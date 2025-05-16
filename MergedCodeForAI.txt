@@ -74,6 +74,158 @@ class Program
 }
 </file>
 
+<file path="Source\Controls\WaveformDisplayControl.cs">
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Media;
+using Avalonia.Input;
+using System;
+using System.Collections.Generic;
+using Sonorize.Models; // For LoopRegion
+using Sonorize.Services; // For WaveformPoint
+
+namespace Sonorize.Controls;
+
+public class WaveformDisplayControl : Control
+{
+    // Background Property (NEW)
+    public static readonly StyledProperty<IBrush?> BackgroundProperty =
+        Border.BackgroundProperty.AddOwner<WaveformDisplayControl>();
+
+    public IBrush? Background
+    {
+        get => GetValue(BackgroundProperty);
+        set => SetValue(BackgroundProperty, value);
+    }
+
+    public static readonly StyledProperty<List<WaveformPoint>> WaveformPointsProperty =
+        AvaloniaProperty.Register<WaveformDisplayControl, List<WaveformPoint>>(nameof(WaveformPoints), defaultValue: new List<WaveformPoint>());
+
+    public List<WaveformPoint> WaveformPoints
+    {
+        get => GetValue(WaveformPointsProperty);
+        set => SetValue(WaveformPointsProperty, value);
+    }
+
+    public static readonly StyledProperty<TimeSpan> CurrentPositionProperty =
+        AvaloniaProperty.Register<WaveformDisplayControl, TimeSpan>(nameof(CurrentPosition));
+
+    public TimeSpan CurrentPosition
+    {
+        get => GetValue(CurrentPositionProperty);
+        set => SetValue(CurrentPositionProperty, value);
+    }
+
+    public static readonly StyledProperty<TimeSpan> DurationProperty =
+        AvaloniaProperty.Register<WaveformDisplayControl, TimeSpan>(nameof(Duration), TimeSpan.FromSeconds(1));
+
+    public TimeSpan Duration
+    {
+        get => GetValue(DurationProperty);
+        set => SetValue(DurationProperty, value);
+    }
+
+    public static readonly StyledProperty<LoopRegion?> ActiveLoopProperty =
+        AvaloniaProperty.Register<WaveformDisplayControl, LoopRegion?>(nameof(ActiveLoop));
+
+    public LoopRegion? ActiveLoop
+    {
+        get => GetValue(ActiveLoopProperty);
+        set => SetValue(ActiveLoopProperty, value);
+    }
+
+    public static readonly StyledProperty<IBrush> WaveformBrushProperty =
+        AvaloniaProperty.Register<WaveformDisplayControl, IBrush>(nameof(WaveformBrush), Brushes.DodgerBlue);
+    public IBrush WaveformBrush { get => GetValue(WaveformBrushProperty); set => SetValue(WaveformBrushProperty, value); }
+
+    public static readonly StyledProperty<IBrush> PositionMarkerBrushProperty =
+        AvaloniaProperty.Register<WaveformDisplayControl, IBrush>(nameof(PositionMarkerBrush), Brushes.Red);
+    public IBrush PositionMarkerBrush { get => GetValue(PositionMarkerBrushProperty); set => SetValue(PositionMarkerBrushProperty, value); }
+
+    public static readonly StyledProperty<IBrush> LoopRegionBrushProperty =
+        AvaloniaProperty.Register<WaveformDisplayControl, IBrush>(nameof(LoopRegionBrush), new SolidColorBrush(Colors.Orange, 0.3));
+    public IBrush LoopRegionBrush { get => GetValue(LoopRegionBrushProperty); set => SetValue(LoopRegionBrushProperty, value); }
+
+
+    public event EventHandler<TimeSpan>? SeekRequested;
+
+    static WaveformDisplayControl()
+    {
+        AffectsRender<WaveformDisplayControl>(BackgroundProperty, WaveformPointsProperty, CurrentPositionProperty, DurationProperty, ActiveLoopProperty, WaveformBrushProperty, PositionMarkerBrushProperty, LoopRegionBrushProperty);
+    }
+
+    public WaveformDisplayControl()
+    {
+        ClipToBounds = true;
+    }
+
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+        if (Duration.TotalSeconds > 0 && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            var position = e.GetPosition(this);
+            var relativeX = position.X / Bounds.Width;
+            var seekTime = TimeSpan.FromSeconds(relativeX * Duration.TotalSeconds);
+            SeekRequested?.Invoke(this, seekTime);
+        }
+    }
+
+    public override void Render(DrawingContext context)
+    {
+        base.Render(context);
+        var width = Bounds.Width;
+        var height = Bounds.Height;
+
+        if (width <= 0 || height <= 0) return;
+
+        // Draw Background (NEW)
+        if (Background != null)
+        {
+            context.FillRectangle(Background, Bounds);
+        }
+
+
+        var waveformPen = new Pen(WaveformBrush, 1);
+        var positionPen = new Pen(PositionMarkerBrush, 1.5);
+
+        if (WaveformPoints != null && WaveformPoints.Count > 1)
+        {
+            for (int i = 0; i < WaveformPoints.Count; i++)
+            {
+                var point = WaveformPoints[i];
+                var x = point.X * width;
+                var yPeak = point.Y * (height / 2);
+                context.DrawLine(waveformPen, new Point(x, height / 2 - yPeak), new Point(x, height / 2 + yPeak));
+            }
+        }
+        else
+        {
+            context.DrawLine(waveformPen, new Point(0, height / 2), new Point(width, height / 2));
+        }
+
+        if (ActiveLoop != null && Duration.TotalSeconds > 0)
+        {
+            var loopStartRatio = ActiveLoop.Start.TotalSeconds / Duration.TotalSeconds;
+            var loopEndRatio = ActiveLoop.End.TotalSeconds / Duration.TotalSeconds;
+            var loopStartX = loopStartRatio * width;
+            var loopEndX = loopEndRatio * width;
+            if (loopEndX > loopStartX)
+            {
+                context.FillRectangle(LoopRegionBrush, new Rect(loopStartX, 0, loopEndX - loopStartX, height));
+            }
+        }
+
+        if (Duration.TotalSeconds > 0)
+        {
+            var currentX = (CurrentPosition.TotalSeconds / Duration.TotalSeconds) * width;
+            currentX = Math.Clamp(currentX, 0, width);
+            context.DrawLine(positionPen, new Point(currentX, 0), new Point(currentX, height));
+        }
+    }
+}
+</file>
+
 <file path="Source\Models\AppSettings.cs">
 using System.Collections.Generic;
 
@@ -86,10 +238,67 @@ public class AppSettings
 }
 </file>
 
+<file path="Source\Models\LoopRegion.cs">
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+
+namespace Sonorize.Models;
+
+public class LoopRegion : INotifyPropertyChanged
+{
+    private string _name = "New Loop";
+    public string Name
+    {
+        get => _name;
+        set => SetProperty(ref _name, value);
+    }
+
+    private TimeSpan _start;
+    public TimeSpan Start
+    {
+        get => _start;
+        set => SetProperty(ref _start, value);
+    }
+
+    private TimeSpan _end;
+    public TimeSpan End
+    {
+        get => _end;
+        set => SetProperty(ref _end, value);
+    }
+
+    public LoopRegion(TimeSpan start, TimeSpan end, string name = "New Loop")
+    {
+        _start = start;
+        _end = end;
+        _name = name;
+    }
+
+    public string DisplayText => $"{Name} ({Start:mm\\:ss} - {End:mm\\:ss})";
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    protected bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value)) return false;
+        field = value;
+        OnPropertyChanged(propertyName);
+        return true;
+    }
+    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+}
+</file>
+
 <file path="Source\Models\Song.cs">
 using Avalonia.Media.Imaging;
 using Sonorize.ViewModels; // For ViewModelBase
 using System;
+using System.Collections.ObjectModel; // For ObservableCollection
+using System.ComponentModel; // For INotifyPropertyChanged
 
 namespace Sonorize.Models;
 
@@ -110,6 +319,16 @@ public class Song : ViewModelBase
 
     private Bitmap? _thumbnail;
     public Bitmap? Thumbnail { get => _thumbnail; set => SetProperty(ref _thumbnail, value); }
+
+    // Stores all defined loop regions for this song (session-specific)
+    public ObservableCollection<LoopRegion> LoopRegions { get; } = new();
+
+    private LoopRegion? _activeLoop;
+    public LoopRegion? ActiveLoop
+    {
+        get => _activeLoop;
+        set => SetProperty(ref _activeLoop, value);
+    }
 }
 </file>
 
@@ -382,218 +601,246 @@ public class MusicLibraryService
 </file>
 
 <file path="Source\Services\PlaybackService.cs">
-using Avalonia.Threading; // For Dispatcher
-using NAudio.Wave; // Core NAudio namespace for playback
+using Avalonia.Threading;
+using NAudio.Wave;
+using NAudio.Wave.SampleProviders; // Added this line
 using Sonorize.Models;
 using Sonorize.ViewModels; // For ViewModelBase
 using System;
 using System.Threading;
 
 namespace Sonorize.Services;
-
+public enum PlaybackStateStatus { Stopped, Playing, Paused }
 public class PlaybackService : ViewModelBase, IDisposable
 {
     private Song? _currentSong;
-    public Song? CurrentSong { get => _currentSong; private set => SetProperty(ref _currentSong, value); }
+    public Song? CurrentSong { get => _currentSong; private set { SetProperty(ref _currentSong, value); OnPropertyChanged(nameof(HasCurrentSong)); } }
+    public bool HasCurrentSong => CurrentSong != null;
 
     private bool _isPlaying;
     public bool IsPlaying { get => _isPlaying; private set => SetProperty(ref _isPlaying, value); }
 
-    private TimeSpan _currentPosition;
-    public TimeSpan CurrentPosition
+    private PlaybackStateStatus _currentPlaybackStatus = PlaybackStateStatus.Stopped;
+    public PlaybackStateStatus CurrentPlaybackStatus
     {
-        get => _currentPosition;
-        set
-        {
-            if (SetProperty(ref _currentPosition, value))
-            {
-                OnPropertyChanged(nameof(CurrentPositionSeconds));
-            }
-        }
+        get => _currentPlaybackStatus;
+        private set => SetProperty(ref _currentPlaybackStatus, value);
     }
 
-    public double CurrentPositionSeconds
-    {
-        get => CurrentPosition.TotalSeconds;
-        set
-        {
-            // Only seek if the value change is significant and we have a reader
-            if (audioFileReader != null && Math.Abs(CurrentPosition.TotalSeconds - value) > 0.5)
-            {
-                Seek(TimeSpan.FromSeconds(value));
-            }
-        }
-    }
+    private TimeSpan _currentPosition;
+    public TimeSpan CurrentPosition { get => _currentPosition; set { if (SetProperty(ref _currentPosition, value)) OnPropertyChanged(nameof(CurrentPositionSeconds)); } }
+    public double CurrentPositionSeconds { get => CurrentPosition.TotalSeconds; set { if (audioFileReader != null && Math.Abs(CurrentPosition.TotalSeconds - value) > 0.1) Seek(TimeSpan.FromSeconds(value)); } }
 
     private TimeSpan _currentSongDuration;
-    public TimeSpan CurrentSongDuration
-    {
-        get => _currentSongDuration;
-        private set
-        {
-            if (SetProperty(ref _currentSongDuration, value))
-            {
-                OnPropertyChanged(nameof(CurrentSongDurationSeconds));
-            }
-        }
-    }
-
-    public double CurrentSongDurationSeconds => CurrentSongDuration.TotalSeconds > 0 ? CurrentSongDuration.TotalSeconds : 100;
+    public TimeSpan CurrentSongDuration { get => _currentSongDuration; private set { if (SetProperty(ref _currentSongDuration, value)) OnPropertyChanged(nameof(CurrentSongDurationSeconds)); } }
+    public double CurrentSongDurationSeconds => CurrentSongDuration.TotalSeconds > 0 ? CurrentSongDuration.TotalSeconds : 1;
 
     private IWavePlayer? waveOutDevice;
     private AudioFileReader? audioFileReader;
+    private VarispeedSampleProvider? varispeedProvider;
     private Timer? uiUpdateTimer;
+
+    private float _playbackRate = 1.0f;
+    public float PlaybackRate
+    {
+        get => _playbackRate;
+        set
+        {
+            if (SetProperty(ref _playbackRate, value))
+            {
+                if (varispeedProvider != null)
+                {
+                    varispeedProvider.PlaybackRate = _playbackRate;
+                }
+            }
+        }
+    }
+
+    private float _pitchSemitones = 0f;
+    public float PitchSemitones
+    {
+        get => _pitchSemitones;
+        set
+        {
+            SetProperty(ref _pitchSemitones, value);
+        }
+    }
 
     public PlaybackService()
     {
-        // Initialize the UI update timer but don't start it yet
         uiUpdateTimer = new Timer(UpdateUiCallback, null, Timeout.Infinite, Timeout.Infinite);
     }
 
     private void UpdateUiCallback(object? state)
     {
-        if (IsPlaying && audioFileReader != null && waveOutDevice?.PlaybackState == PlaybackState.Playing)
+        if (IsPlaying && audioFileReader != null && waveOutDevice?.PlaybackState == NAudio.Wave.PlaybackState.Playing)
         {
-            // Ensure UI updates are on the UI thread
             Dispatcher.UIThread.InvokeAsync(() =>
             {
-                CurrentPosition = audioFileReader.CurrentTime;
+                if (audioFileReader == null || varispeedProvider == null) return;
+
+                CurrentPosition = audioFileReader.CurrentTime.Multiply(varispeedProvider.PlaybackRate);
+
+                if (CurrentSong?.ActiveLoop != null)
+                {
+                    var activeLoop = CurrentSong.ActiveLoop;
+                    var actualPlaybackTimeInFile = audioFileReader.CurrentTime;
+                    if (actualPlaybackTimeInFile >= activeLoop.End && activeLoop.End > activeLoop.Start)
+                    {
+                        if (audioFileReader != null && CurrentSong?.ActiveLoop != null && varispeedProvider != null)
+                        {
+                            audioFileReader.CurrentTime = CurrentSong.ActiveLoop.Start;
+                            CurrentPosition = CurrentSong.ActiveLoop.Start.Multiply(varispeedProvider.PlaybackRate);
+                        }
+                    }
+                }
             });
         }
     }
 
-    private void StartUiUpdateTimer()
+    private void InitializeNAudioPipeline(string filePath)
     {
-        uiUpdateTimer?.Change(TimeSpan.Zero, TimeSpan.FromMilliseconds(200)); // Update UI every 200ms
+        CleanUpPlaybackResources();
+
+        audioFileReader = new AudioFileReader(filePath);
+        varispeedProvider = new VarispeedSampleProvider(audioFileReader, 100, new SoundTouchProfile(true, false, false));
+        varispeedProvider.PlaybackRate = _playbackRate;
+
+        waveOutDevice = new WaveOutEvent();
+        waveOutDevice.PlaybackStopped += OnPlaybackStopped;
+        waveOutDevice.Init(varispeedProvider);
+
+        CurrentSongDuration = audioFileReader.TotalTime;
+        CurrentPosition = TimeSpan.Zero;
     }
 
-    private void StopUiUpdateTimer()
+
+    public void Play(Song song)
     {
-        uiUpdateTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+        if (song == null) return;
+        CurrentSong = song;
+
+        try
+        {
+            InitializeNAudioPipeline(song.FilePath);
+
+            waveOutDevice?.Play();
+            IsPlaying = true;
+            CurrentPlaybackStatus = PlaybackStateStatus.Playing;
+            StartUiUpdateTimer();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error initializing playback for {song.FilePath}: {ex.Message}");
+            IsPlaying = false; CurrentSong = null; CurrentSongDuration = TimeSpan.Zero; CurrentPosition = TimeSpan.Zero;
+            CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
+            CleanUpPlaybackResources();
+        }
     }
+
+    private void StartUiUpdateTimer() => uiUpdateTimer?.Change(TimeSpan.Zero, TimeSpan.FromMilliseconds(100));
+    private void StopUiUpdateTimer() => uiUpdateTimer?.Change(Timeout.Infinite, Timeout.Infinite);
 
     private void CleanUpPlaybackResources()
     {
         StopUiUpdateTimer();
 
-        if (waveOutDevice != null)
-        {
-            waveOutDevice.PlaybackStopped -= OnPlaybackStopped; // Unhook event handler
-            waveOutDevice.Stop(); // Stop playback
-            waveOutDevice.Dispose();
-            waveOutDevice = null;
-        }
-        if (audioFileReader != null)
-        {
-            audioFileReader.Dispose();
-            audioFileReader = null;
-        }
-    }
+        waveOutDevice?.Stop();
+        waveOutDevice?.Dispose();
+        waveOutDevice = null;
 
-    public void Play(Song song)
-    {
-        CleanUpPlaybackResources(); // Clean up any existing playback
-
-        CurrentSong = song; // Set current song immediately
-
-        try
-        {
-            audioFileReader = new AudioFileReader(song.FilePath);
-            waveOutDevice = new WaveOutEvent(); // Or WasapiOut for lower latency on Windows
-            waveOutDevice.PlaybackStopped += OnPlaybackStopped;
-            waveOutDevice.Init(audioFileReader);
-
-            CurrentSongDuration = audioFileReader.TotalTime;
-            CurrentPosition = TimeSpan.Zero; // Reset position for new song
-
-            waveOutDevice.Play();
-            IsPlaying = true;
-            StartUiUpdateTimer();
-            Console.WriteLine($"NAudio Playing: {song.Title}");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error initializing playback for {song.FilePath}: {ex.Message}");
-            // Potentially update UI to show an error
-            IsPlaying = false;
-            CurrentSong = null; // Clear current song if playback failed to start
-            CurrentSongDuration = TimeSpan.Zero;
-            CurrentPosition = TimeSpan.Zero;
-        }
+        varispeedProvider = null; 
+        audioFileReader?.Dispose();
+        audioFileReader = null;
     }
 
     private void OnPlaybackStopped(object? sender, StoppedEventArgs e)
     {
-        // This event fires when playback ends naturally or is stopped.
-        // We've unhooked it in CleanUpPlaybackResources before manual stop,
-        // so this handler is primarily for when the song finishes playing naturally.
         Dispatcher.UIThread.InvokeAsync(() =>
         {
-            IsPlaying = false;
-            StopUiUpdateTimer();
-            // Resources are cleaned up by the next Play() or by Dispose() or Stop()
-            // Here, we just ensure the state reflects that nothing is playing.
-            // If we want to automatically play the next song, this is where to trigger it.
-
-            // Ensure position is at the end if it stopped naturally
-            if (audioFileReader != null && CurrentPosition < audioFileReader.TotalTime)
+            if (IsPlaying || (waveOutDevice != null && waveOutDevice.PlaybackState == NAudio.Wave.PlaybackState.Stopped))
             {
-                CurrentPosition = audioFileReader.TotalTime;
+                IsPlaying = false;
+                CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
             }
-
-            CleanUpPlaybackResources(); // Clean up the finished song's resources
-
+            StopUiUpdateTimer();
             if (e.Exception != null)
             {
                 Console.WriteLine($"NAudio Playback Error: {e.Exception.Message}");
             }
-            // Update UI or play next song
         });
     }
 
     public void Pause()
     {
-        if (IsPlaying && waveOutDevice?.PlaybackState == PlaybackState.Playing)
+        if (IsPlaying && waveOutDevice?.PlaybackState == NAudio.Wave.PlaybackState.Playing)
         {
             waveOutDevice.Pause();
             IsPlaying = false;
-            StopUiUpdateTimer(); // Stop UI updates while paused
-            Console.WriteLine("NAudio Paused");
+            CurrentPlaybackStatus = PlaybackStateStatus.Paused;
+            StopUiUpdateTimer();
         }
     }
 
     public void Resume()
     {
-        if (!IsPlaying && CurrentSong != null && waveOutDevice?.PlaybackState == PlaybackState.Paused)
+        if (!IsPlaying && CurrentSong != null)
         {
-            waveOutDevice.Play();
+            if (waveOutDevice == null || audioFileReader == null || varispeedProvider == null || waveOutDevice.PlaybackState == NAudio.Wave.PlaybackState.Stopped)
+            {
+                TimeSpan resumePosition = TimeSpan.Zero;
+                if (audioFileReader != null)
+                {
+                    resumePosition = audioFileReader.CurrentTime;
+                }
+                else if (CurrentPosition > TimeSpan.Zero && _playbackRate > 0)
+                {
+                    resumePosition = CurrentPosition.Divide(_playbackRate);
+                }
+
+                try
+                {
+                    InitializeNAudioPipeline(CurrentSong.FilePath);
+                    if (audioFileReader != null && varispeedProvider != null)
+                    {
+                        audioFileReader.CurrentTime = resumePosition;
+                        CurrentPosition = resumePosition.Multiply(varispeedProvider.PlaybackRate);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error re-initializing for resume: {ex.Message}");
+                    CleanUpPlaybackResources();
+                    CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
+                    return;
+                }
+            }
+            waveOutDevice?.Play();
             IsPlaying = true;
-            StartUiUpdateTimer(); // Resume UI updates
-            Console.WriteLine("NAudio Resumed");
+            CurrentPlaybackStatus = PlaybackStateStatus.Playing;
+            StartUiUpdateTimer();
         }
     }
 
     public void Stop()
     {
-        CleanUpPlaybackResources();
         IsPlaying = false;
-        // Optionally clear CurrentSong or keep it for context until a new song is played
-        // CurrentSong = null;
+        CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
+        waveOutDevice?.Stop();
+        CleanUpPlaybackResources(); 
         CurrentPosition = TimeSpan.Zero;
-        // CurrentSongDuration = TimeSpan.Zero; // Keep duration of last song visible? Or reset?
-        Console.WriteLine("NAudio Stopped");
     }
 
-    public void Seek(TimeSpan position)
+    public void Seek(TimeSpan positionInTrueTime)
     {
-        if (audioFileReader != null)
+        if (audioFileReader != null && varispeedProvider != null)
         {
-            var newPosition = position;
-            if (newPosition < TimeSpan.Zero) newPosition = TimeSpan.Zero;
-            if (newPosition > audioFileReader.TotalTime) newPosition = audioFileReader.TotalTime;
+            var targetPosition = positionInTrueTime;
+            if (targetPosition < TimeSpan.Zero) targetPosition = TimeSpan.Zero;
+            if (targetPosition > audioFileReader.TotalTime) targetPosition = audioFileReader.TotalTime;
 
-            audioFileReader.CurrentTime = newPosition;
-            CurrentPosition = audioFileReader.CurrentTime; // Immediately update our property
+            audioFileReader.CurrentTime = targetPosition;
+            CurrentPosition = targetPosition.Multiply(varispeedProvider.PlaybackRate);
         }
     }
 
@@ -789,18 +1036,124 @@ public class ThemeService
 }
 </file>
 
+<file path="Source\Services\WaveFormService.cs">
+using Avalonia;
+using NAudio.Wave;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Diagnostics;
+
+namespace Sonorize.Services;
+
+// Represents a simplified data point for the waveform
+public record WaveformPoint(double X, double YPeak);
+
+public class WaveformService
+{
+    // Cache for waveform data to avoid reprocessing
+    private readonly Dictionary<string, List<WaveformPoint>> _waveformCache = new();
+
+    public async Task<List<WaveformPoint>> GetWaveformAsync(string filePath, int targetPoints)
+    {
+        if (string.IsNullOrEmpty(filePath) || targetPoints <= 0)
+            return new List<WaveformPoint>();
+
+        if (_waveformCache.TryGetValue(filePath, out var cachedData))
+        {
+            // Potentially resample cached data if targetPoints differs significantly,
+            // or just return cached if good enough. For simplicity, returning cached.
+            Debug.WriteLine($"[WaveformService] Returning cached waveform for {filePath}");
+            return cachedData;
+        }
+
+        Debug.WriteLine($"[WaveformService] Generating waveform for {filePath} with {targetPoints} points.");
+        List<WaveformPoint> points = new List<WaveformPoint>();
+
+        try
+        {
+            await Task.Run(() =>
+            {
+                using (var reader = new AudioFileReader(filePath))
+                {
+                    var samples = reader.Length / (reader.WaveFormat.BitsPerSample / 8);
+                    var samplesPerPoint = (int)Math.Max(1, samples / targetPoints / reader.WaveFormat.Channels);
+
+                    if (samplesPerPoint == 0 || samples == 0)
+                    {
+                        Debug.WriteLine($"[WaveformService] Not enough samples or zero samplesPerPoint for {filePath}. Samples: {samples}, SPP: {samplesPerPoint}");
+                        return; // Not enough data or too many target points
+                    }
+
+                    var buffer = new float[samplesPerPoint * reader.WaveFormat.Channels];
+                    int samplesRead;
+                    double currentX = 0;
+                    double xIncrement = 1.0 / targetPoints;
+
+                    for (int i = 0; i < targetPoints; i++)
+                    {
+                        float max = 0;
+                        long currentSampleIndex = (long)i * samplesPerPoint * reader.WaveFormat.Channels;
+
+                        // Ensure reader is positioned correctly if seeking is needed (not ideal for full scan)
+                        // For a sequential read, this direct approach is okay.
+                        // reader.Position = currentSampleIndex * (reader.WaveFormat.BitsPerSample / 8);
+
+                        samplesRead = reader.Read(buffer, 0, buffer.Length);
+                        if (samplesRead == 0) break;
+
+                        for (int n = 0; n < samplesRead; n++)
+                        {
+                            max = Math.Max(max, Math.Abs(buffer[n]));
+                        }
+                        points.Add(new WaveformPoint(currentX, max)); // Y is normalized peak (0 to 1)
+                        currentX += xIncrement;
+                        if (currentX > 1.0) currentX = 1.0; // Cap at 1.0
+                    }
+                }
+            });
+
+            if (points.Any())
+            {
+                _waveformCache[filePath] = points; // Cache the result
+                Debug.WriteLine($"[WaveformService] Waveform generated for {filePath}, {points.Count} points.");
+            }
+            else
+            {
+                Debug.WriteLine($"[WaveformService] No points generated for {filePath}. It might be too short or an issue with reading.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[WaveformService] Error generating waveform for {filePath}: {ex.Message}");
+            // Return empty list on error
+            return new List<WaveformPoint>();
+        }
+        return points;
+    }
+
+    public void ClearCache()
+    {
+        _waveformCache.Clear();
+        Debug.WriteLine("[WaveformService] Cache cleared.");
+    }
+}
+</file>
+
 <file path="Source\ViewModels\MainViewModel.cs">
-using Avalonia.Controls; // For OpenFolderDialog, Window
-using Avalonia.Platform.Storage; // For IStorageFolder (though ShowAsync returns string now)
-using Sonorize.Models;    // For Song, AppSettings, ThemeColors
-using Sonorize.Services;  // For SettingsService, MusicLibraryService, PlaybackService
+using Avalonia.Controls;
+using Sonorize.Models;
+using Sonorize.Services;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
-using System; // Required for Action
-using System.Diagnostics; // For Debug.WriteLine
-using Avalonia.Threading; // For Dispatcher
+using System;
+using System.Diagnostics;
+using Avalonia.Threading;
+using System.ComponentModel;
+using System.Collections.Generic;
 
 namespace Sonorize.ViewModels;
 
@@ -808,189 +1161,386 @@ public class MainWindowViewModel : ViewModelBase
 {
     private readonly SettingsService _settingsService;
     private readonly MusicLibraryService _musicLibraryService;
+    private readonly WaveformService _waveformService;
     public PlaybackService PlaybackService { get; }
-    public ThemeColors CurrentTheme { get; } // To make theme accessible to UI if needed for dynamic bindings (less common in C#-only UI)
+    public ThemeColors CurrentTheme { get; }
 
     public ObservableCollection<Song> Songs { get; } = new();
 
-    private Song? _selectedSong;
+    private Song? _selectedSongInternal;
     public Song? SelectedSong
     {
-        get => _selectedSong;
+        get => _selectedSongInternal;
         set
         {
-            if (SetProperty(ref _selectedSong, value) && value != null)
+            var previousSong = _selectedSongInternal;
+            if (SetProperty(ref _selectedSongInternal, value))
             {
-                PlaySongCommand.Execute(value);
+                HandleSelectedSongChange(previousSong, _selectedSongInternal);
             }
         }
     }
 
-    private string _statusBarText = "Welcome to Sonorize!";
-    public string StatusBarText
+    private async void HandleSelectedSongChange(Song? oldSong, Song? newSong)
     {
-        get => _statusBarText;
-        set => SetProperty(ref _statusBarText, value);
+        if (oldSong != null)
+        {
+            oldSong.PropertyChanged -= OnCurrentSongActiveLoopChanged;
+        }
+        if (newSong != null)
+        {
+            newSong.PropertyChanged += OnCurrentSongActiveLoopChanged;
+            PlaybackService.Play(newSong);
+            await LoadWaveformForCurrentSong();
+        }
+        else
+        {
+            PlaybackService.Stop();
+            WaveformRenderData.Clear();
+            OnPropertyChanged(nameof(WaveformRenderData));
+            IsAdvancedPanelVisible = false;
+        }
+
+        UpdateLoopEditorForCurrentSong();
+        UpdateActiveLoopDisplayText();
+        (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        OnPropertyChanged(nameof(PlaybackService.HasCurrentSong));
     }
+
+    private string _statusBarText = "Welcome to Sonorize!";
+    public string StatusBarText { get => _statusBarText; set => SetProperty(ref _statusBarText, value); }
 
     private bool _isLoadingLibrary = false;
     public bool IsLoadingLibrary
     {
         get => _isLoadingLibrary;
+        set { if (SetProperty(ref _isLoadingLibrary, value)) OnIsLoadingLibraryChanged(); }
+    }
+
+    private void OnIsLoadingLibraryChanged()
+    {
+        (LoadInitialDataCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (OpenSettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        if (_isLoadingLibrary) IsAdvancedPanelVisible = false;
+    }
+
+    private bool _isAdvancedPanelVisible;
+    public bool IsAdvancedPanelVisible
+    {
+        get => _isAdvancedPanelVisible;
         set
         {
-            if (SetProperty(ref _isLoadingLibrary, value))
+            if (SetProperty(ref _isAdvancedPanelVisible, value))
             {
-                // Update CanExecute for commands that should be disabled during loading
-                (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
-                (OpenSettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
-                (LoadInitialDataCommand as RelayCommand)?.RaiseCanExecuteChanged(); // If you add a manual refresh button
+                (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                if (value && PlaybackService.CurrentSong != null && !WaveformRenderData.Any())
+                {
+                    _ = LoadWaveformForCurrentSong();
+                }
             }
         }
     }
 
+    private double _playbackSpeed = 1.0;
+    public double PlaybackSpeed
+    {
+        get => _playbackSpeed;
+        set
+        {
+            if (SetProperty(ref _playbackSpeed, Math.Max(0.25, Math.Min(value, 4.0))))
+            {
+                PlaybackService.PlaybackRate = (float)_playbackSpeed;
+                OnPropertyChanged(nameof(PlaybackSpeedDisplay));
+            }
+        }
+    }
+    public string PlaybackSpeedDisplay => $"{PlaybackSpeed:F2}x";
+
+    private double _playbackPitch = 0.0;
+    public double PlaybackPitch
+    {
+        get => _playbackPitch;
+        set
+        {
+            if (SetProperty(ref _playbackPitch, Math.Max(-24, Math.Min(value, 24))))
+            {
+                PlaybackService.PitchSemitones = (float)_playbackPitch;
+                OnPropertyChanged(nameof(PlaybackPitchDisplay));
+            }
+        }
+    }
+    public string PlaybackPitchDisplay => $"{PlaybackPitch:+0.0;-0.0;0} st";
+
+    public ObservableCollection<WaveformPoint> WaveformRenderData { get; } = new();
+    private bool _isWaveformLoading = false;
+    public bool IsWaveformLoading { get => _isWaveformLoading; private set => SetProperty(ref _isWaveformLoading, value); }
+
+    public ObservableCollection<LoopRegion> EditableLoopRegions { get; } = new();
+    private LoopRegion? _selectedEditableLoopRegion;
+    public LoopRegion? SelectedEditableLoopRegion { get => _selectedEditableLoopRegion; set { if (SetProperty(ref _selectedEditableLoopRegion, value)) OnSelectedEditableLoopRegionChanged(); } }
+    private void OnSelectedEditableLoopRegionChanged()
+    {
+        (ActivateLoopRegionCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (DeleteLoopRegionCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        if (_selectedEditableLoopRegion != null) NewLoopNameInput = _selectedEditableLoopRegion.Name;
+    }
+    private string _newLoopNameInput = "New Loop";
+    public string NewLoopNameInput { get => _newLoopNameInput; set => SetProperty(ref _newLoopNameInput, value); }
+    private TimeSpan? _newLoopStartCandidate;
+    public TimeSpan? NewLoopStartCandidate { get => _newLoopStartCandidate; set { SetProperty(ref _newLoopStartCandidate, value); OnPropertyChanged(nameof(CanSaveNewLoopRegion)); OnPropertyChanged(nameof(NewLoopStartCandidateDisplay)); } }
+    private TimeSpan? _newLoopEndCandidate;
+    public TimeSpan? NewLoopEndCandidate { get => _newLoopEndCandidate; set { SetProperty(ref _newLoopEndCandidate, value); OnPropertyChanged(nameof(CanSaveNewLoopRegion)); OnPropertyChanged(nameof(NewLoopEndCandidateDisplay)); } }
+    public string NewLoopStartCandidateDisplay => _newLoopStartCandidate.HasValue ? $"{_newLoopStartCandidate.Value:mm\\:ss\\.ff}" : "Not set";
+    public string NewLoopEndCandidateDisplay => _newLoopEndCandidate.HasValue ? $"{_newLoopEndCandidate.Value:mm\\:ss\\.ff}" : "Not set";
+    private string _activeLoopDisplayText = "No active loop.";
+    public string ActiveLoopDisplayText { get => _activeLoopDisplayText; set => SetProperty(ref _activeLoopDisplayText, value); }
+
     public ICommand LoadInitialDataCommand { get; }
     public ICommand OpenSettingsCommand { get; }
     public ICommand ExitCommand { get; }
-    public ICommand PlaySongCommand { get; }
     public ICommand AddDirectoryAndRefreshCommand { get; }
+    public ICommand ToggleAdvancedPanelCommand { get; }
+    public ICommand CaptureLoopStartCandidateCommand { get; }
+    public ICommand CaptureLoopEndCandidateCommand { get; }
+    public ICommand SaveNewLoopRegionCommand { get; }
+    public ICommand ActivateLoopRegionCommand { get; }
+    public ICommand DeactivateActiveLoopCommand { get; }
+    public ICommand DeleteLoopRegionCommand { get; }
+    public ICommand WaveformSeekCommand { get; }
+
 
     public MainWindowViewModel(
         SettingsService settingsService,
         MusicLibraryService musicLibraryService,
         PlaybackService playbackService,
-        ThemeColors theme) // ThemeColors passed in
+        ThemeColors theme,
+        WaveformService waveformService)
     {
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
         PlaybackService = playbackService;
-        CurrentTheme = theme; // Store the passed theme
+        CurrentTheme = theme;
+        _waveformService = waveformService;
 
         LoadInitialDataCommand = new RelayCommand(async _ => await LoadMusicLibrary(), _ => !IsLoadingLibrary);
         OpenSettingsCommand = new RelayCommand(async owner => await OpenSettingsDialog(owner), _ => !IsLoadingLibrary);
         ExitCommand = new RelayCommand(_ => Environment.Exit(0));
-        PlaySongCommand = new RelayCommand(song => PlaybackService.Play((Song)song!), song => song is Song);
         AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefresh(owner), _ => !IsLoadingLibrary);
 
-        PlaybackService.PropertyChanged += (sender, args) =>
-        {
-            if (args.PropertyName == nameof(PlaybackService.CurrentSong) || args.PropertyName == nameof(PlaybackService.IsPlaying))
-            {
-                UpdateStatusBarTextPlayingStatus();
-            }
-        };
+        ToggleAdvancedPanelCommand = new RelayCommand(
+            _ => IsAdvancedPanelVisible = !IsAdvancedPanelVisible,
+            _ => PlaybackService.CurrentSong != null && !IsLoadingLibrary);
+
+        CaptureLoopStartCandidateCommand = new RelayCommand(_ => NewLoopStartCandidate = PlaybackService.CurrentPosition.Divide(PlaybackService.PlaybackRate), _ => PlaybackService.CurrentSong != null);
+        CaptureLoopEndCandidateCommand = new RelayCommand(_ => NewLoopEndCandidate = PlaybackService.CurrentPosition.Divide(PlaybackService.PlaybackRate), _ => PlaybackService.CurrentSong != null);
+        SaveNewLoopRegionCommand = new RelayCommand(SaveLoopCandidateAction, _ => CanSaveNewLoopRegion);
+        ActivateLoopRegionCommand = new RelayCommand(_ => { if (PlaybackService.CurrentSong != null && SelectedEditableLoopRegion != null) PlaybackService.CurrentSong.ActiveLoop = SelectedEditableLoopRegion; }, _ => CanActivateLoopRegion());
+        DeactivateActiveLoopCommand = new RelayCommand(_ => { if (PlaybackService.CurrentSong != null) PlaybackService.CurrentSong.ActiveLoop = null; }, _ => PlaybackService.CurrentSong?.ActiveLoop != null);
+        DeleteLoopRegionCommand = new RelayCommand(DeleteSelectedLoopRegionAction, _ => SelectedEditableLoopRegion != null);
+        WaveformSeekCommand = new RelayCommand(timeSpan => PlaybackService.Seek((TimeSpan)timeSpan!), _ => PlaybackService.CurrentSong != null);
+
+        PlaybackService.PropertyChanged += OnPlaybackServicePropertyChanged;
+        PlaybackSpeed = 1.0;
+        PlaybackPitch = 0.0;
+        UpdateStatusBarText();
+        UpdateActiveLoopDisplayText();
     }
 
-    private void UpdateStatusBarTextPlayingStatus()
-    {
-        if (IsLoadingLibrary) return; // Loading status takes precedence
+    private bool CanActivateLoopRegion() => PlaybackService.CurrentSong != null && SelectedEditableLoopRegion != null && PlaybackService.CurrentSong.ActiveLoop != SelectedEditableLoopRegion;
 
-        if (PlaybackService.IsPlaying && PlaybackService.CurrentSong != null)
+    private async Task LoadWaveformForCurrentSong()
+    {
+        if (PlaybackService.CurrentSong == null || string.IsNullOrEmpty(PlaybackService.CurrentSong.FilePath))
         {
-            StatusBarText = $"Playing: {PlaybackService.CurrentSong.Title} - {PlaybackService.CurrentSong.Artist}";
+            WaveformRenderData.Clear();
+            OnPropertyChanged(nameof(WaveformRenderData));
+            return;
         }
-        else if (PlaybackService.CurrentSong != null)
+
+        IsWaveformLoading = true;
+        try
         {
-            StatusBarText = $"Paused: {PlaybackService.CurrentSong.Title} - {PlaybackService.CurrentSong.Artist}";
+            int targetWaveformPoints = 1000;
+            var points = await _waveformService.GetWaveformAsync(PlaybackService.CurrentSong.FilePath, targetWaveformPoints);
+
+            WaveformRenderData.Clear();
+            foreach (var p in points) WaveformRenderData.Add(p);
+            OnPropertyChanged(nameof(WaveformRenderData));
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[ViewModel] Failed to load waveform: {ex.Message}");
+            WaveformRenderData.Clear();
+            OnPropertyChanged(nameof(WaveformRenderData));
+        }
+        finally
+        {
+            IsWaveformLoading = false;
+        }
+    }
+
+    private void OnPlaybackServicePropertyChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        switch (args.PropertyName)
+        {
+            case nameof(PlaybackService.CurrentSong):
+                (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                break;
+            case nameof(PlaybackService.IsPlaying): // IsPlaying changes
+            case nameof(PlaybackService.CurrentPlaybackStatus): // CurrentPlaybackStatus also changes
+                UpdateStatusBarText();
+                break;
+            case nameof(PlaybackService.CurrentPosition):
+            case nameof(PlaybackService.CurrentSongDuration):
+                (SaveNewLoopRegionCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                break;
+        }
+    }
+
+    private void OnCurrentSongActiveLoopChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(Song.ActiveLoop))
+        {
+            UpdateActiveLoopDisplayText();
+            UpdateStatusBarText();
+            (ActivateLoopRegionCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (DeactivateActiveLoopCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        }
+    }
+
+    private void UpdateLoopEditorForCurrentSong()
+    {
+        EditableLoopRegions.Clear();
+        if (PlaybackService.CurrentSong != null)
+        {
+            foreach (var loop in PlaybackService.CurrentSong.LoopRegions) EditableLoopRegions.Add(loop);
+            NewLoopNameInput = $"Loop {EditableLoopRegions.Count + 1}";
+        }
+        else NewLoopNameInput = "New Loop";
+
+        NewLoopStartCandidate = null;
+        NewLoopEndCandidate = null;
+        SelectedEditableLoopRegion = null;
+
+        (CaptureLoopStartCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (CaptureLoopEndCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (SaveNewLoopRegionCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (ActivateLoopRegionCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (DeactivateActiveLoopCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (DeleteLoopRegionCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        OnPropertyChanged(nameof(CanSaveNewLoopRegion));
+    }
+
+    private void ClearLoopCandidate()
+    {
+        NewLoopNameInput = $"Loop {(PlaybackService.CurrentSong?.LoopRegions.Count ?? 0) + 1}";
+        NewLoopStartCandidate = null;
+        NewLoopEndCandidate = null;
+        OnPropertyChanged(nameof(CanSaveNewLoopRegion));
+    }
+
+    public bool CanSaveNewLoopRegion => PlaybackService.CurrentSong != null &&
+                                        NewLoopStartCandidate.HasValue &&
+                                        NewLoopEndCandidate.HasValue &&
+                                        NewLoopEndCandidate.Value > NewLoopStartCandidate.Value &&
+                                        NewLoopEndCandidate.Value <= PlaybackService.CurrentSongDuration.Divide(PlaybackService.PlaybackRate) &&
+                                        NewLoopStartCandidate.Value >= TimeSpan.Zero &&
+                                        !string.IsNullOrWhiteSpace(NewLoopNameInput);
+
+    private void SaveLoopCandidateAction(object? param)
+    {
+        if (!CanSaveNewLoopRegion || PlaybackService.CurrentSong == null || !NewLoopStartCandidate.HasValue || !NewLoopEndCandidate.HasValue) return;
+        var newLoop = new LoopRegion(NewLoopStartCandidate.Value, NewLoopEndCandidate.Value, NewLoopNameInput);
+        PlaybackService.CurrentSong.LoopRegions.Add(newLoop);
+        EditableLoopRegions.Add(newLoop);
+        ClearLoopCandidate();
+    }
+
+    private void DeleteSelectedLoopRegionAction(object? param)
+    {
+        if (PlaybackService.CurrentSong != null && SelectedEditableLoopRegion != null)
+        {
+            if (PlaybackService.CurrentSong.ActiveLoop == SelectedEditableLoopRegion) PlaybackService.CurrentSong.ActiveLoop = null;
+            PlaybackService.CurrentSong.LoopRegions.Remove(SelectedEditableLoopRegion);
+            EditableLoopRegions.Remove(SelectedEditableLoopRegion);
+            SelectedEditableLoopRegion = null;
+            ClearLoopCandidate();
+        }
+    }
+
+    private void UpdateActiveLoopDisplayText()
+    {
+        if (PlaybackService.CurrentSong?.ActiveLoop != null)
+        {
+            var loop = PlaybackService.CurrentSong.ActiveLoop;
+            // Display loop times as they are (unadjusted by speed for clarity in definition)
+            ActiveLoopDisplayText = $"Active Loop: {loop.Name} ({loop.Start:mm\\:ss\\.f} - {loop.End:mm\\:ss\\.f})";
+        }
+        else ActiveLoopDisplayText = "No active loop.";
+    }
+
+    private void UpdateStatusBarText()
+    {
+        if (IsLoadingLibrary) return;
+        string status;
+
+        if (PlaybackService.CurrentSong != null)
+        {
+            string stateStr = PlaybackService.CurrentPlaybackStatus switch // Use the new public property
+            {
+                PlaybackStateStatus.Playing => "Playing",
+                PlaybackStateStatus.Paused => "Paused",
+                PlaybackStateStatus.Stopped => "Stopped",
+                _ => "Idle"
+            };
+            status = $"{stateStr}: {PlaybackService.CurrentSong.Title}";
         }
         else
         {
-            StatusBarText = $"Sonorize - {Songs.Count} songs loaded.";
+            status = $"Sonorize - {Songs.Count} songs loaded.";
         }
+
+        if (PlaybackService.CurrentSong?.ActiveLoop != null) status += $" (Loop: {PlaybackService.CurrentSong.ActiveLoop.Name})";
+        StatusBarText = status;
     }
 
     private async Task LoadMusicLibrary()
     {
-        if (IsLoadingLibrary)
-        {
-            Debug.WriteLine("[MainVM] LoadMusicLibrary called while already loading. Skipping.");
-            return;
-        }
+        if (IsLoadingLibrary) return;
+        IsAdvancedPanelVisible = false;
         IsLoadingLibrary = true;
-
         var settings = _settingsService.LoadSettings();
-
-        // Clear songs on the UI thread before starting background work
-        await Dispatcher.UIThread.InvokeAsync(() => {
-            Songs.Clear();
-            StatusBarText = "Preparing to load music library...";
-        });
-
-
+        await Dispatcher.UIThread.InvokeAsync(() => { Songs.Clear(); StatusBarText = "Preparing..."; });
         if (settings.MusicDirectories.Any())
         {
-            Debug.WriteLine($"[MainVM] Starting music library load from {settings.MusicDirectories.Count} directories.");
-            // Run the potentially long-running service call on a background thread
-            await Task.Run(async () =>
-            {
-                try
-                {
-                    await _musicLibraryService.LoadMusicFromDirectoriesAsync(
-                        settings.MusicDirectories,
-                        song => Songs.Add(song), // songAddedCallback is already marshalled to UI thread by the service
-                        status => StatusBarText = status  // statusUpdateCallback is also marshalled
-                    );
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"[MainVM] Error during LoadMusicFromDirectoriesAsync background task: {ex}");
-                    await Dispatcher.UIThread.InvokeAsync(() => StatusBarText = "Error loading library.");
-                }
-            });
-
-            // Final status update after the Task.Run completes
-            await Dispatcher.UIThread.InvokeAsync(() => {
-                StatusBarText = $"{Songs.Count} songs loaded. Ready.";
-                if (!Songs.Any() && settings.MusicDirectories.Any())
-                    StatusBarText = "No songs found in specified directories. Add directories via File > Settings.";
-            });
+            await Task.Run(async () => { try { await _musicLibraryService.LoadMusicFromDirectoriesAsync(settings.MusicDirectories, song => Songs.Add(song), s => StatusBarText = s); } catch (Exception ex) { Debug.WriteLine($"[MainVM] LoadMusicErr: {ex}"); await Dispatcher.UIThread.InvokeAsync(() => StatusBarText = "Error loading library."); } });
+            await Dispatcher.UIThread.InvokeAsync(() => { StatusBarText = $"{Songs.Count} songs loaded."; if (!Songs.Any() && settings.MusicDirectories.Any()) StatusBarText = "No songs found."; });
         }
-        else
-        {
-            await Dispatcher.UIThread.InvokeAsync(() =>
-                StatusBarText = "No music directories configured. Add directories via File > Settings.");
-        }
-        IsLoadingLibrary = false;
-        UpdateStatusBarTextPlayingStatus(); // Refresh status bar based on playback after loading finishes
+        else await Dispatcher.UIThread.InvokeAsync(() => StatusBarText = "No music directories.");
+        IsLoadingLibrary = false; UpdateStatusBarText();
     }
 
     private async Task OpenSettingsDialog(object? ownerWindow)
     {
-        if (ownerWindow is not Window owner) return;
-
+        if (ownerWindow is not Window owner || IsLoadingLibrary) return;
+        IsAdvancedPanelVisible = false;
         var settingsVM = new SettingsViewModel(_settingsService);
-        // Pass the CurrentTheme to the SettingsWindow constructor
-        var settingsDialog = new Sonorize.Views.SettingsWindow(CurrentTheme)
-        {
-            DataContext = settingsVM
-        };
-
+        var settingsDialog = new Sonorize.Views.SettingsWindow(CurrentTheme) { DataContext = settingsVM };
         await settingsDialog.ShowDialog(owner);
-
-        if (settingsVM.SettingsChanged)
-        {
-            await LoadMusicLibrary();
-        }
+        if (settingsVM.SettingsChanged) await LoadMusicLibrary();
     }
 
     private async Task AddMusicDirectoryAndRefresh(object? ownerWindow)
     {
-        if (ownerWindow is not Window owner) return;
-
-        var dialog = new OpenFolderDialog { Title = "Select Music Directory" };
-        // For Avalonia 11, ShowAsync returns string directly.
-        // For earlier versions, it returned IStorageFolder. This code assumes Avalonia 11+.
-        var resultPath = await dialog.ShowAsync(owner);
-
+        if (ownerWindow is not Window owner || IsLoadingLibrary) return;
+        IsAdvancedPanelVisible = false;
+        var resultPath = await new OpenFolderDialog { Title = "Select Music Directory" }.ShowAsync(owner);
         if (!string.IsNullOrEmpty(resultPath))
         {
             var settings = _settingsService.LoadSettings();
-            if (!settings.MusicDirectories.Contains(resultPath))
-            {
-                settings.MusicDirectories.Add(resultPath);
-                _settingsService.SaveSettings(settings);
-                await LoadMusicLibrary();
-            }
+            if (!settings.MusicDirectories.Contains(resultPath)) { settings.MusicDirectories.Add(resultPath); _settingsService.SaveSettings(settings); await LoadMusicLibrary(); }
         }
     }
 }
@@ -1200,48 +1750,72 @@ public class ViewModelBase : INotifyPropertyChanged
 
 <file path="Source\Views\MainView.cs">
 using System;
-using System.Linq;
-using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives; // For TemplatedControl and Thumb
-using Avalonia.Controls.Templates;
-using Avalonia.Data;
-using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Media.Imaging;
 using Sonorize.Models;
 using Sonorize.ViewModels;
+using Avalonia.Data;
+using Sonorize.Controls; // For WaveformDisplayControl
 using System.Diagnostics;
-using Avalonia.Styling; // For Style, Selector
+using Avalonia;
+using Avalonia.Controls.Templates;
+using Avalonia.Controls.Primitives; // For TemplatedControl
+using Avalonia.Media.Imaging;
+using Avalonia.Data.Converters; // <<<<<<< REQUIRED FOR IValueConverter
+using Avalonia.Styling;         // <<<<<<< REQUIRED FOR Style and Selectors
 
 namespace Sonorize.Views;
-
 public class MainWindow : Window
 {
-    private ListBox _songListBox;
     private readonly ThemeColors _theme;
 
     public MainWindow(ThemeColors theme)
     {
         _theme = theme;
-
-        Debug.WriteLine($"[MainView] Constructor called with theme: BG {_theme.BackgroundColor}, Accent {_theme.AccentColor}");
-        Title = "Sonorize";
-        Width = 900;
-        Height = 700;
-        MinWidth = 600;
-        MinHeight = 400;
+        Title = "Sonorize"; Width = 950; Height = 750; MinWidth = 700; MinHeight = 500;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
-
         Background = _theme.B_BackgroundColor;
 
-        // --- Menu Bar ---
-        var menu = new Menu
+        var mainGrid = new Grid
         {
-            Background = _theme.B_SlightlyLighterBackground,
-            Foreground = _theme.B_TextColor
+            RowDefinitions = new RowDefinitions
+            {
+                new RowDefinition(GridLength.Auto),
+                new RowDefinition(GridLength.Star),
+                new RowDefinition(GridLength.Auto),
+                new RowDefinition(GridLength.Auto),
+                new RowDefinition(GridLength.Auto)
+            }
         };
+
+        var menu = CreateMenu();
+        Grid.SetRow(menu, 0);
+        mainGrid.Children.Add(menu);
+
+        var songListScrollViewer = CreateSongListScrollViewer();
+        Grid.SetRow(songListScrollViewer, 1);
+        mainGrid.Children.Add(songListScrollViewer);
+
+        var advancedPlaybackPanel = CreateAdvancedPlaybackPanel();
+        advancedPlaybackPanel.Bind(Visual.IsVisibleProperty, new Binding("IsAdvancedPanelVisible"));
+        Grid.SetRow(advancedPlaybackPanel, 2);
+        mainGrid.Children.Add(advancedPlaybackPanel);
+
+        var mainPlaybackControls = CreateMainPlaybackControls();
+        Grid.SetRow(mainPlaybackControls, 3);
+        mainGrid.Children.Add(mainPlaybackControls);
+
+        var statusBar = CreateStatusBar();
+        Grid.SetRow(statusBar, 4);
+        mainGrid.Children.Add(statusBar);
+
+        Content = mainGrid;
+    }
+
+    private Menu CreateMenu()
+    {
+        var menu = new Menu { Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor };
         var fileMenuItem = new MenuItem { Header = "_File", Foreground = _theme.B_TextColor };
         var addDirectoryMenuItem = new MenuItem { Header = "_Add Music Directory...", Foreground = _theme.B_TextColor };
         addDirectoryMenuItem.Bind(MenuItem.CommandProperty, new Binding("AddDirectoryAndRefreshCommand"));
@@ -1251,224 +1825,248 @@ public class MainWindow : Window
         settingsMenuItem.CommandParameter = this;
         var exitMenuItem = new MenuItem { Header = "E_xit", Foreground = _theme.B_TextColor };
         exitMenuItem.Bind(MenuItem.CommandProperty, new Binding("ExitCommand"));
-        fileMenuItem.Items.Add(addDirectoryMenuItem);
-        fileMenuItem.Items.Add(settingsMenuItem);
-        fileMenuItem.Items.Add(new Separator());
-        fileMenuItem.Items.Add(exitMenuItem);
+        fileMenuItem.Items.Add(addDirectoryMenuItem); fileMenuItem.Items.Add(settingsMenuItem);
+        fileMenuItem.Items.Add(new Separator()); fileMenuItem.Items.Add(exitMenuItem);
         menu.Items.Add(fileMenuItem);
+        return menu;
+    }
 
-        // --- Song List ---
-        _songListBox = new ListBox
+    private ScrollViewer CreateSongListScrollViewer()
+    {
+        var songListBox = new ListBox
         {
             Background = _theme.B_ListBoxBackground,
             BorderThickness = new Thickness(0),
             Margin = new Thickness(10),
-            Styles =
-            {
-                new Style(x => x.OfType<ListBoxItem>())
-                {
-                    Setters =
-                    {
-                        new Setter(TemplatedControl.BackgroundProperty, _theme.B_ListBoxBackground),
-                        new Setter(TextBlock.ForegroundProperty, _theme.B_TextColor)
-                    }
-                },
-                new Style(x => x.OfType<ListBoxItem>().Class(":pointerover"))
-                {
-                    Setters =
-                    {
-                        new Setter(TemplatedControl.BackgroundProperty, _theme.B_ControlBackgroundColor),
-                    }
-                },
-                new Style(x => x.OfType<ListBoxItem>().Class(":selected"))
-                {
-                    Setters =
-                    {
-                        new Setter(TemplatedControl.BackgroundProperty, BrushExtensions.Multiply(_theme.B_AccentColor, 0.7)),
-                        new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
-                    }
-                },
-                 new Style(x => x.OfType<ListBoxItem>().Class(":selected").Class(":pointerover"))
-                {
-                     Setters =
-                    {
-                        new Setter(TemplatedControl.BackgroundProperty, BrushExtensions.Multiply(_theme.B_AccentColor, 0.8)),
-                        new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
-                    }
-                }
-            }
+            Name = "SongListBox"
         };
-        _songListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("Songs"));
-        _songListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedSong", BindingMode.TwoWay));
 
-        _songListBox.ItemTemplate = new FuncDataTemplate<Song>(
-            (song, scope) =>
-            {
-                var image = new Image
-                {
-                    Width = 32,
-                    Height = 32,
-                    Margin = new Thickness(5, 0, 5, 0),
-                    Source = song.Thumbnail,
-                    Stretch = Stretch.UniformToFill
-                };
-                RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
+        // Corrected Style Definitions
+        songListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>())
+        { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_ListBoxBackground), new Setter(TextBlock.ForegroundProperty, _theme.B_TextColor) } });
+        songListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":pointerover"))
+        { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_ControlBackgroundColor) } });
+        songListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected"))
+        { Setters = { new Setter(TemplatedControl.BackgroundProperty, BrushExtensions.Multiply(_theme.B_AccentColor, 0.7)), new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground) } });
+        songListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected").Class(":pointerover"))
+        { Setters = { new Setter(TemplatedControl.BackgroundProperty, BrushExtensions.Multiply(_theme.B_AccentColor, 0.8)), new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground) } });
 
-                var titleBlock = new TextBlock
-                {
-                    Text = song.Title,
-                    FontSize = 14,
-                    FontWeight = FontWeight.Normal,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(0, 0, 0, 1)
-                };
-                var artistBlock = new TextBlock
-                {
-                    Text = song.Artist,
-                    FontSize = 11,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
+        songListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("Songs"));
+        songListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedSong", BindingMode.TwoWay));
+        songListBox.ItemTemplate = new FuncDataTemplate<Song>((song, scope) => {
+            var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 5, 0), Source = song.Thumbnail, Stretch = Stretch.UniformToFill };
+            RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
+            var titleBlock = new TextBlock { Text = song.Title, FontSize = 14, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 1) };
+            var artistBlock = new TextBlock { Text = song.Artist, FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
+            var durationBlock = new TextBlock { Text = song.DurationString, FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+            if (_theme.B_AccentForeground is ISolidColorBrush accentFgBrush && accentFgBrush.Color.ToHsl().L > 0.5) { artistBlock.Foreground = _theme.B_SecondaryTextColor; durationBlock.Foreground = _theme.B_SecondaryTextColor; }
+            var textStack = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Children = { titleBlock, artistBlock } };
+            var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), VerticalAlignment = VerticalAlignment.Center, Children = { image, textStack, durationBlock } };
+            Grid.SetColumn(image, 0); Grid.SetColumn(textStack, 1); Grid.SetColumn(durationBlock, 2);
+            return new Border { Padding = new Thickness(10, 6, 10, 6), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
+        }, supportsRecycling: true);
+        return new ScrollViewer { Content = songListBox, Padding = new Thickness(0, 0, 0, 5) };
+    }
 
-                var durationBlock = new TextBlock // Declaration of durationBlock
-                {
-                    Text = song.DurationString,
-                    FontSize = 11,
-                    HorizontalAlignment = HorizontalAlignment.Right,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-
-                // Heuristic for artist/duration foreground when selected item has a light foreground text
-                if (_theme.B_AccentForeground is ISolidColorBrush accentFgBrush && accentFgBrush.Color.ToHsl().L > 0.5)
-                {
-                    // This logic will apply the secondary text color if the AccentForeground is light.
-                    // The ListBoxItem :selected style sets a general Foreground. If that is light (e.g. white on dark accent),
-                    // then making artist/duration dimmer can improve readability.
-                    // Note: This applies directly and won't change if the ListBoxItem's *selected* style for Foreground changes.
-                    // For more dynamic behavior tied to the ListBoxItem's actual selected foreground, styles targeting
-                    // child TextBlocks would be needed, which is more complex.
-                    artistBlock.Foreground = _theme.B_SecondaryTextColor;
-                    durationBlock.Foreground = _theme.B_SecondaryTextColor;
-                }
-
-
-                var textStack = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
-                textStack.Children.Add(titleBlock);
-                textStack.Children.Add(artistBlock);
-
-                var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), VerticalAlignment = VerticalAlignment.Center };
-                Grid.SetColumn(image, 0); Grid.SetColumn(textStack, 1); Grid.SetColumn(durationBlock, 2);
-                itemGrid.Children.Add(image); itemGrid.Children.Add(textStack); itemGrid.Children.Add(durationBlock);
-
-                return new Border
-                {
-                    Padding = new Thickness(10, 6, 10, 6),
-                    MinHeight = 44,
-                    Background = Brushes.Transparent,
-                    Child = itemGrid
-                };
-            },
-            supportsRecycling: true
-        );
-
-        var scrollViewer = new ScrollViewer { Content = _songListBox, Padding = new Thickness(0, 0, 0, 5) };
-
-        // --- Playback Controls ---
-        var playbackSlider = new Slider
+    private Border CreateAdvancedPlaybackPanel()
+    {
+        var panelRoot = new Border
         {
+            Background = _theme.B_SlightlyLighterBackground,
+            Padding = new Thickness(10),
+            BorderBrush = _theme.B_AccentColor,
+            BorderThickness = new Thickness(0, 1, 0, 1),
+            MinHeight = 200,
+            ClipToBounds = true
+        };
+
+        var mainStack = new StackPanel { Spacing = 10 };
+
+        var speedPitchGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto,*,Auto"), Margin = new Thickness(0, 0, 0, 5) };
+        var speedLabel = new TextBlock { Text = "Speed:", VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_TextColor };
+        var speedSlider = new Slider { Minimum = 0.25, Maximum = 4.0, SmallChange = 0.05, LargeChange = 0.25, TickFrequency = 0.25, Foreground = _theme.B_AccentColor, Background = _theme.B_SecondaryTextColor };
+        speedSlider.Bind(Slider.ValueProperty, new Binding("PlaybackSpeed", BindingMode.TwoWay));
+        var speedDisplay = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0), Foreground = _theme.B_TextColor, MinWidth = 35 };
+        speedDisplay.Bind(TextBlock.TextProperty, new Binding("PlaybackSpeedDisplay"));
+
+        var pitchLabel = new TextBlock { Text = "Pitch:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(15, 0, 0, 0), Foreground = _theme.B_TextColor };
+        var pitchSlider = new Slider { Minimum = -24, Maximum = 24, SmallChange = 0.5, LargeChange = 1, TickFrequency = 1, Foreground = _theme.B_AccentColor, Background = _theme.B_SecondaryTextColor };
+        pitchSlider.Bind(Slider.ValueProperty, new Binding("PlaybackPitch", BindingMode.TwoWay));
+        var pitchDisplay = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0), Foreground = _theme.B_TextColor, MinWidth = 45 };
+        pitchDisplay.Bind(TextBlock.TextProperty, new Binding("PlaybackPitchDisplay"));
+
+        Grid.SetColumn(speedLabel, 0); Grid.SetColumn(speedSlider, 1); Grid.SetColumn(speedDisplay, 2);
+        Grid.SetColumn(pitchLabel, 3); Grid.SetColumn(pitchSlider, 4); Grid.SetColumn(pitchDisplay, 5);
+        speedPitchGrid.Children.Add(speedLabel); speedPitchGrid.Children.Add(speedSlider); speedPitchGrid.Children.Add(speedDisplay);
+        speedPitchGrid.Children.Add(pitchLabel); speedPitchGrid.Children.Add(pitchSlider); speedPitchGrid.Children.Add(pitchDisplay);
+        mainStack.Children.Add(speedPitchGrid);
+
+        Color accentColorForLoopRegion = (_theme.B_AccentColor as ISolidColorBrush)?.Color ?? Colors.Orange; // Fallback color
+        var waveformDisplay = new WaveformDisplayControl
+        {
+            Height = 80,
+            MinHeight = 60,
+            Background = _theme.B_ControlBackgroundColor, // Now uses the added Background property
+            WaveformBrush = _theme.B_AccentColor,
+            PositionMarkerBrush = Brushes.OrangeRed,
+            LoopRegionBrush = new SolidColorBrush(accentColorForLoopRegion, 0.3) // Corrected color access
+        };
+        waveformDisplay.Bind(WaveformDisplayControl.WaveformPointsProperty, new Binding("WaveformRenderData"));
+        waveformDisplay.Bind(WaveformDisplayControl.CurrentPositionProperty, new Binding("PlaybackService.CurrentPosition"));
+        waveformDisplay.Bind(WaveformDisplayControl.DurationProperty, new Binding("PlaybackService.CurrentSongDuration"));
+        waveformDisplay.Bind(WaveformDisplayControl.ActiveLoopProperty, new Binding("PlaybackService.CurrentSong.ActiveLoop"));
+        waveformDisplay.SeekRequested += (s, time) => (DataContext as MainWindowViewModel)?.WaveformSeekCommand.Execute(time);
+
+        var waveformLoadingIndicator = new ProgressBar
+        {
+            IsIndeterminate = true,
+            Height = 5,
+            Margin = new Thickness(0, -5, 0, 0),
+            Foreground = _theme.B_AccentColor,
+            Background = Brushes.Transparent
+        };
+        waveformLoadingIndicator.Bind(Visual.IsVisibleProperty, new Binding("IsWaveformLoading"));
+
+        var waveformContainer = new Panel();
+        waveformContainer.Children.Add(waveformDisplay);
+        waveformContainer.Children.Add(waveformLoadingIndicator);
+        mainStack.Children.Add(waveformContainer);
+
+        var loopEditorGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 10, 0, 0) };
+        var createLoopPanel = new StackPanel { Spacing = 5 };
+        var loopNameInput = new TextBox { Watermark = "Loop Name", Foreground = _theme.B_TextColor, Background = _theme.B_ControlBackgroundColor };
+        loopNameInput.Bind(TextBox.TextProperty, new Binding("NewLoopNameInput", BindingMode.TwoWay));
+
+        var timeSettersGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,10,Auto,*"), VerticalAlignment = VerticalAlignment.Center };
+        var setStartBtn = new Button { Content = "Set Start", FontSize = 10, Padding = new Thickness(3), Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
+        setStartBtn.Bind(Button.CommandProperty, new Binding("CaptureLoopStartCandidateCommand"));
+        var startDisp = new TextBlock { FontSize = 10, Margin = new Thickness(3, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
+        startDisp.Bind(TextBlock.TextProperty, new Binding("NewLoopStartCandidateDisplay"));
+        var setEndBtn = new Button { Content = "Set End", FontSize = 10, Padding = new Thickness(3), Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
+        setEndBtn.Bind(Button.CommandProperty, new Binding("CaptureLoopEndCandidateCommand"));
+        var endDisp = new TextBlock { FontSize = 10, Margin = new Thickness(3, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
+        endDisp.Bind(TextBlock.TextProperty, new Binding("NewLoopEndCandidateDisplay"));
+        Grid.SetColumn(setStartBtn, 0); Grid.SetColumn(startDisp, 1); Grid.SetColumn(setEndBtn, 2); Grid.SetColumn(endDisp, 3);
+        timeSettersGrid.Children.Add(setStartBtn); timeSettersGrid.Children.Add(startDisp); timeSettersGrid.Children.Add(setEndBtn); timeSettersGrid.Children.Add(endDisp);
+
+        var saveLoopBtn = new Button { Content = "Save Loop", HorizontalAlignment = HorizontalAlignment.Stretch, Background = _theme.B_AccentColor, Foreground = _theme.B_AccentForeground };
+        saveLoopBtn.Bind(Button.CommandProperty, new Binding("SaveNewLoopRegionCommand"));
+        saveLoopBtn.Bind(Button.IsEnabledProperty, new Binding("CanSaveNewLoopRegion"));
+
+        createLoopPanel.Children.Add(new TextBlock { Text = "Create/Edit Loop Region:", FontSize = 12, Foreground = _theme.B_TextColor });
+        createLoopPanel.Children.Add(loopNameInput);
+        createLoopPanel.Children.Add(timeSettersGrid);
+        createLoopPanel.Children.Add(saveLoopBtn);
+        Grid.SetColumn(createLoopPanel, 0);
+
+        var manageLoopsPanel = new StackPanel { Spacing = 5, Margin = new Thickness(10, 0, 0, 0), MinWidth = 180 };
+        var loopsListBox = new ListBox { MinHeight = 50, MaxHeight = 100, Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
+        loopsListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("EditableLoopRegions"));
+        loopsListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedEditableLoopRegion", BindingMode.TwoWay));
+        loopsListBox.ItemTemplate = new FuncDataTemplate<LoopRegion>((loop, _) => new TextBlock { Text = loop.DisplayText, Padding = new Thickness(3), Foreground = _theme.B_TextColor });
+
+        var loopListButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, HorizontalAlignment = HorizontalAlignment.Right };
+        var activateBtn = new Button { Content = "Activate", FontSize = 10, Background = _theme.B_AccentColor, Foreground = _theme.B_AccentForeground };
+        activateBtn.Bind(Button.CommandProperty, new Binding("ActivateLoopRegionCommand"));
+        var deleteBtn = new Button { Content = "Delete", FontSize = 10, Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
+        deleteBtn.Bind(Button.CommandProperty, new Binding("DeleteLoopRegionCommand"));
+        loopListButtons.Children.Add(activateBtn); loopListButtons.Children.Add(deleteBtn);
+
+        var deactivateBtn = new Button { Content = "Deactivate Current Loop", HorizontalAlignment = HorizontalAlignment.Stretch, FontSize = 10, Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor, Margin = new Thickness(0, 5, 0, 0) };
+        deactivateBtn.Bind(Button.CommandProperty, new Binding("DeactivateActiveLoopCommand"));
+
+        manageLoopsPanel.Children.Add(new TextBlock { Text = "Defined Loops:", FontSize = 12, Foreground = _theme.B_TextColor });
+        manageLoopsPanel.Children.Add(loopsListBox);
+        manageLoopsPanel.Children.Add(loopListButtons);
+        manageLoopsPanel.Children.Add(deactivateBtn);
+        Grid.SetColumn(manageLoopsPanel, 1);
+
+        loopEditorGrid.Children.Add(createLoopPanel); loopEditorGrid.Children.Add(manageLoopsPanel);
+        mainStack.Children.Add(loopEditorGrid);
+        panelRoot.Child = mainStack;
+        return panelRoot;
+    }
+
+    private StackPanel CreateMainPlaybackControls()
+    {
+        var mainPlaybackSlider = new Slider
+        {
+            Name = "MainPlaybackSliderInstance", // Added a name for potential specific targeting if needed elsewhere, though not strictly for this style.
             Minimum = 0,
             Margin = new Thickness(10, 0),
             VerticalAlignment = VerticalAlignment.Center,
             Background = _theme.B_SecondaryTextColor,
             Foreground = _theme.B_AccentColor
         };
-        var sliderThumbStyle = new Style(x => x.OfType<Slider>().Descendant().OfType<Thumb>());
-        sliderThumbStyle.Setters.Add(new Setter(BackgroundProperty, _theme.B_AccentColor));
-        playbackSlider.Styles.Add(sliderThumbStyle);
 
-        playbackSlider.Bind(Slider.MaximumProperty, new Binding("PlaybackService.CurrentSongDurationSeconds"));
-        playbackSlider.Bind(Slider.ValueProperty, new Binding("PlaybackService.CurrentPositionSeconds", BindingMode.TwoWay));
+        // Corrected Style for the Thumb of this specific Slider instance
+        mainPlaybackSlider.Styles.Add(new Style(s => s.Is<Thumb>()) // Selects any Thumb descendant of mainPlaybackSlider
+        {
+            Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor) }
+        });
+        // Or, if you need to be more specific about it being in the template (though s.Is<Thumb>() usually suffices here):
+        // mainPlaybackSlider.Styles.Add(new Style(s => s.Template().Is<Thumb>()) 
+        // { 
+        //     Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor) }
+        // });
 
-        var playPauseButton = new Button
-        {
-            Content = "Play/Pause",
-            Margin = new Thickness(5),
-            Background = _theme.B_SlightlyLighterBackground,
-            Foreground = _theme.B_TextColor,
-            BorderBrush = _theme.B_AccentColor,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(3),
-            Padding = new Thickness(10, 5)
-        };
-        playPauseButton.Click += (s, e) =>
-        {
-            if (DataContext is MainWindowViewModel vm)
-            {
-                if (vm.PlaybackService.IsPlaying) vm.PlaybackService.Pause();
-                else if (vm.PlaybackService.CurrentSong != null) vm.PlaybackService.Resume();
-                else if (vm.Songs.Any()) vm.PlaybackService.Play(vm.Songs.First());
-            }
-        };
 
-        var playbackControlsPanel = new DockPanel
-        {
-            Background = _theme.B_BackgroundColor,
-            Margin = new Thickness(5, 0, 5, 5),
-            Height = 35,
-            LastChildFill = true
-        };
-        DockPanel.SetDock(playPauseButton, Dock.Left);
-        playbackControlsPanel.Children.Add(playPauseButton);
-        playbackControlsPanel.Children.Add(playbackSlider);
+        mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("PlaybackService.CurrentSongDurationSeconds"));
+        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("PlaybackService.CurrentPositionSeconds", BindingMode.TwoWay));
+        mainPlaybackSlider.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
 
-        // --- Status Bar ---
-        var statusBar = new Border
-        {
-            Background = _theme.B_SlightlyLighterBackground,
-            Padding = new Thickness(10, 4),
-            Height = 26
-        };
-        var statusBarText = new TextBlock
-        {
-            Foreground = _theme.B_SecondaryTextColor,
-            VerticalAlignment = VerticalAlignment.Center,
-            FontSize = 11
-        };
+
+        var mainPlayPauseButton = new Button { Content = "Play", Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(10, 5), MinWidth = 70 };
+        mainPlayPauseButton.Click += (s, e) => { if (DataContext is MainWindowViewModel vm) { if (vm.PlaybackService.IsPlaying) vm.PlaybackService.Pause(); else vm.PlaybackService.Resume(); } };
+        mainPlayPauseButton.Bind(Button.ContentProperty, new Binding("PlaybackService.IsPlaying") { Converter = new BooleanToPlayPauseTextConverter() });
+        mainPlayPauseButton.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
+
+
+        var toggleAdvPanelButton = new Button { Content = "+", Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(8, 4), MinWidth = 30, FontWeight = FontWeight.Bold, Margin = new Thickness(5, 0, 0, 0) };
+        toggleAdvPanelButton.Bind(Button.CommandProperty, new Binding("ToggleAdvancedPanelCommand"));
+        toggleAdvPanelButton.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
+
+
+        var controlsButtonPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0, 10, 0) };
+        controlsButtonPanel.Children.Add(mainPlayPauseButton);
+        controlsButtonPanel.Children.Add(toggleAdvPanelButton);
+
+        var topMainPlaybackControls = new DockPanel { LastChildFill = true, Height = 35, Margin = new Thickness(5, 0, 5, 0) };
+        DockPanel.SetDock(controlsButtonPanel, Dock.Left);
+        topMainPlaybackControls.Children.Add(controlsButtonPanel);
+        topMainPlaybackControls.Children.Add(mainPlaybackSlider);
+
+        var activeLoopDisplayText = new TextBlock { Foreground = _theme.B_SecondaryTextColor, FontSize = 10, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(10, 0, 10, 2), MinHeight = 14 };
+        activeLoopDisplayText.Bind(TextBlock.TextProperty, new Binding("ActiveLoopDisplayText"));
+
+        var outerPanel = new StackPanel { Orientation = Orientation.Vertical, Background = _theme.B_BackgroundColor, Margin = new Thickness(0, 5, 0, 5) };
+        outerPanel.Children.Add(topMainPlaybackControls);
+        outerPanel.Children.Add(activeLoopDisplayText);
+        return outerPanel;
+    }
+
+    private Border CreateStatusBar()
+    {
+        var statusBar = new Border { Background = _theme.B_SlightlyLighterBackground, Padding = new Thickness(10, 4), Height = 26 };
+        var statusBarText = new TextBlock { Foreground = _theme.B_SecondaryTextColor, VerticalAlignment = VerticalAlignment.Center, FontSize = 11 };
         statusBarText.Bind(TextBlock.TextProperty, new Binding("StatusBarText"));
         statusBar.Child = statusBarText;
-
-        // --- Main Layout ---
-        var mainDockPanel = new DockPanel();
-        DockPanel.SetDock(menu, Dock.Top);
-        DockPanel.SetDock(statusBar, Dock.Bottom);
-        DockPanel.SetDock(playbackControlsPanel, Dock.Bottom);
-        mainDockPanel.Children.Add(menu);
-        mainDockPanel.Children.Add(statusBar);
-        mainDockPanel.Children.Add(playbackControlsPanel);
-        mainDockPanel.Children.Add(scrollViewer);
-
-        Content = mainDockPanel;
-        Debug.WriteLine("[MainView] Constructor finished.");
+        return statusBar;
     }
 }
 
-// Helper extension class for IBrush operations
-public static class BrushExtensions
+public class BooleanToPlayPauseTextConverter : IValueConverter
 {
-    public static IBrush Multiply(this IBrush brush, double factor)
+    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
     {
-        if (brush is ISolidColorBrush solidBrush)
-        {
-            var c = solidBrush.Color;
-            return new SolidColorBrush(Color.FromArgb(
-                c.A,
-                (byte)Math.Clamp(c.R * factor, 0, 255),
-                (byte)Math.Clamp(c.G * factor, 0, 255),
-                (byte)Math.Clamp(c.B * factor, 0, 255)
-            ));
-        }
-        return brush;
+        if (value is bool isPlaying) return isPlaying ? "Pause" : "Play";
+        return "Play";
     }
+    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        => throw new NotSupportedException();
 }
+
+public static class BrushExtensions { public static IBrush Multiply(this IBrush brush, double factor) { if (brush is ISolidColorBrush solidBrush) { var c = solidBrush.Color; return new SolidColorBrush(Color.FromArgb(c.A, (byte)Math.Clamp(c.R * factor, 0, 255), (byte)Math.Clamp(c.G * factor, 0, 255), (byte)Math.Clamp(c.B * factor, 0, 255))); } return brush; } }
 </file>
 
 <file path="Source\Views\SettingsWindow.cs">

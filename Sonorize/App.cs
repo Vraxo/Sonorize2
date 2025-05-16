@@ -30,12 +30,14 @@ public class App : Application
 
             var playbackService = new PlaybackService();
             var musicLibraryService = new MusicLibraryService();
+            var waveformService = new WaveformService(); // Instantiate WaveformService
 
             var mainWindowViewModel = new MainWindowViewModel(
                 settingsService,
                 musicLibraryService,
                 playbackService,
-                currentTheme);
+                currentTheme,
+                waveformService); // Pass WaveformService instance
 
             desktop.MainWindow = new MainWindow(currentTheme)
             {
