@@ -1,11 +1,12 @@
-<file path="App.axaml.cs">
+<file path="App.cs">
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Markup.Xaml.Styling; // For FluentTheme even without XAML files
-using Avalonia.Styling; // For ThemeVariant
+using Avalonia.Markup.Xaml.Styling;
+using Avalonia.Styling;
 using Sonorize.ViewModels;
 using Sonorize.Views;
 using Sonorize.Services;
+using Sonorize.Models;
 using Avalonia.Themes.Fluent;
 
 namespace Sonorize;
@@ -14,7 +15,6 @@ public class App : Application
 {
     public override void Initialize()
     {
-        // No XAML parsing, AvaloniaXamlLoader.Load(this); is not called.
         Styles.Add(new FluentTheme());
         RequestedThemeVariant = ThemeVariant.Dark;
     }
@@ -23,13 +23,22 @@ public class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            var settingsService = new SettingsService();
+            var settingsService = new SettingsService(); // Load settings first
+            var appSettings = settingsService.LoadSettings();
+
+            var themeService = new ThemeService(appSettings.PreferredThemeFileName); // Pass preferred theme name
+            var currentTheme = themeService.CurrentTheme;
+
             var playbackService = new PlaybackService();
             var musicLibraryService = new MusicLibraryService();
 
-            var mainWindowViewModel = new MainWindowViewModel(settingsService, musicLibraryService, playbackService);
+            var mainWindowViewModel = new MainWindowViewModel(
+                settingsService,
+                musicLibraryService,
+                playbackService,
+                currentTheme);
 
-            desktop.MainWindow = new MainWindow
+            desktop.MainWindow = new MainWindow(currentTheme)
             {
                 DataContext = mainWindowViewModel
             };
@@ -38,21 +47,6 @@ public class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
-    }
-}
-</file>
-
-<file path="MainWindow.axaml.cs">
-using Avalonia.Controls;
-
-namespace Sonorize
-{
-    public partial class MainWindow : Window
-    {
-        public MainWindow()
-        {
-            InitializeComponent();
-        }
     }
 }
 </file>
@@ -88,6 +82,7 @@ namespace Sonorize.Models;
 public class AppSettings
 {
     public List<string> MusicDirectories { get; set; } = new List<string>();
+    public string? PreferredThemeFileName { get; set; } // Stores the name of the theme file
 }
 </file>
 
@@ -118,18 +113,68 @@ public class Song : ViewModelBase
 }
 </file>
 
+<file path="Source\Models\ThemeColors.cs">
+using Avalonia.Media;
+using System.Text.Json.Serialization;
+
+namespace Sonorize.Models;
+
+public class ThemeColors
+{
+    // --- Main UI Colors ---
+    public string BackgroundColor { get; set; } = "#FF1E1E1E";
+    public string SlightlyLighterBackground { get; set; } = "#FF2D2D30";
+    public string ControlBackgroundColor { get; set; } = "#FF3C3C3C";
+    public string TextColor { get; set; } = "#FFF1F1F1";
+    public string SecondaryTextColor { get; set; } = "#FFAAAAAA";
+    public string AccentColor { get; set; } = "#FF007ACC";
+    public string AccentForeground { get; set; } = "#FFFFFFFF";
+
+    // --- ListBox Specific Colors ---
+    public string ListBoxBackground { get; set; } = "#FF2D2D30"; // Default: Same as SlightlyLighterBackground
+
+    // --- Brush Properties ---
+    [JsonIgnore] public IBrush B_BackgroundColor => SolidColorBrush.Parse(BackgroundColor);
+    [JsonIgnore] public IBrush B_SlightlyLighterBackground => SolidColorBrush.Parse(SlightlyLighterBackground);
+    [JsonIgnore] public IBrush B_ControlBackgroundColor => SolidColorBrush.Parse(ControlBackgroundColor);
+    [JsonIgnore] public IBrush B_TextColor => SolidColorBrush.Parse(TextColor);
+    [JsonIgnore] public IBrush B_SecondaryTextColor => SolidColorBrush.Parse(SecondaryTextColor);
+    [JsonIgnore] public IBrush B_AccentColor => SolidColorBrush.Parse(AccentColor);
+    [JsonIgnore] public IBrush B_AccentForeground => SolidColorBrush.Parse(AccentForeground);
+    [JsonIgnore] public IBrush B_ListBoxBackground => SolidColorBrush.Parse(ListBoxBackground);
+
+    public static ThemeColors CreateAmoledSpotifyTheme()
+    {
+        return new ThemeColors
+        {
+            BackgroundColor = "#FF000000",
+            SlightlyLighterBackground = "#FF121212",
+            ControlBackgroundColor = "#FF181818",
+            TextColor = "#FFFFFFFF",
+            SecondaryTextColor = "#FFB3B3B3",
+            AccentColor = "#FF1DB954",      // Spotify Green
+            AccentForeground = "#FF000000",  // Black text on green buttons
+            ListBoxBackground = "#FF000000"   // <<< CRUCIAL FOR AMOLED LIST ITEMS (unselected)
+        };
+    }
+}
+</file>
+
 <file path="Source\Services\MusicLibraryService.cs">
-using Avalonia; // For Application.Current, PixelSize, Point, Vector, Size
-using Avalonia.Media; // For Colors, Brushes, FormattedText, Typeface, FlowDirection, DrawingContext, SolidColorBrush
-using Avalonia.Media.Imaging; // For Bitmap, RenderTargetBitmap
-using Avalonia.Platform; // For IAssetLoader (though not directly used in thumbnail generation here)
+using Avalonia;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Sonorize.Models;
 using System;
 using System.Collections.Generic;
-using System.Globalization; // For CultureInfo
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Diagnostics;
+using TagLib;
+using Avalonia.Threading;
 
 namespace Sonorize.Services;
 
@@ -139,27 +184,40 @@ public class MusicLibraryService
 
     public MusicLibraryService()
     {
-        // Constructor
-    }
-
-    private Bitmap GetOrCreateDefaultThumbnail()
-    {
+        Debug.WriteLine("[MusicLibService] Constructor called.");
+        // Pre-generate the default thumbnail on the UI thread (constructor context).
+        // This is crucial because RenderTargetBitmap operations need to be on the UI thread.
         if (_defaultThumbnail == null)
         {
+            _defaultThumbnail = CreateDefaultMusicalNoteIcon();
+            if (_defaultThumbnail == null)
+            {
+                Debug.WriteLine("[MusicLibService] CRITICAL: Failed to create default thumbnail in constructor.");
+            }
+            else
+            {
+                Debug.WriteLine("[MusicLibService] Default thumbnail created successfully in constructor.");
+            }
+        }
+    }
+
+    private Bitmap? CreateDefaultMusicalNoteIcon()
+    {
+        // This method should now be called from the constructor, which is on the UI thread.
+        Debug.WriteLine("[ThumbGen] CreateDefaultMusicalNoteIcon called.");
+        try
+        {
             var pixelSize = new Avalonia.PixelSize(64, 64);
-            var dpi = new Avalonia.Vector(96, 96); // Standard DPI, 1 DIP = 1 pixel
+            var dpi = new Avalonia.Vector(96, 96);
 
             using var renderTarget = new RenderTargetBitmap(pixelSize, dpi);
-
-            using (Avalonia.Media.DrawingContext context = renderTarget.CreateDrawingContext())
+            using (DrawingContext context = renderTarget.CreateDrawingContext())
             {
-                // --- MODIFIED LINE ---
-                // DrawingContext.Clear() was removed in Avalonia 11.1+.
-                // Use FillRectangle to "clear" the context with a color.
-                var clearBrush = new SolidColorBrush(Avalonia.Media.Colors.DimGray);
+                var backgroundBrush = new SolidColorBrush(Avalonia.Media.Colors.DimGray);
+                var foregroundBrush = Avalonia.Media.Brushes.WhiteSmoke;
+
                 var bounds = new Rect(new Size(pixelSize.Width, pixelSize.Height));
-                context.FillRectangle(clearBrush, bounds);
-                // --- END MODIFIED LINE ---
+                context.FillRectangle(backgroundBrush, bounds);
 
                 var formattedText = new FormattedText(
                     "♫",
@@ -167,7 +225,7 @@ public class MusicLibraryService
                     FlowDirection.LeftToRight,
                     Typeface.Default,
                     32,
-                    Avalonia.Media.Brushes.WhiteSmoke);
+                    foregroundBrush);
 
                 var textOrigin = new Avalonia.Point(
                     (bounds.Width - formattedText.Width) / 2,
@@ -178,68 +236,162 @@ public class MusicLibraryService
             using var memoryStream = new MemoryStream();
             renderTarget.Save(memoryStream);
             memoryStream.Seek(0, SeekOrigin.Begin);
-            _defaultThumbnail = new Bitmap(memoryStream);
+
+            if (memoryStream.Length > 0)
+            {
+                var bitmap = new Bitmap(memoryStream);
+                Debug.WriteLine($"[ThumbGen] Default musical note icon created successfully. Size: {bitmap.PixelSize}");
+                return bitmap;
+            }
+            Debug.WriteLine("[ThumbGen] CRITICAL ERROR: MemoryStream empty for default icon, returning null.");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[ThumbGen] CRITICAL EXCEPTION creating default icon: {ex.ToString()}, returning null.");
+            return null;
+        }
+    }
+
+    // GetDefaultThumbnail now simply returns the pre-cached (or failed-to-create) thumbnail.
+    private Bitmap? GetDefaultThumbnail()
+    {
+        if (_defaultThumbnail == null)
+        {
+            // This should ideally not happen if constructor logic is sound.
+            Debug.WriteLine("[ThumbGen] GetDefaultThumbnail called, but _defaultThumbnail is null (creation failed in constructor or was never called).");
         }
         return _defaultThumbnail;
     }
 
-
-    public async Task<List<Song>> LoadMusicFromDirectoriesAsync(IEnumerable<string> directories)
+    private Bitmap? LoadAlbumArt(string filePath)
     {
-        var songs = new List<Song>();
+        try
+        {
+            using (var tagFile = TagLib.File.Create(filePath))
+            {
+                if (tagFile.Tag.Pictures.Length > 0)
+                {
+                    IPicture pic = tagFile.Tag.Pictures[0];
+                    using (var ms = new MemoryStream(pic.Data.Data))
+                    {
+                        if (ms.Length > 0)
+                        {
+                            using (var originalBitmap = new Bitmap(ms))
+                            {
+                                var targetSize = new PixelSize(64, 64);
+                                var scaledBitmap = originalBitmap.CreateScaledBitmap(targetSize, BitmapInterpolationMode.HighQuality);
+                                return scaledBitmap;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        catch (CorruptFileException) { /* Optional: Debug.WriteLine($"[AlbumArt] Corrupt file: {Path.GetFileName(filePath)}"); */ }
+        catch (UnsupportedFormatException) { /* Optional: Debug.WriteLine($"[AlbumArt] Unsupported format: {Path.GetFileName(filePath)}"); */ }
+        catch (Exception ex) { Debug.WriteLine($"[AlbumArt] Error loading album art for {Path.GetFileName(filePath)}: {ex.Message}"); }
+        return null;
+    }
+
+    public async Task LoadMusicFromDirectoriesAsync(
+        IEnumerable<string> directories,
+        Action<Song> songAddedCallback,
+        Action<string> statusUpdateCallback)
+    {
+        Debug.WriteLine("[MusicLibService] LoadMusicFromDirectoriesAsync (incremental) called.");
         var supportedExtensions = new[] { ".mp3", ".wav", ".flac", ".m4a", ".ogg" };
 
-        Bitmap defaultThumbnail = GetOrCreateDefaultThumbnail();
-
-        await Task.Run(() =>
+        // Get the default icon; it should have been created in the constructor on the UI thread.
+        Bitmap? defaultIcon = GetDefaultThumbnail();
+        if (defaultIcon == null)
         {
-            foreach (var dir in directories)
+            Debug.WriteLine("[MusicLibService] Warning: defaultIcon is null during library scan. Fallback thumbnails will not appear.");
+        }
+        int filesProcessed = 0;
+
+        // This loop runs on a background thread (due to Task.Run in ViewModel)
+        foreach (var dir in directories)
+        {
+            if (!Directory.Exists(dir))
             {
-                if (!Directory.Exists(dir))
+                Debug.WriteLine($"[LibScan] Directory not found: {dir}");
+                await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Directory not found: {dir}"));
+                continue;
+            }
+
+            await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Scanning: {Path.GetFileName(dir)}..."));
+
+            List<string> filesInDir;
+            try
+            {
+                filesInDir = Directory.EnumerateFiles(dir, "*.*", SearchOption.AllDirectories)
+                                      .Where(f => supportedExtensions.Any(ext => f.EndsWith(ext, StringComparison.OrdinalIgnoreCase)))
+                                      .ToList();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[LibScan] Error enumerating files in {dir}: {ex.Message}");
+                await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Error scanning {Path.GetFileName(dir)}"));
+                continue;
+            }
+
+            foreach (var file in filesInDir)
+            {
+                Bitmap? thumbnail = LoadAlbumArt(file);
+
+                var song = new Song
                 {
-                    Console.WriteLine($"Directory not found: {dir}");
-                    continue;
-                }
+                    FilePath = file,
+                    Title = Path.GetFileNameWithoutExtension(file),
+                    Artist = "Unknown Artist",
+                    Duration = TimeSpan.Zero,
+                    Thumbnail = thumbnail ?? defaultIcon // Use album art or fallback to THE default icon
+                };
 
                 try
                 {
-                    var files = Directory.EnumerateFiles(dir, "*.*", SearchOption.AllDirectories)
-                                         .Where(f => supportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()));
-
-                    foreach (var file in files)
+                    using (var tagFile = TagLib.File.Create(file))
                     {
-                        var song = new Song
-                        {
-                            FilePath = file,
-                            Title = Path.GetFileNameWithoutExtension(file),
-                            Artist = "Unknown Artist",
-                            Duration = TimeSpan.FromMinutes(3) + TimeSpan.FromSeconds(Random.Shared.Next(0, 180)),
-                            Thumbnail = defaultThumbnail
-                        };
-                        songs.Add(song);
+                        if (!string.IsNullOrWhiteSpace(tagFile.Tag.Title))
+                            song.Title = tagFile.Tag.Title;
+
+                        if (tagFile.Tag.Performers.Length > 0 && !string.IsNullOrWhiteSpace(tagFile.Tag.Performers[0]))
+                            song.Artist = tagFile.Tag.Performers[0];
+                        else if (tagFile.Tag.AlbumArtists.Length > 0 && !string.IsNullOrWhiteSpace(tagFile.Tag.AlbumArtists[0]))
+                            song.Artist = tagFile.Tag.AlbumArtists[0];
+
+                        if (tagFile.Properties.Duration > TimeSpan.Zero)
+                            song.Duration = tagFile.Properties.Duration;
                     }
                 }
-                catch (Exception ex)
+                catch (Exception) { /* Silently ignore metadata read errors for individual files */ }
+
+                await Dispatcher.UIThread.InvokeAsync(() => songAddedCallback(song));
+                filesProcessed++;
+
+                if (filesProcessed % 20 == 0)
                 {
-                    Console.WriteLine($"Error scanning directory {dir}: {ex.Message}");
+                    await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Loaded {filesProcessed} songs..."));
                 }
             }
-        });
-        return songs;
+        }
+        Debug.WriteLine($"[MusicLibService] Background file scanning complete. Processed {filesProcessed} songs in total.");
     }
 }
 </file>
 
 <file path="Source\Services\PlaybackService.cs">
+using Avalonia.Threading; // For Dispatcher
+using NAudio.Wave; // Core NAudio namespace for playback
 using Sonorize.Models;
 using Sonorize.ViewModels; // For ViewModelBase
 using System;
 using System.Threading;
-using Avalonia.Threading; // For Dispatcher
 
 namespace Sonorize.Services;
 
-public class PlaybackService : ViewModelBase
+public class PlaybackService : ViewModelBase, IDisposable
 {
     private Song? _currentSong;
     public Song? CurrentSong { get => _currentSong; private set => SetProperty(ref _currentSong, value); }
@@ -255,18 +407,18 @@ public class PlaybackService : ViewModelBase
         {
             if (SetProperty(ref _currentPosition, value))
             {
-                OnPropertyChanged(nameof(CurrentPositionSeconds)); // Notify UI
+                OnPropertyChanged(nameof(CurrentPositionSeconds));
             }
         }
     }
 
-    // Used for slider binding
     public double CurrentPositionSeconds
     {
         get => CurrentPosition.TotalSeconds;
         set
         {
-            if (Math.Abs(CurrentPosition.TotalSeconds - value) > 0.5) // Avoid too frequent updates from slider
+            // Only seek if the value change is significant and we have a reader
+            if (audioFileReader != null && Math.Abs(CurrentPosition.TotalSeconds - value) > 0.5)
             {
                 Seek(TimeSpan.FromSeconds(value));
             }
@@ -281,84 +433,176 @@ public class PlaybackService : ViewModelBase
         {
             if (SetProperty(ref _currentSongDuration, value))
             {
-                OnPropertyChanged(nameof(CurrentSongDurationSeconds)); // Notify UI
+                OnPropertyChanged(nameof(CurrentSongDurationSeconds));
             }
         }
     }
 
-    public double CurrentSongDurationSeconds => CurrentSongDuration.TotalSeconds > 0 ? CurrentSongDuration.TotalSeconds : 100; // Default if zero
+    public double CurrentSongDurationSeconds => CurrentSongDuration.TotalSeconds > 0 ? CurrentSongDuration.TotalSeconds : 100;
 
-    private System.Threading.Timer? _playbackTimer;
+    private IWavePlayer? waveOutDevice;
+    private AudioFileReader? audioFileReader;
+    private Timer? uiUpdateTimer;
+
+    public PlaybackService()
+    {
+        // Initialize the UI update timer but don't start it yet
+        uiUpdateTimer = new Timer(UpdateUiCallback, null, Timeout.Infinite, Timeout.Infinite);
+    }
+
+    private void UpdateUiCallback(object? state)
+    {
+        if (IsPlaying && audioFileReader != null && waveOutDevice?.PlaybackState == PlaybackState.Playing)
+        {
+            // Ensure UI updates are on the UI thread
+            Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                CurrentPosition = audioFileReader.CurrentTime;
+            });
+        }
+    }
+
+    private void StartUiUpdateTimer()
+    {
+        uiUpdateTimer?.Change(TimeSpan.Zero, TimeSpan.FromMilliseconds(200)); // Update UI every 200ms
+    }
+
+    private void StopUiUpdateTimer()
+    {
+        uiUpdateTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+    }
+
+    private void CleanUpPlaybackResources()
+    {
+        StopUiUpdateTimer();
+
+        if (waveOutDevice != null)
+        {
+            waveOutDevice.PlaybackStopped -= OnPlaybackStopped; // Unhook event handler
+            waveOutDevice.Stop(); // Stop playback
+            waveOutDevice.Dispose();
+            waveOutDevice = null;
+        }
+        if (audioFileReader != null)
+        {
+            audioFileReader.Dispose();
+            audioFileReader = null;
+        }
+    }
 
     public void Play(Song song)
     {
-        CurrentSong = song;
-        CurrentSongDuration = song.Duration;
-        CurrentPosition = TimeSpan.Zero;
-        IsPlaying = true;
+        CleanUpPlaybackResources(); // Clean up any existing playback
 
-        _playbackTimer?.Dispose();
-        _playbackTimer = new System.Threading.Timer(tick =>
+        CurrentSong = song; // Set current song immediately
+
+        try
         {
-            if (IsPlaying && CurrentSong != null)
-            {
-                Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    if (CurrentPosition < CurrentSongDuration)
-                    {
-                        CurrentPosition = CurrentPosition.Add(TimeSpan.FromSeconds(1));
-                    }
-                    else
-                    {
-                        Stop(); // Or play next song
-                    }
-                });
-            }
-        }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+            audioFileReader = new AudioFileReader(song.FilePath);
+            waveOutDevice = new WaveOutEvent(); // Or WasapiOut for lower latency on Windows
+            waveOutDevice.PlaybackStopped += OnPlaybackStopped;
+            waveOutDevice.Init(audioFileReader);
 
-        Console.WriteLine($"Playing: {song.Title}");
+            CurrentSongDuration = audioFileReader.TotalTime;
+            CurrentPosition = TimeSpan.Zero; // Reset position for new song
+
+            waveOutDevice.Play();
+            IsPlaying = true;
+            StartUiUpdateTimer();
+            Console.WriteLine($"NAudio Playing: {song.Title}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error initializing playback for {song.FilePath}: {ex.Message}");
+            // Potentially update UI to show an error
+            IsPlaying = false;
+            CurrentSong = null; // Clear current song if playback failed to start
+            CurrentSongDuration = TimeSpan.Zero;
+            CurrentPosition = TimeSpan.Zero;
+        }
+    }
+
+    private void OnPlaybackStopped(object? sender, StoppedEventArgs e)
+    {
+        // This event fires when playback ends naturally or is stopped.
+        // We've unhooked it in CleanUpPlaybackResources before manual stop,
+        // so this handler is primarily for when the song finishes playing naturally.
+        Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            IsPlaying = false;
+            StopUiUpdateTimer();
+            // Resources are cleaned up by the next Play() or by Dispose() or Stop()
+            // Here, we just ensure the state reflects that nothing is playing.
+            // If we want to automatically play the next song, this is where to trigger it.
+
+            // Ensure position is at the end if it stopped naturally
+            if (audioFileReader != null && CurrentPosition < audioFileReader.TotalTime)
+            {
+                CurrentPosition = audioFileReader.TotalTime;
+            }
+
+            CleanUpPlaybackResources(); // Clean up the finished song's resources
+
+            if (e.Exception != null)
+            {
+                Console.WriteLine($"NAudio Playback Error: {e.Exception.Message}");
+            }
+            // Update UI or play next song
+        });
     }
 
     public void Pause()
     {
-        if (!IsPlaying) return; // Already paused
-        IsPlaying = false;
-        _playbackTimer?.Change(Timeout.Infinite, Timeout.Infinite); // Stop timer ticks
-        Console.WriteLine("Paused");
+        if (IsPlaying && waveOutDevice?.PlaybackState == PlaybackState.Playing)
+        {
+            waveOutDevice.Pause();
+            IsPlaying = false;
+            StopUiUpdateTimer(); // Stop UI updates while paused
+            Console.WriteLine("NAudio Paused");
+        }
     }
 
     public void Resume()
     {
-        if (IsPlaying || CurrentSong == null) return; // Already playing or no song
-        IsPlaying = true;
-        _playbackTimer?.Change(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1)); // Resume timer
-        Console.WriteLine("Resumed");
+        if (!IsPlaying && CurrentSong != null && waveOutDevice?.PlaybackState == PlaybackState.Paused)
+        {
+            waveOutDevice.Play();
+            IsPlaying = true;
+            StartUiUpdateTimer(); // Resume UI updates
+            Console.WriteLine("NAudio Resumed");
+        }
     }
 
     public void Stop()
     {
+        CleanUpPlaybackResources();
         IsPlaying = false;
+        // Optionally clear CurrentSong or keep it for context until a new song is played
+        // CurrentSong = null;
         CurrentPosition = TimeSpan.Zero;
-        _playbackTimer?.Dispose();
-        _playbackTimer = null;
-        // CurrentSong = null; // Optionally clear, or keep for context
-        Console.WriteLine("Stopped");
+        // CurrentSongDuration = TimeSpan.Zero; // Keep duration of last song visible? Or reset?
+        Console.WriteLine("NAudio Stopped");
     }
 
     public void Seek(TimeSpan position)
     {
-        if (CurrentSong != null)
+        if (audioFileReader != null)
         {
-            var newPosition = position < TimeSpan.Zero ? TimeSpan.Zero : position;
-            newPosition = newPosition > CurrentSongDuration ? CurrentSongDuration : newPosition;
-            CurrentPosition = newPosition;
+            var newPosition = position;
+            if (newPosition < TimeSpan.Zero) newPosition = TimeSpan.Zero;
+            if (newPosition > audioFileReader.TotalTime) newPosition = audioFileReader.TotalTime;
 
-            Console.WriteLine($"Seeked to: {CurrentPosition}");
-            if (CurrentPosition >= CurrentSongDuration && IsPlaying)
-            {
-                Stop(); // Stop if seeked to or past the end while playing
-            }
+            audioFileReader.CurrentTime = newPosition;
+            CurrentPosition = audioFileReader.CurrentTime; // Immediately update our property
         }
+    }
+
+    public void Dispose()
+    {
+        CleanUpPlaybackResources();
+        uiUpdateTimer?.Dispose();
+        uiUpdateTimer = null;
+        GC.SuppressFinalize(this);
     }
 }
 </file>
@@ -416,16 +660,147 @@ public class SettingsService
 }
 </file>
 
-<file path="Source\ViewModels\MainViewModel.cs">
-using Avalonia.Controls; // For OpenFolderDialog
-using Avalonia.Platform.Storage; // For IStorageFolder
+<file path="Source\Services\ThemeService.cs">
 using Sonorize.Models;
-using Sonorize.Services;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text.Json;
+using System.Diagnostics;
+
+namespace Sonorize.Services;
+
+public class ThemeService
+{
+    private readonly string _themesDirectory;
+    public ThemeColors CurrentTheme { get; private set; }
+
+    public const string DefaultThemeFileName = "DefaultTheme.json"; // Made public const
+    private const string AmoledSpotifyThemeFileName = "AmoledSpotify.json";
+
+
+    public ThemeService(string? preferredThemeNameFromSettings)
+    {
+        var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var sonorizeAppDataPath = Path.Combine(appDataPath, "Sonorize");
+        _themesDirectory = Path.Combine(sonorizeAppDataPath, "Themes");
+        Directory.CreateDirectory(_themesDirectory);
+
+        EnsureDefaultThemesExist();
+
+        string themeToLoad = DefaultThemeFileName; // Default to this one first
+
+        if (!string.IsNullOrEmpty(preferredThemeNameFromSettings))
+        {
+            // Check if preferred theme exists
+            if (File.Exists(Path.Combine(_themesDirectory, preferredThemeNameFromSettings)))
+            {
+                themeToLoad = preferredThemeNameFromSettings;
+            }
+            else
+            {
+                Debug.WriteLine($"[ThemeService] Preferred theme '{preferredThemeNameFromSettings}' not found. Falling back to default.");
+            }
+        }
+
+        CurrentTheme = LoadThemeFromFile(themeToLoad);
+        if (CurrentTheme == null) // If chosen (or default) theme failed, use hardcoded
+        {
+            Debug.WriteLine($"[ThemeService] Theme '{themeToLoad}' failed to load. Using hardcoded fallback (standard dark).");
+            CurrentTheme = new ThemeColors(); // Hardcoded fallback (standard dark)
+        }
+        Debug.WriteLine($"[ThemeService] Current theme loaded: {themeToLoad} (BG: {CurrentTheme.BackgroundColor}, Accent: {CurrentTheme.AccentColor})");
+    }
+
+    private void EnsureDefaultThemesExist()
+    {
+        string defaultThemePath = Path.Combine(_themesDirectory, DefaultThemeFileName);
+        if (!File.Exists(defaultThemePath))
+        {
+            SaveThemeToFile(new ThemeColors(), DefaultThemeFileName);
+        }
+
+        string amoledSpotifyThemePath = Path.Combine(_themesDirectory, AmoledSpotifyThemeFileName);
+        if (!File.Exists(amoledSpotifyThemePath))
+        {
+            SaveThemeToFile(ThemeColors.CreateAmoledSpotifyTheme(), AmoledSpotifyThemeFileName);
+        }
+    }
+
+    public ThemeColors? LoadThemeFromFile(string themeFileName)
+    {
+        // ... (LoadThemeFromFile remains the same as previous correct version) ...
+        string filePath = Path.Combine(_themesDirectory, themeFileName);
+        Debug.WriteLine($"[ThemeService] Attempting to load theme from: {filePath}");
+        if (File.Exists(filePath))
+        {
+            try
+            {
+                var json = File.ReadAllText(filePath);
+                var theme = JsonSerializer.Deserialize<ThemeColors>(json);
+                if (theme != null)
+                {
+                    Debug.WriteLine($"[ThemeService] Theme '{themeFileName}' loaded successfully.");
+                    return theme;
+                }
+                Debug.WriteLine($"[ThemeService] Failed to deserialize theme '{themeFileName}'. Json content was: {json.Substring(0, Math.Min(json.Length, 200))}");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ThemeService] Error loading theme '{themeFileName}': {ex.Message}");
+            }
+        }
+        else
+        {
+            Debug.WriteLine($"[ThemeService] Theme file not found: {filePath}");
+        }
+        return null;
+    }
+
+    public void SaveThemeToFile(ThemeColors theme, string themeFileName)
+    {
+        // ... (SaveThemeToFile remains the same as previous correct version) ...
+        string filePath = Path.Combine(_themesDirectory, themeFileName);
+        try
+        {
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            var json = JsonSerializer.Serialize(theme, options);
+            File.WriteAllText(filePath, json);
+            Debug.WriteLine($"[ThemeService] Theme '{themeFileName}' saved to: {filePath}");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[ThemeService] Error saving theme '{themeFileName}': {ex.Message}");
+        }
+    }
+
+    public List<string> GetAvailableThemeFiles()
+    {
+        if (!Directory.Exists(_themesDirectory))
+        {
+            return new List<string>();
+        }
+        return Directory.GetFiles(_themesDirectory, "*.json")
+                        .Select(Path.GetFileName)
+                        .Where(f => f != null) // Path.GetFileName can return null
+                        .ToList()!; // Non-null asserted as we filter nulls
+    }
+}
+</file>
+
+<file path="Source\ViewModels\MainViewModel.cs">
+using Avalonia.Controls; // For OpenFolderDialog, Window
+using Avalonia.Platform.Storage; // For IStorageFolder (though ShowAsync returns string now)
+using Sonorize.Models;    // For Song, AppSettings, ThemeColors
+using Sonorize.Services;  // For SettingsService, MusicLibraryService, PlaybackService
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using System; // Required for Action
+using System.Diagnostics; // For Debug.WriteLine
+using Avalonia.Threading; // For Dispatcher
 
 namespace Sonorize.ViewModels;
 
@@ -434,6 +809,7 @@ public class MainWindowViewModel : ViewModelBase
     private readonly SettingsService _settingsService;
     private readonly MusicLibraryService _musicLibraryService;
     public PlaybackService PlaybackService { get; }
+    public ThemeColors CurrentTheme { get; } // To make theme accessible to UI if needed for dynamic bindings (less common in C#-only UI)
 
     public ObservableCollection<Song> Songs { get; } = new();
 
@@ -457,71 +833,125 @@ public class MainWindowViewModel : ViewModelBase
         set => SetProperty(ref _statusBarText, value);
     }
 
+    private bool _isLoadingLibrary = false;
+    public bool IsLoadingLibrary
+    {
+        get => _isLoadingLibrary;
+        set
+        {
+            if (SetProperty(ref _isLoadingLibrary, value))
+            {
+                // Update CanExecute for commands that should be disabled during loading
+                (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                (OpenSettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                (LoadInitialDataCommand as RelayCommand)?.RaiseCanExecuteChanged(); // If you add a manual refresh button
+            }
+        }
+    }
+
     public ICommand LoadInitialDataCommand { get; }
     public ICommand OpenSettingsCommand { get; }
     public ICommand ExitCommand { get; }
     public ICommand PlaySongCommand { get; }
     public ICommand AddDirectoryAndRefreshCommand { get; }
 
-
-    public MainWindowViewModel(SettingsService settingsService, MusicLibraryService musicLibraryService, PlaybackService playbackService)
+    public MainWindowViewModel(
+        SettingsService settingsService,
+        MusicLibraryService musicLibraryService,
+        PlaybackService playbackService,
+        ThemeColors theme) // ThemeColors passed in
     {
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
         PlaybackService = playbackService;
+        CurrentTheme = theme; // Store the passed theme
 
-        LoadInitialDataCommand = new RelayCommand(async _ => await LoadMusicLibrary());
-        OpenSettingsCommand = new RelayCommand(async owner => await OpenSettingsDialog(owner));
-        ExitCommand = new RelayCommand(_ => Environment.Exit(0)); // Or Application.Current.Shutdown() if more complex cleanup
+        LoadInitialDataCommand = new RelayCommand(async _ => await LoadMusicLibrary(), _ => !IsLoadingLibrary);
+        OpenSettingsCommand = new RelayCommand(async owner => await OpenSettingsDialog(owner), _ => !IsLoadingLibrary);
+        ExitCommand = new RelayCommand(_ => Environment.Exit(0));
         PlaySongCommand = new RelayCommand(song => PlaybackService.Play((Song)song!), song => song is Song);
-        AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefresh(owner));
+        AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefresh(owner), _ => !IsLoadingLibrary);
 
-        // Subscribe to PlaybackService property changes to update status bar or other UI elements
         PlaybackService.PropertyChanged += (sender, args) =>
         {
             if (args.PropertyName == nameof(PlaybackService.CurrentSong) || args.PropertyName == nameof(PlaybackService.IsPlaying))
             {
-                UpdateStatusBarText();
+                UpdateStatusBarTextPlayingStatus();
             }
         };
     }
 
-    private void UpdateStatusBarText()
+    private void UpdateStatusBarTextPlayingStatus()
     {
+        if (IsLoadingLibrary) return; // Loading status takes precedence
+
         if (PlaybackService.IsPlaying && PlaybackService.CurrentSong != null)
         {
             StatusBarText = $"Playing: {PlaybackService.CurrentSong.Title} - {PlaybackService.CurrentSong.Artist}";
         }
-        else if (PlaybackService.CurrentSong != null) // Paused or stopped but a song is loaded
+        else if (PlaybackService.CurrentSong != null)
         {
             StatusBarText = $"Paused: {PlaybackService.CurrentSong.Title} - {PlaybackService.CurrentSong.Artist}";
         }
         else
         {
-            StatusBarText = "Sonorize - Ready";
+            StatusBarText = $"Sonorize - {Songs.Count} songs loaded.";
         }
     }
 
-
     private async Task LoadMusicLibrary()
     {
+        if (IsLoadingLibrary)
+        {
+            Debug.WriteLine("[MainVM] LoadMusicLibrary called while already loading. Skipping.");
+            return;
+        }
+        IsLoadingLibrary = true;
+
         var settings = _settingsService.LoadSettings();
-        Songs.Clear();
+
+        // Clear songs on the UI thread before starting background work
+        await Dispatcher.UIThread.InvokeAsync(() => {
+            Songs.Clear();
+            StatusBarText = "Preparing to load music library...";
+        });
+
+
         if (settings.MusicDirectories.Any())
         {
-            StatusBarText = "Loading music library...";
-            var songs = await _musicLibraryService.LoadMusicFromDirectoriesAsync(settings.MusicDirectories);
-            foreach (var song in songs)
+            Debug.WriteLine($"[MainVM] Starting music library load from {settings.MusicDirectories.Count} directories.");
+            // Run the potentially long-running service call on a background thread
+            await Task.Run(async () =>
             {
-                Songs.Add(song);
-            }
-            StatusBarText = $"{Songs.Count} songs loaded.";
-            if (!Songs.Any()) StatusBarText = "No songs found in specified directories. Add directories via File > Settings.";
+                try
+                {
+                    await _musicLibraryService.LoadMusicFromDirectoriesAsync(
+                        settings.MusicDirectories,
+                        song => Songs.Add(song), // songAddedCallback is already marshalled to UI thread by the service
+                        status => StatusBarText = status  // statusUpdateCallback is also marshalled
+                    );
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[MainVM] Error during LoadMusicFromDirectoriesAsync background task: {ex}");
+                    await Dispatcher.UIThread.InvokeAsync(() => StatusBarText = "Error loading library.");
+                }
+            });
+
+            // Final status update after the Task.Run completes
+            await Dispatcher.UIThread.InvokeAsync(() => {
+                StatusBarText = $"{Songs.Count} songs loaded. Ready.";
+                if (!Songs.Any() && settings.MusicDirectories.Any())
+                    StatusBarText = "No songs found in specified directories. Add directories via File > Settings.";
+            });
         }
         else
         {
-            StatusBarText = "No music directories configured. Add directories via File > Settings.";
+            await Dispatcher.UIThread.InvokeAsync(() =>
+                StatusBarText = "No music directories configured. Add directories via File > Settings.");
         }
+        IsLoadingLibrary = false;
+        UpdateStatusBarTextPlayingStatus(); // Refresh status bar based on playback after loading finishes
     }
 
     private async Task OpenSettingsDialog(object? ownerWindow)
@@ -529,14 +959,15 @@ public class MainWindowViewModel : ViewModelBase
         if (ownerWindow is not Window owner) return;
 
         var settingsVM = new SettingsViewModel(_settingsService);
-        var settingsDialog = new Sonorize.Views.SettingsWindow
+        // Pass the CurrentTheme to the SettingsWindow constructor
+        var settingsDialog = new Sonorize.Views.SettingsWindow(CurrentTheme)
         {
             DataContext = settingsVM
         };
 
         await settingsDialog.ShowDialog(owner);
 
-        if (settingsVM.SettingsChanged) // A flag you might set in SettingsViewModel upon saving
+        if (settingsVM.SettingsChanged)
         {
             await LoadMusicLibrary();
         }
@@ -547,16 +978,18 @@ public class MainWindowViewModel : ViewModelBase
         if (ownerWindow is not Window owner) return;
 
         var dialog = new OpenFolderDialog { Title = "Select Music Directory" };
-        var result = await dialog.ShowAsync(owner);
+        // For Avalonia 11, ShowAsync returns string directly.
+        // For earlier versions, it returned IStorageFolder. This code assumes Avalonia 11+.
+        var resultPath = await dialog.ShowAsync(owner);
 
-        if (result != null && !string.IsNullOrEmpty(result)) // Avalonia 11 returns string path
+        if (!string.IsNullOrEmpty(resultPath))
         {
             var settings = _settingsService.LoadSettings();
-            if (!settings.MusicDirectories.Contains(result))
+            if (!settings.MusicDirectories.Contains(resultPath))
             {
-                settings.MusicDirectories.Add(result);
+                settings.MusicDirectories.Add(resultPath);
                 _settingsService.SaveSettings(settings);
-                await LoadMusicLibrary(); // Refresh music library
+                await LoadMusicLibrary();
             }
         }
     }
@@ -614,20 +1047,23 @@ public class RelayCommand : ICommand
 </file>
 
 <file path="Source\ViewModels\SettingsViewModel.cs">
-using Avalonia.Controls; // For OpenFolderDialog
-using Avalonia.Platform.Storage; // For IStorageFolder
+using Avalonia.Controls;
+using Avalonia.Platform.Storage;
 using Sonorize.Models;
 using Sonorize.Services;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using System.Diagnostics;
 
 namespace Sonorize.ViewModels;
 
 public class SettingsViewModel : ViewModelBase
 {
     private readonly SettingsService _settingsService;
+    private readonly ThemeService _themeService; // Inject ThemeService for listing themes
+
     public ObservableCollection<string> MusicDirectories { get; } = new();
 
     private string? _selectedDirectory;
@@ -637,29 +1073,57 @@ public class SettingsViewModel : ViewModelBase
         set => SetProperty(ref _selectedDirectory, value, nameof(CanRemoveDirectory));
     }
 
+    public ObservableCollection<string> AvailableThemes { get; } = new();
+    private string? _selectedThemeFile;
+    public string? SelectedThemeFile
+    {
+        get => _selectedThemeFile;
+        set
+        {
+            if (SetProperty(ref _selectedThemeFile, value))
+            {
+                SettingsChanged = true; // Changing theme is a setting change
+            }
+        }
+    }
+
     public bool SettingsChanged { get; private set; } = false;
 
     public ICommand AddDirectoryCommand { get; }
     public ICommand RemoveDirectoryCommand { get; }
-    public ICommand SaveAndCloseCommand { get; } // Save implies close for this simple dialog
+    public ICommand SaveAndCloseCommand { get; }
 
     public bool CanRemoveDirectory => SelectedDirectory != null;
 
-    public SettingsViewModel(SettingsService settingsService)
+    // Constructor now needs ThemeService
+    public SettingsViewModel(SettingsService settingsService) // Keep original signature for MainViewModel for now
     {
         _settingsService = settingsService;
+        _themeService = new ThemeService(null); // Create a temporary instance to list files
+                                                // A better DI approach would pass it from App.cs
+
         var settings = _settingsService.LoadSettings();
         foreach (var dir in settings.MusicDirectories)
         {
             MusicDirectories.Add(dir);
         }
 
+        foreach (var themeFile in _themeService.GetAvailableThemeFiles())
+        {
+            AvailableThemes.Add(themeFile);
+        }
+
+        SelectedThemeFile = settings.PreferredThemeFileName ?? ThemeService.DefaultThemeFileName;
+        if (!AvailableThemes.Contains(SelectedThemeFile) && AvailableThemes.Any())
+        {
+            SelectedThemeFile = AvailableThemes.First(); // Fallback if saved theme not found
+        }
+
+
         AddDirectoryCommand = new RelayCommand(async owner => await AddDirectory(owner as Window));
         RemoveDirectoryCommand = new RelayCommand(RemoveSelectedDirectory, _ => CanRemoveDirectory);
         SaveAndCloseCommand = new RelayCommand(SaveSettings);
 
-        // This is to ensure CanExecute for RemoveDirectoryCommand is re-evaluated
-        // when SelectedDirectory changes. Manual update for simple RelayCommand.
         PropertyChanged += (s, e) => {
             if (e.PropertyName == nameof(SelectedDirectory))
             {
@@ -670,11 +1134,10 @@ public class SettingsViewModel : ViewModelBase
 
     private async Task AddDirectory(Window? owner)
     {
-        if (owner == null) return; // Should always have an owner for a dialog
-
+        // ... (AddDirectory remains the same) ...
+        if (owner == null) return;
         var dialog = new OpenFolderDialog() { Title = "Select Music Directory" };
-        var result = await dialog.ShowAsync(owner); // string path
-
+        var result = await dialog.ShowAsync(owner);
         if (result != null && !string.IsNullOrEmpty(result))
         {
             if (!MusicDirectories.Contains(result))
@@ -687,27 +1150,24 @@ public class SettingsViewModel : ViewModelBase
 
     private void RemoveSelectedDirectory(object? parameter)
     {
+        // ... (RemoveSelectedDirectory remains the same) ...
         if (SelectedDirectory != null)
         {
             MusicDirectories.Remove(SelectedDirectory);
-            SelectedDirectory = null; // Clear selection
+            SelectedDirectory = null;
             SettingsChanged = true;
         }
     }
 
     private void SaveSettings(object? parameter)
     {
-        var settings = new AppSettings
-        {
-            MusicDirectories = MusicDirectories.ToList()
-        };
-        _settingsService.SaveSettings(settings);
-        SettingsChanged = true; // Ensure flag is set even if only removals occurred
+        var currentSettings = _settingsService.LoadSettings(); // Load current to preserve other settings if any
+        currentSettings.MusicDirectories = MusicDirectories.ToList();
+        currentSettings.PreferredThemeFileName = SelectedThemeFile;
 
-        // The window will be closed by its own code-behind after this command
-        // if this VM is used in a ShowDialog context where the dialog handles its lifecycle.
-        // If the command needs to close the window, it would need a reference to it.
-        // For now, SettingsWindow will handle its closure.
+        _settingsService.SaveSettings(currentSettings);
+        SettingsChanged = true;
+        Debug.WriteLine($"[SettingsVM] Saved theme: {SelectedThemeFile}");
     }
 }
 </file>
@@ -740,26 +1200,33 @@ public class ViewModelBase : INotifyPropertyChanged
 
 <file path="Source\Views\MainView.cs">
 using System;
-using System.Linq;                              // For LINQ extension methods
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Templates;              // For FuncDataTemplate<T>
-using Avalonia.Data;                            // For Binding
+using Avalonia.Controls.Primitives; // For TemplatedControl and Thumb
+using Avalonia.Controls.Templates;
+using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Sonorize.Models;
 using Sonorize.ViewModels;
+using System.Diagnostics;
+using Avalonia.Styling; // For Style, Selector
 
 namespace Sonorize.Views;
 
 public class MainWindow : Window
 {
     private ListBox _songListBox;
+    private readonly ThemeColors _theme;
 
-    public MainWindow()
+    public MainWindow(ThemeColors theme)
     {
+        _theme = theme;
+
+        Debug.WriteLine($"[MainView] Constructor called with theme: BG {_theme.BackgroundColor}, Accent {_theme.AccentColor}");
         Title = "Sonorize";
         Width = 900;
         Height = 700;
@@ -767,50 +1234,69 @@ public class MainWindow : Window
         MinHeight = 400;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
 
-        // Theme brushes
-        var backgroundColor = SolidColorBrush.Parse("#FF1E1E1E");
-        var slightlyLighterBackground = SolidColorBrush.Parse("#FF2D2D30");
-        var textColor = SolidColorBrush.Parse("#FFF1F1F1");
-        var secondaryTextColor = SolidColorBrush.Parse("#FFAAAAAA");
-        var accentColor = SolidColorBrush.Parse("#FF007ACC");
-
-        Background = backgroundColor;
+        Background = _theme.B_BackgroundColor;
 
         // --- Menu Bar ---
         var menu = new Menu
         {
-            Background = slightlyLighterBackground,
-            Foreground = textColor
+            Background = _theme.B_SlightlyLighterBackground,
+            Foreground = _theme.B_TextColor
         };
-
-        var fileMenuItem = new MenuItem { Header = "_File" };
-
-        var addDirectoryMenuItem = new MenuItem { Header = "_Add Music Directory..." };
+        var fileMenuItem = new MenuItem { Header = "_File", Foreground = _theme.B_TextColor };
+        var addDirectoryMenuItem = new MenuItem { Header = "_Add Music Directory...", Foreground = _theme.B_TextColor };
         addDirectoryMenuItem.Bind(MenuItem.CommandProperty, new Binding("AddDirectoryAndRefreshCommand"));
         addDirectoryMenuItem.CommandParameter = this;
-
-        var settingsMenuItem = new MenuItem { Header = "_Settings..." };
+        var settingsMenuItem = new MenuItem { Header = "_Settings...", Foreground = _theme.B_TextColor };
         settingsMenuItem.Bind(MenuItem.CommandProperty, new Binding("OpenSettingsCommand"));
         settingsMenuItem.CommandParameter = this;
-
-        var exitMenuItem = new MenuItem { Header = "E_xit" };
+        var exitMenuItem = new MenuItem { Header = "E_xit", Foreground = _theme.B_TextColor };
         exitMenuItem.Bind(MenuItem.CommandProperty, new Binding("ExitCommand"));
-
-        // Populate File menu
         fileMenuItem.Items.Add(addDirectoryMenuItem);
         fileMenuItem.Items.Add(settingsMenuItem);
         fileMenuItem.Items.Add(new Separator());
         fileMenuItem.Items.Add(exitMenuItem);
-
-        // Add File menu into the top menu
         menu.Items.Add(fileMenuItem);
 
         // --- Song List ---
         _songListBox = new ListBox
         {
-            Background = slightlyLighterBackground,
+            Background = _theme.B_ListBoxBackground,
             BorderThickness = new Thickness(0),
-            Margin = new Thickness(10)
+            Margin = new Thickness(10),
+            Styles =
+            {
+                new Style(x => x.OfType<ListBoxItem>())
+                {
+                    Setters =
+                    {
+                        new Setter(TemplatedControl.BackgroundProperty, _theme.B_ListBoxBackground),
+                        new Setter(TextBlock.ForegroundProperty, _theme.B_TextColor)
+                    }
+                },
+                new Style(x => x.OfType<ListBoxItem>().Class(":pointerover"))
+                {
+                    Setters =
+                    {
+                        new Setter(TemplatedControl.BackgroundProperty, _theme.B_ControlBackgroundColor),
+                    }
+                },
+                new Style(x => x.OfType<ListBoxItem>().Class(":selected"))
+                {
+                    Setters =
+                    {
+                        new Setter(TemplatedControl.BackgroundProperty, BrushExtensions.Multiply(_theme.B_AccentColor, 0.7)),
+                        new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
+                    }
+                },
+                 new Style(x => x.OfType<ListBoxItem>().Class(":selected").Class(":pointerover"))
+                {
+                     Setters =
+                    {
+                        new Setter(TemplatedControl.BackgroundProperty, BrushExtensions.Multiply(_theme.B_AccentColor, 0.8)),
+                        new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
+                    }
+                }
+            }
         };
         _songListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("Songs"));
         _songListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedSong", BindingMode.TwoWay));
@@ -820,9 +1306,9 @@ public class MainWindow : Window
             {
                 var image = new Image
                 {
-                    Width = 50,
-                    Height = 50,
-                    Margin = new Thickness(5),
+                    Width = 32,
+                    Height = 32,
+                    Margin = new Thickness(5, 0, 5, 0),
                     Source = song.Thumbnail,
                     Stretch = Stretch.UniformToFill
                 };
@@ -831,52 +1317,52 @@ public class MainWindow : Window
                 var titleBlock = new TextBlock
                 {
                     Text = song.Title,
-                    FontSize = 16,
-                    FontWeight = FontWeight.SemiBold,
-                    Foreground = textColor,
+                    FontSize = 14,
+                    FontWeight = FontWeight.Normal,
                     VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(0, 0, 0, 2)
+                    Margin = new Thickness(0, 0, 0, 1)
                 };
                 var artistBlock = new TextBlock
                 {
                     Text = song.Artist,
-                    FontSize = 12,
-                    Foreground = secondaryTextColor,
+                    FontSize = 11,
                     VerticalAlignment = VerticalAlignment.Center
                 };
-                var durationBlock = new TextBlock
+
+                var durationBlock = new TextBlock // Declaration of durationBlock
                 {
                     Text = song.DurationString,
-                    FontSize = 12,
-                    Foreground = secondaryTextColor,
+                    FontSize = 11,
                     HorizontalAlignment = HorizontalAlignment.Right,
                     VerticalAlignment = VerticalAlignment.Center
                 };
 
-                var textStack = new StackPanel
+                // Heuristic for artist/duration foreground when selected item has a light foreground text
+                if (_theme.B_AccentForeground is ISolidColorBrush accentFgBrush && accentFgBrush.Color.ToHsl().L > 0.5)
                 {
-                    Orientation = Orientation.Vertical,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(10, 0)
-                };
+                    // This logic will apply the secondary text color if the AccentForeground is light.
+                    // The ListBoxItem :selected style sets a general Foreground. If that is light (e.g. white on dark accent),
+                    // then making artist/duration dimmer can improve readability.
+                    // Note: This applies directly and won't change if the ListBoxItem's *selected* style for Foreground changes.
+                    // For more dynamic behavior tied to the ListBoxItem's actual selected foreground, styles targeting
+                    // child TextBlocks would be needed, which is more complex.
+                    artistBlock.Foreground = _theme.B_SecondaryTextColor;
+                    durationBlock.Foreground = _theme.B_SecondaryTextColor;
+                }
+
+
+                var textStack = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
                 textStack.Children.Add(titleBlock);
                 textStack.Children.Add(artistBlock);
 
-                var itemGrid = new Grid
-                {
-                    ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto")
-                };
-                Grid.SetColumn(image, 0);
-                Grid.SetColumn(textStack, 1);
-                Grid.SetColumn(durationBlock, 2);
-                itemGrid.Children.Add(image);
-                itemGrid.Children.Add(textStack);
-                itemGrid.Children.Add(durationBlock);
+                var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), VerticalAlignment = VerticalAlignment.Center };
+                Grid.SetColumn(image, 0); Grid.SetColumn(textStack, 1); Grid.SetColumn(durationBlock, 2);
+                itemGrid.Children.Add(image); itemGrid.Children.Add(textStack); itemGrid.Children.Add(durationBlock);
 
                 return new Border
                 {
-                    Padding = new Thickness(10, 8),
-                    MinHeight = 60,
+                    Padding = new Thickness(10, 6, 10, 6),
+                    MinHeight = 44,
                     Background = Brushes.Transparent,
                     Child = itemGrid
                 };
@@ -884,11 +1370,7 @@ public class MainWindow : Window
             supportsRecycling: true
         );
 
-        var scrollViewer = new ScrollViewer
-        {
-            Content = _songListBox,
-            Padding = new Thickness(0, 0, 0, 5)
-        };
+        var scrollViewer = new ScrollViewer { Content = _songListBox, Padding = new Thickness(0, 0, 0, 5) };
 
         // --- Playback Controls ---
         var playbackSlider = new Slider
@@ -896,9 +1378,13 @@ public class MainWindow : Window
             Minimum = 0,
             Margin = new Thickness(10, 0),
             VerticalAlignment = VerticalAlignment.Center,
-            Background = secondaryTextColor,
-            Foreground = accentColor
+            Background = _theme.B_SecondaryTextColor,
+            Foreground = _theme.B_AccentColor
         };
+        var sliderThumbStyle = new Style(x => x.OfType<Slider>().Descendant().OfType<Thumb>());
+        sliderThumbStyle.Setters.Add(new Setter(BackgroundProperty, _theme.B_AccentColor));
+        playbackSlider.Styles.Add(sliderThumbStyle);
+
         playbackSlider.Bind(Slider.MaximumProperty, new Binding("PlaybackService.CurrentSongDurationSeconds"));
         playbackSlider.Bind(Slider.ValueProperty, new Binding("PlaybackService.CurrentPositionSeconds", BindingMode.TwoWay));
 
@@ -906,30 +1392,28 @@ public class MainWindow : Window
         {
             Content = "Play/Pause",
             Margin = new Thickness(5),
-            Background = slightlyLighterBackground,
-            Foreground = textColor,
-            BorderBrush = accentColor,
+            Background = _theme.B_SlightlyLighterBackground,
+            Foreground = _theme.B_TextColor,
+            BorderBrush = _theme.B_AccentColor,
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(3)
+            CornerRadius = new CornerRadius(3),
+            Padding = new Thickness(10, 5)
         };
         playPauseButton.Click += (s, e) =>
         {
             if (DataContext is MainWindowViewModel vm)
             {
-                if (vm.PlaybackService.IsPlaying)
-                    vm.PlaybackService.Pause();
-                else if (vm.PlaybackService.CurrentSong != null)
-                    vm.PlaybackService.Resume();
-                else if (vm.Songs.Any())
-                    vm.PlaybackService.Play(vm.Songs.First());
+                if (vm.PlaybackService.IsPlaying) vm.PlaybackService.Pause();
+                else if (vm.PlaybackService.CurrentSong != null) vm.PlaybackService.Resume();
+                else if (vm.Songs.Any()) vm.PlaybackService.Play(vm.Songs.First());
             }
         };
 
         var playbackControlsPanel = new DockPanel
         {
-            Background = backgroundColor,
+            Background = _theme.B_BackgroundColor,
             Margin = new Thickness(5, 0, 5, 5),
-            Height = 40,
+            Height = 35,
             LastChildFill = true
         };
         DockPanel.SetDock(playPauseButton, Dock.Left);
@@ -939,14 +1423,15 @@ public class MainWindow : Window
         // --- Status Bar ---
         var statusBar = new Border
         {
-            Background = slightlyLighterBackground,
-            Padding = new Thickness(10, 5),
-            Height = 30
+            Background = _theme.B_SlightlyLighterBackground,
+            Padding = new Thickness(10, 4),
+            Height = 26
         };
         var statusBarText = new TextBlock
         {
-            Foreground = secondaryTextColor,
-            VerticalAlignment = VerticalAlignment.Center
+            Foreground = _theme.B_SecondaryTextColor,
+            VerticalAlignment = VerticalAlignment.Center,
+            FontSize = 11
         };
         statusBarText.Bind(TextBlock.TextProperty, new Binding("StatusBarText"));
         statusBar.Child = statusBarText;
@@ -956,13 +1441,32 @@ public class MainWindow : Window
         DockPanel.SetDock(menu, Dock.Top);
         DockPanel.SetDock(statusBar, Dock.Bottom);
         DockPanel.SetDock(playbackControlsPanel, Dock.Bottom);
-
         mainDockPanel.Children.Add(menu);
         mainDockPanel.Children.Add(statusBar);
         mainDockPanel.Children.Add(playbackControlsPanel);
         mainDockPanel.Children.Add(scrollViewer);
 
         Content = mainDockPanel;
+        Debug.WriteLine("[MainView] Constructor finished.");
+    }
+}
+
+// Helper extension class for IBrush operations
+public static class BrushExtensions
+{
+    public static IBrush Multiply(this IBrush brush, double factor)
+    {
+        if (brush is ISolidColorBrush solidBrush)
+        {
+            var c = solidBrush.Color;
+            return new SolidColorBrush(Color.FromArgb(
+                c.A,
+                (byte)Math.Clamp(c.R * factor, 0, 255),
+                (byte)Math.Clamp(c.G * factor, 0, 255),
+                (byte)Math.Clamp(c.B * factor, 0, 255)
+            ));
+        }
+        return brush;
     }
 }
 </file>
@@ -972,125 +1476,101 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Data; // For Binding
+using Avalonia.Data;
+using Sonorize.Models;
 using Sonorize.ViewModels;
-using Avalonia.Platform; // Required for WindowIcon if you were to create one, but here we set it to null.
 
 namespace Sonorize.Views;
 
 public class SettingsWindow : Window
 {
-    public SettingsWindow()
+    private readonly ThemeColors _theme; // Current theme for styling THIS window
+
+    public SettingsWindow(ThemeColors currentDisplayTheme)
     {
-        Title = "Sonorize Settings";
-        Width = 500;
-        Height = 400;
-        CanResize = false;
-        WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        // Ensure it's a dialog modal to its owner
-        Icon = null; // Corrected: Remove default icon to feel more like a dialog
+        _theme = currentDisplayTheme;
 
-        // Define colors (can be shared from a Theme class or App resources)
-        var backgroundColor = SolidColorBrush.Parse("#FF2D2D30"); // Slightly lighter than main window
-        var controlBackgroundColor = SolidColorBrush.Parse("#FF3C3C3C");
-        var textColor = SolidColorBrush.Parse("#FFF1F1F1");
-        var accentColor = SolidColorBrush.Parse("#FF007ACC");
-
-        this.Background = backgroundColor;
+        // ... (Window properties and color definitions using _theme remain the same) ...
+        Title = "Sonorize Settings"; Width = 500; Height = 450; // Increased height for theme selector
+        CanResize = false; WindowStartupLocation = WindowStartupLocation.CenterOwner; Icon = null;
+        Background = _theme.B_SlightlyLighterBackground;
 
         var mainPanel = new DockPanel { Margin = new Thickness(15) };
 
-        // --- Header ---
-        var headerBlock = new TextBlock
+        // --- Header for Directories ---
+        var dirHeaderBlock = new TextBlock
         {
             Text = "Music Directories",
             FontSize = 18,
             FontWeight = FontWeight.SemiBold,
-            Foreground = textColor,
+            Foreground = _theme.B_TextColor,
             Margin = new Thickness(0, 0, 0, 10)
         };
-        DockPanel.SetDock(headerBlock, Dock.Top);
+        // DockPanel.SetDock(dirHeaderBlock, Dock.Top); // We'll use a StackPanel for sections
+
+        // --- Music Directories Section ---
+        var directoriesPanel = new DockPanel();
+        var dirManagementButtons = new StackPanel { Orientation = Orientation.Vertical, Spacing = 5, Margin = new Thickness(0, 0, 10, 0) };
+        DockPanel.SetDock(dirManagementButtons, Dock.Right);
+        var addButton = new Button { Content = "Add", Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor, HorizontalAlignment = HorizontalAlignment.Stretch };
+        addButton.Bind(Button.CommandProperty, new Binding("AddDirectoryCommand")); addButton.CommandParameter = this;
+        var removeButton = new Button { Content = "Remove", Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor, HorizontalAlignment = HorizontalAlignment.Stretch };
+        removeButton.Bind(Button.CommandProperty, new Binding("RemoveDirectoryCommand")); removeButton.Bind(Button.IsEnabledProperty, new Binding("CanRemoveDirectory"));
+        dirManagementButtons.Children.Add(addButton); dirManagementButtons.Children.Add(removeButton);
+        var directoryListBox = new ListBox { Background = _theme.B_ControlBackgroundColor, BorderThickness = new Thickness(1), BorderBrush = _theme.B_SecondaryTextColor, Foreground = _theme.B_TextColor, Height = 150 }; // Set a height
+        directoryListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("MusicDirectories")); directoryListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedDirectory", BindingMode.TwoWay));
+        directoriesPanel.Children.Add(dirManagementButtons); directoriesPanel.Children.Add(directoryListBox);
+
+        // --- Theme Selection Section ---
+        var themeHeaderBlock = new TextBlock
+        {
+            Text = "Application Theme",
+            FontSize = 16,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = _theme.B_TextColor,
+            Margin = new Thickness(0, 15, 0, 5) // Margin top for separation
+        };
+
+        var themeComboBox = new ComboBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Background = _theme.B_ControlBackgroundColor,
+            Foreground = _theme.B_TextColor,
+            BorderBrush = _theme.B_SecondaryTextColor
+        };
+        themeComboBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("AvailableThemes"));
+        themeComboBox.Bind(ComboBox.SelectedItemProperty, new Binding("SelectedThemeFile", BindingMode.TwoWay));
+
+        var themeRestartNotice = new TextBlock
+        {
+            Text = "A restart is required for theme changes to take full effect.",
+            FontSize = 10,
+            Foreground = _theme.B_SecondaryTextColor,
+            FontStyle = FontStyle.Italic,
+            Margin = new Thickness(0, 5, 0, 0),
+            TextWrapping = TextWrapping.Wrap
+        };
+
+        // --- Layout using a main StackPanel for sections ---
+        var sectionsStackPanel = new StackPanel { Orientation = Orientation.Vertical, Spacing = 5 };
+        sectionsStackPanel.Children.Add(dirHeaderBlock);
+        sectionsStackPanel.Children.Add(directoriesPanel);
+        sectionsStackPanel.Children.Add(themeHeaderBlock);
+        sectionsStackPanel.Children.Add(themeComboBox);
+        sectionsStackPanel.Children.Add(themeRestartNotice);
 
         // --- Buttons Panel (Bottom) ---
-        var buttonsPanel = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Spacing = 10,
-            Margin = new Thickness(0, 15, 0, 0)
-        };
-        DockPanel.SetDock(buttonsPanel, Dock.Bottom);
-
-        var saveButton = new Button
-        {
-            Content = "Save & Close",
-            Background = accentColor,
-            Foreground = Brushes.White,
-            Padding = new Thickness(15, 8),
-            CornerRadius = new CornerRadius(3)
-        };
-        saveButton.Click += (s, e) =>
-        {
-            if (DataContext is SettingsViewModel vm)
-            {
-                vm.SaveAndCloseCommand.Execute(null);
-            }
-            Close();
-        };
-
-        var cancelButton = new Button
-        {
-            Content = "Cancel",
-            Background = controlBackgroundColor,
-            Foreground = textColor,
-            Padding = new Thickness(15, 8),
-            CornerRadius = new CornerRadius(3)
-        };
+        var buttonsPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 10, Margin = new Thickness(0, 20, 0, 0) };
+        var saveButton = new Button { Content = "Save & Close", Background = _theme.B_AccentColor, Foreground = _theme.B_AccentForeground, Padding = new Thickness(15, 8), CornerRadius = new CornerRadius(3) };
+        saveButton.Click += (s, e) => { if (DataContext is SettingsViewModel vm) { vm.SaveAndCloseCommand.Execute(null); } Close(); };
+        var cancelButton = new Button { Content = "Cancel", Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor, Padding = new Thickness(15, 8), CornerRadius = new CornerRadius(3) };
         cancelButton.Click += (s, e) => Close();
+        buttonsPanel.Children.Add(saveButton); buttonsPanel.Children.Add(cancelButton);
 
-        buttonsPanel.Children.Add(saveButton);
-        buttonsPanel.Children.Add(cancelButton);
-
-        // --- Directory List and Management (Center) ---
-        var contentPanel = new DockPanel(); // Use DockPanel for Add/Remove buttons next to ListBox
-
-        var directoryManagementButtons = new StackPanel
-        {
-            Orientation = Orientation.Vertical,
-            Spacing = 5,
-            Margin = new Thickness(0, 0, 10, 0) // Margin to the right of these buttons
-        };
-        DockPanel.SetDock(directoryManagementButtons, Dock.Right);
-
-        var addButton = new Button { Content = "Add", Background = controlBackgroundColor, Foreground = textColor, HorizontalAlignment = HorizontalAlignment.Stretch };
-        addButton.Bind(Button.CommandProperty, new Binding("AddDirectoryCommand"));
-        addButton.CommandParameter = this; // Pass Window as owner for dialog
-
-        var removeButton = new Button { Content = "Remove", Background = controlBackgroundColor, Foreground = textColor, HorizontalAlignment = HorizontalAlignment.Stretch };
-        removeButton.Bind(Button.CommandProperty, new Binding("RemoveDirectoryCommand"));
-        removeButton.Bind(Button.IsEnabledProperty, new Binding("CanRemoveDirectory"));
-
-        directoryManagementButtons.Children.Add(addButton);
-        directoryManagementButtons.Children.Add(removeButton);
-
-        var directoryListBox = new ListBox
-        {
-            Background = controlBackgroundColor,
-            BorderThickness = new Thickness(1),
-            BorderBrush = Brushes.Gray,
-            Foreground = textColor,
-        };
-        directoryListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("MusicDirectories"));
-        directoryListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedDirectory", BindingMode.TwoWay));
-        // The ListBox will fill the remaining space in contentPanel (center)
-
-        contentPanel.Children.Add(directoryManagementButtons);
-        contentPanel.Children.Add(directoryListBox); // This will be the center filling child
-
-
-        mainPanel.Children.Add(headerBlock);
+        // Main panel structure
+        DockPanel.SetDock(buttonsPanel, Dock.Bottom);
         mainPanel.Children.Add(buttonsPanel);
-        mainPanel.Children.Add(contentPanel); // This fills the rest
+        mainPanel.Children.Add(sectionsStackPanel); // This will fill the center
 
         Content = mainPanel;
     }

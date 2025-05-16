@@ -1,6 +1,8 @@
 ﻿using Avalonia.Media.Imaging;
 using Sonorize.ViewModels; // For ViewModelBase
 using System;
+using System.Collections.ObjectModel; // For ObservableCollection
+using System.ComponentModel; // For INotifyPropertyChanged
 
 namespace Sonorize.Models;
 
@@ -21,4 +23,14 @@ public class Song : ViewModelBase
 
     private Bitmap? _thumbnail;
     public Bitmap? Thumbnail { get => _thumbnail; set => SetProperty(ref _thumbnail, value); }
+
+    // Stores all defined loop regions for this song (session-specific)
+    public ObservableCollection<LoopRegion> LoopRegions { get; } = new();
+
+    private LoopRegion? _activeLoop;
+    public LoopRegion? ActiveLoop
+    {
+        get => _activeLoop;
+        set => SetProperty(ref _activeLoop, value);
+    }
 }
