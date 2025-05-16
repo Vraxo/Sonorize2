@@ -10,44 +10,45 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Diagnostics;
-using TagLib;
+using TagLib; // For reading audio file metadata and embedded pictures
 using Avalonia.Threading; // For Dispatcher
 
 namespace Sonorize.Services;
 
 public class MusicLibraryService
 {
-    private Bitmap? _defaultThumbnail;
+    private Bitmap? _defaultThumbnail; // Cache for the default musical note icon
 
     public MusicLibraryService()
     {
         Debug.WriteLine("[MusicLibService] Constructor called.");
     }
 
+    // Method to create the nice default musical note icon
     private Bitmap? CreateDefaultMusicalNoteIcon()
     {
-        // ... (Keep the CreateDefaultMusicalNoteIcon method exactly as in the previous correct version) ...
         Debug.WriteLine("[ThumbGen] CreateDefaultMusicalNoteIcon called.");
         try
         {
-            var pixelSize = new Avalonia.PixelSize(64, 64);
+            var pixelSize = new Avalonia.PixelSize(64, 64); // Generate at a decent resolution
             var dpi = new Avalonia.Vector(96, 96);
 
             using var renderTarget = new RenderTargetBitmap(pixelSize, dpi);
             using (DrawingContext context = renderTarget.CreateDrawingContext())
             {
-                var backgroundBrush = new SolidColorBrush(Avalonia.Media.Colors.DimGray);
-                var foregroundBrush = Avalonia.Media.Brushes.WhiteSmoke;
+                // Original intended colors for the default icon
+                var backgroundBrush = new SolidColorBrush(Avalonia.Media.Colors.DimGray); // #FF696969
+                var foregroundBrush = Avalonia.Media.Brushes.WhiteSmoke;                 // #FFF5F5F5
 
                 var bounds = new Rect(new Size(pixelSize.Width, pixelSize.Height));
                 context.FillRectangle(backgroundBrush, bounds);
 
                 var formattedText = new FormattedText(
-                    "♫",
+                    "♫", // U+266B MUSICAL NOTE
                     CultureInfo.CurrentCulture,
                     FlowDirection.LeftToRight,
-                    Typeface.Default,
-                    32,
+                    Typeface.Default, // Using default system font
+                    32, // Font size for 64x64 image
                     foregroundBrush);
 
                 var textOrigin = new Avalonia.Point(
@@ -76,9 +77,9 @@ public class MusicLibraryService
         }
     }
 
+    // Helper method to get the cached default thumbnail or create it if it doesn't exist
     private Bitmap? GetDefaultThumbnail()
     {
-        // ... (Keep the GetDefaultThumbnail method exactly as in the previous correct version) ...
         if (_defaultThumbnail == null)
         {
             Debug.WriteLine("[ThumbGen] _defaultThumbnail is null, attempting to create it.");
@@ -89,29 +90,40 @@ public class MusicLibraryService
 
     private Bitmap? LoadAlbumArt(string filePath)
     {
-        // ... (Keep the LoadAlbumArt method exactly as in the previous correct version) ...
         try
         {
             using (var tagFile = TagLib.File.Create(filePath))
             {
                 if (tagFile.Tag.Pictures.Length > 0)
                 {
-                    IPicture pic = tagFile.Tag.Pictures[0];
+                    IPicture pic = tagFile.Tag.Pictures[0]; // Take the first picture
                     using (var ms = new MemoryStream(pic.Data.Data))
                     {
                         if (ms.Length > 0)
                         {
-                            var avaloniaBitmap = new Bitmap(ms);
-                            // Debug.WriteLine($"[AlbumArt] Loaded for {Path.GetFileName(filePath)}, Size: {avaloniaBitmap.PixelSize}");
-                            return avaloniaBitmap;
+                            // Load the original bitmap from the stream
+                            using (var originalBitmap = new Bitmap(ms))
+                            {
+                                // Define target size for thumbnails
+                                var targetSize = new PixelSize(64, 64);
+
+                                // Create a scaled bitmap
+                                // This disposes the originalBitmap implicitly if it's the same object,
+                                // but since CreateScaledBitmap returns a new instance, originalBitmap
+                                // will be disposed by its own 'using' block.
+                                var scaledBitmap = originalBitmap.CreateScaledBitmap(targetSize, BitmapInterpolationMode.HighQuality);
+
+                                // Debug.WriteLine($"[AlbumArt] Loaded & Resized for {Path.GetFileName(filePath)}, Original: {originalBitmap.PixelSize}, Scaled: {scaledBitmap.PixelSize}");
+                                return scaledBitmap;
+                            }
                         }
                     }
                 }
             }
         }
-        catch (CorruptFileException) { /* Debug.WriteLine($"[AlbumArt] Corrupt file: {Path.GetFileName(filePath)}"); */ }
-        catch (UnsupportedFormatException) { /* Debug.WriteLine($"[AlbumArt] Unsupported format: {Path.GetFileName(filePath)}"); */ }
-        catch (Exception ex) { Debug.WriteLine($"[AlbumArt] Error loading album art for {Path.GetFileName(filePath)}: {ex.Message}"); }
+        catch (CorruptFileException) { /* Debug.WriteLine($"[AlbumArt] Corrupt file, cannot load metadata for {Path.GetFileName(filePath)}"); */ }
+        catch (UnsupportedFormatException) { /* Debug.WriteLine($"[AlbumArt] Unsupported format for metadata {Path.GetFileName(filePath)}"); */ }
+        catch (Exception ex) { Debug.WriteLine($"[AlbumArt] Error loading album art for {Path.GetFileName(filePath)}: {ex.Message}"); } // Log other exceptions
         return null;
     }
 
@@ -121,13 +133,11 @@ public class MusicLibraryService
         Action<string> statusUpdateCallback)
     {
         Debug.WriteLine("[MusicLibService] LoadMusicFromDirectoriesAsync (incremental) called.");
-        var supportedExtensions = new[] { ".mp3", ".wav", ".flac", ".m4a", ".ogg" };
+        var supportedExtensions = new[] { ".mp3", ".wav", ".flac", ".m4a", ".ogg" }; // TagLib supports these and more
+
+        // Ensure the default thumbnail is created once and cached (on the calling thread, which is fine for a small icon)
         Bitmap? defaultIcon = GetDefaultThumbnail();
         int filesProcessed = 0;
-
-        // The main loop will run on a background thread thanks to Task.Run in the ViewModel
-        // No need for another Task.Run here unless specific parts are exceptionally heavy
-        // and can be further parallelized (which is not the case for typical file iteration).
 
         foreach (var dir in directories)
         {
@@ -140,14 +150,12 @@ public class MusicLibraryService
 
             await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Scanning: {Path.GetFileName(dir)}..."));
 
-            // Get all files first to avoid issues with `Directory.EnumerateFiles` if we yield execution often
-            // Though for simple processing like this, EnumerateFiles is usually fine.
             List<string> filesInDir;
             try
             {
                 filesInDir = Directory.EnumerateFiles(dir, "*.*", SearchOption.AllDirectories)
                                       .Where(f => supportedExtensions.Any(ext => f.EndsWith(ext, StringComparison.OrdinalIgnoreCase)))
-                                      .ToList();
+                                      .ToList(); // ToList to avoid collection modified issues if dir changes (unlikely here)
             }
             catch (Exception ex)
             {
@@ -156,46 +164,56 @@ public class MusicLibraryService
                 continue;
             }
 
-
             foreach (var file in filesInDir)
             {
+                // LoadAlbumArt is relatively quick as it reads embedded data or fails.
+                // The resizing is the new part, also generally quick for small images.
                 Bitmap? thumbnail = LoadAlbumArt(file);
+
                 var song = new Song
                 {
                     FilePath = file,
-                    Title = Path.GetFileNameWithoutExtension(file),
-                    Artist = "Unknown Artist",
-                    Duration = TimeSpan.Zero,
-                    Thumbnail = thumbnail ?? defaultIcon
+                    Title = Path.GetFileNameWithoutExtension(file), // Default title
+                    Artist = "Unknown Artist",                     // Default artist
+                    Duration = TimeSpan.Zero,                      // Default duration
+                    Thumbnail = thumbnail ?? defaultIcon           // Use album art or fallback to default icon
                 };
 
+                // Extract actual metadata using TagLib-Sharp
                 try
                 {
                     using (var tagFile = TagLib.File.Create(file))
                     {
                         if (!string.IsNullOrWhiteSpace(tagFile.Tag.Title))
                             song.Title = tagFile.Tag.Title;
+
                         if (tagFile.Tag.Performers.Length > 0 && !string.IsNullOrWhiteSpace(tagFile.Tag.Performers[0]))
                             song.Artist = tagFile.Tag.Performers[0];
                         else if (tagFile.Tag.AlbumArtists.Length > 0 && !string.IsNullOrWhiteSpace(tagFile.Tag.AlbumArtists[0]))
-                            song.Artist = tagFile.Tag.AlbumArtists[0];
+                            song.Artist = tagFile.Tag.AlbumArtists[0]; // Fallback to album artist
 
                         if (tagFile.Properties.Duration > TimeSpan.Zero)
                             song.Duration = tagFile.Properties.Duration;
                     }
                 }
-                catch (Exception) { /* Debug.WriteLine($"[TagLib] Error reading metadata for {file}: {ex.Message}"); */ }
+                catch (Exception)
+                {
+                    // Debug.WriteLine($"[TagLib] Error reading metadata for {Path.GetFileName(file)}: {ex.Message}");
+                    // Silently ignore metadata read errors for individual files to not stop the whole scan.
+                    // The defaults for Title, Artist, Duration will be used.
+                }
 
-                // Marshall the addition to the UI thread
+                // Marshall the addition of the song to the UI thread
                 await Dispatcher.UIThread.InvokeAsync(() => songAddedCallback(song));
                 filesProcessed++;
 
-                if (filesProcessed % 20 == 0) // Update status every 20 files
+                if (filesProcessed % 20 == 0) // Update status periodically
                 {
                     await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Loaded {filesProcessed} songs..."));
                 }
             }
         }
         Debug.WriteLine($"[MusicLibService] Background file scanning complete. Processed {filesProcessed} songs in total.");
+        // Final status update handled by ViewModel after this method completes
     }
 }

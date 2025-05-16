@@ -1,17 +1,20 @@
-﻿using Avalonia.Controls; // For OpenFolderDialog
-using Avalonia.Platform.Storage; // For IStorageFolder
+﻿using Avalonia.Controls;
+using Avalonia.Platform.Storage;
 using Sonorize.Models;
 using Sonorize.Services;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using System.Diagnostics;
 
 namespace Sonorize.ViewModels;
 
 public class SettingsViewModel : ViewModelBase
 {
     private readonly SettingsService _settingsService;
+    private readonly ThemeService _themeService; // Inject ThemeService for listing themes
+
     public ObservableCollection<string> MusicDirectories { get; } = new();
 
     private string? _selectedDirectory;
@@ -21,29 +24,57 @@ public class SettingsViewModel : ViewModelBase
         set => SetProperty(ref _selectedDirectory, value, nameof(CanRemoveDirectory));
     }
 
+    public ObservableCollection<string> AvailableThemes { get; } = new();
+    private string? _selectedThemeFile;
+    public string? SelectedThemeFile
+    {
+        get => _selectedThemeFile;
+        set
+        {
+            if (SetProperty(ref _selectedThemeFile, value))
+            {
+                SettingsChanged = true; // Changing theme is a setting change
+            }
+        }
+    }
+
     public bool SettingsChanged { get; private set; } = false;
 
     public ICommand AddDirectoryCommand { get; }
     public ICommand RemoveDirectoryCommand { get; }
-    public ICommand SaveAndCloseCommand { get; } // Save implies close for this simple dialog
+    public ICommand SaveAndCloseCommand { get; }
 
     public bool CanRemoveDirectory => SelectedDirectory != null;
 
-    public SettingsViewModel(SettingsService settingsService)
+    // Constructor now needs ThemeService
+    public SettingsViewModel(SettingsService settingsService) // Keep original signature for MainViewModel for now
     {
         _settingsService = settingsService;
+        _themeService = new ThemeService(null); // Create a temporary instance to list files
+                                                // A better DI approach would pass it from App.cs
+
         var settings = _settingsService.LoadSettings();
         foreach (var dir in settings.MusicDirectories)
         {
             MusicDirectories.Add(dir);
         }
 
+        foreach (var themeFile in _themeService.GetAvailableThemeFiles())
+        {
+            AvailableThemes.Add(themeFile);
+        }
+
+        SelectedThemeFile = settings.PreferredThemeFileName ?? ThemeService.DefaultThemeFileName;
+        if (!AvailableThemes.Contains(SelectedThemeFile) && AvailableThemes.Any())
+        {
+            SelectedThemeFile = AvailableThemes.First(); // Fallback if saved theme not found
+        }
+
+
         AddDirectoryCommand = new RelayCommand(async owner => await AddDirectory(owner as Window));
         RemoveDirectoryCommand = new RelayCommand(RemoveSelectedDirectory, _ => CanRemoveDirectory);
         SaveAndCloseCommand = new RelayCommand(SaveSettings);
 
-        // This is to ensure CanExecute for RemoveDirectoryCommand is re-evaluated
-        // when SelectedDirectory changes. Manual update for simple RelayCommand.
         PropertyChanged += (s, e) => {
             if (e.PropertyName == nameof(SelectedDirectory))
             {
@@ -54,11 +85,10 @@ public class SettingsViewModel : ViewModelBase
 
     private async Task AddDirectory(Window? owner)
     {
-        if (owner == null) return; // Should always have an owner for a dialog
-
+        // ... (AddDirectory remains the same) ...
+        if (owner == null) return;
         var dialog = new OpenFolderDialog() { Title = "Select Music Directory" };
-        var result = await dialog.ShowAsync(owner); // string path
-
+        var result = await dialog.ShowAsync(owner);
         if (result != null && !string.IsNullOrEmpty(result))
         {
             if (!MusicDirectories.Contains(result))
@@ -71,26 +101,23 @@ public class SettingsViewModel : ViewModelBase
 
     private void RemoveSelectedDirectory(object? parameter)
     {
+        // ... (RemoveSelectedDirectory remains the same) ...
         if (SelectedDirectory != null)
         {
             MusicDirectories.Remove(SelectedDirectory);
-            SelectedDirectory = null; // Clear selection
+            SelectedDirectory = null;
             SettingsChanged = true;
         }
     }
 
     private void SaveSettings(object? parameter)
     {
-        var settings = new AppSettings
-        {
-            MusicDirectories = MusicDirectories.ToList()
-        };
-        _settingsService.SaveSettings(settings);
-        SettingsChanged = true; // Ensure flag is set even if only removals occurred
+        var currentSettings = _settingsService.LoadSettings(); // Load current to preserve other settings if any
+        currentSettings.MusicDirectories = MusicDirectories.ToList();
+        currentSettings.PreferredThemeFileName = SelectedThemeFile;
 
-        // The window will be closed by its own code-behind after this command
-        // if this VM is used in a ShowDialog context where the dialog handles its lifecycle.
-        // If the command needs to close the window, it would need a reference to it.
-        // For now, SettingsWindow will handle its closure.
+        _settingsService.SaveSettings(currentSettings);
+        SettingsChanged = true;
+        Debug.WriteLine($"[SettingsVM] Saved theme: {SelectedThemeFile}");
     }
 }

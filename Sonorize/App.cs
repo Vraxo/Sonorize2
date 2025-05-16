@@ -1,12 +1,12 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Markup.Xaml.Styling; // For FluentTheme even without XAML files
-using Avalonia.Styling; // For ThemeVariant
+using Avalonia.Markup.Xaml.Styling;
+using Avalonia.Styling;
 using Sonorize.ViewModels;
 using Sonorize.Views;
 using Sonorize.Services;
+using Sonorize.Models;
 using Avalonia.Themes.Fluent;
-// using Avalonia.Themes.Fluent; // This was redundant
 
 namespace Sonorize;
 
@@ -14,7 +14,6 @@ public class App : Application
 {
     public override void Initialize()
     {
-        // No XAML parsing, AvaloniaXamlLoader.Load(this); is not called.
         Styles.Add(new FluentTheme());
         RequestedThemeVariant = ThemeVariant.Dark;
     }
@@ -23,14 +22,22 @@ public class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            var settingsService = new SettingsService();
+            var settingsService = new SettingsService(); // Load settings first
+            var appSettings = settingsService.LoadSettings();
+
+            var themeService = new ThemeService(appSettings.PreferredThemeFileName); // Pass preferred theme name
+            var currentTheme = themeService.CurrentTheme;
+
             var playbackService = new PlaybackService();
             var musicLibraryService = new MusicLibraryService();
 
-            var mainWindowViewModel = new MainWindowViewModel(settingsService, musicLibraryService, playbackService);
+            var mainWindowViewModel = new MainWindowViewModel(
+                settingsService,
+                musicLibraryService,
+                playbackService,
+                currentTheme);
 
-            // This new MainWindow should be Sonorize.Views.MainWindow (from your Source/Views/MainView.cs)
-            desktop.MainWindow = new MainWindow
+            desktop.MainWindow = new MainWindow(currentTheme)
             {
                 DataContext = mainWindowViewModel
             };

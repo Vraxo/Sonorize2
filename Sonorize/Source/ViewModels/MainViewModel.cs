@@ -1,12 +1,12 @@
-﻿using Avalonia.Controls;
-using Avalonia.Platform.Storage;
-using Sonorize.Models;
-using Sonorize.Services;
+﻿using Avalonia.Controls; // For OpenFolderDialog, Window
+using Avalonia.Platform.Storage; // For IStorageFolder (though ShowAsync returns string now)
+using Sonorize.Models;    // For Song, AppSettings, ThemeColors
+using Sonorize.Services;  // For SettingsService, MusicLibraryService, PlaybackService
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
-using System;
+using System; // Required for Action
 using System.Diagnostics; // For Debug.WriteLine
 using Avalonia.Threading; // For Dispatcher
 
@@ -17,6 +17,7 @@ public class MainWindowViewModel : ViewModelBase
     private readonly SettingsService _settingsService;
     private readonly MusicLibraryService _musicLibraryService;
     public PlaybackService PlaybackService { get; }
+    public ThemeColors CurrentTheme { get; } // To make theme accessible to UI if needed for dynamic bindings (less common in C#-only UI)
 
     public ObservableCollection<Song> Songs { get; } = new();
 
@@ -48,13 +49,13 @@ public class MainWindowViewModel : ViewModelBase
         {
             if (SetProperty(ref _isLoadingLibrary, value))
             {
-                // Potentially disable UI elements that shouldn't be used during loading
+                // Update CanExecute for commands that should be disabled during loading
                 (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 (OpenSettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                (LoadInitialDataCommand as RelayCommand)?.RaiseCanExecuteChanged(); // If you add a manual refresh button
             }
         }
     }
-
 
     public ICommand LoadInitialDataCommand { get; }
     public ICommand OpenSettingsCommand { get; }
@@ -62,14 +63,18 @@ public class MainWindowViewModel : ViewModelBase
     public ICommand PlaySongCommand { get; }
     public ICommand AddDirectoryAndRefreshCommand { get; }
 
-
-    public MainWindowViewModel(SettingsService settingsService, MusicLibraryService musicLibraryService, PlaybackService playbackService)
+    public MainWindowViewModel(
+        SettingsService settingsService,
+        MusicLibraryService musicLibraryService,
+        PlaybackService playbackService,
+        ThemeColors theme) // ThemeColors passed in
     {
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
         PlaybackService = playbackService;
+        CurrentTheme = theme; // Store the passed theme
 
-        LoadInitialDataCommand = new RelayCommand(async _ => await LoadMusicLibrary());
+        LoadInitialDataCommand = new RelayCommand(async _ => await LoadMusicLibrary(), _ => !IsLoadingLibrary);
         OpenSettingsCommand = new RelayCommand(async owner => await OpenSettingsDialog(owner), _ => !IsLoadingLibrary);
         ExitCommand = new RelayCommand(_ => Environment.Exit(0));
         PlaySongCommand = new RelayCommand(song => PlaybackService.Play((Song)song!), song => song is Song);
@@ -79,14 +84,14 @@ public class MainWindowViewModel : ViewModelBase
         {
             if (args.PropertyName == nameof(PlaybackService.CurrentSong) || args.PropertyName == nameof(PlaybackService.IsPlaying))
             {
-                UpdateStatusBarTextPlayingStatus(); // Renamed for clarity
+                UpdateStatusBarTextPlayingStatus();
             }
         };
     }
 
     private void UpdateStatusBarTextPlayingStatus()
     {
-        if (IsLoadingLibrary) return; // Don't overwrite loading status
+        if (IsLoadingLibrary) return; // Loading status takes precedence
 
         if (PlaybackService.IsPlaying && PlaybackService.CurrentSong != null)
         {
@@ -102,45 +107,59 @@ public class MainWindowViewModel : ViewModelBase
         }
     }
 
-
     private async Task LoadMusicLibrary()
     {
-        if (IsLoadingLibrary) return;
+        if (IsLoadingLibrary)
+        {
+            Debug.WriteLine("[MainVM] LoadMusicLibrary called while already loading. Skipping.");
+            return;
+        }
         IsLoadingLibrary = true;
 
         var settings = _settingsService.LoadSettings();
-        Songs.Clear(); // Clear existing songs before reload
-        StatusBarText = "Preparing to load music library...";
+
+        // Clear songs on the UI thread before starting background work
+        await Dispatcher.UIThread.InvokeAsync(() => {
+            Songs.Clear();
+            StatusBarText = "Preparing to load music library...";
+        });
+
 
         if (settings.MusicDirectories.Any())
         {
-            await Task.Run(async () => // Ensure the MusicLibraryService call itself is on a background thread
+            Debug.WriteLine($"[MainVM] Starting music library load from {settings.MusicDirectories.Count} directories.");
+            // Run the potentially long-running service call on a background thread
+            await Task.Run(async () =>
             {
                 try
                 {
                     await _musicLibraryService.LoadMusicFromDirectoriesAsync(
                         settings.MusicDirectories,
-                        song => Songs.Add(song), // Action<Song> songAddedCallback (already on UI thread from service)
-                        status => StatusBarText = status // Action<string> statusUpdateCallback (already on UI thread)
+                        song => Songs.Add(song), // songAddedCallback is already marshalled to UI thread by the service
+                        status => StatusBarText = status  // statusUpdateCallback is also marshalled
                     );
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"Error during LoadMusicFromDirectoriesAsync: {ex}");
+                    Debug.WriteLine($"[MainVM] Error during LoadMusicFromDirectoriesAsync background task: {ex}");
                     await Dispatcher.UIThread.InvokeAsync(() => StatusBarText = "Error loading library.");
                 }
             });
 
-            StatusBarText = $"{Songs.Count} songs loaded. Ready.";
-            if (!Songs.Any() && settings.MusicDirectories.Any())
-                StatusBarText = "No songs found in specified directories. Add directories via File > Settings.";
+            // Final status update after the Task.Run completes
+            await Dispatcher.UIThread.InvokeAsync(() => {
+                StatusBarText = $"{Songs.Count} songs loaded. Ready.";
+                if (!Songs.Any() && settings.MusicDirectories.Any())
+                    StatusBarText = "No songs found in specified directories. Add directories via File > Settings.";
+            });
         }
         else
         {
-            StatusBarText = "No music directories configured. Add directories via File > Settings.";
+            await Dispatcher.UIThread.InvokeAsync(() =>
+                StatusBarText = "No music directories configured. Add directories via File > Settings.");
         }
         IsLoadingLibrary = false;
-        UpdateStatusBarTextPlayingStatus(); // Refresh status bar based on playback after loading
+        UpdateStatusBarTextPlayingStatus(); // Refresh status bar based on playback after loading finishes
     }
 
     private async Task OpenSettingsDialog(object? ownerWindow)
@@ -148,7 +167,8 @@ public class MainWindowViewModel : ViewModelBase
         if (ownerWindow is not Window owner) return;
 
         var settingsVM = new SettingsViewModel(_settingsService);
-        var settingsDialog = new Sonorize.Views.SettingsWindow
+        // Pass the CurrentTheme to the SettingsWindow constructor
+        var settingsDialog = new Sonorize.Views.SettingsWindow(CurrentTheme)
         {
             DataContext = settingsVM
         };
@@ -157,7 +177,7 @@ public class MainWindowViewModel : ViewModelBase
 
         if (settingsVM.SettingsChanged)
         {
-            await LoadMusicLibrary(); // This will now clear and reload incrementally
+            await LoadMusicLibrary();
         }
     }
 
@@ -166,14 +186,16 @@ public class MainWindowViewModel : ViewModelBase
         if (ownerWindow is not Window owner) return;
 
         var dialog = new OpenFolderDialog { Title = "Select Music Directory" };
-        var result = await dialog.ShowAsync(owner);
+        // For Avalonia 11, ShowAsync returns string directly.
+        // For earlier versions, it returned IStorageFolder. This code assumes Avalonia 11+.
+        var resultPath = await dialog.ShowAsync(owner);
 
-        if (result != null && !string.IsNullOrEmpty(result))
+        if (!string.IsNullOrEmpty(resultPath))
         {
             var settings = _settingsService.LoadSettings();
-            if (!settings.MusicDirectories.Contains(result))
+            if (!settings.MusicDirectories.Contains(resultPath))
             {
-                settings.MusicDirectories.Add(result);
+                settings.MusicDirectories.Add(resultPath);
                 _settingsService.SaveSettings(settings);
                 await LoadMusicLibrary();
             }
