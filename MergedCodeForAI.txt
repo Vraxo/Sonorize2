@@ -31,12 +31,14 @@ public class App : Application
 
             var playbackService = new PlaybackService();
             var musicLibraryService = new MusicLibraryService();
+            var waveformService = new WaveformService(); // Instantiate WaveformService
 
             var mainWindowViewModel = new MainWindowViewModel(
                 settingsService,
                 musicLibraryService,
                 playbackService,
-                currentTheme);
+                currentTheme,
+                waveformService); // Pass WaveformService instance
 
             desktop.MainWindow = new MainWindow(currentTheme)
             {
@@ -81,6 +83,7 @@ using Avalonia.Media;
 using Avalonia.Input;
 using System;
 using System.Collections.Generic;
+using System.Linq; // Required for Enumerable.Empty
 using Sonorize.Models; // For LoopRegion
 using Sonorize.Services; // For WaveformPoint
 
@@ -88,7 +91,7 @@ namespace Sonorize.Controls;
 
 public class WaveformDisplayControl : Control
 {
-    // Background Property (NEW)
+    // Background Property
     public static readonly StyledProperty<IBrush?> BackgroundProperty =
         Border.BackgroundProperty.AddOwner<WaveformDisplayControl>();
 
@@ -98,10 +101,13 @@ public class WaveformDisplayControl : Control
         set => SetValue(BackgroundProperty, value);
     }
 
-    public static readonly StyledProperty<List<WaveformPoint>> WaveformPointsProperty =
-        AvaloniaProperty.Register<WaveformDisplayControl, List<WaveformPoint>>(nameof(WaveformPoints), defaultValue: new List<WaveformPoint>());
+    // Corrected to use IEnumerable<WaveformPoint>
+    public static readonly StyledProperty<IEnumerable<WaveformPoint>> WaveformPointsProperty =
+        AvaloniaProperty.Register<WaveformDisplayControl, IEnumerable<WaveformPoint>>(
+            nameof(WaveformPoints),
+            defaultValue: Enumerable.Empty<WaveformPoint>()); // Default to an empty enumerable
 
-    public List<WaveformPoint> WaveformPoints
+    public IEnumerable<WaveformPoint> WaveformPoints
     {
         get => GetValue(WaveformPointsProperty);
         set => SetValue(WaveformPointsProperty, value);
@@ -179,27 +185,46 @@ public class WaveformDisplayControl : Control
 
         if (width <= 0 || height <= 0) return;
 
-        // Draw Background (NEW)
+        // Draw Background
         if (Background != null)
         {
             context.FillRectangle(Background, Bounds);
         }
 
-
         var waveformPen = new Pen(WaveformBrush, 1);
         var positionPen = new Pen(PositionMarkerBrush, 1.5);
 
-        if (WaveformPoints != null && WaveformPoints.Count > 1)
+        // WaveformPoints is now IEnumerable<WaveformPoint>
+        if (WaveformPoints != null && WaveformPoints.Any()) // Use .Any() for IEnumerable
         {
-            for (int i = 0; i < WaveformPoints.Count; i++)
+            // If we need Count or indexed access, we might need to ToList() it here,
+            // but for simple iteration, this is fine.
+            // For performance with potentially large IEnumerable, if Count is needed multiple times,
+            // convert to List once.
+            var pointsList = WaveformPoints as List<WaveformPoint> ?? WaveformPoints.ToList();
+            if (pointsList.Count > 1)
             {
-                var point = WaveformPoints[i];
+                for (int i = 0; i < pointsList.Count; i++)
+                {
+                    var point = pointsList[i];
+                    var x = point.X * width;
+                    var yPeakValue = point.YPeak * (height / 2);
+                    context.DrawLine(waveformPen, new Point(x, height / 2 - yPeakValue), new Point(x, height / 2 + yPeakValue));
+                }
+            }
+            else if (pointsList.Count == 1) // Draw a small vertical line for a single point
+            {
+                var point = pointsList[0];
                 var x = point.X * width;
-                var yPeak = point.Y * (height / 2);
-                context.DrawLine(waveformPen, new Point(x, height / 2 - yPeak), new Point(x, height / 2 + yPeak));
+                var yPeakValue = point.YPeak * (height / 2);
+                context.DrawLine(waveformPen, new Point(x, height / 2 - yPeakValue), new Point(x, height / 2 + yPeakValue));
+            }
+            else // No points but not null (e.g., empty collection)
+            {
+                context.DrawLine(waveformPen, new Point(0, height / 2), new Point(width, height / 2));
             }
         }
-        else
+        else // WaveformPoints is null or empty
         {
             context.DrawLine(waveformPen, new Point(0, height / 2), new Point(width, height / 2));
         }
@@ -603,22 +628,37 @@ public class MusicLibraryService
 <file path="Source\Services\PlaybackService.cs">
 using Avalonia.Threading;
 using NAudio.Wave;
-using NAudio.Wave.SampleProviders; // Added this line
+using NAudio.Wave.SampleProviders;
 using Sonorize.Models;
-using Sonorize.ViewModels; // For ViewModelBase
+using Sonorize.ViewModels;
 using System;
+using System.Diagnostics;
 using System.Threading;
 
 namespace Sonorize.Services;
+
 public enum PlaybackStateStatus { Stopped, Playing, Paused }
+
 public class PlaybackService : ViewModelBase, IDisposable
 {
     private Song? _currentSong;
-    public Song? CurrentSong { get => _currentSong; private set { SetProperty(ref _currentSong, value); OnPropertyChanged(nameof(HasCurrentSong)); } }
+    public Song? CurrentSong
+    {
+        get => _currentSong;
+        private set
+        {
+            SetProperty(ref _currentSong, value);
+            OnPropertyChanged(nameof(HasCurrentSong));
+        }
+    }
     public bool HasCurrentSong => CurrentSong != null;
 
     private bool _isPlaying;
-    public bool IsPlaying { get => _isPlaying; private set => SetProperty(ref _isPlaying, value); }
+    public bool IsPlaying
+    {
+        get => _isPlaying;
+        private set => SetProperty(ref _isPlaying, value);
+    }
 
     private PlaybackStateStatus _currentPlaybackStatus = PlaybackStateStatus.Stopped;
     public PlaybackStateStatus CurrentPlaybackStatus
@@ -628,16 +668,41 @@ public class PlaybackService : ViewModelBase, IDisposable
     }
 
     private TimeSpan _currentPosition;
-    public TimeSpan CurrentPosition { get => _currentPosition; set { if (SetProperty(ref _currentPosition, value)) OnPropertyChanged(nameof(CurrentPositionSeconds)); } }
-    public double CurrentPositionSeconds { get => CurrentPosition.TotalSeconds; set { if (audioFileReader != null && Math.Abs(CurrentPosition.TotalSeconds - value) > 0.1) Seek(TimeSpan.FromSeconds(value)); } }
+    public TimeSpan CurrentPosition
+    {
+        get => _currentPosition;
+        set
+        {
+            if (SetProperty(ref _currentPosition, value))
+                OnPropertyChanged(nameof(CurrentPositionSeconds));
+        }
+    }
+    public double CurrentPositionSeconds
+    {
+        get => CurrentPosition.TotalSeconds;
+        set
+        {
+            if (audioFileReader != null && Math.Abs(CurrentPosition.TotalSeconds - value) > 0.1)
+                Seek(TimeSpan.FromSeconds(value));
+        }
+    }
 
     private TimeSpan _currentSongDuration;
-    public TimeSpan CurrentSongDuration { get => _currentSongDuration; private set { if (SetProperty(ref _currentSongDuration, value)) OnPropertyChanged(nameof(CurrentSongDurationSeconds)); } }
+    public TimeSpan CurrentSongDuration
+    {
+        get => _currentSongDuration;
+        private set
+        {
+            if (SetProperty(ref _currentSongDuration, value))
+                OnPropertyChanged(nameof(CurrentSongDurationSeconds));
+        }
+    }
     public double CurrentSongDurationSeconds => CurrentSongDuration.TotalSeconds > 0 ? CurrentSongDuration.TotalSeconds : 1;
 
     private IWavePlayer? waveOutDevice;
     private AudioFileReader? audioFileReader;
-    private VarispeedSampleProvider? varispeedProvider;
+    private ISampleProvider? finalSampleProvider;
+    private SmbPitchShiftingSampleProvider? pitchShifter;
     private Timer? uiUpdateTimer;
 
     private float _playbackRate = 1.0f;
@@ -648,9 +713,11 @@ public class PlaybackService : ViewModelBase, IDisposable
         {
             if (SetProperty(ref _playbackRate, value))
             {
-                if (varispeedProvider != null)
+                if (IsPlaying && CurrentSong != null)
                 {
-                    varispeedProvider.PlaybackRate = _playbackRate;
+                    var resumeTime = audioFileReader?.CurrentTime ?? TimeSpan.Zero;
+                    Play(CurrentSong);
+                    Seek(resumeTime);
                 }
             }
         }
@@ -662,7 +729,13 @@ public class PlaybackService : ViewModelBase, IDisposable
         get => _pitchSemitones;
         set
         {
-            SetProperty(ref _pitchSemitones, value);
+            if (SetProperty(ref _pitchSemitones, value))
+            {
+                if (pitchShifter != null)
+                {
+                    pitchShifter.PitchFactor = (float)Math.Pow(2, value / 12.0);
+                }
+            }
         }
     }
 
@@ -673,13 +746,13 @@ public class PlaybackService : ViewModelBase, IDisposable
 
     private void UpdateUiCallback(object? state)
     {
-        if (IsPlaying && audioFileReader != null && waveOutDevice?.PlaybackState == NAudio.Wave.PlaybackState.Playing)
+        if (IsPlaying && audioFileReader != null && waveOutDevice?.PlaybackState == PlaybackState.Playing)
         {
             Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (audioFileReader == null || varispeedProvider == null) return;
+                if (audioFileReader == null) return;
 
-                CurrentPosition = audioFileReader.CurrentTime.Multiply(varispeedProvider.PlaybackRate);
+                CurrentPosition = audioFileReader.CurrentTime;
 
                 if (CurrentSong?.ActiveLoop != null)
                 {
@@ -687,11 +760,8 @@ public class PlaybackService : ViewModelBase, IDisposable
                     var actualPlaybackTimeInFile = audioFileReader.CurrentTime;
                     if (actualPlaybackTimeInFile >= activeLoop.End && activeLoop.End > activeLoop.Start)
                     {
-                        if (audioFileReader != null && CurrentSong?.ActiveLoop != null && varispeedProvider != null)
-                        {
-                            audioFileReader.CurrentTime = CurrentSong.ActiveLoop.Start;
-                            CurrentPosition = CurrentSong.ActiveLoop.Start.Multiply(varispeedProvider.PlaybackRate);
-                        }
+                        audioFileReader.CurrentTime = activeLoop.Start;
+                        CurrentPosition = activeLoop.Start;
                     }
                 }
             });
@@ -703,17 +773,37 @@ public class PlaybackService : ViewModelBase, IDisposable
         CleanUpPlaybackResources();
 
         audioFileReader = new AudioFileReader(filePath);
-        varispeedProvider = new VarispeedSampleProvider(audioFileReader, 100, new SoundTouchProfile(true, false, false));
-        varispeedProvider.PlaybackRate = _playbackRate;
+
+        ISampleProvider speedAdjustedProvider = AdjustSpeed(audioFileReader, PlaybackRate);
+
+        pitchShifter = new SmbPitchShiftingSampleProvider(speedAdjustedProvider);
+        pitchShifter.PitchFactor = (float)Math.Pow(2, PitchSemitones / 12.0);
+
+        finalSampleProvider = pitchShifter;
 
         waveOutDevice = new WaveOutEvent();
         waveOutDevice.PlaybackStopped += OnPlaybackStopped;
-        waveOutDevice.Init(varispeedProvider);
+        waveOutDevice.Init(finalSampleProvider);
 
         CurrentSongDuration = audioFileReader.TotalTime;
         CurrentPosition = TimeSpan.Zero;
     }
 
+    private ISampleProvider AdjustSpeed(AudioFileReader reader, float speed)
+    {
+        if (speed == 1.0f)
+            return reader.ToSampleProvider();
+
+        int newSampleRate = (int)(reader.WaveFormat.SampleRate * speed);
+        var outFormat = new WaveFormat(newSampleRate, reader.WaveFormat.Channels);
+
+        var resampler = new MediaFoundationResampler(reader, outFormat)
+        {
+            ResamplerQuality = 60
+        };
+
+        return resampler.ToSampleProvider();
+    }
 
     public void Play(Song song)
     {
@@ -732,7 +822,10 @@ public class PlaybackService : ViewModelBase, IDisposable
         catch (Exception ex)
         {
             Console.WriteLine($"Error initializing playback for {song.FilePath}: {ex.Message}");
-            IsPlaying = false; CurrentSong = null; CurrentSongDuration = TimeSpan.Zero; CurrentPosition = TimeSpan.Zero;
+            IsPlaying = false;
+            CurrentSong = null;
+            CurrentSongDuration = TimeSpan.Zero;
+            CurrentPosition = TimeSpan.Zero;
             CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
             CleanUpPlaybackResources();
         }
@@ -749,7 +842,8 @@ public class PlaybackService : ViewModelBase, IDisposable
         waveOutDevice?.Dispose();
         waveOutDevice = null;
 
-        varispeedProvider = null; 
+        pitchShifter = null;
+        finalSampleProvider = null;
         audioFileReader?.Dispose();
         audioFileReader = null;
     }
@@ -758,7 +852,7 @@ public class PlaybackService : ViewModelBase, IDisposable
     {
         Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (IsPlaying || (waveOutDevice != null && waveOutDevice.PlaybackState == NAudio.Wave.PlaybackState.Stopped))
+            if (IsPlaying || (waveOutDevice != null && waveOutDevice.PlaybackState == PlaybackState.Stopped))
             {
                 IsPlaying = false;
                 CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
@@ -773,7 +867,7 @@ public class PlaybackService : ViewModelBase, IDisposable
 
     public void Pause()
     {
-        if (IsPlaying && waveOutDevice?.PlaybackState == NAudio.Wave.PlaybackState.Playing)
+        if (IsPlaying && waveOutDevice?.PlaybackState == PlaybackState.Playing)
         {
             waveOutDevice.Pause();
             IsPlaying = false;
@@ -786,25 +880,25 @@ public class PlaybackService : ViewModelBase, IDisposable
     {
         if (!IsPlaying && CurrentSong != null)
         {
-            if (waveOutDevice == null || audioFileReader == null || varispeedProvider == null || waveOutDevice.PlaybackState == NAudio.Wave.PlaybackState.Stopped)
+            if (waveOutDevice == null || audioFileReader == null || waveOutDevice.PlaybackState == PlaybackState.Stopped)
             {
                 TimeSpan resumePosition = TimeSpan.Zero;
                 if (audioFileReader != null)
                 {
                     resumePosition = audioFileReader.CurrentTime;
                 }
-                else if (CurrentPosition > TimeSpan.Zero && _playbackRate > 0)
+                else if (CurrentPosition > TimeSpan.Zero)
                 {
-                    resumePosition = CurrentPosition.Divide(_playbackRate);
+                    resumePosition = CurrentPosition;
                 }
 
                 try
                 {
                     InitializeNAudioPipeline(CurrentSong.FilePath);
-                    if (audioFileReader != null && varispeedProvider != null)
+                    if (audioFileReader != null)
                     {
                         audioFileReader.CurrentTime = resumePosition;
-                        CurrentPosition = resumePosition.Multiply(varispeedProvider.PlaybackRate);
+                        CurrentPosition = resumePosition;
                     }
                 }
                 catch (Exception ex)
@@ -827,20 +921,20 @@ public class PlaybackService : ViewModelBase, IDisposable
         IsPlaying = false;
         CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
         waveOutDevice?.Stop();
-        CleanUpPlaybackResources(); 
+        CleanUpPlaybackResources();
         CurrentPosition = TimeSpan.Zero;
     }
 
     public void Seek(TimeSpan positionInTrueTime)
     {
-        if (audioFileReader != null && varispeedProvider != null)
+        if (audioFileReader != null)
         {
             var targetPosition = positionInTrueTime;
             if (targetPosition < TimeSpan.Zero) targetPosition = TimeSpan.Zero;
             if (targetPosition > audioFileReader.TotalTime) targetPosition = audioFileReader.TotalTime;
 
             audioFileReader.CurrentTime = targetPosition;
-            CurrentPosition = targetPosition.Multiply(varispeedProvider.PlaybackRate);
+            CurrentPosition = targetPosition;
         }
     }
 
@@ -1044,6 +1138,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using System.IO; // Required for Path.GetFileName
 
 namespace Sonorize.Services;
 
@@ -1058,17 +1153,21 @@ public class WaveformService
     public async Task<List<WaveformPoint>> GetWaveformAsync(string filePath, int targetPoints)
     {
         if (string.IsNullOrEmpty(filePath) || targetPoints <= 0)
+        {
+            Debug.WriteLine($"[WaveformService] Invalid input: filePath is null/empty or targetPoints <= 0. File: '{filePath}', Points: {targetPoints}");
             return new List<WaveformPoint>();
+        }
+
+        // For debugging, temporarily disable cache to ensure fresh generation
+        // if (_waveformCache.ContainsKey(filePath)) _waveformCache.Remove(filePath);
 
         if (_waveformCache.TryGetValue(filePath, out var cachedData))
         {
-            // Potentially resample cached data if targetPoints differs significantly,
-            // or just return cached if good enough. For simplicity, returning cached.
-            Debug.WriteLine($"[WaveformService] Returning cached waveform for {filePath}");
+            Debug.WriteLine($"[WaveformService] Returning cached waveform for \"{Path.GetFileName(filePath)}\". Points: {cachedData.Count}");
             return cachedData;
         }
 
-        Debug.WriteLine($"[WaveformService] Generating waveform for {filePath} with {targetPoints} points.");
+        Debug.WriteLine($"[WaveformService] Generating waveform for \"{Path.GetFileName(filePath)}\". Target points: {targetPoints}.");
         List<WaveformPoint> points = new List<WaveformPoint>();
 
         try
@@ -1077,57 +1176,84 @@ public class WaveformService
             {
                 using (var reader = new AudioFileReader(filePath))
                 {
-                    var samples = reader.Length / (reader.WaveFormat.BitsPerSample / 8);
-                    var samplesPerPoint = (int)Math.Max(1, samples / targetPoints / reader.WaveFormat.Channels);
+                    Debug.WriteLine($"[WaveformServiceReader] File: \"{Path.GetFileName(filePath)}\", TotalTime: {reader.TotalTime}, Channels: {reader.WaveFormat.Channels}, SampleRate: {reader.WaveFormat.SampleRate}, BitsPerSample: {reader.WaveFormat.BitsPerSample}, Encoding: {reader.WaveFormat.Encoding}, BlockAlign: {reader.WaveFormat.BlockAlign}, Length (bytes): {reader.Length}");
 
-                    if (samplesPerPoint == 0 || samples == 0)
+                    if (reader.WaveFormat.BlockAlign == 0)
                     {
-                        Debug.WriteLine($"[WaveformService] Not enough samples or zero samplesPerPoint for {filePath}. Samples: {samples}, SPP: {samplesPerPoint}");
-                        return; // Not enough data or too many target points
+                        Debug.WriteLine($"[WaveformServiceReader] File \"{Path.GetFileName(filePath)}\" has BlockAlign = 0. Cannot calculate total sample frames.");
+                        return;
                     }
 
-                    var buffer = new float[samplesPerPoint * reader.WaveFormat.Channels];
-                    int samplesRead;
+                    long totalSampleFrames = reader.Length / reader.WaveFormat.BlockAlign;
+
+                    if (totalSampleFrames == 0)
+                    {
+                        Debug.WriteLine($"[WaveformServiceReader] File \"{Path.GetFileName(filePath)}\" has 0 sample frames (Length: {reader.Length}, BlockAlign: {reader.WaveFormat.BlockAlign}). Cannot generate waveform.");
+                        return;
+                    }
+
+                    var samplesPerFrameToProcessPerPoint = (int)Math.Max(1, totalSampleFrames / targetPoints);
+                    var bufferSizeInSamples = samplesPerFrameToProcessPerPoint * reader.WaveFormat.Channels;
+
+                    if (bufferSizeInSamples == 0)
+                    {
+                        Debug.WriteLine($"[WaveformServiceReader] Calculated bufferSizeInSamples is 0 for \"{Path.GetFileName(filePath)}\". TotalSampleFrames: {totalSampleFrames}, TargetPoints: {targetPoints}, Channels: {reader.WaveFormat.Channels}, SamplesPerFrameToProcessPerPoint: {samplesPerFrameToProcessPerPoint}. Cannot generate.");
+                        return;
+                    }
+
+                    var buffer = new float[bufferSizeInSamples];
+                    int samplesReadFromAudioFile;
                     double currentX = 0;
                     double xIncrement = 1.0 / targetPoints;
+                    int pointsGeneratedCount = 0;
+
+                    Debug.WriteLine($"[WaveformServiceReader] Processing \"{Path.GetFileName(filePath)}\": TotalSampleFrames: {totalSampleFrames}, TargetPoints: {targetPoints}, SamplesPerFrameToProcessPerPoint: {samplesPerFrameToProcessPerPoint}, BufferSizeInFloats: {bufferSizeInSamples}");
 
                     for (int i = 0; i < targetPoints; i++)
                     {
-                        float max = 0;
-                        long currentSampleIndex = (long)i * samplesPerPoint * reader.WaveFormat.Channels;
+                        float maxPeakInChunk = 0f;
 
-                        // Ensure reader is positioned correctly if seeking is needed (not ideal for full scan)
-                        // For a sequential read, this direct approach is okay.
-                        // reader.Position = currentSampleIndex * (reader.WaveFormat.BitsPerSample / 8);
+                        samplesReadFromAudioFile = reader.Read(buffer, 0, buffer.Length);
 
-                        samplesRead = reader.Read(buffer, 0, buffer.Length);
-                        if (samplesRead == 0) break;
-
-                        for (int n = 0; n < samplesRead; n++)
+                        if (samplesReadFromAudioFile == 0)
                         {
-                            max = Math.Max(max, Math.Abs(buffer[n]));
+                            Debug.WriteLine($"[WaveformServiceReader] Read 0 samples at waveform point index {i} (target: {targetPoints}) for \"{Path.GetFileName(filePath)}\". End of audio stream reached.");
+                            break;
                         }
-                        points.Add(new WaveformPoint(currentX, max)); // Y is normalized peak (0 to 1)
+
+                        for (int n = 0; n < samplesReadFromAudioFile; n++)
+                        {
+                            maxPeakInChunk = Math.Max(maxPeakInChunk, Math.Abs(buffer[n]));
+                        }
+
+                        points.Add(new WaveformPoint(currentX, maxPeakInChunk));
+                        pointsGeneratedCount++;
+
+                        if (i < 5 || (i > 0 && i % (targetPoints / 10) == 0) || i == targetPoints - 1)
+                        {
+                            Debug.WriteLine($"[WaveformServiceReader] Point {i}: X={currentX:F3}, Calculated YPeak={maxPeakInChunk:F4}, SamplesInThisChunk={samplesReadFromAudioFile}");
+                        }
+
                         currentX += xIncrement;
-                        if (currentX > 1.0) currentX = 1.0; // Cap at 1.0
+                        if (currentX > 1.0) currentX = 1.0;
                     }
+                    Debug.WriteLine($"[WaveformServiceReader] Loop finished for \"{Path.GetFileName(filePath)}\". Total waveform points generated: {pointsGeneratedCount}. (Target was {targetPoints})");
                 }
             });
 
             if (points.Any())
             {
-                _waveformCache[filePath] = points; // Cache the result
-                Debug.WriteLine($"[WaveformService] Waveform generated for {filePath}, {points.Count} points.");
+                _waveformCache[filePath] = points;
+                Debug.WriteLine($"[WaveformService] Waveform generated and cached for \"{Path.GetFileName(filePath)}\", {points.Count} points. First point YPeak: {points[0].YPeak:F4}. Approx mid point YPeak: {points[points.Count / 2].YPeak:F4}. Last point YPeak: {points.Last().YPeak:F4}");
             }
             else
             {
-                Debug.WriteLine($"[WaveformService] No points generated for {filePath}. It might be too short or an issue with reading.");
+                Debug.WriteLine($"[WaveformService] No points generated for \"{Path.GetFileName(filePath)}\". It might be too short, silent, or an issue with reading audio data.");
             }
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[WaveformService] Error generating waveform for {filePath}: {ex.Message}");
-            // Return empty list on error
+            Debug.WriteLine($"[WaveformService] CRITICAL Error generating waveform for \"{Path.GetFileName(filePath)}\": {ex.ToString()}");
             return new List<WaveformPoint>();
         }
         return points;
