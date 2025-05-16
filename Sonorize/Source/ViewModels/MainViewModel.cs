@@ -1,12 +1,14 @@
-﻿using Avalonia.Controls; // For OpenFolderDialog
-using Avalonia.Platform.Storage; // For IStorageFolder
+﻿using Avalonia.Controls;
+using Avalonia.Platform.Storage;
 using Sonorize.Models;
 using Sonorize.Services;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
-using System; // Required for Action
+using System;
+using System.Diagnostics; // For Debug.WriteLine
+using Avalonia.Threading; // For Dispatcher
 
 namespace Sonorize.ViewModels;
 
@@ -38,6 +40,22 @@ public class MainWindowViewModel : ViewModelBase
         set => SetProperty(ref _statusBarText, value);
     }
 
+    private bool _isLoadingLibrary = false;
+    public bool IsLoadingLibrary
+    {
+        get => _isLoadingLibrary;
+        set
+        {
+            if (SetProperty(ref _isLoadingLibrary, value))
+            {
+                // Potentially disable UI elements that shouldn't be used during loading
+                (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                (OpenSettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+
     public ICommand LoadInitialDataCommand { get; }
     public ICommand OpenSettingsCommand { get; }
     public ICommand ExitCommand { get; }
@@ -52,57 +70,77 @@ public class MainWindowViewModel : ViewModelBase
         PlaybackService = playbackService;
 
         LoadInitialDataCommand = new RelayCommand(async _ => await LoadMusicLibrary());
-        OpenSettingsCommand = new RelayCommand(async owner => await OpenSettingsDialog(owner));
-        ExitCommand = new RelayCommand(_ => Environment.Exit(0)); // Or Application.Current.Shutdown() if more complex cleanup
+        OpenSettingsCommand = new RelayCommand(async owner => await OpenSettingsDialog(owner), _ => !IsLoadingLibrary);
+        ExitCommand = new RelayCommand(_ => Environment.Exit(0));
         PlaySongCommand = new RelayCommand(song => PlaybackService.Play((Song)song!), song => song is Song);
-        AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefresh(owner));
+        AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefresh(owner), _ => !IsLoadingLibrary);
 
-        // Subscribe to PlaybackService property changes to update status bar or other UI elements
         PlaybackService.PropertyChanged += (sender, args) =>
         {
             if (args.PropertyName == nameof(PlaybackService.CurrentSong) || args.PropertyName == nameof(PlaybackService.IsPlaying))
             {
-                UpdateStatusBarText();
+                UpdateStatusBarTextPlayingStatus(); // Renamed for clarity
             }
         };
     }
 
-    private void UpdateStatusBarText()
+    private void UpdateStatusBarTextPlayingStatus()
     {
+        if (IsLoadingLibrary) return; // Don't overwrite loading status
+
         if (PlaybackService.IsPlaying && PlaybackService.CurrentSong != null)
         {
             StatusBarText = $"Playing: {PlaybackService.CurrentSong.Title} - {PlaybackService.CurrentSong.Artist}";
         }
-        else if (PlaybackService.CurrentSong != null) // Paused or stopped but a song is loaded
+        else if (PlaybackService.CurrentSong != null)
         {
             StatusBarText = $"Paused: {PlaybackService.CurrentSong.Title} - {PlaybackService.CurrentSong.Artist}";
         }
         else
         {
-            StatusBarText = "Sonorize - Ready";
+            StatusBarText = $"Sonorize - {Songs.Count} songs loaded.";
         }
     }
 
 
     private async Task LoadMusicLibrary()
     {
+        if (IsLoadingLibrary) return;
+        IsLoadingLibrary = true;
+
         var settings = _settingsService.LoadSettings();
-        Songs.Clear();
+        Songs.Clear(); // Clear existing songs before reload
+        StatusBarText = "Preparing to load music library...";
+
         if (settings.MusicDirectories.Any())
         {
-            StatusBarText = "Loading music library...";
-            var songs = await _musicLibraryService.LoadMusicFromDirectoriesAsync(settings.MusicDirectories);
-            foreach (var song in songs)
+            await Task.Run(async () => // Ensure the MusicLibraryService call itself is on a background thread
             {
-                Songs.Add(song);
-            }
-            StatusBarText = $"{Songs.Count} songs loaded.";
-            if (!Songs.Any()) StatusBarText = "No songs found in specified directories. Add directories via File > Settings.";
+                try
+                {
+                    await _musicLibraryService.LoadMusicFromDirectoriesAsync(
+                        settings.MusicDirectories,
+                        song => Songs.Add(song), // Action<Song> songAddedCallback (already on UI thread from service)
+                        status => StatusBarText = status // Action<string> statusUpdateCallback (already on UI thread)
+                    );
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error during LoadMusicFromDirectoriesAsync: {ex}");
+                    await Dispatcher.UIThread.InvokeAsync(() => StatusBarText = "Error loading library.");
+                }
+            });
+
+            StatusBarText = $"{Songs.Count} songs loaded. Ready.";
+            if (!Songs.Any() && settings.MusicDirectories.Any())
+                StatusBarText = "No songs found in specified directories. Add directories via File > Settings.";
         }
         else
         {
             StatusBarText = "No music directories configured. Add directories via File > Settings.";
         }
+        IsLoadingLibrary = false;
+        UpdateStatusBarTextPlayingStatus(); // Refresh status bar based on playback after loading
     }
 
     private async Task OpenSettingsDialog(object? ownerWindow)
@@ -117,9 +155,9 @@ public class MainWindowViewModel : ViewModelBase
 
         await settingsDialog.ShowDialog(owner);
 
-        if (settingsVM.SettingsChanged) // A flag you might set in SettingsViewModel upon saving
+        if (settingsVM.SettingsChanged)
         {
-            await LoadMusicLibrary();
+            await LoadMusicLibrary(); // This will now clear and reload incrementally
         }
     }
 
@@ -130,14 +168,14 @@ public class MainWindowViewModel : ViewModelBase
         var dialog = new OpenFolderDialog { Title = "Select Music Directory" };
         var result = await dialog.ShowAsync(owner);
 
-        if (result != null && !string.IsNullOrEmpty(result)) // Avalonia 11 returns string path
+        if (result != null && !string.IsNullOrEmpty(result))
         {
             var settings = _settingsService.LoadSettings();
             if (!settings.MusicDirectories.Contains(result))
             {
                 settings.MusicDirectories.Add(result);
                 _settingsService.SaveSettings(settings);
-                await LoadMusicLibrary(); // Refresh music library
+                await LoadMusicLibrary();
             }
         }
     }

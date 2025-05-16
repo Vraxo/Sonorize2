@@ -1,14 +1,17 @@
-﻿using Avalonia; // For Application.Current, PixelSize, Point, Vector, Size
-using Avalonia.Media; // For Colors, Brushes, FormattedText, Typeface, FlowDirection, DrawingContext, SolidColorBrush
-using Avalonia.Media.Imaging; // For Bitmap, RenderTargetBitmap
-using Avalonia.Platform; // For IAssetLoader (though not directly used in thumbnail generation here)
+﻿using Avalonia;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Sonorize.Models;
 using System;
 using System.Collections.Generic;
-using System.Globalization; // For CultureInfo
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Diagnostics;
+using TagLib;
+using Avalonia.Threading; // For Dispatcher
 
 namespace Sonorize.Services;
 
@@ -18,27 +21,26 @@ public class MusicLibraryService
 
     public MusicLibraryService()
     {
-        // Constructor
+        Debug.WriteLine("[MusicLibService] Constructor called.");
     }
 
-    private Bitmap GetOrCreateDefaultThumbnail()
+    private Bitmap? CreateDefaultMusicalNoteIcon()
     {
-        if (_defaultThumbnail == null)
+        // ... (Keep the CreateDefaultMusicalNoteIcon method exactly as in the previous correct version) ...
+        Debug.WriteLine("[ThumbGen] CreateDefaultMusicalNoteIcon called.");
+        try
         {
             var pixelSize = new Avalonia.PixelSize(64, 64);
-            var dpi = new Avalonia.Vector(96, 96); // Standard DPI, 1 DIP = 1 pixel
+            var dpi = new Avalonia.Vector(96, 96);
 
             using var renderTarget = new RenderTargetBitmap(pixelSize, dpi);
-
-            using (Avalonia.Media.DrawingContext context = renderTarget.CreateDrawingContext())
+            using (DrawingContext context = renderTarget.CreateDrawingContext())
             {
-                // --- MODIFIED LINE ---
-                // DrawingContext.Clear() was removed in Avalonia 11.1+.
-                // Use FillRectangle to "clear" the context with a color.
-                var clearBrush = new SolidColorBrush(Avalonia.Media.Colors.DimGray);
+                var backgroundBrush = new SolidColorBrush(Avalonia.Media.Colors.DimGray);
+                var foregroundBrush = Avalonia.Media.Brushes.WhiteSmoke;
+
                 var bounds = new Rect(new Size(pixelSize.Width, pixelSize.Height));
-                context.FillRectangle(clearBrush, bounds);
-                // --- END MODIFIED LINE ---
+                context.FillRectangle(backgroundBrush, bounds);
 
                 var formattedText = new FormattedText(
                     "♫",
@@ -46,7 +48,7 @@ public class MusicLibraryService
                     FlowDirection.LeftToRight,
                     Typeface.Default,
                     32,
-                    Avalonia.Media.Brushes.WhiteSmoke);
+                    foregroundBrush);
 
                 var textOrigin = new Avalonia.Point(
                     (bounds.Width - formattedText.Width) / 2,
@@ -57,53 +59,143 @@ public class MusicLibraryService
             using var memoryStream = new MemoryStream();
             renderTarget.Save(memoryStream);
             memoryStream.Seek(0, SeekOrigin.Begin);
-            _defaultThumbnail = new Bitmap(memoryStream);
+
+            if (memoryStream.Length > 0)
+            {
+                var bitmap = new Bitmap(memoryStream);
+                Debug.WriteLine($"[ThumbGen] Default musical note icon created successfully. Size: {bitmap.PixelSize}");
+                return bitmap;
+            }
+            Debug.WriteLine("[ThumbGen] CRITICAL ERROR: MemoryStream empty for default icon.");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[ThumbGen] CRITICAL EXCEPTION creating default icon: {ex.ToString()}");
+            return null;
+        }
+    }
+
+    private Bitmap? GetDefaultThumbnail()
+    {
+        // ... (Keep the GetDefaultThumbnail method exactly as in the previous correct version) ...
+        if (_defaultThumbnail == null)
+        {
+            Debug.WriteLine("[ThumbGen] _defaultThumbnail is null, attempting to create it.");
+            _defaultThumbnail = CreateDefaultMusicalNoteIcon();
         }
         return _defaultThumbnail;
     }
 
-
-    public async Task<List<Song>> LoadMusicFromDirectoriesAsync(IEnumerable<string> directories)
+    private Bitmap? LoadAlbumArt(string filePath)
     {
-        var songs = new List<Song>();
-        var supportedExtensions = new[] { ".mp3", ".wav", ".flac", ".m4a", ".ogg" };
-
-        Bitmap defaultThumbnail = GetOrCreateDefaultThumbnail();
-
-        await Task.Run(() =>
+        // ... (Keep the LoadAlbumArt method exactly as in the previous correct version) ...
+        try
         {
-            foreach (var dir in directories)
+            using (var tagFile = TagLib.File.Create(filePath))
             {
-                if (!Directory.Exists(dir))
+                if (tagFile.Tag.Pictures.Length > 0)
                 {
-                    Console.WriteLine($"Directory not found: {dir}");
-                    continue;
+                    IPicture pic = tagFile.Tag.Pictures[0];
+                    using (var ms = new MemoryStream(pic.Data.Data))
+                    {
+                        if (ms.Length > 0)
+                        {
+                            var avaloniaBitmap = new Bitmap(ms);
+                            // Debug.WriteLine($"[AlbumArt] Loaded for {Path.GetFileName(filePath)}, Size: {avaloniaBitmap.PixelSize}");
+                            return avaloniaBitmap;
+                        }
+                    }
                 }
+            }
+        }
+        catch (CorruptFileException) { /* Debug.WriteLine($"[AlbumArt] Corrupt file: {Path.GetFileName(filePath)}"); */ }
+        catch (UnsupportedFormatException) { /* Debug.WriteLine($"[AlbumArt] Unsupported format: {Path.GetFileName(filePath)}"); */ }
+        catch (Exception ex) { Debug.WriteLine($"[AlbumArt] Error loading album art for {Path.GetFileName(filePath)}: {ex.Message}"); }
+        return null;
+    }
+
+    public async Task LoadMusicFromDirectoriesAsync(
+        IEnumerable<string> directories,
+        Action<Song> songAddedCallback,
+        Action<string> statusUpdateCallback)
+    {
+        Debug.WriteLine("[MusicLibService] LoadMusicFromDirectoriesAsync (incremental) called.");
+        var supportedExtensions = new[] { ".mp3", ".wav", ".flac", ".m4a", ".ogg" };
+        Bitmap? defaultIcon = GetDefaultThumbnail();
+        int filesProcessed = 0;
+
+        // The main loop will run on a background thread thanks to Task.Run in the ViewModel
+        // No need for another Task.Run here unless specific parts are exceptionally heavy
+        // and can be further parallelized (which is not the case for typical file iteration).
+
+        foreach (var dir in directories)
+        {
+            if (!Directory.Exists(dir))
+            {
+                Debug.WriteLine($"[LibScan] Directory not found: {dir}");
+                await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Directory not found: {dir}"));
+                continue;
+            }
+
+            await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Scanning: {Path.GetFileName(dir)}..."));
+
+            // Get all files first to avoid issues with `Directory.EnumerateFiles` if we yield execution often
+            // Though for simple processing like this, EnumerateFiles is usually fine.
+            List<string> filesInDir;
+            try
+            {
+                filesInDir = Directory.EnumerateFiles(dir, "*.*", SearchOption.AllDirectories)
+                                      .Where(f => supportedExtensions.Any(ext => f.EndsWith(ext, StringComparison.OrdinalIgnoreCase)))
+                                      .ToList();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[LibScan] Error enumerating files in {dir}: {ex.Message}");
+                await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Error scanning {Path.GetFileName(dir)}"));
+                continue;
+            }
+
+
+            foreach (var file in filesInDir)
+            {
+                Bitmap? thumbnail = LoadAlbumArt(file);
+                var song = new Song
+                {
+                    FilePath = file,
+                    Title = Path.GetFileNameWithoutExtension(file),
+                    Artist = "Unknown Artist",
+                    Duration = TimeSpan.Zero,
+                    Thumbnail = thumbnail ?? defaultIcon
+                };
 
                 try
                 {
-                    var files = Directory.EnumerateFiles(dir, "*.*", SearchOption.AllDirectories)
-                                         .Where(f => supportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()));
-
-                    foreach (var file in files)
+                    using (var tagFile = TagLib.File.Create(file))
                     {
-                        var song = new Song
-                        {
-                            FilePath = file,
-                            Title = Path.GetFileNameWithoutExtension(file),
-                            Artist = "Unknown Artist",
-                            Duration = TimeSpan.FromMinutes(3) + TimeSpan.FromSeconds(Random.Shared.Next(0, 180)),
-                            Thumbnail = defaultThumbnail
-                        };
-                        songs.Add(song);
+                        if (!string.IsNullOrWhiteSpace(tagFile.Tag.Title))
+                            song.Title = tagFile.Tag.Title;
+                        if (tagFile.Tag.Performers.Length > 0 && !string.IsNullOrWhiteSpace(tagFile.Tag.Performers[0]))
+                            song.Artist = tagFile.Tag.Performers[0];
+                        else if (tagFile.Tag.AlbumArtists.Length > 0 && !string.IsNullOrWhiteSpace(tagFile.Tag.AlbumArtists[0]))
+                            song.Artist = tagFile.Tag.AlbumArtists[0];
+
+                        if (tagFile.Properties.Duration > TimeSpan.Zero)
+                            song.Duration = tagFile.Properties.Duration;
                     }
                 }
-                catch (Exception ex)
+                catch (Exception) { /* Debug.WriteLine($"[TagLib] Error reading metadata for {file}: {ex.Message}"); */ }
+
+                // Marshall the addition to the UI thread
+                await Dispatcher.UIThread.InvokeAsync(() => songAddedCallback(song));
+                filesProcessed++;
+
+                if (filesProcessed % 20 == 0) // Update status every 20 files
                 {
-                    Console.WriteLine($"Error scanning directory {dir}: {ex.Message}");
+                    await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Loaded {filesProcessed} songs..."));
                 }
             }
-        });
-        return songs;
+        }
+        Debug.WriteLine($"[MusicLibService] Background file scanning complete. Processed {filesProcessed} songs in total.");
     }
 }

@@ -1,15 +1,16 @@
 ﻿using System;
-using System.Linq;                              // For LINQ extension methods
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Templates;              // For FuncDataTemplate<T>
-using Avalonia.Data;                            // For Binding
+using Avalonia.Controls.Templates;
+using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Sonorize.Models;
 using Sonorize.ViewModels;
+using System.Diagnostics; // Added for Debug.WriteLine
 
 namespace Sonorize.Views;
 
@@ -19,6 +20,7 @@ public class MainWindow : Window
 
     public MainWindow()
     {
+        Debug.WriteLine("[MainView] Constructor called.");
         Title = "Sonorize";
         Width = 900;
         Height = 700;
@@ -55,9 +57,6 @@ public class MainWindow : Window
         var exitMenuItem = new MenuItem { Header = "E_xit" };
         exitMenuItem.Bind(MenuItem.CommandProperty, new Binding("ExitCommand"));
 
-        // Populate File menu
-        // Note: For Avalonia 11+, using .Add directly on Items is fine.
-        // If you were using an older version or needed a specific collection type, you might initialize differently.
         fileMenuItem.Items.Add(addDirectoryMenuItem);
         fileMenuItem.Items.Add(settingsMenuItem);
         fileMenuItem.Items.Add(new Separator());
@@ -78,12 +77,20 @@ public class MainWindow : Window
         _songListBox.ItemTemplate = new FuncDataTemplate<Song>(
             (song, scope) =>
             {
+                // --- ADDED LOGGING ---
+                Debug.WriteLine($"[ItemTemplate] Creating item for: {song.Title}. Thumbnail is {(song.Thumbnail == null ? "NULL" : "NOT NULL")}");
+                if (song.Thumbnail != null)
+                {
+                    Debug.WriteLine($"[ItemTemplate]   Thumbnail PixelSize: {song.Thumbnail.PixelSize}, Dpi: {song.Thumbnail.Dpi}");
+                }
+                // --- END ADDED LOGGING ---
+
                 var image = new Image
                 {
-                    Width = 32, // Reduced from 50
-                    Height = 32, // Reduced from 50
-                    Margin = new Thickness(5, 0, 5, 0), // Reduced vertical margin
-                    Source = song.Thumbnail,
+                    Width = 32,
+                    Height = 32,
+                    Margin = new Thickness(5, 0, 5, 0),
+                    Source = song.Thumbnail, // This is where the thumbnail is used
                     Stretch = Stretch.UniformToFill
                 };
                 RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
@@ -91,23 +98,23 @@ public class MainWindow : Window
                 var titleBlock = new TextBlock
                 {
                     Text = song.Title,
-                    FontSize = 14, // Slightly reduced from 16
-                    FontWeight = FontWeight.Normal, // Changed from SemiBold for a sleeker look
+                    FontSize = 14,
+                    FontWeight = FontWeight.Normal,
                     Foreground = textColor,
                     VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(0, 0, 0, 1) // Reduced bottom margin
+                    Margin = new Thickness(0, 0, 0, 1)
                 };
                 var artistBlock = new TextBlock
                 {
                     Text = song.Artist,
-                    FontSize = 11, // Slightly reduced from 12
+                    FontSize = 11,
                     Foreground = secondaryTextColor,
                     VerticalAlignment = VerticalAlignment.Center
                 };
                 var durationBlock = new TextBlock
                 {
                     Text = song.DurationString,
-                    FontSize = 11, // Slightly reduced from 12
+                    FontSize = 11,
                     Foreground = secondaryTextColor,
                     HorizontalAlignment = HorizontalAlignment.Right,
                     VerticalAlignment = VerticalAlignment.Center
@@ -117,7 +124,7 @@ public class MainWindow : Window
                 {
                     Orientation = Orientation.Vertical,
                     VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(8, 0, 0, 0) // Reduced left margin from 10 to 8
+                    Margin = new Thickness(8, 0, 0, 0)
                 };
                 textStack.Children.Add(titleBlock);
                 textStack.Children.Add(artistBlock);
@@ -125,7 +132,7 @@ public class MainWindow : Window
                 var itemGrid = new Grid
                 {
                     ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
-                    VerticalAlignment = VerticalAlignment.Center // Ensure grid itself is centered if border is taller
+                    VerticalAlignment = VerticalAlignment.Center
                 };
                 Grid.SetColumn(image, 0);
                 Grid.SetColumn(textStack, 1);
@@ -136,8 +143,8 @@ public class MainWindow : Window
 
                 return new Border
                 {
-                    Padding = new Thickness(10, 6, 10, 6), // Reduced vertical padding from 8 to 6
-                    MinHeight = 44, // Reduced from 60
+                    Padding = new Thickness(10, 6, 10, 6),
+                    MinHeight = 44,
                     Background = Brushes.Transparent,
                     Child = itemGrid
                 };
@@ -148,7 +155,7 @@ public class MainWindow : Window
         var scrollViewer = new ScrollViewer
         {
             Content = _songListBox,
-            Padding = new Thickness(0, 0, 0, 5) // Keep some padding at the bottom of the scroll viewer
+            Padding = new Thickness(0, 0, 0, 5)
         };
 
         // --- Playback Controls ---
@@ -172,7 +179,7 @@ public class MainWindow : Window
             BorderBrush = accentColor,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(3),
-            Padding = new Thickness(10, 5) // Adjusted padding for a smaller button
+            Padding = new Thickness(10, 5)
         };
         playPauseButton.Click += (s, e) =>
         {
@@ -182,7 +189,7 @@ public class MainWindow : Window
                     vm.PlaybackService.Pause();
                 else if (vm.PlaybackService.CurrentSong != null)
                     vm.PlaybackService.Resume();
-                else if (vm.Songs.Any()) // Check if Songs collection is not null and has items
+                else if (vm.Songs.Any())
                     vm.PlaybackService.Play(vm.Songs.First());
             }
         };
@@ -191,7 +198,7 @@ public class MainWindow : Window
         {
             Background = backgroundColor,
             Margin = new Thickness(5, 0, 5, 5),
-            Height = 35, // Reduced height
+            Height = 35,
             LastChildFill = true
         };
         DockPanel.SetDock(playPauseButton, Dock.Left);
@@ -202,14 +209,14 @@ public class MainWindow : Window
         var statusBar = new Border
         {
             Background = slightlyLighterBackground,
-            Padding = new Thickness(10, 4), // Reduced padding
-            Height = 26 // Reduced height
+            Padding = new Thickness(10, 4),
+            Height = 26
         };
         var statusBarText = new TextBlock
         {
             Foreground = secondaryTextColor,
             VerticalAlignment = VerticalAlignment.Center,
-            FontSize = 11 // Slightly smaller for status bar
+            FontSize = 11
         };
         statusBarText.Bind(TextBlock.TextProperty, new Binding("StatusBarText"));
         statusBar.Child = statusBarText;
@@ -226,5 +233,6 @@ public class MainWindow : Window
         mainDockPanel.Children.Add(scrollViewer);
 
         Content = mainDockPanel;
+        Debug.WriteLine("[MainView] Constructor finished.");
     }
 }
