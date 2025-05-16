@@ -105,10 +105,19 @@ public class MainWindowViewModel : ViewModelBase
         get => _playbackSpeed;
         set
         {
-            if (SetProperty(ref _playbackSpeed, Math.Max(0.25, Math.Min(value, 4.0))))
+            double clampedValue = Math.Max(0.25, Math.Min(value, 4.0)); // Max 4x for sanity
+            Debug.WriteLine($"[MainVM] PlaybackSpeed SETTER. Current: {_playbackSpeed}, Attempting: {value}, Clamped: {clampedValue}");
+
+            // Use SetProperty which includes the check for actual change and updates backing field
+            if (SetProperty(ref _playbackSpeed, clampedValue))
             {
-                PlaybackService.PlaybackRate = (float)_playbackSpeed;
+                Debug.WriteLine($"[MainVM] _playbackSpeed field updated to: {_playbackSpeed}. Calling service.PlaybackRate.");
+                PlaybackService.PlaybackRate = (float)_playbackSpeed; // This calls the service's PlaybackRate setter
                 OnPropertyChanged(nameof(PlaybackSpeedDisplay));
+            }
+            else
+            {
+                Debug.WriteLine($"[MainVM] PlaybackSpeed: Value {clampedValue} did not change backing field {_playbackSpeed}. No service call.");
             }
         }
     }
