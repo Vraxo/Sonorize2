@@ -1,0 +1,1099 @@
+<file path="App.axaml.cs">
+using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Markup.Xaml.Styling; // For FluentTheme even without XAML files
+using Avalonia.Styling; // For ThemeVariant
+using Sonorize.ViewModels;
+using Sonorize.Views;
+using Sonorize.Services;
+using Avalonia.Themes.Fluent;
+
+namespace Sonorize;
+
+public class App : Application
+{
+    public override void Initialize()
+    {
+        // No XAML parsing, AvaloniaXamlLoader.Load(this); is not called.
+        Styles.Add(new FluentTheme());
+        RequestedThemeVariant = ThemeVariant.Dark;
+    }
+
+    public override void OnFrameworkInitializationCompleted()
+    {
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            var settingsService = new SettingsService();
+            var playbackService = new PlaybackService();
+            var musicLibraryService = new MusicLibraryService();
+
+            var mainWindowViewModel = new MainWindowViewModel(settingsService, musicLibraryService, playbackService);
+
+            desktop.MainWindow = new MainWindow
+            {
+                DataContext = mainWindowViewModel
+            };
+
+            mainWindowViewModel.LoadInitialDataCommand.Execute(null);
+        }
+
+        base.OnFrameworkInitializationCompleted();
+    }
+}
+</file>
+
+<file path="MainWindow.axaml.cs">
+using Avalonia.Controls;
+
+namespace Sonorize
+{
+    public partial class MainWindow : Window
+    {
+        public MainWindow()
+        {
+            InitializeComponent();
+        }
+    }
+}
+</file>
+
+<file path="Program.cs">
+using Avalonia;
+using System;
+
+namespace Sonorize;
+
+class Program
+{
+    // Initialization code. Don't use any Avalonia, third-party APIs or any
+    // SynchronizationContext-reliant code before AppMain is called: things aren't initialized
+    // yet and stuff might break.
+    [STAThread]
+    public static void Main(string[] args) => BuildAvaloniaApp()
+        .StartWithClassicDesktopLifetime(args);
+
+    // Avalonia configuration, don't remove; also used by visual designer.
+    public static AppBuilder BuildAvaloniaApp()
+        => AppBuilder.Configure<App>()
+            .UsePlatformDetect()
+            .LogToTrace();
+}
+</file>
+
+<file path="Source\Models\AppSettings.cs">
+using System.Collections.Generic;
+
+namespace Sonorize.Models;
+
+public class AppSettings
+{
+    public List<string> MusicDirectories { get; set; } = new List<string>();
+}
+</file>
+
+<file path="Source\Models\Song.cs">
+using Avalonia.Media.Imaging;
+using Sonorize.ViewModels; // For ViewModelBase
+using System;
+
+namespace Sonorize.Models;
+
+public class Song : ViewModelBase
+{
+    private string _filePath = string.Empty;
+    public string FilePath { get => _filePath; set => SetProperty(ref _filePath, value); }
+
+    private string _title = "Unknown Title";
+    public string Title { get => _title; set => SetProperty(ref _title, value); }
+
+    private string _artist = "Unknown Artist";
+    public string Artist { get => _artist; set => SetProperty(ref _artist, value); }
+
+    private TimeSpan _duration;
+    public TimeSpan Duration { get => _duration; set => SetProperty(ref _duration, value); }
+    public string DurationString => $"{Duration:mm\\:ss}";
+
+    private Bitmap? _thumbnail;
+    public Bitmap? Thumbnail { get => _thumbnail; set => SetProperty(ref _thumbnail, value); }
+}
+</file>
+
+<file path="Source\Services\MusicLibraryService.cs">
+using Avalonia; // For Application.Current, PixelSize, Point, Vector, Size
+using Avalonia.Media; // For Colors, Brushes, FormattedText, Typeface, FlowDirection, DrawingContext, SolidColorBrush
+using Avalonia.Media.Imaging; // For Bitmap, RenderTargetBitmap
+using Avalonia.Platform; // For IAssetLoader (though not directly used in thumbnail generation here)
+using Sonorize.Models;
+using System;
+using System.Collections.Generic;
+using System.Globalization; // For CultureInfo
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace Sonorize.Services;
+
+public class MusicLibraryService
+{
+    private Bitmap? _defaultThumbnail;
+
+    public MusicLibraryService()
+    {
+        // Constructor
+    }
+
+    private Bitmap GetOrCreateDefaultThumbnail()
+    {
+        if (_defaultThumbnail == null)
+        {
+            var pixelSize = new Avalonia.PixelSize(64, 64);
+            var dpi = new Avalonia.Vector(96, 96); // Standard DPI, 1 DIP = 1 pixel
+
+            using var renderTarget = new RenderTargetBitmap(pixelSize, dpi);
+
+            using (Avalonia.Media.DrawingContext context = renderTarget.CreateDrawingContext())
+            {
+                // --- MODIFIED LINE ---
+                // DrawingContext.Clear() was removed in Avalonia 11.1+.
+                // Use FillRectangle to "clear" the context with a color.
+                var clearBrush = new SolidColorBrush(Avalonia.Media.Colors.DimGray);
+                var bounds = new Rect(new Size(pixelSize.Width, pixelSize.Height));
+                context.FillRectangle(clearBrush, bounds);
+                // --- END MODIFIED LINE ---
+
+                var formattedText = new FormattedText(
+                    "♫",
+                    CultureInfo.CurrentCulture,
+                    FlowDirection.LeftToRight,
+                    Typeface.Default,
+                    32,
+                    Avalonia.Media.Brushes.WhiteSmoke);
+
+                var textOrigin = new Avalonia.Point(
+                    (bounds.Width - formattedText.Width) / 2,
+                    (bounds.Height - formattedText.Height) / 2);
+                context.DrawText(formattedText, textOrigin);
+            }
+
+            using var memoryStream = new MemoryStream();
+            renderTarget.Save(memoryStream);
+            memoryStream.Seek(0, SeekOrigin.Begin);
+            _defaultThumbnail = new Bitmap(memoryStream);
+        }
+        return _defaultThumbnail;
+    }
+
+
+    public async Task<List<Song>> LoadMusicFromDirectoriesAsync(IEnumerable<string> directories)
+    {
+        var songs = new List<Song>();
+        var supportedExtensions = new[] { ".mp3", ".wav", ".flac", ".m4a", ".ogg" };
+
+        Bitmap defaultThumbnail = GetOrCreateDefaultThumbnail();
+
+        await Task.Run(() =>
+        {
+            foreach (var dir in directories)
+            {
+                if (!Directory.Exists(dir))
+                {
+                    Console.WriteLine($"Directory not found: {dir}");
+                    continue;
+                }
+
+                try
+                {
+                    var files = Directory.EnumerateFiles(dir, "*.*", SearchOption.AllDirectories)
+                                         .Where(f => supportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()));
+
+                    foreach (var file in files)
+                    {
+                        var song = new Song
+                        {
+                            FilePath = file,
+                            Title = Path.GetFileNameWithoutExtension(file),
+                            Artist = "Unknown Artist",
+                            Duration = TimeSpan.FromMinutes(3) + TimeSpan.FromSeconds(Random.Shared.Next(0, 180)),
+                            Thumbnail = defaultThumbnail
+                        };
+                        songs.Add(song);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error scanning directory {dir}: {ex.Message}");
+                }
+            }
+        });
+        return songs;
+    }
+}
+</file>
+
+<file path="Source\Services\PlaybackService.cs">
+using Sonorize.Models;
+using Sonorize.ViewModels; // For ViewModelBase
+using System;
+using System.Threading;
+using Avalonia.Threading; // For Dispatcher
+
+namespace Sonorize.Services;
+
+public class PlaybackService : ViewModelBase
+{
+    private Song? _currentSong;
+    public Song? CurrentSong { get => _currentSong; private set => SetProperty(ref _currentSong, value); }
+
+    private bool _isPlaying;
+    public bool IsPlaying { get => _isPlaying; private set => SetProperty(ref _isPlaying, value); }
+
+    private TimeSpan _currentPosition;
+    public TimeSpan CurrentPosition
+    {
+        get => _currentPosition;
+        set
+        {
+            if (SetProperty(ref _currentPosition, value))
+            {
+                OnPropertyChanged(nameof(CurrentPositionSeconds)); // Notify UI
+            }
+        }
+    }
+
+    // Used for slider binding
+    public double CurrentPositionSeconds
+    {
+        get => CurrentPosition.TotalSeconds;
+        set
+        {
+            if (Math.Abs(CurrentPosition.TotalSeconds - value) > 0.5) // Avoid too frequent updates from slider
+            {
+                Seek(TimeSpan.FromSeconds(value));
+            }
+        }
+    }
+
+    private TimeSpan _currentSongDuration;
+    public TimeSpan CurrentSongDuration
+    {
+        get => _currentSongDuration;
+        private set
+        {
+            if (SetProperty(ref _currentSongDuration, value))
+            {
+                OnPropertyChanged(nameof(CurrentSongDurationSeconds)); // Notify UI
+            }
+        }
+    }
+
+    public double CurrentSongDurationSeconds => CurrentSongDuration.TotalSeconds > 0 ? CurrentSongDuration.TotalSeconds : 100; // Default if zero
+
+    private System.Threading.Timer? _playbackTimer;
+
+    public void Play(Song song)
+    {
+        CurrentSong = song;
+        CurrentSongDuration = song.Duration;
+        CurrentPosition = TimeSpan.Zero;
+        IsPlaying = true;
+
+        _playbackTimer?.Dispose();
+        _playbackTimer = new System.Threading.Timer(tick =>
+        {
+            if (IsPlaying && CurrentSong != null)
+            {
+                Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (CurrentPosition < CurrentSongDuration)
+                    {
+                        CurrentPosition = CurrentPosition.Add(TimeSpan.FromSeconds(1));
+                    }
+                    else
+                    {
+                        Stop(); // Or play next song
+                    }
+                });
+            }
+        }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+
+        Console.WriteLine($"Playing: {song.Title}");
+    }
+
+    public void Pause()
+    {
+        if (!IsPlaying) return; // Already paused
+        IsPlaying = false;
+        _playbackTimer?.Change(Timeout.Infinite, Timeout.Infinite); // Stop timer ticks
+        Console.WriteLine("Paused");
+    }
+
+    public void Resume()
+    {
+        if (IsPlaying || CurrentSong == null) return; // Already playing or no song
+        IsPlaying = true;
+        _playbackTimer?.Change(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1)); // Resume timer
+        Console.WriteLine("Resumed");
+    }
+
+    public void Stop()
+    {
+        IsPlaying = false;
+        CurrentPosition = TimeSpan.Zero;
+        _playbackTimer?.Dispose();
+        _playbackTimer = null;
+        // CurrentSong = null; // Optionally clear, or keep for context
+        Console.WriteLine("Stopped");
+    }
+
+    public void Seek(TimeSpan position)
+    {
+        if (CurrentSong != null)
+        {
+            var newPosition = position < TimeSpan.Zero ? TimeSpan.Zero : position;
+            newPosition = newPosition > CurrentSongDuration ? CurrentSongDuration : newPosition;
+            CurrentPosition = newPosition;
+
+            Console.WriteLine($"Seeked to: {CurrentPosition}");
+            if (CurrentPosition >= CurrentSongDuration && IsPlaying)
+            {
+                Stop(); // Stop if seeked to or past the end while playing
+            }
+        }
+    }
+}
+</file>
+
+<file path="Source\Services\SettingsService.cs">
+using Sonorize.Models;
+using System;
+using System.IO;
+using System.Text.Json;
+
+namespace Sonorize.Services;
+
+public class SettingsService
+{
+    private readonly string _settingsFilePath;
+
+    public SettingsService()
+    {
+        var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var sonorizeAppDataPath = Path.Combine(appDataPath, "Sonorize");
+        Directory.CreateDirectory(sonorizeAppDataPath); // Ensure directory exists
+        _settingsFilePath = Path.Combine(sonorizeAppDataPath, "settings.json");
+    }
+
+    public AppSettings LoadSettings()
+    {
+        try
+        {
+            if (File.Exists(_settingsFilePath))
+            {
+                var json = File.ReadAllText(_settingsFilePath);
+                return JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading settings: {ex.Message}");
+            // Fallback to default settings
+        }
+        return new AppSettings();
+    }
+
+    public void SaveSettings(AppSettings settings)
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(_settingsFilePath, json);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving settings: {ex.Message}");
+        }
+    }
+}
+</file>
+
+<file path="Source\ViewModels\MainViewModel.cs">
+using Avalonia.Controls; // For OpenFolderDialog
+using Avalonia.Platform.Storage; // For IStorageFolder
+using Sonorize.Models;
+using Sonorize.Services;
+using System.Collections.ObjectModel;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows.Input;
+using System; // Required for Action
+
+namespace Sonorize.ViewModels;
+
+public class MainWindowViewModel : ViewModelBase
+{
+    private readonly SettingsService _settingsService;
+    private readonly MusicLibraryService _musicLibraryService;
+    public PlaybackService PlaybackService { get; }
+
+    public ObservableCollection<Song> Songs { get; } = new();
+
+    private Song? _selectedSong;
+    public Song? SelectedSong
+    {
+        get => _selectedSong;
+        set
+        {
+            if (SetProperty(ref _selectedSong, value) && value != null)
+            {
+                PlaySongCommand.Execute(value);
+            }
+        }
+    }
+
+    private string _statusBarText = "Welcome to Sonorize!";
+    public string StatusBarText
+    {
+        get => _statusBarText;
+        set => SetProperty(ref _statusBarText, value);
+    }
+
+    public ICommand LoadInitialDataCommand { get; }
+    public ICommand OpenSettingsCommand { get; }
+    public ICommand ExitCommand { get; }
+    public ICommand PlaySongCommand { get; }
+    public ICommand AddDirectoryAndRefreshCommand { get; }
+
+
+    public MainWindowViewModel(SettingsService settingsService, MusicLibraryService musicLibraryService, PlaybackService playbackService)
+    {
+        _settingsService = settingsService;
+        _musicLibraryService = musicLibraryService;
+        PlaybackService = playbackService;
+
+        LoadInitialDataCommand = new RelayCommand(async _ => await LoadMusicLibrary());
+        OpenSettingsCommand = new RelayCommand(async owner => await OpenSettingsDialog(owner));
+        ExitCommand = new RelayCommand(_ => Environment.Exit(0)); // Or Application.Current.Shutdown() if more complex cleanup
+        PlaySongCommand = new RelayCommand(song => PlaybackService.Play((Song)song!), song => song is Song);
+        AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefresh(owner));
+
+        // Subscribe to PlaybackService property changes to update status bar or other UI elements
+        PlaybackService.PropertyChanged += (sender, args) =>
+        {
+            if (args.PropertyName == nameof(PlaybackService.CurrentSong) || args.PropertyName == nameof(PlaybackService.IsPlaying))
+            {
+                UpdateStatusBarText();
+            }
+        };
+    }
+
+    private void UpdateStatusBarText()
+    {
+        if (PlaybackService.IsPlaying && PlaybackService.CurrentSong != null)
+        {
+            StatusBarText = $"Playing: {PlaybackService.CurrentSong.Title} - {PlaybackService.CurrentSong.Artist}";
+        }
+        else if (PlaybackService.CurrentSong != null) // Paused or stopped but a song is loaded
+        {
+            StatusBarText = $"Paused: {PlaybackService.CurrentSong.Title} - {PlaybackService.CurrentSong.Artist}";
+        }
+        else
+        {
+            StatusBarText = "Sonorize - Ready";
+        }
+    }
+
+
+    private async Task LoadMusicLibrary()
+    {
+        var settings = _settingsService.LoadSettings();
+        Songs.Clear();
+        if (settings.MusicDirectories.Any())
+        {
+            StatusBarText = "Loading music library...";
+            var songs = await _musicLibraryService.LoadMusicFromDirectoriesAsync(settings.MusicDirectories);
+            foreach (var song in songs)
+            {
+                Songs.Add(song);
+            }
+            StatusBarText = $"{Songs.Count} songs loaded.";
+            if (!Songs.Any()) StatusBarText = "No songs found in specified directories. Add directories via File > Settings.";
+        }
+        else
+        {
+            StatusBarText = "No music directories configured. Add directories via File > Settings.";
+        }
+    }
+
+    private async Task OpenSettingsDialog(object? ownerWindow)
+    {
+        if (ownerWindow is not Window owner) return;
+
+        var settingsVM = new SettingsViewModel(_settingsService);
+        var settingsDialog = new Sonorize.Views.SettingsWindow
+        {
+            DataContext = settingsVM
+        };
+
+        await settingsDialog.ShowDialog(owner);
+
+        if (settingsVM.SettingsChanged) // A flag you might set in SettingsViewModel upon saving
+        {
+            await LoadMusicLibrary();
+        }
+    }
+
+    private async Task AddMusicDirectoryAndRefresh(object? ownerWindow)
+    {
+        if (ownerWindow is not Window owner) return;
+
+        var dialog = new OpenFolderDialog { Title = "Select Music Directory" };
+        var result = await dialog.ShowAsync(owner);
+
+        if (result != null && !string.IsNullOrEmpty(result)) // Avalonia 11 returns string path
+        {
+            var settings = _settingsService.LoadSettings();
+            if (!settings.MusicDirectories.Contains(result))
+            {
+                settings.MusicDirectories.Add(result);
+                _settingsService.SaveSettings(settings);
+                await LoadMusicLibrary(); // Refresh music library
+            }
+        }
+    }
+}
+</file>
+
+<file path="Source\ViewModels\RelayCommand.cs">
+using System;
+using System.Windows.Input;
+
+namespace Sonorize.ViewModels;
+
+public class RelayCommand : ICommand
+{
+    private readonly Action<object?> _execute;
+    private readonly Predicate<object?>? _canExecute;
+    private EventHandler? _canExecuteChanged;
+
+    public event EventHandler? CanExecuteChanged
+    {
+        add
+        {
+            // Note: Avalonia doesn't have a global CommandManager.RequerySuggested like WPF.
+            // For simplicity, this basic RelayCommand requires manual raising of CanExecuteChanged
+            // or relies on UI controls that re-evaluate CanExecute on interactions.
+            // For more robust scenarios, integrate with a mechanism that allows VMs to signal changes.
+            _canExecuteChanged += value;
+        }
+        remove
+        {
+            _canExecuteChanged -= value;
+        }
+    }
+
+    public void RaiseCanExecuteChanged()
+    {
+        _canExecuteChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public RelayCommand(Action<object?> execute, Predicate<object?>? canExecute = null)
+    {
+        _execute = execute ?? throw new ArgumentNullException(nameof(execute));
+        _canExecute = canExecute;
+    }
+
+    public RelayCommand(Action execute, Func<bool>? canExecute = null)
+        : this(o => execute(), canExecute == null ? (Predicate<object?>?)null : o => canExecute())
+    {
+    }
+
+
+    public bool CanExecute(object? parameter) => _canExecute == null || _canExecute(parameter);
+    public void Execute(object? parameter) => _execute(parameter);
+}
+</file>
+
+<file path="Source\ViewModels\SettingsViewModel.cs">
+using Avalonia.Controls; // For OpenFolderDialog
+using Avalonia.Platform.Storage; // For IStorageFolder
+using Sonorize.Models;
+using Sonorize.Services;
+using System.Collections.ObjectModel;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows.Input;
+
+namespace Sonorize.ViewModels;
+
+public class SettingsViewModel : ViewModelBase
+{
+    private readonly SettingsService _settingsService;
+    public ObservableCollection<string> MusicDirectories { get; } = new();
+
+    private string? _selectedDirectory;
+    public string? SelectedDirectory
+    {
+        get => _selectedDirectory;
+        set => SetProperty(ref _selectedDirectory, value, nameof(CanRemoveDirectory));
+    }
+
+    public bool SettingsChanged { get; private set; } = false;
+
+    public ICommand AddDirectoryCommand { get; }
+    public ICommand RemoveDirectoryCommand { get; }
+    public ICommand SaveAndCloseCommand { get; } // Save implies close for this simple dialog
+
+    public bool CanRemoveDirectory => SelectedDirectory != null;
+
+    public SettingsViewModel(SettingsService settingsService)
+    {
+        _settingsService = settingsService;
+        var settings = _settingsService.LoadSettings();
+        foreach (var dir in settings.MusicDirectories)
+        {
+            MusicDirectories.Add(dir);
+        }
+
+        AddDirectoryCommand = new RelayCommand(async owner => await AddDirectory(owner as Window));
+        RemoveDirectoryCommand = new RelayCommand(RemoveSelectedDirectory, _ => CanRemoveDirectory);
+        SaveAndCloseCommand = new RelayCommand(SaveSettings);
+
+        // This is to ensure CanExecute for RemoveDirectoryCommand is re-evaluated
+        // when SelectedDirectory changes. Manual update for simple RelayCommand.
+        PropertyChanged += (s, e) => {
+            if (e.PropertyName == nameof(SelectedDirectory))
+            {
+                (RemoveDirectoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            }
+        };
+    }
+
+    private async Task AddDirectory(Window? owner)
+    {
+        if (owner == null) return; // Should always have an owner for a dialog
+
+        var dialog = new OpenFolderDialog() { Title = "Select Music Directory" };
+        var result = await dialog.ShowAsync(owner); // string path
+
+        if (result != null && !string.IsNullOrEmpty(result))
+        {
+            if (!MusicDirectories.Contains(result))
+            {
+                MusicDirectories.Add(result);
+                SettingsChanged = true;
+            }
+        }
+    }
+
+    private void RemoveSelectedDirectory(object? parameter)
+    {
+        if (SelectedDirectory != null)
+        {
+            MusicDirectories.Remove(SelectedDirectory);
+            SelectedDirectory = null; // Clear selection
+            SettingsChanged = true;
+        }
+    }
+
+    private void SaveSettings(object? parameter)
+    {
+        var settings = new AppSettings
+        {
+            MusicDirectories = MusicDirectories.ToList()
+        };
+        _settingsService.SaveSettings(settings);
+        SettingsChanged = true; // Ensure flag is set even if only removals occurred
+
+        // The window will be closed by its own code-behind after this command
+        // if this VM is used in a ShowDialog context where the dialog handles its lifecycle.
+        // If the command needs to close the window, it would need a reference to it.
+        // For now, SettingsWindow will handle its closure.
+    }
+}
+</file>
+
+<file path="Source\ViewModels\ViewModelBase.cs">
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+
+namespace Sonorize.ViewModels;
+
+public class ViewModelBase : INotifyPropertyChanged
+{
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    protected bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value)) return false;
+        field = value;
+        OnPropertyChanged(propertyName);
+        return true;
+    }
+
+    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+}
+</file>
+
+<file path="Source\Views\MainView.cs">
+using System;
+using System.Linq;                              // For LINQ extension methods
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Templates;              // For FuncDataTemplate<T>
+using Avalonia.Data;                            // For Binding
+using Avalonia.Input;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Sonorize.Models;
+using Sonorize.ViewModels;
+
+namespace Sonorize.Views;
+
+public class MainWindow : Window
+{
+    private ListBox _songListBox;
+
+    public MainWindow()
+    {
+        Title = "Sonorize";
+        Width = 900;
+        Height = 700;
+        MinWidth = 600;
+        MinHeight = 400;
+        WindowStartupLocation = WindowStartupLocation.CenterScreen;
+
+        // Theme brushes
+        var backgroundColor = SolidColorBrush.Parse("#FF1E1E1E");
+        var slightlyLighterBackground = SolidColorBrush.Parse("#FF2D2D30");
+        var textColor = SolidColorBrush.Parse("#FFF1F1F1");
+        var secondaryTextColor = SolidColorBrush.Parse("#FFAAAAAA");
+        var accentColor = SolidColorBrush.Parse("#FF007ACC");
+
+        Background = backgroundColor;
+
+        // --- Menu Bar ---
+        var menu = new Menu
+        {
+            Background = slightlyLighterBackground,
+            Foreground = textColor
+        };
+
+        var fileMenuItem = new MenuItem { Header = "_File" };
+
+        var addDirectoryMenuItem = new MenuItem { Header = "_Add Music Directory..." };
+        addDirectoryMenuItem.Bind(MenuItem.CommandProperty, new Binding("AddDirectoryAndRefreshCommand"));
+        addDirectoryMenuItem.CommandParameter = this;
+
+        var settingsMenuItem = new MenuItem { Header = "_Settings..." };
+        settingsMenuItem.Bind(MenuItem.CommandProperty, new Binding("OpenSettingsCommand"));
+        settingsMenuItem.CommandParameter = this;
+
+        var exitMenuItem = new MenuItem { Header = "E_xit" };
+        exitMenuItem.Bind(MenuItem.CommandProperty, new Binding("ExitCommand"));
+
+        // Populate File menu
+        fileMenuItem.Items.Add(addDirectoryMenuItem);
+        fileMenuItem.Items.Add(settingsMenuItem);
+        fileMenuItem.Items.Add(new Separator());
+        fileMenuItem.Items.Add(exitMenuItem);
+
+        // Add File menu into the top menu
+        menu.Items.Add(fileMenuItem);
+
+        // --- Song List ---
+        _songListBox = new ListBox
+        {
+            Background = slightlyLighterBackground,
+            BorderThickness = new Thickness(0),
+            Margin = new Thickness(10)
+        };
+        _songListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("Songs"));
+        _songListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedSong", BindingMode.TwoWay));
+
+        _songListBox.ItemTemplate = new FuncDataTemplate<Song>(
+            (song, scope) =>
+            {
+                var image = new Image
+                {
+                    Width = 50,
+                    Height = 50,
+                    Margin = new Thickness(5),
+                    Source = song.Thumbnail,
+                    Stretch = Stretch.UniformToFill
+                };
+                RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
+
+                var titleBlock = new TextBlock
+                {
+                    Text = song.Title,
+                    FontSize = 16,
+                    FontWeight = FontWeight.SemiBold,
+                    Foreground = textColor,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 0, 2)
+                };
+                var artistBlock = new TextBlock
+                {
+                    Text = song.Artist,
+                    FontSize = 12,
+                    Foreground = secondaryTextColor,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                var durationBlock = new TextBlock
+                {
+                    Text = song.DurationString,
+                    FontSize = 12,
+                    Foreground = secondaryTextColor,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                var textStack = new StackPanel
+                {
+                    Orientation = Orientation.Vertical,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(10, 0)
+                };
+                textStack.Children.Add(titleBlock);
+                textStack.Children.Add(artistBlock);
+
+                var itemGrid = new Grid
+                {
+                    ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto")
+                };
+                Grid.SetColumn(image, 0);
+                Grid.SetColumn(textStack, 1);
+                Grid.SetColumn(durationBlock, 2);
+                itemGrid.Children.Add(image);
+                itemGrid.Children.Add(textStack);
+                itemGrid.Children.Add(durationBlock);
+
+                return new Border
+                {
+                    Padding = new Thickness(10, 8),
+                    MinHeight = 60,
+                    Background = Brushes.Transparent,
+                    Child = itemGrid
+                };
+            },
+            supportsRecycling: true
+        );
+
+        var scrollViewer = new ScrollViewer
+        {
+            Content = _songListBox,
+            Padding = new Thickness(0, 0, 0, 5)
+        };
+
+        // --- Playback Controls ---
+        var playbackSlider = new Slider
+        {
+            Minimum = 0,
+            Margin = new Thickness(10, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = secondaryTextColor,
+            Foreground = accentColor
+        };
+        playbackSlider.Bind(Slider.MaximumProperty, new Binding("PlaybackService.CurrentSongDurationSeconds"));
+        playbackSlider.Bind(Slider.ValueProperty, new Binding("PlaybackService.CurrentPositionSeconds", BindingMode.TwoWay));
+
+        var playPauseButton = new Button
+        {
+            Content = "Play/Pause",
+            Margin = new Thickness(5),
+            Background = slightlyLighterBackground,
+            Foreground = textColor,
+            BorderBrush = accentColor,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(3)
+        };
+        playPauseButton.Click += (s, e) =>
+        {
+            if (DataContext is MainWindowViewModel vm)
+            {
+                if (vm.PlaybackService.IsPlaying)
+                    vm.PlaybackService.Pause();
+                else if (vm.PlaybackService.CurrentSong != null)
+                    vm.PlaybackService.Resume();
+                else if (vm.Songs.Any())
+                    vm.PlaybackService.Play(vm.Songs.First());
+            }
+        };
+
+        var playbackControlsPanel = new DockPanel
+        {
+            Background = backgroundColor,
+            Margin = new Thickness(5, 0, 5, 5),
+            Height = 40,
+            LastChildFill = true
+        };
+        DockPanel.SetDock(playPauseButton, Dock.Left);
+        playbackControlsPanel.Children.Add(playPauseButton);
+        playbackControlsPanel.Children.Add(playbackSlider);
+
+        // --- Status Bar ---
+        var statusBar = new Border
+        {
+            Background = slightlyLighterBackground,
+            Padding = new Thickness(10, 5),
+            Height = 30
+        };
+        var statusBarText = new TextBlock
+        {
+            Foreground = secondaryTextColor,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        statusBarText.Bind(TextBlock.TextProperty, new Binding("StatusBarText"));
+        statusBar.Child = statusBarText;
+
+        // --- Main Layout ---
+        var mainDockPanel = new DockPanel();
+        DockPanel.SetDock(menu, Dock.Top);
+        DockPanel.SetDock(statusBar, Dock.Bottom);
+        DockPanel.SetDock(playbackControlsPanel, Dock.Bottom);
+
+        mainDockPanel.Children.Add(menu);
+        mainDockPanel.Children.Add(statusBar);
+        mainDockPanel.Children.Add(playbackControlsPanel);
+        mainDockPanel.Children.Add(scrollViewer);
+
+        Content = mainDockPanel;
+    }
+}
+</file>
+
+<file path="Source\Views\SettingsWindow.cs">
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Data; // For Binding
+using Sonorize.ViewModels;
+using Avalonia.Platform; // Required for WindowIcon if you were to create one, but here we set it to null.
+
+namespace Sonorize.Views;
+
+public class SettingsWindow : Window
+{
+    public SettingsWindow()
+    {
+        Title = "Sonorize Settings";
+        Width = 500;
+        Height = 400;
+        CanResize = false;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        // Ensure it's a dialog modal to its owner
+        Icon = null; // Corrected: Remove default icon to feel more like a dialog
+
+        // Define colors (can be shared from a Theme class or App resources)
+        var backgroundColor = SolidColorBrush.Parse("#FF2D2D30"); // Slightly lighter than main window
+        var controlBackgroundColor = SolidColorBrush.Parse("#FF3C3C3C");
+        var textColor = SolidColorBrush.Parse("#FFF1F1F1");
+        var accentColor = SolidColorBrush.Parse("#FF007ACC");
+
+        this.Background = backgroundColor;
+
+        var mainPanel = new DockPanel { Margin = new Thickness(15) };
+
+        // --- Header ---
+        var headerBlock = new TextBlock
+        {
+            Text = "Music Directories",
+            FontSize = 18,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = textColor,
+            Margin = new Thickness(0, 0, 0, 10)
+        };
+        DockPanel.SetDock(headerBlock, Dock.Top);
+
+        // --- Buttons Panel (Bottom) ---
+        var buttonsPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Spacing = 10,
+            Margin = new Thickness(0, 15, 0, 0)
+        };
+        DockPanel.SetDock(buttonsPanel, Dock.Bottom);
+
+        var saveButton = new Button
+        {
+            Content = "Save & Close",
+            Background = accentColor,
+            Foreground = Brushes.White,
+            Padding = new Thickness(15, 8),
+            CornerRadius = new CornerRadius(3)
+        };
+        saveButton.Click += (s, e) =>
+        {
+            if (DataContext is SettingsViewModel vm)
+            {
+                vm.SaveAndCloseCommand.Execute(null);
+            }
+            Close();
+        };
+
+        var cancelButton = new Button
+        {
+            Content = "Cancel",
+            Background = controlBackgroundColor,
+            Foreground = textColor,
+            Padding = new Thickness(15, 8),
+            CornerRadius = new CornerRadius(3)
+        };
+        cancelButton.Click += (s, e) => Close();
+
+        buttonsPanel.Children.Add(saveButton);
+        buttonsPanel.Children.Add(cancelButton);
+
+        // --- Directory List and Management (Center) ---
+        var contentPanel = new DockPanel(); // Use DockPanel for Add/Remove buttons next to ListBox
+
+        var directoryManagementButtons = new StackPanel
+        {
+            Orientation = Orientation.Vertical,
+            Spacing = 5,
+            Margin = new Thickness(0, 0, 10, 0) // Margin to the right of these buttons
+        };
+        DockPanel.SetDock(directoryManagementButtons, Dock.Right);
+
+        var addButton = new Button { Content = "Add", Background = controlBackgroundColor, Foreground = textColor, HorizontalAlignment = HorizontalAlignment.Stretch };
+        addButton.Bind(Button.CommandProperty, new Binding("AddDirectoryCommand"));
+        addButton.CommandParameter = this; // Pass Window as owner for dialog
+
+        var removeButton = new Button { Content = "Remove", Background = controlBackgroundColor, Foreground = textColor, HorizontalAlignment = HorizontalAlignment.Stretch };
+        removeButton.Bind(Button.CommandProperty, new Binding("RemoveDirectoryCommand"));
+        removeButton.Bind(Button.IsEnabledProperty, new Binding("CanRemoveDirectory"));
+
+        directoryManagementButtons.Children.Add(addButton);
+        directoryManagementButtons.Children.Add(removeButton);
+
+        var directoryListBox = new ListBox
+        {
+            Background = controlBackgroundColor,
+            BorderThickness = new Thickness(1),
+            BorderBrush = Brushes.Gray,
+            Foreground = textColor,
+        };
+        directoryListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("MusicDirectories"));
+        directoryListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedDirectory", BindingMode.TwoWay));
+        // The ListBox will fill the remaining space in contentPanel (center)
+
+        contentPanel.Children.Add(directoryManagementButtons);
+        contentPanel.Children.Add(directoryListBox); // This will be the center filling child
+
+
+        mainPanel.Children.Add(headerBlock);
+        mainPanel.Children.Add(buttonsPanel);
+        mainPanel.Children.Add(contentPanel); // This fills the rest
+
+        Content = mainPanel;
+    }
+}
+</file>
+
