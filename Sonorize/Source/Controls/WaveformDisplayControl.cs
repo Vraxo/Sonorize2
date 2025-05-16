@@ -4,6 +4,7 @@ using Avalonia.Media;
 using Avalonia.Input;
 using System;
 using System.Collections.Generic;
+using System.Linq; // Required for Enumerable.Empty
 using Sonorize.Models; // For LoopRegion
 using Sonorize.Services; // For WaveformPoint
 
@@ -11,7 +12,7 @@ namespace Sonorize.Controls;
 
 public class WaveformDisplayControl : Control
 {
-    // Background Property (NEW)
+    // Background Property
     public static readonly StyledProperty<IBrush?> BackgroundProperty =
         Border.BackgroundProperty.AddOwner<WaveformDisplayControl>();
 
@@ -21,10 +22,13 @@ public class WaveformDisplayControl : Control
         set => SetValue(BackgroundProperty, value);
     }
 
-    public static readonly StyledProperty<List<WaveformPoint>> WaveformPointsProperty =
-        AvaloniaProperty.Register<WaveformDisplayControl, List<WaveformPoint>>(nameof(WaveformPoints), defaultValue: new List<WaveformPoint>());
+    // Corrected to use IEnumerable<WaveformPoint>
+    public static readonly StyledProperty<IEnumerable<WaveformPoint>> WaveformPointsProperty =
+        AvaloniaProperty.Register<WaveformDisplayControl, IEnumerable<WaveformPoint>>(
+            nameof(WaveformPoints),
+            defaultValue: Enumerable.Empty<WaveformPoint>()); // Default to an empty enumerable
 
-    public List<WaveformPoint> WaveformPoints
+    public IEnumerable<WaveformPoint> WaveformPoints
     {
         get => GetValue(WaveformPointsProperty);
         set => SetValue(WaveformPointsProperty, value);
@@ -108,24 +112,41 @@ public class WaveformDisplayControl : Control
             context.FillRectangle(Background, Bounds);
         }
 
-
         var waveformPen = new Pen(WaveformBrush, 1);
         var positionPen = new Pen(PositionMarkerBrush, 1.5);
 
-        if (WaveformPoints != null && WaveformPoints.Count > 1)
+        // WaveformPoints is now IEnumerable<WaveformPoint>
+        if (WaveformPoints != null && WaveformPoints.Any()) // Use .Any() for IEnumerable
         {
-            for (int i = 0; i < WaveformPoints.Count; i++)
+            // If we need Count or indexed access, we might need to ToList() it here,
+            // but for simple iteration, this is fine.
+            // For performance with potentially large IEnumerable, if Count is needed multiple times,
+            // convert to List once.
+            var pointsList = WaveformPoints as List<WaveformPoint> ?? WaveformPoints.ToList();
+            if (pointsList.Count > 1)
             {
-                var point = WaveformPoints[i];
+                for (int i = 0; i < pointsList.Count; i++)
+                {
+                    var point = pointsList[i];
+                    var x = point.X * width;
+                    var yPeakValue = point.YPeak * (height / 2);
+                    context.DrawLine(waveformPen, new Point(x, height / 2 - yPeakValue), new Point(x, height / 2 + yPeakValue));
+                }
+            }
+            else if (pointsList.Count == 1) // Draw a small vertical line for a single point
+            {
+                var point = pointsList[0];
                 var x = point.X * width;
-                // Corrected: Use YPeak instead of Y
                 var yPeakValue = point.YPeak * (height / 2);
                 context.DrawLine(waveformPen, new Point(x, height / 2 - yPeakValue), new Point(x, height / 2 + yPeakValue));
             }
+            else // No points but not null (e.g., empty collection)
+            {
+                context.DrawLine(waveformPen, new Point(0, height / 2), new Point(width, height / 2));
+            }
         }
-        else
+        else // WaveformPoints is null or empty
         {
-            // Draw a flat line if no points or only one point
             context.DrawLine(waveformPen, new Point(0, height / 2), new Point(width, height / 2));
         }
 

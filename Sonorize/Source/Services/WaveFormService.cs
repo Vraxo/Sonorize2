@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using System.IO; // Required for Path.GetFileName
 
 namespace Sonorize.Services;
 
@@ -19,17 +20,21 @@ public class WaveformService
     public async Task<List<WaveformPoint>> GetWaveformAsync(string filePath, int targetPoints)
     {
         if (string.IsNullOrEmpty(filePath) || targetPoints <= 0)
+        {
+            Debug.WriteLine($"[WaveformService] Invalid input: filePath is null/empty or targetPoints <= 0. File: '{filePath}', Points: {targetPoints}");
             return new List<WaveformPoint>();
+        }
+
+        // For debugging, temporarily disable cache to ensure fresh generation
+        // if (_waveformCache.ContainsKey(filePath)) _waveformCache.Remove(filePath);
 
         if (_waveformCache.TryGetValue(filePath, out var cachedData))
         {
-            // Potentially resample cached data if targetPoints differs significantly,
-            // or just return cached if good enough. For simplicity, returning cached.
-            Debug.WriteLine($"[WaveformService] Returning cached waveform for {filePath}");
+            Debug.WriteLine($"[WaveformService] Returning cached waveform for \"{Path.GetFileName(filePath)}\". Points: {cachedData.Count}");
             return cachedData;
         }
 
-        Debug.WriteLine($"[WaveformService] Generating waveform for {filePath} with {targetPoints} points.");
+        Debug.WriteLine($"[WaveformService] Generating waveform for \"{Path.GetFileName(filePath)}\". Target points: {targetPoints}.");
         List<WaveformPoint> points = new List<WaveformPoint>();
 
         try
@@ -38,57 +43,84 @@ public class WaveformService
             {
                 using (var reader = new AudioFileReader(filePath))
                 {
-                    var samples = reader.Length / (reader.WaveFormat.BitsPerSample / 8);
-                    var samplesPerPoint = (int)Math.Max(1, samples / targetPoints / reader.WaveFormat.Channels);
+                    Debug.WriteLine($"[WaveformServiceReader] File: \"{Path.GetFileName(filePath)}\", TotalTime: {reader.TotalTime}, Channels: {reader.WaveFormat.Channels}, SampleRate: {reader.WaveFormat.SampleRate}, BitsPerSample: {reader.WaveFormat.BitsPerSample}, Encoding: {reader.WaveFormat.Encoding}, BlockAlign: {reader.WaveFormat.BlockAlign}, Length (bytes): {reader.Length}");
 
-                    if (samplesPerPoint == 0 || samples == 0)
+                    if (reader.WaveFormat.BlockAlign == 0)
                     {
-                        Debug.WriteLine($"[WaveformService] Not enough samples or zero samplesPerPoint for {filePath}. Samples: {samples}, SPP: {samplesPerPoint}");
-                        return; // Not enough data or too many target points
+                        Debug.WriteLine($"[WaveformServiceReader] File \"{Path.GetFileName(filePath)}\" has BlockAlign = 0. Cannot calculate total sample frames.");
+                        return;
                     }
 
-                    var buffer = new float[samplesPerPoint * reader.WaveFormat.Channels];
-                    int samplesRead;
+                    long totalSampleFrames = reader.Length / reader.WaveFormat.BlockAlign;
+
+                    if (totalSampleFrames == 0)
+                    {
+                        Debug.WriteLine($"[WaveformServiceReader] File \"{Path.GetFileName(filePath)}\" has 0 sample frames (Length: {reader.Length}, BlockAlign: {reader.WaveFormat.BlockAlign}). Cannot generate waveform.");
+                        return;
+                    }
+
+                    var samplesPerFrameToProcessPerPoint = (int)Math.Max(1, totalSampleFrames / targetPoints);
+                    var bufferSizeInSamples = samplesPerFrameToProcessPerPoint * reader.WaveFormat.Channels;
+
+                    if (bufferSizeInSamples == 0)
+                    {
+                        Debug.WriteLine($"[WaveformServiceReader] Calculated bufferSizeInSamples is 0 for \"{Path.GetFileName(filePath)}\". TotalSampleFrames: {totalSampleFrames}, TargetPoints: {targetPoints}, Channels: {reader.WaveFormat.Channels}, SamplesPerFrameToProcessPerPoint: {samplesPerFrameToProcessPerPoint}. Cannot generate.");
+                        return;
+                    }
+
+                    var buffer = new float[bufferSizeInSamples];
+                    int samplesReadFromAudioFile;
                     double currentX = 0;
                     double xIncrement = 1.0 / targetPoints;
+                    int pointsGeneratedCount = 0;
+
+                    Debug.WriteLine($"[WaveformServiceReader] Processing \"{Path.GetFileName(filePath)}\": TotalSampleFrames: {totalSampleFrames}, TargetPoints: {targetPoints}, SamplesPerFrameToProcessPerPoint: {samplesPerFrameToProcessPerPoint}, BufferSizeInFloats: {bufferSizeInSamples}");
 
                     for (int i = 0; i < targetPoints; i++)
                     {
-                        float max = 0;
-                        long currentSampleIndex = (long)i * samplesPerPoint * reader.WaveFormat.Channels;
+                        float maxPeakInChunk = 0f;
 
-                        // Ensure reader is positioned correctly if seeking is needed (not ideal for full scan)
-                        // For a sequential read, this direct approach is okay.
-                        // reader.Position = currentSampleIndex * (reader.WaveFormat.BitsPerSample / 8);
+                        samplesReadFromAudioFile = reader.Read(buffer, 0, buffer.Length);
 
-                        samplesRead = reader.Read(buffer, 0, buffer.Length);
-                        if (samplesRead == 0) break;
-
-                        for (int n = 0; n < samplesRead; n++)
+                        if (samplesReadFromAudioFile == 0)
                         {
-                            max = Math.Max(max, Math.Abs(buffer[n]));
+                            Debug.WriteLine($"[WaveformServiceReader] Read 0 samples at waveform point index {i} (target: {targetPoints}) for \"{Path.GetFileName(filePath)}\". End of audio stream reached.");
+                            break;
                         }
-                        points.Add(new WaveformPoint(currentX, max)); // Y is normalized peak (0 to 1)
+
+                        for (int n = 0; n < samplesReadFromAudioFile; n++)
+                        {
+                            maxPeakInChunk = Math.Max(maxPeakInChunk, Math.Abs(buffer[n]));
+                        }
+
+                        points.Add(new WaveformPoint(currentX, maxPeakInChunk));
+                        pointsGeneratedCount++;
+
+                        if (i < 5 || (i > 0 && i % (targetPoints / 10) == 0) || i == targetPoints - 1)
+                        {
+                            Debug.WriteLine($"[WaveformServiceReader] Point {i}: X={currentX:F3}, Calculated YPeak={maxPeakInChunk:F4}, SamplesInThisChunk={samplesReadFromAudioFile}");
+                        }
+
                         currentX += xIncrement;
-                        if (currentX > 1.0) currentX = 1.0; // Cap at 1.0
+                        if (currentX > 1.0) currentX = 1.0;
                     }
+                    Debug.WriteLine($"[WaveformServiceReader] Loop finished for \"{Path.GetFileName(filePath)}\". Total waveform points generated: {pointsGeneratedCount}. (Target was {targetPoints})");
                 }
             });
 
             if (points.Any())
             {
-                _waveformCache[filePath] = points; // Cache the result
-                Debug.WriteLine($"[WaveformService] Waveform generated for {filePath}, {points.Count} points.");
+                _waveformCache[filePath] = points;
+                Debug.WriteLine($"[WaveformService] Waveform generated and cached for \"{Path.GetFileName(filePath)}\", {points.Count} points. First point YPeak: {points[0].YPeak:F4}. Approx mid point YPeak: {points[points.Count / 2].YPeak:F4}. Last point YPeak: {points.Last().YPeak:F4}");
             }
             else
             {
-                Debug.WriteLine($"[WaveformService] No points generated for {filePath}. It might be too short or an issue with reading.");
+                Debug.WriteLine($"[WaveformService] No points generated for \"{Path.GetFileName(filePath)}\". It might be too short, silent, or an issue with reading audio data.");
             }
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[WaveformService] Error generating waveform for {filePath}: {ex.Message}");
-            // Return empty list on error
+            Debug.WriteLine($"[WaveformService] CRITICAL Error generating waveform for \"{Path.GetFileName(filePath)}\": {ex.ToString()}");
             return new List<WaveformPoint>();
         }
         return points;
