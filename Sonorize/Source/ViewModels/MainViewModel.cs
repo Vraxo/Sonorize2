@@ -16,7 +16,6 @@ namespace Sonorize.ViewModels;
 
 public class MainWindowViewModel : ViewModelBase
 {
-    // ... (existing properties and constructor a Ttributes) ...
     private readonly SettingsService _settingsService;
     private readonly MusicLibraryService _musicLibraryService;
     private readonly WaveformService _waveformService;
@@ -26,6 +25,7 @@ public class MainWindowViewModel : ViewModelBase
     private readonly ObservableCollection<Song> _allSongs = new();
     public ObservableCollection<Song> FilteredSongs { get; } = new();
     public ObservableCollection<ArtistViewModel> Artists { get; } = new();
+    public ObservableCollection<AlbumViewModel> Albums { get; } = new(); // <-- ADDED
 
     private string _searchQuery = string.Empty;
     public string SearchQuery
@@ -60,15 +60,27 @@ public class MainWindowViewModel : ViewModelBase
         get => _selectedArtist;
         set
         {
-            // We set the property but the main action happens in OnArtistSelected
-            // if we were to bind this to ListBox.SelectedItem.
-            // For a command-like action, we'd pass the artist to a command.
-            // Let's handle it via a method called when selection changes.
             if (SetProperty(ref _selectedArtist, value))
             {
                 if (value != null)
                 {
                     OnArtistSelected(value);
+                }
+            }
+        }
+    }
+
+    private AlbumViewModel? _selectedAlbum; // <-- ADDED
+    public AlbumViewModel? SelectedAlbum   // <-- ADDED
+    {
+        get => _selectedAlbum;
+        set
+        {
+            if (SetProperty(ref _selectedAlbum, value))
+            {
+                if (value != null)
+                {
+                    OnAlbumSelected(value);
                 }
             }
         }
@@ -113,14 +125,31 @@ public class MainWindowViewModel : ViewModelBase
         if (artist?.Name == null) return;
 
         Debug.WriteLine($"[MainVM] Artist selected: {artist.Name}");
-        SearchQuery = artist.Name; // This will trigger ApplyFilter
-        ActiveTabIndex = 0;       // Switch to Library tab (index 0)
-
-        // Optionally, deselect artist in the list after action to allow re-clicking
-        // This depends on desired UX. For now, let it stay selected.
-        // If we want to make it a pure "action" that deselects:
-        // Dispatcher.UIThread.Post(() => SelectedArtist = null, DispatcherPriority.Background);
+        SearchQuery = artist.Name;
+        ActiveTabIndex = 0;
     }
+
+    private void OnAlbumSelected(AlbumViewModel album) // <-- ADDED
+    {
+        if (album?.Title == null || album.Artist == null) return;
+
+        Debug.WriteLine($"[MainVM] Album selected: {album.Title} by {album.Artist}");
+        SearchQuery = string.Empty; // Clear general search
+
+        FilteredSongs.Clear();
+        var songsInAlbum = _allSongs.Where(s =>
+            s.Album.Equals(album.Title, StringComparison.OrdinalIgnoreCase) &&
+            s.Artist.Equals(album.Artist, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(s => s.Title); // Or by track number if available
+
+        foreach (var song in songsInAlbum)
+        {
+            FilteredSongs.Add(song);
+        }
+        UpdateStatusBarText(); // Update count
+        ActiveTabIndex = 0; // Switch to Library tab
+    }
+
 
     private string _statusBarText = "Welcome to Sonorize!";
     public string StatusBarText { get => _statusBarText; set => SetProperty(ref _statusBarText, value); }
@@ -276,28 +305,20 @@ public class MainWindowViewModel : ViewModelBase
         if (!string.IsNullOrWhiteSpace(SearchQuery))
         {
             var query = SearchQuery.ToLowerInvariant().Trim();
-            // If the query matches an exact artist name (common after artist selection), prioritize that.
-            // Otherwise, perform a broader search.
-            // This logic can be refined. For now, the existing broader search is fine.
             songsToFilter = songsToFilter.Where(s =>
                 (s.Title?.ToLowerInvariant().Contains(query) ?? false) ||
-                (s.Artist?.ToLowerInvariant().Contains(query) ?? false));
+                (s.Artist?.ToLowerInvariant().Contains(query) ?? false) ||
+                (s.Album?.ToLowerInvariant().Contains(query) ?? false)); // Include album in search
         }
 
-        foreach (var song in songsToFilter.OrderBy(s => s.Artist).ThenBy(s => s.Title))
+        foreach (var song in songsToFilter.OrderBy(s => s.Artist).ThenBy(s => s.Album).ThenBy(s => s.Title))
         {
             FilteredSongs.Add(song);
         }
 
         if (SelectedSong != null && !FilteredSongs.Contains(SelectedSong))
         {
-            SelectedSong = null; // Deselect if it's no longer in the filtered list
-        }
-        else if (FilteredSongs.Any() && SelectedSong == null && songsToFilter.Count() == _allSongs.Count)
-        {
-            // This case is tricky: if filter cleared and no song selected, do nothing.
-            // If filter applied (e.g. artist selected) and results exist, consider selecting the first one.
-            // For now, let manual selection in Library tab handle it.
+            SelectedSong = null;
         }
         UpdateStatusBarText();
     }
@@ -468,13 +489,14 @@ public class MainWindowViewModel : ViewModelBase
         if (IsLoadingLibrary) return;
         IsAdvancedPanelVisible = false;
         IsLoadingLibrary = true;
-        SearchQuery = string.Empty; // Clear search on full reload
+        SearchQuery = string.Empty;
         var settings = _settingsService.LoadSettings();
 
         await Dispatcher.UIThread.InvokeAsync(() => {
             _allSongs.Clear();
             Artists.Clear();
-            FilteredSongs.Clear(); // Also clear filtered songs
+            Albums.Clear(); // <-- CLEAR ALBUMS
+            FilteredSongs.Clear();
             StatusBarText = "Preparing to load music...";
         });
 
@@ -491,6 +513,7 @@ public class MainWindowViewModel : ViewModelBase
                     );
                 });
 
+                // Populate Artists
                 var uniqueArtistNames = _allSongs
                     .Select(s => s.Artist)
                     .Where(a => !string.IsNullOrWhiteSpace(a))
@@ -498,25 +521,50 @@ public class MainWindowViewModel : ViewModelBase
                     .OrderBy(a => a)
                     .ToList();
 
+                // Populate Albums
+                var uniqueAlbums = _allSongs
+                    .Where(s => !string.IsNullOrWhiteSpace(s.Album) && !string.IsNullOrWhiteSpace(s.Artist))
+                    .GroupBy(s => new { s.Album, s.Artist }) // Group by both Album Title and Artist
+                    .Select(g => new
+                    {
+                        AlbumTitle = g.Key.Album,
+                        ArtistName = g.Key.Artist,
+                        FirstSongWithThumb = g.FirstOrDefault(s => s.Thumbnail != null)
+                    })
+                    .OrderBy(a => a.ArtistName).ThenBy(a => a.AlbumTitle)
+                    .ToList();
+
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     Artists.Clear();
-                    Bitmap? defaultArtistThumb = _musicLibraryService.GetDefaultThumbnail();
+                    Albums.Clear(); // <-- ENSURE CLEAR
+                    Bitmap? defaultThumb = _musicLibraryService.GetDefaultThumbnail();
 
                     foreach (var artistName in uniqueArtistNames)
                     {
                         Bitmap? representativeThumb = _allSongs
                             .FirstOrDefault(s => s.Artist.Equals(artistName, StringComparison.OrdinalIgnoreCase) && s.Thumbnail != null)
                             ?.Thumbnail;
-
                         Artists.Add(new ArtistViewModel
                         {
                             Name = artistName,
-                            Thumbnail = representativeThumb ?? defaultArtistThumb
+                            Thumbnail = representativeThumb ?? defaultThumb
                         });
                     }
                     OnPropertyChanged(nameof(Artists));
-                    ApplyFilter(); // This will populate FilteredSongs based on (now empty) SearchQuery
+
+                    foreach (var albumData in uniqueAlbums)
+                    {
+                        Albums.Add(new AlbumViewModel
+                        {
+                            Title = albumData.AlbumTitle,
+                            Artist = albumData.ArtistName,
+                            Thumbnail = albumData.FirstSongWithThumb?.Thumbnail ?? defaultThumb
+                        });
+                    }
+                    OnPropertyChanged(nameof(Albums));
+
+                    ApplyFilter();
                     if (!_allSongs.Any() && settings.MusicDirectories.Any()) StatusBarText = "No compatible songs found in specified directories.";
                     else if (_allSongs.Any()) StatusBarText = $"Loaded {_allSongs.Count} songs.";
                 });
@@ -530,21 +578,21 @@ public class MainWindowViewModel : ViewModelBase
         else await Dispatcher.UIThread.InvokeAsync(() => StatusBarText = "No music directories configured. Add one via File > Settings.");
 
         IsLoadingLibrary = false;
-        UpdateStatusBarText(); // General update
+        UpdateStatusBarText();
     }
 
     private async Task OpenSettingsDialog(object? ownerWindow)
     {
         if (ownerWindow is not Window owner || IsLoadingLibrary) return;
         IsAdvancedPanelVisible = false;
-        var currentSettingsBeforeDialog = _settingsService.LoadSettings(); // Capture state before
+        var currentSettingsBeforeDialog = _settingsService.LoadSettings();
         var settingsVM = new SettingsViewModel(_settingsService);
         var settingsDialog = new Sonorize.Views.SettingsWindow(CurrentTheme) { DataContext = settingsVM };
         await settingsDialog.ShowDialog(owner);
 
-        if (settingsVM.SettingsChanged) // SettingsVM indicates a save happened
+        if (settingsVM.SettingsChanged)
         {
-            var newSettingsAfterDialog = _settingsService.LoadSettings(); // Get what was actually saved
+            var newSettingsAfterDialog = _settingsService.LoadSettings();
 
             bool dirsActuallyChanged = !currentSettingsBeforeDialog.MusicDirectories.SequenceEqual(newSettingsAfterDialog.MusicDirectories);
             bool themeActuallyChanged = currentSettingsBeforeDialog.PreferredThemeFileName != newSettingsAfterDialog.PreferredThemeFileName;

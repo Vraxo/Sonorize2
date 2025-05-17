@@ -87,7 +87,6 @@ public class MusicLibraryService
         }
     }
 
-    // Make this public
     public Bitmap? GetDefaultThumbnail()
     {
         if (_defaultThumbnail == null)
@@ -112,7 +111,7 @@ public class MusicLibraryService
                         {
                             using (var originalBitmap = new Bitmap(ms))
                             {
-                                var targetSize = new PixelSize(64, 64); // Actual size for song thumbnails (data)
+                                var targetSize = new PixelSize(64, 64);
                                 var scaledBitmap = originalBitmap.CreateScaledBitmap(targetSize, BitmapInterpolationMode.HighQuality);
                                 return scaledBitmap;
                             }
@@ -135,7 +134,7 @@ public class MusicLibraryService
         Debug.WriteLine("[MusicLibService] LoadMusicFromDirectoriesAsync (incremental) called.");
         var supportedExtensions = new[] { ".mp3", ".wav", ".flac", ".m4a", ".ogg" };
 
-        Bitmap? defaultIcon = GetDefaultThumbnail(); // Now public
+        Bitmap? defaultIcon = GetDefaultThumbnail();
         if (defaultIcon == null)
         {
             Debug.WriteLine("[MusicLibService] Warning: defaultIcon is null during library scan. Fallback thumbnails will not appear.");
@@ -176,6 +175,7 @@ public class MusicLibraryService
                     FilePath = file,
                     Title = Path.GetFileNameWithoutExtension(file),
                     Artist = "Unknown Artist",
+                    Album = "Unknown Album", // Initialize
                     Duration = TimeSpan.Zero,
                     Thumbnail = thumbnail ?? defaultIcon
                 };
@@ -191,6 +191,9 @@ public class MusicLibraryService
                             song.Artist = tagFile.Tag.Performers[0];
                         else if (tagFile.Tag.AlbumArtists.Length > 0 && !string.IsNullOrWhiteSpace(tagFile.Tag.AlbumArtists[0]))
                             song.Artist = tagFile.Tag.AlbumArtists[0];
+
+                        if (!string.IsNullOrWhiteSpace(tagFile.Tag.Album)) // <-- POPULATE ALBUM
+                            song.Album = tagFile.Tag.Album;
 
                         if (tagFile.Properties.Duration > TimeSpan.Zero)
                             song.Duration = tagFile.Properties.Duration;

@@ -5,11 +5,11 @@ using Avalonia.Media;
 using Sonorize.Models;
 using Sonorize.ViewModels;
 using Avalonia.Data;
-using Sonorize.Controls; // For WaveformDisplayControl
+using Sonorize.Controls;
 using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls.Templates;
-using Avalonia.Controls.Primitives; // For TemplatedControl
+using Avalonia.Controls.Primitives;
 using Avalonia.Media.Imaging;
 using Avalonia.Data.Converters;
 using Avalonia.Styling;
@@ -30,12 +30,12 @@ public class MainWindow : Window
         {
             RowDefinitions = new RowDefinitions
             {
-                new RowDefinition(GridLength.Auto), // Menu
-                new RowDefinition(GridLength.Auto), // Search Bar
-                new RowDefinition(GridLength.Star), // TabControl (Library/Artists)
-                new RowDefinition(GridLength.Auto), // Advanced Playback Panel
-                new RowDefinition(GridLength.Auto), // Main Playback Controls
-                new RowDefinition(GridLength.Auto)  // Status Bar
+                new RowDefinition(GridLength.Auto),
+                new RowDefinition(GridLength.Auto),
+                new RowDefinition(GridLength.Star),
+                new RowDefinition(GridLength.Auto),
+                new RowDefinition(GridLength.Auto),
+                new RowDefinition(GridLength.Auto)
             }
         };
 
@@ -89,7 +89,7 @@ public class MainWindow : Window
     {
         var searchBox = new TextBox
         {
-            Watermark = "Search songs by title or artist...",
+            Watermark = "Search songs by title, artist, or album...", // Updated watermark
             Margin = new Thickness(10, 5, 10, 5),
             Padding = new Thickness(10, 7),
             Background = _theme.B_SlightlyLighterBackground,
@@ -122,7 +122,6 @@ public class MainWindow : Window
             BorderThickness = new Thickness(0),
             Padding = new Thickness(0)
         };
-        // Bind SelectedIndex to the ViewModel property
         tabControl.Bind(TabControl.SelectedIndexProperty, new Binding("ActiveTabIndex", BindingMode.TwoWay));
 
 
@@ -160,8 +159,15 @@ public class MainWindow : Window
             Content = CreateArtistsListScrollViewer()
         };
 
+        var albumsTab = new TabItem // <-- ADDED TAB
+        {
+            Header = "ALBUMS",
+            Content = CreateAlbumsListScrollViewer()
+        };
+
         tabControl.Items.Add(libraryTab);
         tabControl.Items.Add(artistsTab);
+        tabControl.Items.Add(albumsTab); // <-- ADDED TAB
 
         return tabControl;
     }
@@ -252,7 +258,6 @@ public class MainWindow : Window
         });
 
         artistsListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("Artists"));
-        // Bind SelectedItem to the ViewModel property
         artistsListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedArtist", BindingMode.TwoWay));
 
 
@@ -295,6 +300,98 @@ public class MainWindow : Window
         }, supportsRecycling: true);
 
         return new ScrollViewer { Content = artistsListBox, Padding = new Thickness(0, 0, 0, 5) };
+    }
+
+    private ScrollViewer CreateAlbumsListScrollViewer() // <-- NEW METHOD
+    {
+        var albumsListBox = new ListBox
+        {
+            Background = _theme.B_ListBoxBackground,
+            BorderThickness = new Thickness(0),
+            Margin = new Thickness(10)
+        };
+
+        albumsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>())
+        {
+            Setters = {
+            new Setter(TemplatedControl.BackgroundProperty, _theme.B_ListBoxBackground),
+            new Setter(TextBlock.ForegroundProperty, _theme.B_TextColor)
+        }
+        });
+        albumsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":pointerover").Not(xx => xx.Class(":selected")))
+        { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_ControlBackgroundColor) } });
+        albumsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected"))
+        {
+            Setters = {
+            new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
+            new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
+        }
+        });
+        albumsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected").Class(":pointerover"))
+        {
+            Setters = {
+            new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
+            new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
+        }
+        });
+
+        albumsListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("Albums"));
+        albumsListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedAlbum", BindingMode.TwoWay));
+
+        albumsListBox.ItemTemplate = new FuncDataTemplate<AlbumViewModel>((albumVM, nameScope) =>
+        {
+            var image = new Image
+            {
+                Width = 32,
+                Height = 32,
+                Margin = new Thickness(5, 0, 10, 0),
+                Source = albumVM.Thumbnail,
+                Stretch = Stretch.UniformToFill
+            };
+            RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
+
+            var albumTitleBlock = new TextBlock
+            {
+                Text = albumVM.Title,
+                FontSize = 14,
+                FontWeight = FontWeight.Normal, // Album titles usually normal weight
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            var albumArtistBlock = new TextBlock // Display artist below album title
+            {
+                Text = albumVM.Artist,
+                FontSize = 11,
+                Foreground = _theme.B_SecondaryTextColor, // Use secondary color for artist on album list
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            var textStack = new StackPanel
+            {
+                Orientation = Orientation.Vertical,
+                VerticalAlignment = VerticalAlignment.Center,
+                Children = { albumTitleBlock, albumArtistBlock }
+            };
+
+
+            var itemGrid = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            itemGrid.Children.Add(image);
+            itemGrid.Children.Add(textStack); // Add StackPanel for Album Title and Artist
+            Grid.SetColumn(image, 0);
+            Grid.SetColumn(textStack, 1);
+
+            return new Border
+            {
+                Padding = new Thickness(10, 6), // Consistent with song list items
+                MinHeight = 44,
+                Background = Brushes.Transparent,
+                Child = itemGrid
+            };
+        }, supportsRecycling: true);
+
+        return new ScrollViewer { Content = albumsListBox, Padding = new Thickness(0, 0, 0, 5) };
     }
 
 
