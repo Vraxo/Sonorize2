@@ -53,14 +53,15 @@ public class MainWindowViewModel : ViewModelBase
         {
             PlaybackService.Stop();
             WaveformRenderData.Clear();
-            OnPropertyChanged(nameof(WaveformRenderData));
+            OnPropertyChanged(nameof(WaveformRenderData)); // Ensure UI updates if WaveformRenderData is bound directly
             IsAdvancedPanelVisible = false;
         }
 
         UpdateLoopEditorForCurrentSong();
         UpdateActiveLoopDisplayText();
         (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        OnPropertyChanged(nameof(PlaybackService.HasCurrentSong));
+        // PlaybackService.HasCurrentSong will update via its own PropertyChanged
+        OnPropertyChanged(nameof(PlaybackService.HasCurrentSong)); // Trigger re-evaluation for bindings that might depend on it through ViewModel
     }
 
     private string _statusBarText = "Welcome to Sonorize!";
@@ -93,7 +94,7 @@ public class MainWindowViewModel : ViewModelBase
                 (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 if (value && PlaybackService.CurrentSong != null && !WaveformRenderData.Any())
                 {
-                    _ = LoadWaveformForCurrentSong();
+                    _ = LoadWaveformForCurrentSong(); // Fire and forget is fine here
                 }
             }
         }
@@ -105,9 +106,10 @@ public class MainWindowViewModel : ViewModelBase
         get => _playbackSpeed;
         set
         {
-            if (SetProperty(ref _playbackSpeed, Math.Max(0.25, Math.Min(value, 4.0))))
+            value = Math.Clamp(value, 0.5, 2.0);
+            if (SetProperty(ref _playbackSpeed, value))
             {
-                PlaybackService.PlaybackRate = (float)_playbackSpeed;
+                PlaybackService.PlaybackRate = (float)value;
                 OnPropertyChanged(nameof(PlaybackSpeedDisplay));
             }
         }
@@ -120,7 +122,7 @@ public class MainWindowViewModel : ViewModelBase
         get => _playbackPitch;
         set
         {
-            if (SetProperty(ref _playbackPitch, Math.Max(-5, Math.Min(value, 5)))) // Clamped to -5 to 5
+            if (SetProperty(ref _playbackPitch, Math.Max(-24, Math.Min(value, 24))))
             {
                 PlaybackService.PitchSemitones = (float)_playbackPitch;
                 OnPropertyChanged(nameof(PlaybackPitchDisplay));
@@ -144,12 +146,16 @@ public class MainWindowViewModel : ViewModelBase
     }
     private string _newLoopNameInput = "New Loop";
     public string NewLoopNameInput { get => _newLoopNameInput; set => SetProperty(ref _newLoopNameInput, value); }
+
     private TimeSpan? _newLoopStartCandidate;
     public TimeSpan? NewLoopStartCandidate { get => _newLoopStartCandidate; set { SetProperty(ref _newLoopStartCandidate, value); OnPropertyChanged(nameof(CanSaveNewLoopRegion)); OnPropertyChanged(nameof(NewLoopStartCandidateDisplay)); } }
+
     private TimeSpan? _newLoopEndCandidate;
     public TimeSpan? NewLoopEndCandidate { get => _newLoopEndCandidate; set { SetProperty(ref _newLoopEndCandidate, value); OnPropertyChanged(nameof(CanSaveNewLoopRegion)); OnPropertyChanged(nameof(NewLoopEndCandidateDisplay)); } }
+
     public string NewLoopStartCandidateDisplay => _newLoopStartCandidate.HasValue ? $"{_newLoopStartCandidate.Value:mm\\:ss\\.ff}" : "Not set";
     public string NewLoopEndCandidateDisplay => _newLoopEndCandidate.HasValue ? $"{_newLoopEndCandidate.Value:mm\\:ss\\.ff}" : "Not set";
+
     private string _activeLoopDisplayText = "No active loop.";
     public string ActiveLoopDisplayText { get => _activeLoopDisplayText; set => SetProperty(ref _activeLoopDisplayText, value); }
 
@@ -189,17 +195,20 @@ public class MainWindowViewModel : ViewModelBase
             _ => IsAdvancedPanelVisible = !IsAdvancedPanelVisible,
             _ => PlaybackService.CurrentSong != null && !IsLoadingLibrary);
 
-        CaptureLoopStartCandidateCommand = new RelayCommand(_ => NewLoopStartCandidate = PlaybackService.CurrentPosition.Divide(PlaybackService.PlaybackRate), _ => PlaybackService.CurrentSong != null);
-        CaptureLoopEndCandidateCommand = new RelayCommand(_ => NewLoopEndCandidate = PlaybackService.CurrentPosition.Divide(PlaybackService.PlaybackRate), _ => PlaybackService.CurrentSong != null);
+        // Loop candidates are true time from PlaybackService.CurrentPosition
+        CaptureLoopStartCandidateCommand = new RelayCommand(_ => NewLoopStartCandidate = PlaybackService.CurrentPosition, _ => PlaybackService.CurrentSong != null);
+        CaptureLoopEndCandidateCommand = new RelayCommand(_ => NewLoopEndCandidate = PlaybackService.CurrentPosition, _ => PlaybackService.CurrentSong != null);
+
         SaveNewLoopRegionCommand = new RelayCommand(SaveLoopCandidateAction, _ => CanSaveNewLoopRegion);
         ActivateLoopRegionCommand = new RelayCommand(_ => { if (PlaybackService.CurrentSong != null && SelectedEditableLoopRegion != null) PlaybackService.CurrentSong.ActiveLoop = SelectedEditableLoopRegion; }, _ => CanActivateLoopRegion());
         DeactivateActiveLoopCommand = new RelayCommand(_ => { if (PlaybackService.CurrentSong != null) PlaybackService.CurrentSong.ActiveLoop = null; }, _ => PlaybackService.CurrentSong?.ActiveLoop != null);
         DeleteLoopRegionCommand = new RelayCommand(DeleteSelectedLoopRegionAction, _ => SelectedEditableLoopRegion != null);
-        WaveformSeekCommand = new RelayCommand(timeSpan => PlaybackService.Seek((TimeSpan)timeSpan!), _ => PlaybackService.CurrentSong != null);
+        WaveformSeekCommand = new RelayCommand(timeSpanObj => { if (timeSpanObj is TimeSpan ts) PlaybackService.Seek(ts); }, _ => PlaybackService.CurrentSong != null);
+
 
         PlaybackService.PropertyChanged += OnPlaybackServicePropertyChanged;
-        PlaybackSpeed = 1.0;
-        PlaybackPitch = 0.0;
+        PlaybackSpeed = 1.0; // Initialize playback speed
+        PlaybackPitch = 0.0; // Initialize playback pitch
         UpdateStatusBarText();
         UpdateActiveLoopDisplayText();
     }
@@ -218,17 +227,22 @@ public class MainWindowViewModel : ViewModelBase
         IsWaveformLoading = true;
         try
         {
-            int targetWaveformPoints = 1000;
+            int targetWaveformPoints = 1000; // Or get from a setting
             var points = await _waveformService.GetWaveformAsync(PlaybackService.CurrentSong.FilePath, targetWaveformPoints);
 
+            // Dispatch to UI thread if WaveformRenderData is bound to UI and modified from non-UI thread
+            // However, ObservableCollection should handle this if modifications are done on UI thread.
+            // Assuming GetWaveformAsync might run on a background thread internally but returns to caller context.
+            // For safety, or if _waveformService runs fully async:
+            // await Dispatcher.UIThread.InvokeAsync(() => { ... });
             WaveformRenderData.Clear();
             foreach (var p in points) WaveformRenderData.Add(p);
-            OnPropertyChanged(nameof(WaveformRenderData));
+            OnPropertyChanged(nameof(WaveformRenderData)); // Notify that the collection instance itself (or its content effectively) has changed.
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"[ViewModel] Failed to load waveform: {ex.Message}");
-            WaveformRenderData.Clear();
+            WaveformRenderData.Clear(); // Clear on error
             OnPropertyChanged(nameof(WaveformRenderData));
         }
         finally
@@ -243,14 +257,18 @@ public class MainWindowViewModel : ViewModelBase
         {
             case nameof(PlaybackService.CurrentSong):
                 (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                // Handled by HandleSelectedSongChange for more complex logic
                 break;
-            case nameof(PlaybackService.IsPlaying): // IsPlaying changes
-            case nameof(PlaybackService.CurrentPlaybackStatus): // CurrentPlaybackStatus also changes
+            case nameof(PlaybackService.IsPlaying):
+            case nameof(PlaybackService.CurrentPlaybackStatus):
                 UpdateStatusBarText();
                 break;
             case nameof(PlaybackService.CurrentPosition):
             case nameof(PlaybackService.CurrentSongDuration):
                 (SaveNewLoopRegionCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                // Commands for capturing loop points also need re-evaluation if their CanExecute depends on position/duration
+                (CaptureLoopStartCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                (CaptureLoopEndCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 break;
         }
     }
@@ -260,7 +278,7 @@ public class MainWindowViewModel : ViewModelBase
         if (e.PropertyName == nameof(Song.ActiveLoop))
         {
             UpdateActiveLoopDisplayText();
-            UpdateStatusBarText();
+            UpdateStatusBarText(); // Status bar might show active loop info
             (ActivateLoopRegionCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (DeactivateActiveLoopCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
@@ -278,7 +296,7 @@ public class MainWindowViewModel : ViewModelBase
 
         NewLoopStartCandidate = null;
         NewLoopEndCandidate = null;
-        SelectedEditableLoopRegion = null;
+        SelectedEditableLoopRegion = null; // Clear selection
 
         (CaptureLoopStartCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (CaptureLoopEndCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -286,7 +304,7 @@ public class MainWindowViewModel : ViewModelBase
         (ActivateLoopRegionCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (DeactivateActiveLoopCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (DeleteLoopRegionCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        OnPropertyChanged(nameof(CanSaveNewLoopRegion));
+        OnPropertyChanged(nameof(CanSaveNewLoopRegion)); // Explicitly notify this complex property
     }
 
     private void ClearLoopCandidate()
@@ -294,24 +312,26 @@ public class MainWindowViewModel : ViewModelBase
         NewLoopNameInput = $"Loop {(PlaybackService.CurrentSong?.LoopRegions.Count ?? 0) + 1}";
         NewLoopStartCandidate = null;
         NewLoopEndCandidate = null;
+        // No need to change SelectedEditableLoopRegion here, it's for managing existing ones
         OnPropertyChanged(nameof(CanSaveNewLoopRegion));
     }
 
-    public bool CanSaveNewLoopRegion => PlaybackService.CurrentSong != null &&
-                                        NewLoopStartCandidate.HasValue &&
-                                        NewLoopEndCandidate.HasValue &&
-                                        NewLoopEndCandidate.Value > NewLoopStartCandidate.Value &&
-                                        NewLoopEndCandidate.Value <= PlaybackService.CurrentSongDuration.Divide(PlaybackService.PlaybackRate) &&
-                                        NewLoopStartCandidate.Value >= TimeSpan.Zero &&
-                                        !string.IsNullOrWhiteSpace(NewLoopNameInput);
+    public bool CanSaveNewLoopRegion =>
+        PlaybackService.CurrentSong != null &&
+        NewLoopStartCandidate.HasValue &&
+        NewLoopEndCandidate.HasValue &&
+        NewLoopEndCandidate.Value > NewLoopStartCandidate.Value &&
+        NewLoopEndCandidate.Value <= PlaybackService.CurrentSongDuration && // Use true duration
+        NewLoopStartCandidate.Value >= TimeSpan.Zero &&
+        !string.IsNullOrWhiteSpace(NewLoopNameInput);
 
     private void SaveLoopCandidateAction(object? param)
     {
         if (!CanSaveNewLoopRegion || PlaybackService.CurrentSong == null || !NewLoopStartCandidate.HasValue || !NewLoopEndCandidate.HasValue) return;
         var newLoop = new LoopRegion(NewLoopStartCandidate.Value, NewLoopEndCandidate.Value, NewLoopNameInput);
         PlaybackService.CurrentSong.LoopRegions.Add(newLoop);
-        EditableLoopRegions.Add(newLoop);
-        ClearLoopCandidate();
+        EditableLoopRegions.Add(newLoop); // Keep UI in sync
+        ClearLoopCandidate(); // Prepare for next new loop
     }
 
     private void DeleteSelectedLoopRegionAction(object? param)
@@ -321,8 +341,8 @@ public class MainWindowViewModel : ViewModelBase
             if (PlaybackService.CurrentSong.ActiveLoop == SelectedEditableLoopRegion) PlaybackService.CurrentSong.ActiveLoop = null;
             PlaybackService.CurrentSong.LoopRegions.Remove(SelectedEditableLoopRegion);
             EditableLoopRegions.Remove(SelectedEditableLoopRegion);
-            SelectedEditableLoopRegion = null;
-            ClearLoopCandidate();
+            SelectedEditableLoopRegion = null; // Clear selection
+            ClearLoopCandidate(); // Reset input fields (optional, but good for consistency)
         }
     }
 
@@ -331,7 +351,7 @@ public class MainWindowViewModel : ViewModelBase
         if (PlaybackService.CurrentSong?.ActiveLoop != null)
         {
             var loop = PlaybackService.CurrentSong.ActiveLoop;
-            // Display loop times as they are (unadjusted by speed for clarity in definition)
+            // Display loop times as true time
             ActiveLoopDisplayText = $"Active Loop: {loop.Name} ({loop.Start:mm\\:ss\\.f} - {loop.End:mm\\:ss\\.f})";
         }
         else ActiveLoopDisplayText = "No active loop.";
@@ -339,12 +359,12 @@ public class MainWindowViewModel : ViewModelBase
 
     private void UpdateStatusBarText()
     {
-        if (IsLoadingLibrary) return;
+        if (IsLoadingLibrary) return; // Keep "Loading..." type messages
         string status;
 
         if (PlaybackService.CurrentSong != null)
         {
-            string stateStr = PlaybackService.CurrentPlaybackStatus switch // Use the new public property
+            string stateStr = PlaybackService.CurrentPlaybackStatus switch
             {
                 PlaybackStateStatus.Playing => "Playing",
                 PlaybackStateStatus.Paused => "Paused",
@@ -368,24 +388,46 @@ public class MainWindowViewModel : ViewModelBase
         IsAdvancedPanelVisible = false;
         IsLoadingLibrary = true;
         var settings = _settingsService.LoadSettings();
-        await Dispatcher.UIThread.InvokeAsync(() => { Songs.Clear(); StatusBarText = "Preparing..."; });
+        await Dispatcher.UIThread.InvokeAsync(() => { Songs.Clear(); StatusBarText = "Preparing to load music..."; });
+
         if (settings.MusicDirectories.Any())
         {
-            await Task.Run(async () => { try { await _musicLibraryService.LoadMusicFromDirectoriesAsync(settings.MusicDirectories, song => Songs.Add(song), s => StatusBarText = s); } catch (Exception ex) { Debug.WriteLine($"[MainVM] LoadMusicErr: {ex}"); await Dispatcher.UIThread.InvokeAsync(() => StatusBarText = "Error loading library."); } });
-            await Dispatcher.UIThread.InvokeAsync(() => { StatusBarText = $"{Songs.Count} songs loaded."; if (!Songs.Any() && settings.MusicDirectories.Any()) StatusBarText = "No songs found."; });
+            try
+            {
+                await Task.Run(async () =>
+                {
+                    await _musicLibraryService.LoadMusicFromDirectoriesAsync(
+                        settings.MusicDirectories,
+                        song => Dispatcher.UIThread.InvokeAsync(() => Songs.Add(song)), // Add songs on UI thread
+                        s => Dispatcher.UIThread.InvokeAsync(() => StatusBarText = s)   // Update status on UI thread
+                    );
+                });
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    StatusBarText = $"{Songs.Count} songs loaded.";
+                    if (!Songs.Any() && settings.MusicDirectories.Any()) StatusBarText = "No compatible songs found in specified directories.";
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[MainVM] Error during music library loading: {ex}");
+                await Dispatcher.UIThread.InvokeAsync(() => StatusBarText = "Error loading music library.");
+            }
         }
-        else await Dispatcher.UIThread.InvokeAsync(() => StatusBarText = "No music directories.");
-        IsLoadingLibrary = false; UpdateStatusBarText();
+        else await Dispatcher.UIThread.InvokeAsync(() => StatusBarText = "No music directories configured. Add one via File > Settings.");
+
+        IsLoadingLibrary = false;
+        UpdateStatusBarText(); // Final status update
     }
 
     private async Task OpenSettingsDialog(object? ownerWindow)
     {
         if (ownerWindow is not Window owner || IsLoadingLibrary) return;
         IsAdvancedPanelVisible = false;
-        var settingsVM = new SettingsViewModel(_settingsService);
+        var settingsVM = new SettingsViewModel(_settingsService); // ThemeService instance is created inside SettingsViewModel
         var settingsDialog = new Sonorize.Views.SettingsWindow(CurrentTheme) { DataContext = settingsVM };
         await settingsDialog.ShowDialog(owner);
-        if (settingsVM.SettingsChanged) await LoadMusicLibrary();
+        if (settingsVM.SettingsChanged) await LoadMusicLibrary(); // Reload if settings that affect library changed
     }
 
     private async Task AddMusicDirectoryAndRefresh(object? ownerWindow)
@@ -396,7 +438,12 @@ public class MainWindowViewModel : ViewModelBase
         if (!string.IsNullOrEmpty(resultPath))
         {
             var settings = _settingsService.LoadSettings();
-            if (!settings.MusicDirectories.Contains(resultPath)) { settings.MusicDirectories.Add(resultPath); _settingsService.SaveSettings(settings); await LoadMusicLibrary(); }
+            if (!settings.MusicDirectories.Contains(resultPath))
+            {
+                settings.MusicDirectories.Add(resultPath);
+                _settingsService.SaveSettings(settings);
+                await LoadMusicLibrary();
+            }
         }
     }
 }

@@ -11,8 +11,8 @@ using Avalonia;
 using Avalonia.Controls.Templates;
 using Avalonia.Controls.Primitives; // For TemplatedControl
 using Avalonia.Media.Imaging;
-using Avalonia.Data.Converters; // <<<<<<< REQUIRED FOR IValueConverter
-using Avalonia.Styling;         // <<<<<<< REQUIRED FOR Style and Selectors
+using Avalonia.Data.Converters;
+using Avalonia.Styling;
 
 namespace Sonorize.Views;
 public class MainWindow : Window
@@ -90,7 +90,6 @@ public class MainWindow : Window
             Name = "SongListBox"
         };
 
-        // Corrected Style Definitions
         songListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>())
         { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_ListBoxBackground), new Setter(TextBlock.ForegroundProperty, _theme.B_TextColor) } });
         songListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":pointerover"))
@@ -125,46 +124,59 @@ public class MainWindow : Window
             Padding = new Thickness(10),
             BorderBrush = _theme.B_AccentColor,
             BorderThickness = new Thickness(0, 1, 0, 1),
-            MinHeight = 200,
+            MinHeight = 200, // Adjust as needed
             ClipToBounds = true
         };
 
         var mainStack = new StackPanel { Spacing = 10 };
 
-        var speedPitchGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto,*,Auto"), Margin = new Thickness(0, 0, 0, 5) };
+        // --- Speed and Pitch Controls ---
+        var speedPitchGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,15,Auto,*,Auto"), Margin = new Thickness(0, 0, 0, 5) };
         var speedLabel = new TextBlock { Text = "Speed:", VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_TextColor };
-        var speedSlider = new Slider { Minimum = 0.25, Maximum = 4.0, SmallChange = 0.05, LargeChange = 0.25, TickFrequency = 0.25, Foreground = _theme.B_AccentColor, Background = _theme.B_SecondaryTextColor };
+        var speedSlider = new Slider
+        {
+            Minimum = 0.5,
+            Maximum = 2.0,
+            SmallChange = 0.05,
+            LargeChange = 0.25,
+            TickFrequency = 0.25,
+            Foreground = _theme.B_AccentColor,
+            Background = _theme.B_SecondaryTextColor
+        };
         speedSlider.Bind(Slider.ValueProperty, new Binding("PlaybackSpeed", BindingMode.TwoWay));
-        var speedDisplay = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0), Foreground = _theme.B_TextColor, MinWidth = 35 };
+        var speedDisplay = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0), Foreground = _theme.B_TextColor, MinWidth = 35, HorizontalAlignment = HorizontalAlignment.Right };
         speedDisplay.Bind(TextBlock.TextProperty, new Binding("PlaybackSpeedDisplay"));
 
-        var pitchLabel = new TextBlock { Text = "Pitch:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(15, 0, 0, 0), Foreground = _theme.B_TextColor };
-        var pitchSlider = new Slider { Minimum = -5, Maximum = 5, SmallChange = 0.5, LargeChange = 1, TickFrequency = 1, Foreground = _theme.B_AccentColor, Background = _theme.B_SecondaryTextColor }; // Range updated
+        var pitchLabel = new TextBlock { Text = "Pitch:", VerticalAlignment = VerticalAlignment.Center, /*Margin = new Thickness(15, 0, 0, 0),*/ Foreground = _theme.B_TextColor };
+        var pitchSlider = new Slider { Minimum = -24, Maximum = 24, SmallChange = 0.5, LargeChange = 1, TickFrequency = 1, Foreground = _theme.B_AccentColor, Background = _theme.B_SecondaryTextColor };
         pitchSlider.Bind(Slider.ValueProperty, new Binding("PlaybackPitch", BindingMode.TwoWay));
-        var pitchDisplay = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0), Foreground = _theme.B_TextColor, MinWidth = 45 };
+        var pitchDisplay = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0), Foreground = _theme.B_TextColor, MinWidth = 45, HorizontalAlignment = HorizontalAlignment.Right };
         pitchDisplay.Bind(TextBlock.TextProperty, new Binding("PlaybackPitchDisplay"));
 
         Grid.SetColumn(speedLabel, 0); Grid.SetColumn(speedSlider, 1); Grid.SetColumn(speedDisplay, 2);
-        Grid.SetColumn(pitchLabel, 3); Grid.SetColumn(pitchSlider, 4); Grid.SetColumn(pitchDisplay, 5);
+        // Grid.SetColumn(new Panel(), 3); // Spacer column defined in ColumnDefinitions
+        Grid.SetColumn(pitchLabel, 4); Grid.SetColumn(pitchSlider, 5); Grid.SetColumn(pitchDisplay, 6);
         speedPitchGrid.Children.Add(speedLabel); speedPitchGrid.Children.Add(speedSlider); speedPitchGrid.Children.Add(speedDisplay);
         speedPitchGrid.Children.Add(pitchLabel); speedPitchGrid.Children.Add(pitchSlider); speedPitchGrid.Children.Add(pitchDisplay);
         mainStack.Children.Add(speedPitchGrid);
 
-        Color accentColorForLoopRegion = (_theme.B_AccentColor as ISolidColorBrush)?.Color ?? Colors.Orange; // Fallback color
+        // --- Waveform Display ---
+        Color accentColorForLoopRegion = (_theme.B_AccentColor as ISolidColorBrush)?.Color ?? Colors.Orange;
         var waveformDisplay = new WaveformDisplayControl
         {
             Height = 80,
             MinHeight = 60,
-            Background = _theme.B_ControlBackgroundColor, // Now uses the added Background property
+            Background = _theme.B_ControlBackgroundColor,
             WaveformBrush = _theme.B_AccentColor,
             PositionMarkerBrush = Brushes.OrangeRed,
-            LoopRegionBrush = new SolidColorBrush(accentColorForLoopRegion, 0.3) // Corrected color access
+            LoopRegionBrush = new SolidColorBrush(accentColorForLoopRegion, 0.3)
         };
         waveformDisplay.Bind(WaveformDisplayControl.WaveformPointsProperty, new Binding("WaveformRenderData"));
         waveformDisplay.Bind(WaveformDisplayControl.CurrentPositionProperty, new Binding("PlaybackService.CurrentPosition"));
         waveformDisplay.Bind(WaveformDisplayControl.DurationProperty, new Binding("PlaybackService.CurrentSongDuration"));
         waveformDisplay.Bind(WaveformDisplayControl.ActiveLoopProperty, new Binding("PlaybackService.CurrentSong.ActiveLoop"));
-        waveformDisplay.SeekRequested += (s, time) => (DataContext as MainWindowViewModel)?.WaveformSeekCommand.Execute(time);
+        waveformDisplay.SeekRequested += (s, time) => { if (DataContext is MainWindowViewModel vm) vm.WaveformSeekCommand.Execute(time); };
+
 
         var waveformLoadingIndicator = new ProgressBar
         {
@@ -181,6 +193,7 @@ public class MainWindow : Window
         waveformContainer.Children.Add(waveformLoadingIndicator);
         mainStack.Children.Add(waveformContainer);
 
+        // --- Loop Editor ---
         var loopEditorGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 10, 0, 0) };
         var createLoopPanel = new StackPanel { Spacing = 5 };
         var loopNameInput = new TextBox { Watermark = "Loop Name", Foreground = _theme.B_TextColor, Background = _theme.B_ControlBackgroundColor };
@@ -195,7 +208,7 @@ public class MainWindow : Window
         setEndBtn.Bind(Button.CommandProperty, new Binding("CaptureLoopEndCandidateCommand"));
         var endDisp = new TextBlock { FontSize = 10, Margin = new Thickness(3, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
         endDisp.Bind(TextBlock.TextProperty, new Binding("NewLoopEndCandidateDisplay"));
-        Grid.SetColumn(setStartBtn, 0); Grid.SetColumn(startDisp, 1); Grid.SetColumn(setEndBtn, 2); Grid.SetColumn(endDisp, 3);
+        Grid.SetColumn(setStartBtn, 0); Grid.SetColumn(startDisp, 1); Grid.SetColumn(setEndBtn, 2); Grid.SetColumn(endDisp, 3); // Spacing handled by grid col 2
         timeSettersGrid.Children.Add(setStartBtn); timeSettersGrid.Children.Add(startDisp); timeSettersGrid.Children.Add(setEndBtn); timeSettersGrid.Children.Add(endDisp);
 
         var saveLoopBtn = new Button { Content = "Save Loop", HorizontalAlignment = HorizontalAlignment.Stretch, Background = _theme.B_AccentColor, Foreground = _theme.B_AccentForeground };
@@ -240,57 +253,40 @@ public class MainWindow : Window
     {
         var mainPlaybackSlider = new Slider
         {
-            Name = "MainPlaybackSliderInstance", // Added a name for potential specific targeting if needed elsewhere, though not strictly for this style.
+            Name = "MainPlaybackSliderInstance",
             Minimum = 0,
             Margin = new Thickness(10, 0),
             VerticalAlignment = VerticalAlignment.Center,
             Background = _theme.B_SecondaryTextColor,
             Foreground = _theme.B_AccentColor
         };
-
-        // Corrected Style for the Thumb of this specific Slider instance
-        mainPlaybackSlider.Styles.Add(new Style(s => s.Is<Thumb>()) // Selects any Thumb descendant of mainPlaybackSlider
-        {
-            Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor) }
-        });
-        // Or, if you need to be more specific about it being in the template (though s.Is<Thumb>() usually suffices here):
-        // mainPlaybackSlider.Styles.Add(new Style(s => s.Template().Is<Thumb>()) 
-        // { 
-        //     Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor) }
-        // });
-
-
+        mainPlaybackSlider.Styles.Add(new Style(s => s.Is<Thumb>())
+        { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor) } });
         mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("PlaybackService.CurrentSongDurationSeconds"));
         mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("PlaybackService.CurrentPositionSeconds", BindingMode.TwoWay));
         mainPlaybackSlider.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
-
 
         var mainPlayPauseButton = new Button { Content = "Play", Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(10, 5), MinWidth = 70 };
         mainPlayPauseButton.Click += (s, e) => { if (DataContext is MainWindowViewModel vm) { if (vm.PlaybackService.IsPlaying) vm.PlaybackService.Pause(); else vm.PlaybackService.Resume(); } };
         mainPlayPauseButton.Bind(Button.ContentProperty, new Binding("PlaybackService.IsPlaying") { Converter = new BooleanToPlayPauseTextConverter() });
         mainPlayPauseButton.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
 
-
         var toggleAdvPanelButton = new Button { Content = "+", Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(8, 4), MinWidth = 30, FontWeight = FontWeight.Bold, Margin = new Thickness(5, 0, 0, 0) };
         toggleAdvPanelButton.Bind(Button.CommandProperty, new Binding("ToggleAdvancedPanelCommand"));
         toggleAdvPanelButton.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
 
-
         var controlsButtonPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0, 10, 0) };
-        controlsButtonPanel.Children.Add(mainPlayPauseButton);
-        controlsButtonPanel.Children.Add(toggleAdvPanelButton);
+        controlsButtonPanel.Children.Add(mainPlayPauseButton); controlsButtonPanel.Children.Add(toggleAdvPanelButton);
 
         var topMainPlaybackControls = new DockPanel { LastChildFill = true, Height = 35, Margin = new Thickness(5, 0, 5, 0) };
         DockPanel.SetDock(controlsButtonPanel, Dock.Left);
-        topMainPlaybackControls.Children.Add(controlsButtonPanel);
-        topMainPlaybackControls.Children.Add(mainPlaybackSlider);
+        topMainPlaybackControls.Children.Add(controlsButtonPanel); topMainPlaybackControls.Children.Add(mainPlaybackSlider);
 
         var activeLoopDisplayText = new TextBlock { Foreground = _theme.B_SecondaryTextColor, FontSize = 10, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(10, 0, 10, 2), MinHeight = 14 };
         activeLoopDisplayText.Bind(TextBlock.TextProperty, new Binding("ActiveLoopDisplayText"));
 
         var outerPanel = new StackPanel { Orientation = Orientation.Vertical, Background = _theme.B_BackgroundColor, Margin = new Thickness(0, 5, 0, 5) };
-        outerPanel.Children.Add(topMainPlaybackControls);
-        outerPanel.Children.Add(activeLoopDisplayText);
+        outerPanel.Children.Add(topMainPlaybackControls); outerPanel.Children.Add(activeLoopDisplayText);
         return outerPanel;
     }
 
