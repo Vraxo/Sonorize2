@@ -4,22 +4,24 @@ using NAudio.Wave.SampleProviders;
 using Sonorize.Models;
 using Sonorize.ViewModels;
 using System;
+using System.Diagnostics;
 using System.Threading;
 
 namespace Sonorize.Services;
 
-// file-scoped namespace
 public enum PlaybackStateStatus { Stopped, Playing, Paused }
 
 public class PlaybackService : ViewModelBase, IDisposable
 {
-    // ── Public API ───────────────────────────────────────────────────────────────
-
     private Song? _currentSong;
     public Song? CurrentSong
     {
         get => _currentSong;
-        private set { SetProperty(ref _currentSong, value); OnPropertyChanged(nameof(HasCurrentSong)); }
+        private set
+        {
+            SetProperty(ref _currentSong, value);
+            OnPropertyChanged(nameof(HasCurrentSong));
+        }
     }
     public bool HasCurrentSong => CurrentSong != null;
 
@@ -30,18 +32,22 @@ public class PlaybackService : ViewModelBase, IDisposable
         private set => SetProperty(ref _isPlaying, value);
     }
 
-    private PlaybackStateStatus _currentStatus = PlaybackStateStatus.Stopped;
+    private PlaybackStateStatus _currentPlaybackStatus = PlaybackStateStatus.Stopped;
     public PlaybackStateStatus CurrentPlaybackStatus
     {
-        get => _currentStatus;
-        private set => SetProperty(ref _currentStatus, value);
+        get => _currentPlaybackStatus;
+        private set => SetProperty(ref _currentPlaybackStatus, value);
     }
 
     private TimeSpan _currentPosition;
     public TimeSpan CurrentPosition
     {
         get => _currentPosition;
-        set { if (SetProperty(ref _currentPosition, value)) OnPropertyChanged(nameof(CurrentPositionSeconds)); }
+        set
+        {
+            if (SetProperty(ref _currentPosition, value))
+                OnPropertyChanged(nameof(CurrentPositionSeconds));
+        }
     }
     public double CurrentPositionSeconds
     {
@@ -53,20 +59,25 @@ public class PlaybackService : ViewModelBase, IDisposable
         }
     }
 
-    private TimeSpan _songDuration;
+    private TimeSpan _currentSongDuration;
     public TimeSpan CurrentSongDuration
     {
-        get => _songDuration;
-        private set { if (SetProperty(ref _songDuration, value)) OnPropertyChanged(nameof(CurrentSongDurationSeconds)); }
+        get => _currentSongDuration;
+        private set
+        {
+            if (SetProperty(ref _currentSongDuration, value))
+                OnPropertyChanged(nameof(CurrentSongDurationSeconds));
+        }
     }
-    public double CurrentSongDurationSeconds => CurrentSongDuration.TotalSeconds > 0
-        ? CurrentSongDuration.TotalSeconds
-        : 1;
+    public double CurrentSongDurationSeconds => CurrentSongDuration.TotalSeconds > 0 ? CurrentSongDuration.TotalSeconds : 1;
+
+    private IWavePlayer? waveOutDevice;
+    private AudioFileReader? audioFileReader;
+    private ISampleProvider? finalSampleProvider;
+    private SmbPitchShiftingSampleProvider? pitchShifter;
+    private Timer? uiUpdateTimer;
 
     private float _playbackRate = 1.0f;
-    /// <summary>
-    /// 0.5→2.0 typical range; changes time-stretch speed in real time.
-    /// </summary>
     public float PlaybackRate
     {
         get => _playbackRate;
@@ -74,171 +85,236 @@ public class PlaybackService : ViewModelBase, IDisposable
         {
             if (SetProperty(ref _playbackRate, value))
             {
-                if (isPipelineInitialized)
-                    varispeed!.PlaybackRate = value;
-                UpdateDurationForRate();
+                if (IsPlaying && CurrentSong != null)
+                {
+                    var resumeTime = audioFileReader?.CurrentTime ?? TimeSpan.Zero;
+                    Play(CurrentSong);
+                    Seek(resumeTime);
+                }
             }
         }
     }
 
     private float _pitchSemitones = 0f;
-    /// <summary>
-    /// -12→+12 typical; changes pitch independently.
-    /// </summary>
     public float PitchSemitones
     {
         get => _pitchSemitones;
         set
         {
-            if (SetProperty(ref _pitchSemitones, value) && pitchShifter != null)
-                pitchShifter.PitchFactor = (float)Math.Pow(2, value / 12.0);
+            if (SetProperty(ref _pitchSemitones, value))
+            {
+                if (pitchShifter != null)
+                {
+                    pitchShifter.PitchFactor = (float)Math.Pow(2, value / 12.0);
+                }
+            }
         }
     }
 
     public PlaybackService()
     {
-        uiTimer = new Timer(UiTimerCallback, null, Timeout.Infinite, Timeout.Infinite);
+        uiUpdateTimer = new Timer(UpdateUiCallback, null, Timeout.Infinite, Timeout.Infinite);
+    }
+
+    private void UpdateUiCallback(object? state)
+    {
+        if (IsPlaying && audioFileReader != null && waveOutDevice?.PlaybackState == PlaybackState.Playing)
+        {
+            Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (audioFileReader == null) return;
+
+                CurrentPosition = audioFileReader.CurrentTime;
+
+                if (CurrentSong?.ActiveLoop != null)
+                {
+                    var activeLoop = CurrentSong.ActiveLoop;
+                    var actualPlaybackTimeInFile = audioFileReader.CurrentTime;
+                    if (actualPlaybackTimeInFile >= activeLoop.End && activeLoop.End > activeLoop.Start)
+                    {
+                        audioFileReader.CurrentTime = activeLoop.Start;
+                        CurrentPosition = activeLoop.Start;
+                    }
+                }
+            });
+        }
+    }
+
+    private void InitializeNAudioPipeline(string filePath)
+    {
+        CleanUpPlaybackResources();
+
+        audioFileReader = new AudioFileReader(filePath);
+
+        ISampleProvider speedAdjustedProvider = AdjustSpeed(audioFileReader, PlaybackRate);
+
+        pitchShifter = new SmbPitchShiftingSampleProvider(speedAdjustedProvider);
+        pitchShifter.PitchFactor = (float)Math.Pow(2, PitchSemitones / 12.0);
+
+        finalSampleProvider = pitchShifter;
+
+        waveOutDevice = new WaveOutEvent();
+        waveOutDevice.PlaybackStopped += OnPlaybackStopped;
+        waveOutDevice.Init(finalSampleProvider);
+
+        CurrentSongDuration = audioFileReader.TotalTime;
+        CurrentPosition = TimeSpan.Zero;
+    }
+
+    private ISampleProvider AdjustSpeed(AudioFileReader reader, float speed)
+    {
+        if (speed == 1.0f)
+            return reader.ToSampleProvider();
+
+        int newSampleRate = (int)(reader.WaveFormat.SampleRate * speed);
+        var outFormat = new WaveFormat(newSampleRate, reader.WaveFormat.Channels);
+
+        var resampler = new MediaFoundationResampler(reader, outFormat)
+        {
+            ResamplerQuality = 60
+        };
+
+        return resampler.ToSampleProvider();
     }
 
     public void Play(Song song)
     {
         if (song == null) return;
         CurrentSong = song;
-        InitializePipeline(song.FilePath);
-        waveOut!.Play();
-        IsPlaying = true;
-        CurrentPlaybackStatus = PlaybackStateStatus.Playing;
-        uiTimer!.Change(TimeSpan.Zero, TimeSpan.FromMilliseconds(100));
+
+        try
+        {
+            InitializeNAudioPipeline(song.FilePath);
+
+            waveOutDevice?.Play();
+            IsPlaying = true;
+            CurrentPlaybackStatus = PlaybackStateStatus.Playing;
+            StartUiUpdateTimer();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error initializing playback for {song.FilePath}: {ex.Message}");
+            IsPlaying = false;
+            CurrentSong = null;
+            CurrentSongDuration = TimeSpan.Zero;
+            CurrentPosition = TimeSpan.Zero;
+            CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
+            CleanUpPlaybackResources();
+        }
+    }
+
+    private void StartUiUpdateTimer() => uiUpdateTimer?.Change(TimeSpan.Zero, TimeSpan.FromMilliseconds(100));
+    private void StopUiUpdateTimer() => uiUpdateTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+
+    private void CleanUpPlaybackResources()
+    {
+        StopUiUpdateTimer();
+
+        waveOutDevice?.Stop();
+        waveOutDevice?.Dispose();
+        waveOutDevice = null;
+
+        pitchShifter = null;
+        finalSampleProvider = null;
+        audioFileReader?.Dispose();
+        audioFileReader = null;
+    }
+
+    private void OnPlaybackStopped(object? sender, StoppedEventArgs e)
+    {
+        Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (IsPlaying || (waveOutDevice != null && waveOutDevice.PlaybackState == PlaybackState.Stopped))
+            {
+                IsPlaying = false;
+                CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
+            }
+            StopUiUpdateTimer();
+            if (e.Exception != null)
+            {
+                Console.WriteLine($"NAudio Playback Error: {e.Exception.Message}");
+            }
+        });
     }
 
     public void Pause()
     {
-        if (IsPlaying && waveOut?.PlaybackState == PlaybackState.Playing)
+        if (IsPlaying && waveOutDevice?.PlaybackState == PlaybackState.Playing)
         {
-            waveOut.Pause();
+            waveOutDevice.Pause();
             IsPlaying = false;
             CurrentPlaybackStatus = PlaybackStateStatus.Paused;
-            uiTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+            StopUiUpdateTimer();
         }
     }
 
     public void Resume()
     {
-        if (!IsPlaying && audioFileReader != null)
+        if (!IsPlaying && CurrentSong != null)
         {
-            waveOut?.Play();
+            if (waveOutDevice == null || audioFileReader == null || waveOutDevice.PlaybackState == PlaybackState.Stopped)
+            {
+                TimeSpan resumePosition = TimeSpan.Zero;
+                if (audioFileReader != null)
+                {
+                    resumePosition = audioFileReader.CurrentTime;
+                }
+                else if (CurrentPosition > TimeSpan.Zero)
+                {
+                    resumePosition = CurrentPosition;
+                }
+
+                try
+                {
+                    InitializeNAudioPipeline(CurrentSong.FilePath);
+                    if (audioFileReader != null)
+                    {
+                        audioFileReader.CurrentTime = resumePosition;
+                        CurrentPosition = resumePosition;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error re-initializing for resume: {ex.Message}");
+                    CleanUpPlaybackResources();
+                    CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
+                    return;
+                }
+            }
+            waveOutDevice?.Play();
             IsPlaying = true;
             CurrentPlaybackStatus = PlaybackStateStatus.Playing;
-            uiTimer?.Change(TimeSpan.Zero, TimeSpan.FromMilliseconds(100));
+            StartUiUpdateTimer();
         }
     }
 
     public void Stop()
     {
-        waveOut?.Stop();
         IsPlaying = false;
         CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-        uiTimer?.Change(Timeout.Infinite, Timeout.Infinite);
-        CleanUp();
+        waveOutDevice?.Stop();
+        CleanUpPlaybackResources();
         CurrentPosition = TimeSpan.Zero;
     }
 
-    public void Seek(TimeSpan position)
+    public void Seek(TimeSpan positionInTrueTime)
     {
         if (audioFileReader != null)
         {
-            position = position < TimeSpan.Zero ? TimeSpan.Zero
-                      : position > audioFileReader.TotalTime ? audioFileReader.TotalTime
-                      : position;
-            audioFileReader.CurrentTime = position;
-            CurrentPosition = position;
+            var targetPosition = positionInTrueTime;
+            if (targetPosition < TimeSpan.Zero) targetPosition = TimeSpan.Zero;
+            if (targetPosition > audioFileReader.TotalTime) targetPosition = audioFileReader.TotalTime;
+
+            audioFileReader.CurrentTime = targetPosition;
+            CurrentPosition = targetPosition;
         }
     }
 
     public void Dispose()
     {
-        CleanUp();
-        uiTimer?.Dispose();
+        CleanUpPlaybackResources();
+        uiUpdateTimer?.Dispose();
+        uiUpdateTimer = null;
         GC.SuppressFinalize(this);
-    }
-
-    // ── Internals ────────────────────────────────────────────────────────────────
-
-    private IWavePlayer? waveOut;
-    private AudioFileReader? audioFileReader;
-    private VarispeedSampleProvider? varispeed;
-    private SmbPitchShiftingSampleProvider? pitchShifter;
-    private Timer? uiTimer;
-    private bool isPipelineInitialized;
-
-    private void InitializePipeline(string filePath)
-    {
-        CleanUp();
-
-        // 1) core reader
-        audioFileReader = new AudioFileReader(filePath);
-
-        // 2) varispeed time-stretch provider
-        varispeed = new VarispeedSampleProvider(
-            source: audioFileReader.ToSampleProvider(),
-            fftLength: 1024,
-            new SoundTouchProfile(matchTempo: true, matchPitch: true))
-        {
-            PlaybackRate = PlaybackRate
-        };
-
-        // 3) pitch shift
-        pitchShifter = new SmbPitchShiftingSampleProvider(varispeed)
-        {
-            PitchFactor = (float)Math.Pow(2, PitchSemitones / 12.0)
-        };
-
-        // 4) hook up output
-        waveOut = new WaveOutEvent();
-        waveOut.PlaybackStopped += (s, e) =>
-        {
-            Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                IsPlaying = false;
-                CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-                uiTimer?.Change(Timeout.Infinite, Timeout.Infinite);
-            });
-        };
-        waveOut.Init(pitchShifter);
-
-        isPipelineInitialized = true;
-        UpdateDurationForRate();
-        CurrentPosition = TimeSpan.Zero;
-    }
-
-    private void CleanUp()
-    {
-        isPipelineInitialized = false;
-        waveOut?.Stop();
-        waveOut?.Dispose();
-        waveOut = null;
-        audioFileReader?.Dispose();
-        audioFileReader = null;
-        varispeed = null;
-        pitchShifter = null;
-    }
-
-    private void UiTimerCallback(object? _)
-    {
-        if (IsPlaying && audioFileReader != null && waveOut?.PlaybackState == PlaybackState.Playing)
-        {
-            Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                CurrentPosition = audioFileReader.CurrentTime;
-                // loop logic omitted for brevity…
-            });
-        }
-    }
-
-    private void UpdateDurationForRate()
-    {
-        if (audioFileReader != null)
-            CurrentSongDuration = TimeSpan.FromSeconds(
-                audioFileReader.TotalTime.TotalSeconds / PlaybackRate);
     }
 }
