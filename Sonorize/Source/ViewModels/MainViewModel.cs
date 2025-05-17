@@ -116,20 +116,23 @@ public class MainWindowViewModel : ViewModelBase
     }
     public string PlaybackSpeedDisplay => $"{PlaybackSpeed:F2}x";
 
+    // ...
     private double _playbackPitch = 0.0;
     public double PlaybackPitch
     {
         get => _playbackPitch;
         set
         {
-            if (SetProperty(ref _playbackPitch, Math.Max(-24, Math.Min(value, 24))))
+            // Adjust clamping for new range -4 to 4
+            if (SetProperty(ref _playbackPitch, Math.Max(-4, Math.Min(value, 4))))
             {
                 PlaybackService.PitchSemitones = (float)_playbackPitch;
                 OnPropertyChanged(nameof(PlaybackPitchDisplay));
             }
         }
     }
-    public string PlaybackPitchDisplay => $"{PlaybackPitch:+0.0;-0.0;0} st";
+    public string PlaybackPitchDisplay => $"{_playbackPitch:+0.0;-0.0;0} st";
+    // ...
 
     public ObservableCollection<WaveformPoint> WaveformRenderData { get; } = new();
     private bool _isWaveformLoading = false;

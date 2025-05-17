@@ -132,14 +132,15 @@ public class MainWindow : Window
 
         // --- Speed and Pitch Controls ---
         var speedPitchGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,15,Auto,*,Auto"), Margin = new Thickness(0, 0, 0, 5) };
-        var speedLabel = new TextBlock { Text = "Speed:", VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_TextColor };
+        // Changed Text to "Tempo:" and added Margin for spacing
+        var speedLabel = new TextBlock { Text = "Tempo:", VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_TextColor, Margin = new Thickness(0, 0, 5, 0) };
         var speedSlider = new Slider
         {
             Minimum = 0.5,
             Maximum = 2.0,
             SmallChange = 0.05,
             LargeChange = 0.25,
-            TickFrequency = 0.25,
+            TickFrequency = 0.25, // Tick at 1.0 will be present
             Foreground = _theme.B_AccentColor,
             Background = _theme.B_SecondaryTextColor
         };
@@ -147,8 +148,18 @@ public class MainWindow : Window
         var speedDisplay = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0), Foreground = _theme.B_TextColor, MinWidth = 35, HorizontalAlignment = HorizontalAlignment.Right };
         speedDisplay.Bind(TextBlock.TextProperty, new Binding("PlaybackSpeedDisplay"));
 
-        var pitchLabel = new TextBlock { Text = "Pitch:", VerticalAlignment = VerticalAlignment.Center, /*Margin = new Thickness(15, 0, 0, 0),*/ Foreground = _theme.B_TextColor };
-        var pitchSlider = new Slider { Minimum = -24, Maximum = 24, SmallChange = 0.5, LargeChange = 1, TickFrequency = 1, Foreground = _theme.B_AccentColor, Background = _theme.B_SecondaryTextColor };
+        // Added Margin for spacing to pitchLabel and adjusted Pitch Slider properties
+        var pitchLabel = new TextBlock { Text = "Pitch:", VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_TextColor, Margin = new Thickness(0, 0, 5, 0) };
+        var pitchSlider = new Slider
+        {
+            Minimum = -4, // Changed
+            Maximum = 4,  // Changed
+            SmallChange = 0.1, // Changed
+            LargeChange = 0.5, // Changed
+            TickFrequency = 0.5, // Changed
+            Foreground = _theme.B_AccentColor,
+            Background = _theme.B_SecondaryTextColor
+        };
         pitchSlider.Bind(Slider.ValueProperty, new Binding("PlaybackPitch", BindingMode.TwoWay));
         var pitchDisplay = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0), Foreground = _theme.B_TextColor, MinWidth = 45, HorizontalAlignment = HorizontalAlignment.Right };
         pitchDisplay.Bind(TextBlock.TextProperty, new Binding("PlaybackPitchDisplay"));
