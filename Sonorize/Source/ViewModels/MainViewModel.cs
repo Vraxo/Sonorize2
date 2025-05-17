@@ -120,7 +120,7 @@ public class MainWindowViewModel : ViewModelBase
         get => _playbackPitch;
         set
         {
-            if (SetProperty(ref _playbackPitch, Math.Max(-24, Math.Min(value, 24))))
+            if (SetProperty(ref _playbackPitch, Math.Max(-5, Math.Min(value, 5)))) // Clamped to -5 to 5
             {
                 PlaybackService.PitchSemitones = (float)_playbackPitch;
                 OnPropertyChanged(nameof(PlaybackPitchDisplay));
