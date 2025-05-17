@@ -189,16 +189,8 @@ public class MainWindowViewModel : ViewModelBase
             _ => IsAdvancedPanelVisible = !IsAdvancedPanelVisible,
             _ => PlaybackService.CurrentSong != null && !IsLoadingLibrary);
 
-        CaptureLoopStartCandidateCommand = new RelayCommand(
-            // PlaybackService.CurrentPosition is the true position in the audio file,
-            // unaffected by playback rate in its value (it just advances faster or slower).
-            // Loop points should be defined in this true time.
-            _ => NewLoopStartCandidate = PlaybackService.CurrentPosition,
-            _ => PlaybackService.CurrentSong != null);
-        CaptureLoopEndCandidateCommand = new RelayCommand(
-            // Same reasoning as CaptureLoopStartCandidateCommand.
-            _ => NewLoopEndCandidate = PlaybackService.CurrentPosition,
-            _ => PlaybackService.CurrentSong != null);
+        CaptureLoopStartCandidateCommand = new RelayCommand(_ => NewLoopStartCandidate = PlaybackService.CurrentPosition.Divide(PlaybackService.PlaybackRate), _ => PlaybackService.CurrentSong != null);
+        CaptureLoopEndCandidateCommand = new RelayCommand(_ => NewLoopEndCandidate = PlaybackService.CurrentPosition.Divide(PlaybackService.PlaybackRate), _ => PlaybackService.CurrentSong != null);
         SaveNewLoopRegionCommand = new RelayCommand(SaveLoopCandidateAction, _ => CanSaveNewLoopRegion);
         ActivateLoopRegionCommand = new RelayCommand(_ => { if (PlaybackService.CurrentSong != null && SelectedEditableLoopRegion != null) PlaybackService.CurrentSong.ActiveLoop = SelectedEditableLoopRegion; }, _ => CanActivateLoopRegion());
         DeactivateActiveLoopCommand = new RelayCommand(_ => { if (PlaybackService.CurrentSong != null) PlaybackService.CurrentSong.ActiveLoop = null; }, _ => PlaybackService.CurrentSong?.ActiveLoop != null);
@@ -309,8 +301,7 @@ public class MainWindowViewModel : ViewModelBase
                                         NewLoopStartCandidate.HasValue &&
                                         NewLoopEndCandidate.HasValue &&
                                         NewLoopEndCandidate.Value > NewLoopStartCandidate.Value &&
-                                        // CurrentSongDuration is the true duration. Loop points are in true time.
-                                        NewLoopEndCandidate.Value <= PlaybackService.CurrentSongDuration &&
+                                        NewLoopEndCandidate.Value <= PlaybackService.CurrentSongDuration.Divide(PlaybackService.PlaybackRate) &&
                                         NewLoopStartCandidate.Value >= TimeSpan.Zero &&
                                         !string.IsNullOrWhiteSpace(NewLoopNameInput);
 

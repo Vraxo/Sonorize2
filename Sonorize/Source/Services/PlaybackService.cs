@@ -83,55 +83,15 @@ public class PlaybackService : ViewModelBase, IDisposable
         get => _playbackRate;
         set
         {
-            float newRate = value; // ViewModel already clamps this
-            if (Math.Abs(_playbackRate - newRate) < 0.001f) return; // No significant change
-
-            _playbackRate = newRate;
-            OnPropertyChanged(); // Notify UI of the change in the underlying property
-
-            if (CurrentSong != null && (IsPlaying || CurrentPlaybackStatus == PlaybackStateStatus.Paused))
+            if (SetProperty(ref _playbackRate, value))
             {
-                TimeSpan currentTime = audioFileReader?.CurrentTime ?? CurrentPosition;
-                bool wasPlaying = IsPlaying;
-                PlaybackStateStatus previousStatus = CurrentPlaybackStatus;
-
-                CleanUpPlaybackResources(); // Stops playback, disposes resources
-
-                try
+                if (IsPlaying && CurrentSong != null)
                 {
-                    InitializeNAudioPipeline(CurrentSong.FilePath); // Re-initializes with new _playbackRate
-
-                    if (audioFileReader != null)
-                    {
-                        audioFileReader.CurrentTime = currentTime;
-                        CurrentPosition = currentTime; // Ensure UI property is updated
-                    }
-
-                    if (wasPlaying && waveOutDevice != null)
-                    {
-                        waveOutDevice.Play();
-                        IsPlaying = true;
-                        CurrentPlaybackStatus = PlaybackStateStatus.Playing;
-                        StartUiUpdateTimer();
-                    }
-                    else if (previousStatus == PlaybackStateStatus.Paused && waveOutDevice != null)
-                    {
-                        // Pipeline is ready, but remain paused.
-                        IsPlaying = false;
-                        CurrentPlaybackStatus = PlaybackStateStatus.Paused;
-                        // UI timer remains stopped for paused state.
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"Error re-initializing playback for rate change: {ex.Message}");
-                    IsPlaying = false;
-                    CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-                    CurrentSong = null; // Critical error, stop playback
-                    CleanUpPlaybackResources();
+                    var resumeTime = audioFileReader?.CurrentTime ?? TimeSpan.Zero;
+                    Play(CurrentSong);
+                    Seek(resumeTime);
                 }
             }
-            // If stopped, the new _playbackRate will be picked up on the next Play() call
         }
     }
 
@@ -141,14 +101,12 @@ public class PlaybackService : ViewModelBase, IDisposable
         get => _pitchSemitones;
         set
         {
-            if (Math.Abs(_pitchSemitones - value) < 0.001f) return;
-            _pitchSemitones = value;
-            OnPropertyChanged();
-
-            if (pitchShifter != null && _playbackRate > 0) // PlaybackRate must be positive
+            if (SetProperty(ref _pitchSemitones, value))
             {
-                double desiredPitchFactor = Math.Pow(2, _pitchSemitones / 12.0);
-                pitchShifter.PitchFactor = (float)(desiredPitchFactor / _playbackRate);
+                if (pitchShifter != null)
+                {
+                    pitchShifter.PitchFactor = (float)Math.Pow(2, value / 12.0);
+                }
             }
         }
     }
@@ -165,56 +123,33 @@ public class PlaybackService : ViewModelBase, IDisposable
             Dispatcher.UIThread.InvokeAsync(() =>
             {
                 if (audioFileReader == null) return;
+
                 CurrentPosition = audioFileReader.CurrentTime;
 
                 if (CurrentSong?.ActiveLoop != null)
                 {
                     var activeLoop = CurrentSong.ActiveLoop;
-                    if (audioFileReader.CurrentTime >= activeLoop.End && activeLoop.End > activeLoop.Start)
+                    var actualPlaybackTimeInFile = audioFileReader.CurrentTime;
+                    if (actualPlaybackTimeInFile >= activeLoop.End && activeLoop.End > activeLoop.Start)
                     {
                         audioFileReader.CurrentTime = activeLoop.Start;
-                        CurrentPosition = activeLoop.Start; // Update UI property
+                        CurrentPosition = activeLoop.Start;
                     }
                 }
             });
         }
     }
 
-    private ISampleProvider ApplySpeedChange(AudioFileReader reader, float speed)
-    {
-        if (Math.Abs(speed - 1.0f) < 0.001f)
-        {
-            return reader.ToSampleProvider(); // No speed change, return original
-        }
-
-        var outFormat = new WaveFormat((int)(reader.WaveFormat.SampleRate * speed),
-                                       reader.WaveFormat.BitsPerSample,
-                                       reader.WaveFormat.Channels);
-
-        var resampler = new MediaFoundationResampler(reader, outFormat)
-        {
-            ResamplerQuality = 60 // Max quality
-        };
-        return resampler.ToSampleProvider();
-    }
-
     private void InitializeNAudioPipeline(string filePath)
     {
-        CleanUpPlaybackResources(); // Ensures previous instances are disposed
+        CleanUpPlaybackResources();
 
         audioFileReader = new AudioFileReader(filePath);
-        ISampleProvider providerToPitchShift = ApplySpeedChange(audioFileReader, _playbackRate);
 
-        pitchShifter = new SmbPitchShiftingSampleProvider(providerToPitchShift);
-        if (_playbackRate > 0) // Avoid division by zero if _playbackRate somehow became invalid
-        {
-            double desiredPitchFactor = Math.Pow(2, PitchSemitones / 12.0);
-            pitchShifter.PitchFactor = (float)(desiredPitchFactor / _playbackRate);
-        }
-        else
-        {
-            pitchShifter.PitchFactor = (float)Math.Pow(2, PitchSemitones / 12.0); // Fallback if rate is invalid
-        }
+        ISampleProvider speedAdjustedProvider = AdjustSpeed(audioFileReader, PlaybackRate);
+
+        pitchShifter = new SmbPitchShiftingSampleProvider(speedAdjustedProvider);
+        pitchShifter.PitchFactor = (float)Math.Pow(2, PitchSemitones / 12.0);
 
         finalSampleProvider = pitchShifter;
 
@@ -226,22 +161,31 @@ public class PlaybackService : ViewModelBase, IDisposable
         CurrentPosition = TimeSpan.Zero;
     }
 
+    private ISampleProvider AdjustSpeed(AudioFileReader reader, float speed)
+    {
+        if (speed == 1.0f)
+            return reader.ToSampleProvider();
+
+        int newSampleRate = (int)(reader.WaveFormat.SampleRate * speed);
+        var outFormat = new WaveFormat(newSampleRate, reader.WaveFormat.Channels);
+
+        var resampler = new MediaFoundationResampler(reader, outFormat)
+        {
+            ResamplerQuality = 60
+        };
+
+        return resampler.ToSampleProvider();
+    }
+
     public void Play(Song song)
     {
         if (song == null) return;
-
-        // If it's the same song and already paused, treat as Resume
-        if (CurrentSong == song && CurrentPlaybackStatus == PlaybackStateStatus.Paused)
-        {
-            Resume();
-            return;
-        }
-
         CurrentSong = song;
 
         try
         {
             InitializeNAudioPipeline(song.FilePath);
+
             waveOutDevice?.Play();
             IsPlaying = true;
             CurrentPlaybackStatus = PlaybackStateStatus.Playing;
@@ -249,10 +193,12 @@ public class PlaybackService : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Error initializing playback for {song.FilePath}: {ex.Message}");
+            Console.WriteLine($"Error initializing playback for {song.FilePath}: {ex.Message}");
             IsPlaying = false;
-            CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
             CurrentSong = null;
+            CurrentSongDuration = TimeSpan.Zero;
+            CurrentPosition = TimeSpan.Zero;
+            CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
             CleanUpPlaybackResources();
         }
     }
@@ -264,54 +210,29 @@ public class PlaybackService : ViewModelBase, IDisposable
     {
         StopUiUpdateTimer();
 
-        waveOutDevice?.Stop(); // Stop playback
+        waveOutDevice?.Stop();
         waveOutDevice?.Dispose();
         waveOutDevice = null;
 
-        // pitchShifter is disposed implicitly if it's just a pass-through to finalSampleProvider
-        // which itself might wrap disposable resources from audioFileReader via resampler.
-        // However, SmbPitchShiftingSampleProvider itself is not IDisposable.
-        // MediaFoundationResampler *is* IDisposable.
-        // AudioFileReader *is* IDisposable.
-
-        // The resampler (if created in ApplySpeedChange) is wrapped by ToSampleProvider()
-        // and then given to SmbPitchShiftingSampleProvider. It's not directly held to be disposed.
-        // The AudioFileReader is the primary disposable resource here that needs explicit handling.
-        pitchShifter = null; // Allow GC
-        finalSampleProvider = null; // Allow GC
-
+        pitchShifter = null;
+        finalSampleProvider = null;
         audioFileReader?.Dispose();
         audioFileReader = null;
     }
 
     private void OnPlaybackStopped(object? sender, StoppedEventArgs e)
     {
-        // This event can fire for multiple reasons:
-        // 1. Naturally reached end of stream.
-        // 2. waveOutDevice.Stop() was called.
-        // 3. An error occurred during playback.
-
         Dispatcher.UIThread.InvokeAsync(() =>
         {
-            // Only change state if it wasn't an intentional stop/cleanup already handled
-            if (CurrentPlaybackStatus != PlaybackStateStatus.Stopped || IsPlaying)
+            if (IsPlaying || (waveOutDevice != null && waveOutDevice.PlaybackState == PlaybackState.Stopped))
             {
-                // If it stopped due to end of file or error, not manual stop
-                if (audioFileReader != null && audioFileReader.CurrentTime >= audioFileReader.TotalTime)
-                {
-                    // Reached end of song
-                    CurrentPosition = CurrentSongDuration; // Ensure slider goes to end
-                }
                 IsPlaying = false;
                 CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
             }
-
             StopUiUpdateTimer();
-
             if (e.Exception != null)
             {
-                Debug.WriteLine($"NAudio Playback Error: {e.Exception.Message}");
-                // Potentially set an error state in UI or log more formally
+                Console.WriteLine($"NAudio Playback Error: {e.Exception.Message}");
             }
         });
     }
@@ -331,31 +252,35 @@ public class PlaybackService : ViewModelBase, IDisposable
     {
         if (!IsPlaying && CurrentSong != null)
         {
-            // If pipeline is not initialized (e.g., after Stop() or if Play() was never called for this song)
-            // or if it was stopped due to an error.
             if (waveOutDevice == null || audioFileReader == null || waveOutDevice.PlaybackState == PlaybackState.Stopped)
             {
-                TimeSpan resumePosition = CurrentPosition; // Use CurrentPosition as it's maintained
+                TimeSpan resumePosition = TimeSpan.Zero;
+                if (audioFileReader != null)
+                {
+                    resumePosition = audioFileReader.CurrentTime;
+                }
+                else if (CurrentPosition > TimeSpan.Zero)
+                {
+                    resumePosition = CurrentPosition;
+                }
+
                 try
                 {
                     InitializeNAudioPipeline(CurrentSong.FilePath);
                     if (audioFileReader != null)
                     {
                         audioFileReader.CurrentTime = resumePosition;
-                        CurrentPosition = resumePosition; // Update UI property
+                        CurrentPosition = resumePosition;
                     }
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"Error re-initializing for resume: {ex.Message}");
+                    Console.WriteLine($"Error re-initializing for resume: {ex.Message}");
                     CleanUpPlaybackResources();
                     CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-                    IsPlaying = false;
-                    CurrentSong = null;
                     return;
                 }
             }
-
             waveOutDevice?.Play();
             IsPlaying = true;
             CurrentPlaybackStatus = PlaybackStateStatus.Playing;
@@ -365,13 +290,11 @@ public class PlaybackService : ViewModelBase, IDisposable
 
     public void Stop()
     {
-        IsPlaying = false; // Set first to influence OnPlaybackStopped logic if Stop calls it
+        IsPlaying = false;
         CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-        // waveOutDevice.Stop() will trigger OnPlaybackStopped if device exists
-        // CleanUpPlaybackResources also calls waveOutDevice.Stop()
+        waveOutDevice?.Stop();
         CleanUpPlaybackResources();
-        CurrentPosition = TimeSpan.Zero; // Reset position
-        // CurrentSong remains, so UI still shows it as loaded but stopped.
+        CurrentPosition = TimeSpan.Zero;
     }
 
     public void Seek(TimeSpan positionInTrueTime)
@@ -383,7 +306,7 @@ public class PlaybackService : ViewModelBase, IDisposable
             if (targetPosition > audioFileReader.TotalTime) targetPosition = audioFileReader.TotalTime;
 
             audioFileReader.CurrentTime = targetPosition;
-            CurrentPosition = targetPosition; // Update UI property
+            CurrentPosition = targetPosition;
         }
     }
 
