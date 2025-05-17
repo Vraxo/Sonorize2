@@ -32,7 +32,7 @@ public class MainWindow : Window
             {
                 new RowDefinition(GridLength.Auto), // Menu
                 new RowDefinition(GridLength.Auto), // Search Bar
-                new RowDefinition(GridLength.Star), // Song List
+                new RowDefinition(GridLength.Star), // TabControl (Library/Artists)
                 new RowDefinition(GridLength.Auto), // Advanced Playback Panel
                 new RowDefinition(GridLength.Auto), // Main Playback Controls
                 new RowDefinition(GridLength.Auto)  // Status Bar
@@ -47,9 +47,9 @@ public class MainWindow : Window
         Grid.SetRow(searchBarPanel, 1);
         mainGrid.Children.Add(searchBarPanel);
 
-        var songListScrollViewer = CreateSongListScrollViewer();
-        Grid.SetRow(songListScrollViewer, 2);
-        mainGrid.Children.Add(songListScrollViewer);
+        var tabControl = CreateMainTabView();
+        Grid.SetRow(tabControl, 2);
+        mainGrid.Children.Add(tabControl);
 
         var advancedPlaybackPanel = CreateAdvancedPlaybackPanel();
         advancedPlaybackPanel.Bind(Visual.IsVisibleProperty, new Binding("IsAdvancedPanelVisible"));
@@ -90,7 +90,7 @@ public class MainWindow : Window
         var searchBox = new TextBox
         {
             Watermark = "Search songs by title or artist...",
-            Margin = new Thickness(10, 5, 10, 5), // Margin for the TextBox itself
+            Margin = new Thickness(10, 5, 10, 5),
             Padding = new Thickness(10, 7),
             Background = _theme.B_SlightlyLighterBackground,
             Foreground = _theme.B_TextColor,
@@ -108,9 +108,73 @@ public class MainWindow : Window
         var panel = new Panel
         {
             Children = { searchBox },
-            Margin = new Thickness(0, 5, 0, 0) // Changed Padding to Margin for the Panel
+            Margin = new Thickness(0, 5, 0, 0)
         };
         return panel;
+    }
+
+    private TabControl CreateMainTabView()
+    {
+        var tabControl = new TabControl
+        {
+            Background = _theme.B_BackgroundColor,
+            Margin = new Thickness(10, 5, 10, 5),
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0)
+        };
+
+        // TabItem Styling
+        var tabItemStyle = new Style(s => s.Is<TabItem>());
+        // Make unselected tab header background match the TabControl's background
+        tabItemStyle.Setters.Add(new Setter(TabItem.BackgroundProperty, _theme.B_BackgroundColor));
+        tabItemStyle.Setters.Add(new Setter(TabItem.ForegroundProperty, _theme.B_SecondaryTextColor));
+        tabItemStyle.Setters.Add(new Setter(TabItem.PaddingProperty, new Thickness(12, 7)));
+        tabItemStyle.Setters.Add(new Setter(TabItem.FontSizeProperty, 13.0));
+        tabItemStyle.Setters.Add(new Setter(TabItem.FontWeightProperty, FontWeight.SemiBold));
+        tabItemStyle.Setters.Add(new Setter(TabItem.BorderThicknessProperty, new Thickness(0)));
+        // Add a transparent border or a border matching B_BackgroundColor for the bottom
+        // to ensure consistent height and alignment with the selected tab's indicator.
+        // This creates space for where the selection indicator *would* be.
+        tabItemStyle.Setters.Add(new Setter(TabItem.BorderBrushProperty, Brushes.Transparent)); // Use transparent or _theme.B_AccentColor with 0 thickness initially
+        // Thickness for bottom border, assuming selection indicator is ~2px.
+        // This helps align text vertically if selected tab has a visible border/indicator affecting its height.
+        // We can also control this via Padding if the indicator is an overlay.
+        // For now, let's assume the indicator doesn't shift text.
+
+        var selectedTabItemStyle = new Style(s => s.Is<TabItem>().Class(":selected"));
+        selectedTabItemStyle.Setters.Add(new Setter(TabItem.BackgroundProperty, _theme.B_BackgroundColor));
+        selectedTabItemStyle.Setters.Add(new Setter(TabItem.ForegroundProperty, _theme.B_TextColor));
+        // Assuming the green line indicator is handled by the theme or default TabControl template for :selected.
+        // If not, you might need to add a Setter for BorderBrushProperty to _theme.B_AccentColor
+        // and BorderThicknessProperty to something like new Thickness(0,0,0,2) for selected.
+        // For FluentTheme, TabStrip কৃতিত্বSelectionIndicatorBrush is used.
+
+        var pointerOverTabItemStyle = new Style(s => s.Is<TabItem>().Class(":pointerover").Not(x => x.Class(":selected")));
+        pointerOverTabItemStyle.Setters.Add(new Setter(TabItem.BackgroundProperty, _theme.B_SlightlyLighterBackground)); // Keep hover distinct
+        pointerOverTabItemStyle.Setters.Add(new Setter(TabItem.ForegroundProperty, _theme.B_TextColor));
+
+        tabControl.Styles.Add(tabItemStyle);
+        tabControl.Styles.Add(selectedTabItemStyle);
+        tabControl.Styles.Add(pointerOverTabItemStyle);
+
+        // Library Tab
+        var libraryTab = new TabItem
+        {
+            Header = "LIBRARY",
+            Content = CreateSongListScrollViewer()
+        };
+
+        // Artists Tab
+        var artistsTab = new TabItem
+        {
+            Header = "ARTISTS",
+            Content = CreateArtistsListScrollViewer()
+        };
+
+        tabControl.Items.Add(libraryTab);
+        tabControl.Items.Add(artistsTab);
+
+        return tabControl;
     }
 
     private ScrollViewer CreateSongListScrollViewer()
@@ -130,12 +194,8 @@ public class MainWindow : Window
             new Setter(TextBlock.ForegroundProperty, _theme.B_TextColor)
         }
         });
-
         songListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":pointerover").Not(xx => xx.Class(":selected")))
-        {
-            Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_ControlBackgroundColor) }
-        });
-
+        { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_ControlBackgroundColor) } });
         songListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected"))
         {
             Setters = {
@@ -143,7 +203,6 @@ public class MainWindow : Window
             new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
         }
         });
-
         songListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected").Class(":pointerover"))
         {
             Setters = {
@@ -158,40 +217,71 @@ public class MainWindow : Window
         songListBox.ItemTemplate = new FuncDataTemplate<Song>((song, nameScope) => {
             var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 5, 0), Source = song.Thumbnail, Stretch = Stretch.UniformToFill };
             RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
-
-            var titleBlock = new TextBlock
-            {
-                Text = song.Title,
-                FontSize = 14,
-                FontWeight = FontWeight.Normal,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 0, 1)
-            };
-            var artistBlock = new TextBlock
-            {
-                Text = song.Artist,
-                FontSize = 11,
-                VerticalAlignment = VerticalAlignment.Center,
-                Foreground = _theme.B_SecondaryTextColor
-            };
-            var durationBlock = new TextBlock
-            {
-                Text = song.DurationString,
-                FontSize = 11,
-                HorizontalAlignment = HorizontalAlignment.Right,
-                VerticalAlignment = VerticalAlignment.Center,
-                Foreground = _theme.B_SecondaryTextColor
-            };
-
+            var titleBlock = new TextBlock { Text = song.Title, FontSize = 14, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 1) };
+            var artistBlock = new TextBlock { Text = song.Artist, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
+            var durationBlock = new TextBlock { Text = song.DurationString, FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
             var textStack = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Children = { titleBlock, artistBlock } };
             var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), VerticalAlignment = VerticalAlignment.Center, Children = { image, textStack, durationBlock } };
             Grid.SetColumn(image, 0); Grid.SetColumn(textStack, 1); Grid.SetColumn(durationBlock, 2);
-
             return new Border { Padding = new Thickness(10, 6, 10, 6), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
         }, supportsRecycling: true);
 
         return new ScrollViewer { Content = songListBox, Padding = new Thickness(0, 0, 0, 5) };
     }
+
+    private ScrollViewer CreateArtistsListScrollViewer()
+    {
+        var artistsListBox = new ListBox
+        {
+            Background = _theme.B_ListBoxBackground,
+            BorderThickness = new Thickness(0),
+            Margin = new Thickness(10)
+        };
+
+        artistsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>())
+        {
+            Setters = {
+            new Setter(TemplatedControl.BackgroundProperty, _theme.B_ListBoxBackground),
+            new Setter(TextBlock.ForegroundProperty, _theme.B_TextColor)
+        }
+        });
+        artistsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":pointerover").Not(xx => xx.Class(":selected")))
+        { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_ControlBackgroundColor) } });
+        artistsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected"))
+        {
+            Setters = {
+            new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
+            new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
+        }
+        });
+        artistsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected").Class(":pointerover"))
+        {
+            Setters = {
+            new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
+            new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
+        }
+        });
+
+        artistsListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("Artists"));
+
+        artistsListBox.ItemTemplate = new FuncDataTemplate<string>((artistName, nameScope) =>
+        {
+            return new Border
+            {
+                Padding = new Thickness(10, 8),
+                Background = Brushes.Transparent,
+                Child = new TextBlock
+                {
+                    Text = artistName,
+                    FontSize = 14,
+                    VerticalAlignment = VerticalAlignment.Center
+                }
+            };
+        }, supportsRecycling: true);
+
+        return new ScrollViewer { Content = artistsListBox, Padding = new Thickness(0, 0, 0, 5) };
+    }
+
 
     private Border CreateAdvancedPlaybackPanel()
     {

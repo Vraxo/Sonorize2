@@ -23,6 +23,7 @@ public class MainWindowViewModel : ViewModelBase
 
     private readonly ObservableCollection<Song> _allSongs = new();
     public ObservableCollection<Song> FilteredSongs { get; } = new();
+    public ObservableCollection<string> Artists { get; } = new();
 
     private string _searchQuery = string.Empty;
     public string SearchQuery
@@ -236,7 +237,7 @@ public class MainWindowViewModel : ViewModelBase
                 (s.Artist?.ToLowerInvariant().Contains(query) ?? false));
         }
 
-        foreach (var song in songsToFilter)
+        foreach (var song in songsToFilter.OrderBy(s => s.Artist).ThenBy(s => s.Title)) // Keep songs sorted
         {
             FilteredSongs.Add(song);
         }
@@ -419,6 +420,7 @@ public class MainWindowViewModel : ViewModelBase
 
         await Dispatcher.UIThread.InvokeAsync(() => {
             _allSongs.Clear();
+            Artists.Clear(); // Clear artists list too
             StatusBarText = "Preparing to load music...";
         });
 
@@ -434,9 +436,25 @@ public class MainWindowViewModel : ViewModelBase
                         s => Dispatcher.UIThread.InvokeAsync(() => StatusBarText = s)
                     );
                 });
+
+                // Populate Artists list
+                var uniqueArtists = _allSongs
+                    .Select(s => s.Artist)
+                    .Where(a => !string.IsNullOrWhiteSpace(a) && a != "Unknown Artist")
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(a => a)
+                    .ToList();
+
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    ApplyFilter();
+                    Artists.Clear(); // Ensure it's clear before adding
+                    foreach (var artist in uniqueArtists)
+                    {
+                        Artists.Add(artist);
+                    }
+                    OnPropertyChanged(nameof(Artists)); // Notify if the binding is to the property itself, though ObservableCollection handles internal changes.
+
+                    ApplyFilter(); // ApplyFilter should run after _allSongs is populated.
                     if (!_allSongs.Any() && settings.MusicDirectories.Any()) StatusBarText = "No compatible songs found in specified directories.";
                 });
             }
@@ -460,27 +478,13 @@ public class MainWindowViewModel : ViewModelBase
         var settingsDialog = new Sonorize.Views.SettingsWindow(CurrentTheme) { DataContext = settingsVM };
         await settingsDialog.ShowDialog(owner);
 
-        if (settingsVM.SettingsChanged) // This flag is now more reliable
+        if (settingsVM.SettingsChanged)
         {
-            // Determine if directories actually changed by comparing the new list with the initial one
             bool dirsActuallyChanged = !settingsVM.InitialMusicDirectories.SequenceEqual(settingsVM.MusicDirectories);
 
-            // Theme change check (a new theme was selected and saved)
-            var newSettings = _settingsService.LoadSettings(); // Get freshly saved settings
-            bool themeActuallyChanged = CurrentTheme.AccentColor != newSettings.PreferredThemeFileName; // A simplistic check, better to compare actual theme file name
-                                                                                                        // A more robust check would compare the old saved theme name with new saved theme name.
-            if (string.IsNullOrEmpty(newSettings.PreferredThemeFileName) && CurrentTheme.AccentColor != ThemeColors.CreateAmoledSpotifyTheme().AccentColor && CurrentTheme.AccentColor != new ThemeColors().AccentColor)
-            {
-                // this logic might need refinement if you have more default themes or complex theme comparison
-            }
-            else
-            {
-                // Potentially query ThemeService for the name of CurrentTheme if needed.
-                // For now, let's assume SelectedThemeFile in SettingsVM reflects what will be saved.
-                // And compare that to what was originally loaded.
-                string originalThemeName = _settingsService.LoadSettings().PreferredThemeFileName ?? ThemeService.DefaultThemeFileName;
-                themeActuallyChanged = originalThemeName != settingsVM.SelectedThemeFile;
-            }
+            var newSettings = _settingsService.LoadSettings();
+            string originalThemeName = (_settingsService.LoadSettings() ?? new AppSettings()).PreferredThemeFileName ?? ThemeService.DefaultThemeFileName;
+            bool themeActuallyChanged = originalThemeName != newSettings.PreferredThemeFileName;
 
 
             if (dirsActuallyChanged)
