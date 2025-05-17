@@ -1,6 +1,5 @@
 ﻿using Avalonia.Threading;
-using NAudio.Wave;
-using NAudio.Wave.SampleProviders;
+using ManagedBass;
 using Sonorize.Models;
 using Sonorize.ViewModels;
 using System;
@@ -71,10 +70,9 @@ public class PlaybackService : ViewModelBase, IDisposable
     }
     public double CurrentSongDurationSeconds => CurrentSongDuration.TotalSeconds > 0 ? CurrentSongDuration.TotalSeconds : 1;
 
-    private IWavePlayer? waveOutDevice;
-    private AudioFileReader? audioFileReader;
-    private ISampleProvider? finalSampleProvider;
-    private SmbPitchShiftingSampleProvider? pitchShifter;
+    private int _streamHandle;
+    private int _tempoEffectHandle;
+    private int _pitchEffectHandle;
     private Timer? uiUpdateTimer;
 
     private float _playbackRate = 1.0f;
@@ -85,12 +83,7 @@ public class PlaybackService : ViewModelBase, IDisposable
         {
             if (SetProperty(ref _playbackRate, value))
             {
-                if (IsPlaying && CurrentSong != null)
-                {
-                    var resumeTime = audioFileReader?.CurrentTime ?? TimeSpan.Zero;
-                    Play(CurrentSong);
-                    Seek(resumeTime);
-                }
+                UpdateTempo(value);
             }
         }
     }
@@ -103,10 +96,7 @@ public class PlaybackService : ViewModelBase, IDisposable
         {
             if (SetProperty(ref _pitchSemitones, value))
             {
-                if (pitchShifter != null)
-                {
-                    pitchShifter.PitchFactor = (float)Math.Pow(2, value / 12.0);
-                }
+                UpdatePitch(value);
             }
         }
     }
@@ -118,63 +108,87 @@ public class PlaybackService : ViewModelBase, IDisposable
 
     private void UpdateUiCallback(object? state)
     {
-        if (IsPlaying && audioFileReader != null && waveOutDevice?.PlaybackState == PlaybackState.Playing)
+        if (IsPlaying && _streamHandle != 0 && Bass.ChannelIsPlaying(_streamHandle) == PlaybackState.Playing)
         {
             Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (audioFileReader == null) return;
+                if (_streamHandle == 0) return;
 
-                CurrentPosition = audioFileReader.CurrentTime;
+                long position = Bass.ChannelGetPosition(_streamHandle);
+                CurrentPosition = TimeSpan.FromSeconds(Bass.ChannelBytes2Seconds(_streamHandle, position));
 
                 if (CurrentSong?.ActiveLoop != null)
                 {
                     var activeLoop = CurrentSong.ActiveLoop;
-                    var actualPlaybackTimeInFile = audioFileReader.CurrentTime;
+                    var actualPlaybackTimeInFile = CurrentPosition;
                     if (actualPlaybackTimeInFile >= activeLoop.End && activeLoop.End > activeLoop.Start)
                     {
-                        audioFileReader.CurrentTime = activeLoop.Start;
-                        CurrentPosition = activeLoop.Start;
+                        Seek(activeLoop.Start);
                     }
                 }
             });
         }
     }
 
-    private void InitializeNAudioPipeline(string filePath)
+    private void InitializeBassPipeline(string filePath)
     {
         CleanUpPlaybackResources();
 
-        audioFileReader = new AudioFileReader(filePath);
+        if (!Bass.Init(-1, 44100))
+        {
+            Console.WriteLine($"Bass.Init error: {Bass.LastError}");
+            return;
+        }
 
-        ISampleProvider speedAdjustedProvider = AdjustSpeed(audioFileReader, PlaybackRate);
+        _streamHandle = Bass.CreateStream(filePath, 0, 0, BassFlags.Decode | BassFlags.Float);
+        if (_streamHandle == 0)
+        {
+            Console.WriteLine($"Bass.CreateStream error: {Bass.LastError}");
+            return;
+        }
 
-        pitchShifter = new SmbPitchShiftingSampleProvider(speedAdjustedProvider);
-        pitchShifter.PitchFactor = (float)Math.Pow(2, PitchSemitones / 12.0);
+        // Add tempo and pitch effects
+        _tempoEffectHandle = Bass.ChannelSetFX(_streamHandle, EffectType.Tempo, 0);
+        _pitchEffectHandle = Bass.ChannelSetFX(_streamHandle, EffectType.Tempo, 0); // Tempo effect is also used for pitch
 
-        finalSampleProvider = pitchShifter;
+        // Apply initial pitch and tempo
+        UpdatePitch(_pitchSemitones);
+        UpdateTempo(_playbackRate);
 
-        waveOutDevice = new WaveOutEvent();
-        waveOutDevice.PlaybackStopped += OnPlaybackStopped;
-        waveOutDevice.Init(finalSampleProvider);
+        // Create a playable stream from the decoded stream
+        int playableStream = Bass.CreateStream(_streamHandle, 0, 0, BassFlags.Float);
+         if (playableStream == 0)
+        {
+            Console.WriteLine($"Bass.CreateStream (playable) error: {Bass.LastError}");
+            Bass.StreamFree(_streamHandle);
+            _streamHandle = 0;
+            return;
+        }
+        _streamHandle = playableStream;
 
-        CurrentSongDuration = audioFileReader.TotalTime;
+
+        long length = Bass.ChannelGetLength(_streamHandle);
+        CurrentSongDuration = TimeSpan.FromSeconds(Bass.ChannelBytes2Seconds(_streamHandle, length));
         CurrentPosition = TimeSpan.Zero;
     }
 
-    private ISampleProvider AdjustSpeed(AudioFileReader reader, float speed)
+    private void UpdateTempo(float rate)
     {
-        if (speed == 1.0f)
-            return reader.ToSampleProvider();
-
-        int newSampleRate = (int)(reader.WaveFormat.SampleRate * speed);
-        var outFormat = new WaveFormat(newSampleRate, reader.WaveFormat.Channels);
-
-        var resampler = new MediaFoundationResampler(reader, outFormat)
+        if (_tempoEffectHandle != 0)
         {
-            ResamplerQuality = 60
-        };
+            // Rate is a percentage change, so 1.0 is 0% change.
+            // Bass.Net tempo is in percentage.
+            Bass.FXSetParameters(_tempoEffectHandle, new TempoParameters(rate * 100f - 100f, 0, 0));
+        }
+    }
 
-        return resampler.ToSampleProvider();
+    private void UpdatePitch(float semitones)
+    {
+         if (_pitchEffectHandle != 0)
+        {
+            // Pitch is in semitones
+            Bass.FXSetParameters(_pitchEffectHandle, new TempoParameters(0, semitones, 0));
+        }
     }
 
     public void Play(Song song)
@@ -184,12 +198,15 @@ public class PlaybackService : ViewModelBase, IDisposable
 
         try
         {
-            InitializeNAudioPipeline(song.FilePath);
+            InitializeBassPipeline(song.FilePath);
 
-            waveOutDevice?.Play();
-            IsPlaying = true;
-            CurrentPlaybackStatus = PlaybackStateStatus.Playing;
-            StartUiUpdateTimer();
+            if (_streamHandle != 0)
+            {
+                Bass.ChannelPlay(_streamHandle, false);
+                IsPlaying = true;
+                CurrentPlaybackStatus = PlaybackStateStatus.Playing;
+                StartUiUpdateTimer();
+            }
         }
         catch (Exception ex)
         {
@@ -210,38 +227,37 @@ public class PlaybackService : ViewModelBase, IDisposable
     {
         StopUiUpdateTimer();
 
-        waveOutDevice?.Stop();
-        waveOutDevice?.Dispose();
-        waveOutDevice = null;
-
-        pitchShifter = null;
-        finalSampleProvider = null;
-        audioFileReader?.Dispose();
-        audioFileReader = null;
+        if (_streamHandle != 0)
+        {
+            Bass.ChannelRemoveFX(_streamHandle, _tempoEffectHandle);
+            Bass.ChannelRemoveFX(_streamHandle, _pitchEffectHandle);
+            Bass.StreamFree(_streamHandle);
+            _streamHandle = 0;
+            _tempoEffectHandle = 0;
+            _pitchEffectHandle = 0;
+        }
+        Bass.Free();
     }
 
-    private void OnPlaybackStopped(object? sender, StoppedEventArgs e)
+    private void OnPlaybackStopped(int handle, int channel, int data, IntPtr user)
     {
         Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (IsPlaying || (waveOutDevice != null && waveOutDevice.PlaybackState == PlaybackState.Stopped))
+            if (IsPlaying || (_streamHandle != 0 && Bass.ChannelIsPlaying(_streamHandle) == PlaybackState.Stopped))
             {
                 IsPlaying = false;
                 CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
             }
             StopUiUpdateTimer();
-            if (e.Exception != null)
-            {
-                Console.WriteLine($"NAudio Playback Error: {e.Exception.Message}");
-            }
+            // Bass.Net doesn't provide exception in Stopped event, check Bass.LastError after stopping if needed.
         });
     }
 
     public void Pause()
     {
-        if (IsPlaying && waveOutDevice?.PlaybackState == PlaybackState.Playing)
+        if (IsPlaying && _streamHandle != 0 && Bass.ChannelIsPlaying(_streamHandle) == PlaybackState.Playing)
         {
-            waveOutDevice.Pause();
+            Bass.ChannelPause(_streamHandle);
             IsPlaying = false;
             CurrentPlaybackStatus = PlaybackStateStatus.Paused;
             StopUiUpdateTimer();
@@ -252,25 +268,16 @@ public class PlaybackService : ViewModelBase, IDisposable
     {
         if (!IsPlaying && CurrentSong != null)
         {
-            if (waveOutDevice == null || audioFileReader == null || waveOutDevice.PlaybackState == PlaybackState.Stopped)
+            if (_streamHandle == 0 || Bass.ChannelIsPlaying(_streamHandle) == PlaybackState.Stopped)
             {
-                TimeSpan resumePosition = TimeSpan.Zero;
-                if (audioFileReader != null)
-                {
-                    resumePosition = audioFileReader.CurrentTime;
-                }
-                else if (CurrentPosition > TimeSpan.Zero)
-                {
-                    resumePosition = CurrentPosition;
-                }
+                TimeSpan resumePosition = CurrentPosition;
 
                 try
                 {
-                    InitializeNAudioPipeline(CurrentSong.FilePath);
-                    if (audioFileReader != null)
+                    InitializeBassPipeline(CurrentSong.FilePath);
+                    if (_streamHandle != 0)
                     {
-                        audioFileReader.CurrentTime = resumePosition;
-                        CurrentPosition = resumePosition;
+                        Seek(resumePosition);
                     }
                 }
                 catch (Exception ex)
@@ -281,10 +288,13 @@ public class PlaybackService : ViewModelBase, IDisposable
                     return;
                 }
             }
-            waveOutDevice?.Play();
-            IsPlaying = true;
-            CurrentPlaybackStatus = PlaybackStateStatus.Playing;
-            StartUiUpdateTimer();
+            if (_streamHandle != 0)
+            {
+                Bass.ChannelPlay(_streamHandle, false);
+                IsPlaying = true;
+                CurrentPlaybackStatus = PlaybackStateStatus.Playing;
+                StartUiUpdateTimer();
+            }
         }
     }
 
@@ -292,21 +302,25 @@ public class PlaybackService : ViewModelBase, IDisposable
     {
         IsPlaying = false;
         CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-        waveOutDevice?.Stop();
+        if (_streamHandle != 0)
+        {
+            Bass.ChannelStop(_streamHandle);
+        }
         CleanUpPlaybackResources();
         CurrentPosition = TimeSpan.Zero;
     }
 
     public void Seek(TimeSpan positionInTrueTime)
     {
-        if (audioFileReader != null)
+        if (_streamHandle != 0)
         {
             var targetPosition = positionInTrueTime;
             if (targetPosition < TimeSpan.Zero) targetPosition = TimeSpan.Zero;
-            if (targetPosition > audioFileReader.TotalTime) targetPosition = audioFileReader.TotalTime;
+            // Bass.Net handles seeking beyond total time gracefully, so no need to check against total time here.
 
-            audioFileReader.CurrentTime = targetPosition;
-            CurrentPosition = targetPosition;
+            long positionBytes = Bass.ChannelSeconds2Bytes(_streamHandle, targetPosition.TotalSeconds);
+            Bass.ChannelSetPosition(_streamHandle, positionBytes);
+            CurrentPosition = TimeSpan.FromSeconds(Bass.ChannelBytes2Seconds(_streamHandle, Bass.ChannelGetPosition(_streamHandle)));
         }
     }
 
