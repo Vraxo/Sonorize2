@@ -122,6 +122,9 @@ public class MainWindow : Window
             BorderThickness = new Thickness(0),
             Padding = new Thickness(0)
         };
+        // Bind SelectedIndex to the ViewModel property
+        tabControl.Bind(TabControl.SelectedIndexProperty, new Binding("ActiveTabIndex", BindingMode.TwoWay));
+
 
         var tabItemStyle = new Style(s => s.Is<TabItem>());
         tabItemStyle.Setters.Add(new Setter(TabItem.BackgroundProperty, _theme.B_BackgroundColor));
@@ -249,15 +252,17 @@ public class MainWindow : Window
         });
 
         artistsListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("Artists"));
-        // Optional: artistsListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedArtist", BindingMode.TwoWay));
+        // Bind SelectedItem to the ViewModel property
+        artistsListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedArtist", BindingMode.TwoWay));
 
-        artistsListBox.ItemTemplate = new FuncDataTemplate<ArtistViewModel>((artistVM, nameScope) => // Use ArtistViewModel
+
+        artistsListBox.ItemTemplate = new FuncDataTemplate<ArtistViewModel>((artistVM, nameScope) =>
         {
             var image = new Image
             {
                 Width = 32,
-                Height = 32, // Consistent with song list
-                Margin = new Thickness(5, 0, 10, 0), // Margin between image and text
+                Height = 32,
+                Margin = new Thickness(5, 0, 10, 0),
                 Source = artistVM.Thumbnail,
                 Stretch = Stretch.UniformToFill
             };
@@ -272,7 +277,7 @@ public class MainWindow : Window
 
             var itemGrid = new Grid
             {
-                ColumnDefinitions = new ColumnDefinitions("Auto,*"), // Auto for image, * for text
+                ColumnDefinitions = new ColumnDefinitions("Auto,*"),
                 VerticalAlignment = VerticalAlignment.Center,
             };
             itemGrid.Children.Add(image);
@@ -283,7 +288,7 @@ public class MainWindow : Window
             return new Border
             {
                 Padding = new Thickness(10, 8),
-                MinHeight = 44, // Ensure similar height to song items
+                MinHeight = 44,
                 Background = Brushes.Transparent,
                 Child = itemGrid
             };
