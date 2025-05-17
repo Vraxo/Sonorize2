@@ -627,13 +627,13 @@ public class MusicLibraryService
 
 <file path="Source\Services\PlaybackService.cs">
 using Avalonia.Threading;
-using NAudio.Wave;
-using NAudio.Wave.SampleProviders;
 using Sonorize.Models;
 using Sonorize.ViewModels;
 using System;
 using System.Diagnostics;
 using System.Threading;
+using ManagedBass;
+using Un4seen.Bass.AddOn.Fx; // Correct: Main namespace for ManagedBass and its add-ons like Fx
 
 namespace Sonorize.Services;
 
@@ -682,7 +682,7 @@ public class PlaybackService : ViewModelBase, IDisposable
         get => CurrentPosition.TotalSeconds;
         set
         {
-            if (audioFileReader != null && Math.Abs(CurrentPosition.TotalSeconds - value) > 0.1)
+            if (_streamHandle != 0 && Math.Abs(CurrentPosition.TotalSeconds - value) > 0.1)
                 Seek(TimeSpan.FromSeconds(value));
         }
     }
@@ -699,11 +699,11 @@ public class PlaybackService : ViewModelBase, IDisposable
     }
     public double CurrentSongDurationSeconds => CurrentSongDuration.TotalSeconds > 0 ? CurrentSongDuration.TotalSeconds : 1;
 
-    private IWavePlayer? waveOutDevice;
-    private AudioFileReader? audioFileReader;
-    private ISampleProvider? finalSampleProvider;
-    private SmbPitchShiftingSampleProvider? pitchShifter;
     private Timer? uiUpdateTimer;
+    private SyncProcedure? _endSyncProc;
+
+    private int _streamHandle;
+    private int _tempoStreamHandle;
 
     private float _playbackRate = 1.0f;
     public float PlaybackRate
@@ -713,11 +713,10 @@ public class PlaybackService : ViewModelBase, IDisposable
         {
             if (SetProperty(ref _playbackRate, value))
             {
-                if (IsPlaying && CurrentSong != null)
+                if (_tempoStreamHandle != 0)
                 {
-                    var resumeTime = audioFileReader?.CurrentTime ?? TimeSpan.Zero;
-                    Play(CurrentSong);
-                    Seek(resumeTime);
+                    float tempoPercentage = (_playbackRate - 1.0f) * 100.0f;
+                    Bass.ChannelSetAttribute(_tempoStreamHandle, ChannelAttribute.Tempo, tempoPercentage);
                 }
             }
         }
@@ -731,78 +730,110 @@ public class PlaybackService : ViewModelBase, IDisposable
         {
             if (SetProperty(ref _pitchSemitones, value))
             {
-                if (pitchShifter != null)
+                if (_tempoStreamHandle != 0)
                 {
-                    pitchShifter.PitchFactor = (float)Math.Pow(2, value / 12.0);
+                    // Corrected: Use TempoPitch for tempo/pitch streams
+                    Bass.ChannelSetAttribute(_tempoStreamHandle, ChannelAttribute.Pitch, _pitchSemitones);
                 }
             }
         }
     }
 
+    private static bool _bassInitialized = false;
+
     public PlaybackService()
     {
+        if (!_bassInitialized)
+        {
+            // Call Bass.Load() to specify native DLL search paths IF NEEDED.
+            // Usually, ManagedBass NuGet package handles this by placing DLLs correctly.
+            // If DllNotFoundException persists, you might need:
+            // string libPath = System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+            // Bass.Load("bass.dll", libPath); // For core BASS
+            // Bass.Load("bass_fx.dll", libPath); // For BASS_FX (if not automatically loaded as a plugin)
+            // OR more robustly for plugins:
+            // Bass.PluginLoadDirectory(libPath); // Loads all BASS plugins from the specified directory
+
+            if (!Bass.Init(-1, 44100, DeviceInitFlags.Default, IntPtr.Zero))
+            {
+                var error = Bass.LastError;
+                Debug.WriteLine($"[PlaybackService-ManagedBass] Bass.Init failed! Error: {error}. DllNotFoundException is common if bass.dll is not found.");
+            }
+            else
+            {
+                _bassInitialized = true;
+                Debug.WriteLine($"[PlaybackService-ManagedBass] Bass.Init successful. Version: {Bass.Version}");
+            }
+        }
+        _endSyncProc = new SyncProcedure(PlaybackEndedCallback);
         uiUpdateTimer = new Timer(UpdateUiCallback, null, Timeout.Infinite, Timeout.Infinite);
     }
 
     private void UpdateUiCallback(object? state)
     {
-        if (IsPlaying && audioFileReader != null && waveOutDevice?.PlaybackState == PlaybackState.Playing)
+        if (IsPlaying && _tempoStreamHandle != 0 && Bass.ChannelIsActive(_tempoStreamHandle) == PlaybackState.Playing)
         {
             Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (audioFileReader == null) return;
+                if (_streamHandle == 0) return;
 
-                CurrentPosition = audioFileReader.CurrentTime;
+                long currentBytePos = Bass.ChannelGetPosition(_streamHandle, PositionFlags.Bytes);
+                CurrentPosition = TimeSpan.FromSeconds(Bass.ChannelBytes2Seconds(_streamHandle, currentBytePos));
 
                 if (CurrentSong?.ActiveLoop != null)
                 {
                     var activeLoop = CurrentSong.ActiveLoop;
-                    var actualPlaybackTimeInFile = audioFileReader.CurrentTime;
-                    if (actualPlaybackTimeInFile >= activeLoop.End && activeLoop.End > activeLoop.Start)
+                    if (CurrentPosition >= activeLoop.End && activeLoop.End > activeLoop.Start)
                     {
-                        audioFileReader.CurrentTime = activeLoop.Start;
-                        CurrentPosition = activeLoop.Start;
+                        Seek(activeLoop.Start);
                     }
                 }
             });
         }
     }
 
-    private void InitializeNAudioPipeline(string filePath)
+    private void InitializeBassPipeline(string filePath)
     {
         CleanUpPlaybackResources();
 
-        audioFileReader = new AudioFileReader(filePath);
-
-        ISampleProvider speedAdjustedProvider = AdjustSpeed(audioFileReader, PlaybackRate);
-
-        pitchShifter = new SmbPitchShiftingSampleProvider(speedAdjustedProvider);
-        pitchShifter.PitchFactor = (float)Math.Pow(2, PitchSemitones / 12.0);
-
-        finalSampleProvider = pitchShifter;
-
-        waveOutDevice = new WaveOutEvent();
-        waveOutDevice.PlaybackStopped += OnPlaybackStopped;
-        waveOutDevice.Init(finalSampleProvider);
-
-        CurrentSongDuration = audioFileReader.TotalTime;
-        CurrentPosition = TimeSpan.Zero;
-    }
-
-    private ISampleProvider AdjustSpeed(AudioFileReader reader, float speed)
-    {
-        if (speed == 1.0f)
-            return reader.ToSampleProvider();
-
-        int newSampleRate = (int)(reader.WaveFormat.SampleRate * speed);
-        var outFormat = new WaveFormat(newSampleRate, reader.WaveFormat.Channels);
-
-        var resampler = new MediaFoundationResampler(reader, outFormat)
+        _streamHandle = Bass.CreateStream(filePath, 0, 0, BassFlags.Decode | BassFlags.Prescan | BassFlags.Float);
+        if (_streamHandle == 0)
         {
-            ResamplerQuality = 60
-        };
+            var error = Bass.LastError;
+            Debug.WriteLine($"[PlaybackService-ManagedBass] Bass.CreateStream failed for {filePath}. Error: {error}");
+            CurrentSongDuration = TimeSpan.Zero;
+            CurrentPosition = TimeSpan.Zero;
+            return;
+        }
 
-        return resampler.ToSampleProvider();
+        // Correct API for ManagedBass.Fx: BassFx.TempoCreate
+        _tempoStreamHandle = BassFx.BASS_FX_TempoCreate(_streamHandle, (Un4seen.Bass.BASSFlag)(BassFlags.FxFreeSource | BassFlags.Float));
+        if (_tempoStreamHandle == 0)
+        {
+            var error = Bass.LastError;
+            Debug.WriteLine($"[PlaybackService-ManagedBass] BassFx.TempoCreate failed. Error: {error}");
+            Bass.StreamFree(_streamHandle);
+            _streamHandle = 0;
+            CurrentSongDuration = TimeSpan.Zero;
+            CurrentPosition = TimeSpan.Zero;
+            return;
+        }
+
+        // Apply current settings
+        float currentRate = PlaybackRate;
+        PlaybackRate = currentRate;
+
+        float currentPitch = PitchSemitones;
+        PitchSemitones = currentPitch;
+
+        long lengthBytes = Bass.ChannelGetLength(_streamHandle, PositionFlags.Bytes);
+        CurrentSongDuration = TimeSpan.FromSeconds(Bass.ChannelBytes2Seconds(_streamHandle, lengthBytes));
+        CurrentPosition = TimeSpan.Zero;
+
+        if (_endSyncProc != null)
+        {
+            Bass.ChannelSetSync(_tempoStreamHandle, SyncFlags.End | SyncFlags.Mixtime, 0, _endSyncProc, IntPtr.Zero);
+        }
     }
 
     public void Play(Song song)
@@ -812,16 +843,37 @@ public class PlaybackService : ViewModelBase, IDisposable
 
         try
         {
-            InitializeNAudioPipeline(song.FilePath);
+            InitializeBassPipeline(song.FilePath);
 
-            waveOutDevice?.Play();
-            IsPlaying = true;
-            CurrentPlaybackStatus = PlaybackStateStatus.Playing;
-            StartUiUpdateTimer();
+            if (_tempoStreamHandle != 0)
+            {
+                if (Bass.ChannelPlay(_tempoStreamHandle, false))
+                {
+                    IsPlaying = true;
+                    CurrentPlaybackStatus = PlaybackStateStatus.Playing;
+                    StartUiUpdateTimer();
+                }
+                else
+                {
+                    var error = Bass.LastError;
+                    Debug.WriteLine($"[PlaybackService-ManagedBass] Bass.ChannelPlay failed. Error: {error}");
+                    IsPlaying = false;
+                    CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
+                    CleanUpPlaybackResources();
+                }
+            }
+            else
+            {
+                IsPlaying = false;
+                CurrentSong = null;
+                CurrentSongDuration = TimeSpan.Zero;
+                CurrentPosition = TimeSpan.Zero;
+                CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
+            }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error initializing playback for {song.FilePath}: {ex.Message}");
+            Debug.WriteLine($"[PlaybackService-ManagedBass] Error initializing playback for {song.FilePath}: {ex.ToString()}");
             IsPlaying = false;
             CurrentSong = null;
             CurrentSongDuration = TimeSpan.Zero;
@@ -838,41 +890,47 @@ public class PlaybackService : ViewModelBase, IDisposable
     {
         StopUiUpdateTimer();
 
-        waveOutDevice?.Stop();
-        waveOutDevice?.Dispose();
-        waveOutDevice = null;
-
-        pitchShifter = null;
-        finalSampleProvider = null;
-        audioFileReader?.Dispose();
-        audioFileReader = null;
+        if (_tempoStreamHandle != 0)
+        {
+            Bass.StreamFree(_tempoStreamHandle);
+            _tempoStreamHandle = 0;
+        }
+        else if (_streamHandle != 0)
+        {
+            Bass.StreamFree(_streamHandle);
+        }
+        _streamHandle = 0;
     }
 
-    private void OnPlaybackStopped(object? sender, StoppedEventArgs e)
+    private void PlaybackEndedCallback(int Handle, int Channel, int Data, IntPtr User)
     {
         Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (IsPlaying || (waveOutDevice != null && waveOutDevice.PlaybackState == PlaybackState.Stopped))
+            if (Channel == _tempoStreamHandle)
             {
                 IsPlaying = false;
                 CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-            }
-            StopUiUpdateTimer();
-            if (e.Exception != null)
-            {
-                Console.WriteLine($"NAudio Playback Error: {e.Exception.Message}");
+                StopUiUpdateTimer();
+                Debug.WriteLine($"[PlaybackService-ManagedBass] Playback ended for handle {Channel}");
             }
         });
     }
 
     public void Pause()
     {
-        if (IsPlaying && waveOutDevice?.PlaybackState == PlaybackState.Playing)
+        if (IsPlaying && _tempoStreamHandle != 0 && Bass.ChannelIsActive(_tempoStreamHandle) == PlaybackState.Playing)
         {
-            waveOutDevice.Pause();
-            IsPlaying = false;
-            CurrentPlaybackStatus = PlaybackStateStatus.Paused;
-            StopUiUpdateTimer();
+            if (Bass.ChannelPause(_tempoStreamHandle))
+            {
+                IsPlaying = false;
+                CurrentPlaybackStatus = PlaybackStateStatus.Paused;
+                StopUiUpdateTimer();
+            }
+            else
+            {
+                var error = Bass.LastError;
+                Debug.WriteLine($"[PlaybackService-ManagedBass] Bass.ChannelPause failed. Error: {error}");
+            }
         }
     }
 
@@ -880,70 +938,116 @@ public class PlaybackService : ViewModelBase, IDisposable
     {
         if (!IsPlaying && CurrentSong != null)
         {
-            if (waveOutDevice == null || audioFileReader == null || waveOutDevice.PlaybackState == PlaybackState.Stopped)
-            {
-                TimeSpan resumePosition = TimeSpan.Zero;
-                if (audioFileReader != null)
-                {
-                    resumePosition = audioFileReader.CurrentTime;
-                }
-                else if (CurrentPosition > TimeSpan.Zero)
-                {
-                    resumePosition = CurrentPosition;
-                }
+            TimeSpan resumePosition = CurrentPosition;
 
+            if (_tempoStreamHandle == 0 || Bass.ChannelIsActive(_tempoStreamHandle) == PlaybackState.Stopped)
+            {
                 try
                 {
-                    InitializeNAudioPipeline(CurrentSong.FilePath);
-                    if (audioFileReader != null)
+                    InitializeBassPipeline(CurrentSong.FilePath);
+                    if (_streamHandle != 0)
                     {
-                        audioFileReader.CurrentTime = resumePosition;
+                        long posBytes = Bass.ChannelSeconds2Bytes(_streamHandle, resumePosition.TotalSeconds);
+                        Bass.ChannelSetPosition(_streamHandle, posBytes, PositionFlags.Bytes);
                         CurrentPosition = resumePosition;
+                    }
+                    else
+                    {
+                        CleanUpPlaybackResources();
+                        CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
+                        return;
                     }
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Error re-initializing for resume: {ex.Message}");
+                    Debug.WriteLine($"[PlaybackService-ManagedBass] Error re-initializing for resume: {ex.ToString()}");
                     CleanUpPlaybackResources();
                     CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
                     return;
                 }
             }
-            waveOutDevice?.Play();
-            IsPlaying = true;
-            CurrentPlaybackStatus = PlaybackStateStatus.Playing;
-            StartUiUpdateTimer();
+
+            if (_tempoStreamHandle != 0)
+            {
+                if (Bass.ChannelPlay(_tempoStreamHandle, false))
+                {
+                    IsPlaying = true;
+                    CurrentPlaybackStatus = PlaybackStateStatus.Playing;
+                    StartUiUpdateTimer();
+                }
+                else
+                {
+                    var error = Bass.LastError;
+                    Debug.WriteLine($"[PlaybackService-ManagedBass] Bass.ChannelPlay failed on Resume. Error: {error}");
+                }
+            }
         }
     }
 
     public void Stop()
     {
+        if (_tempoStreamHandle != 0)
+        {
+            Bass.ChannelStop(_tempoStreamHandle);
+        }
+        CleanUpPlaybackResources();
+
         IsPlaying = false;
         CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-        waveOutDevice?.Stop();
-        CleanUpPlaybackResources();
         CurrentPosition = TimeSpan.Zero;
     }
 
     public void Seek(TimeSpan positionInTrueTime)
     {
-        if (audioFileReader != null)
+        if (_streamHandle != 0)
         {
             var targetPosition = positionInTrueTime;
             if (targetPosition < TimeSpan.Zero) targetPosition = TimeSpan.Zero;
-            if (targetPosition > audioFileReader.TotalTime) targetPosition = audioFileReader.TotalTime;
 
-            audioFileReader.CurrentTime = targetPosition;
-            CurrentPosition = targetPosition;
+            long durationBytes = Bass.ChannelGetLength(_streamHandle, PositionFlags.Bytes);
+            TimeSpan sourceDuration = TimeSpan.FromSeconds(Bass.ChannelBytes2Seconds(_streamHandle, durationBytes));
+
+            if (targetPosition > sourceDuration) targetPosition = sourceDuration;
+
+            long seekBytes = Bass.ChannelSeconds2Bytes(_streamHandle, targetPosition.TotalSeconds);
+            if (Bass.ChannelSetPosition(_streamHandle, seekBytes, PositionFlags.Bytes))
+            {
+                CurrentPosition = targetPosition;
+            }
+            else
+            {
+                var error = Bass.LastError;
+                Debug.WriteLine($"[PlaybackService-ManagedBass] Bass.ChannelSetPosition failed. Error: {error}");
+            }
         }
     }
 
+    private bool _disposed = false;
     public void Dispose()
     {
-        CleanUpPlaybackResources();
-        uiUpdateTimer?.Dispose();
-        uiUpdateTimer = null;
+        Dispose(true);
         GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed) return;
+
+        if (disposing)
+        {
+            CleanUpPlaybackResources();
+
+            uiUpdateTimer?.Dispose();
+            uiUpdateTimer = null;
+
+            if (_bassInitialized)
+            {
+                Bass.Free();
+                _bassInitialized = false;
+                Debug.WriteLine("[PlaybackService-ManagedBass] Bass.Free called.");
+            }
+        }
+        _disposed = true;
     }
 }
 </file>
@@ -1459,8 +1563,15 @@ public class MainWindowViewModel : ViewModelBase
             _ => IsAdvancedPanelVisible = !IsAdvancedPanelVisible,
             _ => PlaybackService.CurrentSong != null && !IsLoadingLibrary);
 
-        CaptureLoopStartCandidateCommand = new RelayCommand(_ => NewLoopStartCandidate = PlaybackService.CurrentPosition.Divide(PlaybackService.PlaybackRate), _ => PlaybackService.CurrentSong != null);
-        CaptureLoopEndCandidateCommand = new RelayCommand(_ => NewLoopEndCandidate = PlaybackService.CurrentPosition.Divide(PlaybackService.PlaybackRate), _ => PlaybackService.CurrentSong != null);
+        // PlaybackService.CurrentPosition is now the true, unscaled time.
+        // Loop points should be captured directly from this true time.
+        CaptureLoopStartCandidateCommand = new RelayCommand(
+            _ => NewLoopStartCandidate = PlaybackService.CurrentPosition,
+            _ => PlaybackService.CurrentSong != null);
+        CaptureLoopEndCandidateCommand = new RelayCommand(
+            _ => NewLoopEndCandidate = PlaybackService.CurrentPosition,
+            _ => PlaybackService.CurrentSong != null);
+
         SaveNewLoopRegionCommand = new RelayCommand(SaveLoopCandidateAction, _ => CanSaveNewLoopRegion);
         ActivateLoopRegionCommand = new RelayCommand(_ => { if (PlaybackService.CurrentSong != null && SelectedEditableLoopRegion != null) PlaybackService.CurrentSong.ActiveLoop = SelectedEditableLoopRegion; }, _ => CanActivateLoopRegion());
         DeactivateActiveLoopCommand = new RelayCommand(_ => { if (PlaybackService.CurrentSong != null) PlaybackService.CurrentSong.ActiveLoop = null; }, _ => PlaybackService.CurrentSong?.ActiveLoop != null);
@@ -1514,13 +1625,16 @@ public class MainWindowViewModel : ViewModelBase
             case nameof(PlaybackService.CurrentSong):
                 (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 break;
-            case nameof(PlaybackService.IsPlaying): // IsPlaying changes
-            case nameof(PlaybackService.CurrentPlaybackStatus): // CurrentPlaybackStatus also changes
+            case nameof(PlaybackService.IsPlaying):
+            case nameof(PlaybackService.CurrentPlaybackStatus):
                 UpdateStatusBarText();
                 break;
             case nameof(PlaybackService.CurrentPosition):
             case nameof(PlaybackService.CurrentSongDuration):
                 (SaveNewLoopRegionCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                // Re-evaluate CanExecute for loop capture commands if needed, though they mostly depend on CurrentSong.
+                (CaptureLoopStartCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                (CaptureLoopEndCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 break;
         }
     }
@@ -1571,7 +1685,8 @@ public class MainWindowViewModel : ViewModelBase
                                         NewLoopStartCandidate.HasValue &&
                                         NewLoopEndCandidate.HasValue &&
                                         NewLoopEndCandidate.Value > NewLoopStartCandidate.Value &&
-                                        NewLoopEndCandidate.Value <= PlaybackService.CurrentSongDuration.Divide(PlaybackService.PlaybackRate) &&
+                                        // Compare against true song duration, as loop points are true time
+                                        NewLoopEndCandidate.Value <= PlaybackService.CurrentSongDuration &&
                                         NewLoopStartCandidate.Value >= TimeSpan.Zero &&
                                         !string.IsNullOrWhiteSpace(NewLoopNameInput);
 
@@ -1601,7 +1716,6 @@ public class MainWindowViewModel : ViewModelBase
         if (PlaybackService.CurrentSong?.ActiveLoop != null)
         {
             var loop = PlaybackService.CurrentSong.ActiveLoop;
-            // Display loop times as they are (unadjusted by speed for clarity in definition)
             ActiveLoopDisplayText = $"Active Loop: {loop.Name} ({loop.Start:mm\\:ss\\.f} - {loop.End:mm\\:ss\\.f})";
         }
         else ActiveLoopDisplayText = "No active loop.";
@@ -1614,7 +1728,7 @@ public class MainWindowViewModel : ViewModelBase
 
         if (PlaybackService.CurrentSong != null)
         {
-            string stateStr = PlaybackService.CurrentPlaybackStatus switch // Use the new public property
+            string stateStr = PlaybackService.CurrentPlaybackStatus switch
             {
                 PlaybackStateStatus.Playing => "Playing",
                 PlaybackStateStatus.Paused => "Paused",
