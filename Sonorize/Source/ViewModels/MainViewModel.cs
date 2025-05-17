@@ -105,16 +105,14 @@ public class MainWindowViewModel : ViewModelBase
         get => _playbackSpeed;
         set
         {
-            // Clamp to slider's actual range for consistency
-            var clamped = Math.Clamp(value, 0.25, 4.0);
-            if (SetProperty(ref _playbackSpeed, clamped))
+            if (SetProperty(ref _playbackSpeed, Math.Max(0.25, Math.Min(value, 4.0))))
             {
                 PlaybackService.PlaybackRate = (float)_playbackSpeed;
                 OnPropertyChanged(nameof(PlaybackSpeedDisplay));
             }
         }
     }
-    public string PlaybackSpeedDisplay => $"{PlaybackSpeed:F2}×";
+    public string PlaybackSpeedDisplay => $"{PlaybackSpeed:F2}x";
 
     private double _playbackPitch = 0.0;
     public double PlaybackPitch
@@ -191,12 +189,8 @@ public class MainWindowViewModel : ViewModelBase
             _ => IsAdvancedPanelVisible = !IsAdvancedPanelVisible,
             _ => PlaybackService.CurrentSong != null && !IsLoadingLibrary);
 
-        CaptureLoopStartCandidateCommand = new RelayCommand(
-            _ => NewLoopStartCandidate = PlaybackService.CurrentPosition, // Use true current position
-            _ => PlaybackService.CurrentSong != null);
-        CaptureLoopEndCandidateCommand = new RelayCommand(
-            _ => NewLoopEndCandidate = PlaybackService.CurrentPosition, // Use true current position
-            _ => PlaybackService.CurrentSong != null);
+        CaptureLoopStartCandidateCommand = new RelayCommand(_ => NewLoopStartCandidate = PlaybackService.CurrentPosition.Divide(PlaybackService.PlaybackRate), _ => PlaybackService.CurrentSong != null);
+        CaptureLoopEndCandidateCommand = new RelayCommand(_ => NewLoopEndCandidate = PlaybackService.CurrentPosition.Divide(PlaybackService.PlaybackRate), _ => PlaybackService.CurrentSong != null);
         SaveNewLoopRegionCommand = new RelayCommand(SaveLoopCandidateAction, _ => CanSaveNewLoopRegion);
         ActivateLoopRegionCommand = new RelayCommand(_ => { if (PlaybackService.CurrentSong != null && SelectedEditableLoopRegion != null) PlaybackService.CurrentSong.ActiveLoop = SelectedEditableLoopRegion; }, _ => CanActivateLoopRegion());
         DeactivateActiveLoopCommand = new RelayCommand(_ => { if (PlaybackService.CurrentSong != null) PlaybackService.CurrentSong.ActiveLoop = null; }, _ => PlaybackService.CurrentSong?.ActiveLoop != null);
@@ -204,8 +198,8 @@ public class MainWindowViewModel : ViewModelBase
         WaveformSeekCommand = new RelayCommand(timeSpan => PlaybackService.Seek((TimeSpan)timeSpan!), _ => PlaybackService.CurrentSong != null);
 
         PlaybackService.PropertyChanged += OnPlaybackServicePropertyChanged;
-        PlaybackSpeed = 1.0; // Initialize playback speed
-        PlaybackPitch = 0.0; // Initialize playback pitch
+        PlaybackSpeed = 1.0;
+        PlaybackPitch = 0.0;
         UpdateStatusBarText();
         UpdateActiveLoopDisplayText();
     }
@@ -250,15 +244,13 @@ public class MainWindowViewModel : ViewModelBase
             case nameof(PlaybackService.CurrentSong):
                 (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 break;
-            case nameof(PlaybackService.IsPlaying):
-            case nameof(PlaybackService.CurrentPlaybackStatus):
+            case nameof(PlaybackService.IsPlaying): // IsPlaying changes
+            case nameof(PlaybackService.CurrentPlaybackStatus): // CurrentPlaybackStatus also changes
                 UpdateStatusBarText();
                 break;
             case nameof(PlaybackService.CurrentPosition):
             case nameof(PlaybackService.CurrentSongDuration):
                 (SaveNewLoopRegionCommand as RelayCommand)?.RaiseCanExecuteChanged();
-                (CaptureLoopStartCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
-                (CaptureLoopEndCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 break;
         }
     }
@@ -309,7 +301,7 @@ public class MainWindowViewModel : ViewModelBase
                                         NewLoopStartCandidate.HasValue &&
                                         NewLoopEndCandidate.HasValue &&
                                         NewLoopEndCandidate.Value > NewLoopStartCandidate.Value &&
-                                        NewLoopEndCandidate.Value <= PlaybackService.CurrentSongDuration && // Compare against true duration
+                                        NewLoopEndCandidate.Value <= PlaybackService.CurrentSongDuration.Divide(PlaybackService.PlaybackRate) &&
                                         NewLoopStartCandidate.Value >= TimeSpan.Zero &&
                                         !string.IsNullOrWhiteSpace(NewLoopNameInput);
 
@@ -339,6 +331,7 @@ public class MainWindowViewModel : ViewModelBase
         if (PlaybackService.CurrentSong?.ActiveLoop != null)
         {
             var loop = PlaybackService.CurrentSong.ActiveLoop;
+            // Display loop times as they are (unadjusted by speed for clarity in definition)
             ActiveLoopDisplayText = $"Active Loop: {loop.Name} ({loop.Start:mm\\:ss\\.f} - {loop.End:mm\\:ss\\.f})";
         }
         else ActiveLoopDisplayText = "No active loop.";
@@ -351,7 +344,7 @@ public class MainWindowViewModel : ViewModelBase
 
         if (PlaybackService.CurrentSong != null)
         {
-            string stateStr = PlaybackService.CurrentPlaybackStatus switch
+            string stateStr = PlaybackService.CurrentPlaybackStatus switch // Use the new public property
             {
                 PlaybackStateStatus.Playing => "Playing",
                 PlaybackStateStatus.Paused => "Paused",

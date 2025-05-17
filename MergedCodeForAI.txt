@@ -1375,16 +1375,14 @@ public class MainWindowViewModel : ViewModelBase
         get => _playbackSpeed;
         set
         {
-            // clamp to 0.5x–2.0x
-            var clamped = Math.Clamp(value, 0.5, 2.0);
-            if (SetProperty(ref _playbackSpeed, clamped))
+            if (SetProperty(ref _playbackSpeed, Math.Max(0.25, Math.Min(value, 4.0))))
             {
                 PlaybackService.PlaybackRate = (float)_playbackSpeed;
                 OnPropertyChanged(nameof(PlaybackSpeedDisplay));
             }
         }
     }
-    public string PlaybackSpeedDisplay => $"{PlaybackSpeed:F2}×";
+    public string PlaybackSpeedDisplay => $"{PlaybackSpeed:F2}x";
 
     private double _playbackPitch = 0.0;
     public double PlaybackPitch
@@ -1392,7 +1390,7 @@ public class MainWindowViewModel : ViewModelBase
         get => _playbackPitch;
         set
         {
-            if (SetProperty(ref _playbackPitch, Math.Max(-5, Math.Min(value, 5)))) // Clamped to -5 to 5
+            if (SetProperty(ref _playbackPitch, Math.Max(-24, Math.Min(value, 24))))
             {
                 PlaybackService.PitchSemitones = (float)_playbackPitch;
                 OnPropertyChanged(nameof(PlaybackPitchDisplay));
@@ -2018,7 +2016,7 @@ public class MainWindow : Window
         speedDisplay.Bind(TextBlock.TextProperty, new Binding("PlaybackSpeedDisplay"));
 
         var pitchLabel = new TextBlock { Text = "Pitch:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(15, 0, 0, 0), Foreground = _theme.B_TextColor };
-        var pitchSlider = new Slider { Minimum = -5, Maximum = 5, SmallChange = 0.5, LargeChange = 1, TickFrequency = 1, Foreground = _theme.B_AccentColor, Background = _theme.B_SecondaryTextColor }; // Range updated
+        var pitchSlider = new Slider { Minimum = -24, Maximum = 24, SmallChange = 0.5, LargeChange = 1, TickFrequency = 1, Foreground = _theme.B_AccentColor, Background = _theme.B_SecondaryTextColor };
         pitchSlider.Bind(Slider.ValueProperty, new Binding("PlaybackPitch", BindingMode.TwoWay));
         var pitchDisplay = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0), Foreground = _theme.B_TextColor, MinWidth = 45 };
         pitchDisplay.Bind(TextBlock.TextProperty, new Binding("PlaybackPitchDisplay"));
