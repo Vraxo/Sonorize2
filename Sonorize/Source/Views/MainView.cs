@@ -123,48 +123,34 @@ public class MainWindow : Window
             Padding = new Thickness(0)
         };
 
-        // TabItem Styling
         var tabItemStyle = new Style(s => s.Is<TabItem>());
-        // Make unselected tab header background match the TabControl's background
         tabItemStyle.Setters.Add(new Setter(TabItem.BackgroundProperty, _theme.B_BackgroundColor));
         tabItemStyle.Setters.Add(new Setter(TabItem.ForegroundProperty, _theme.B_SecondaryTextColor));
         tabItemStyle.Setters.Add(new Setter(TabItem.PaddingProperty, new Thickness(12, 7)));
         tabItemStyle.Setters.Add(new Setter(TabItem.FontSizeProperty, 13.0));
         tabItemStyle.Setters.Add(new Setter(TabItem.FontWeightProperty, FontWeight.SemiBold));
         tabItemStyle.Setters.Add(new Setter(TabItem.BorderThicknessProperty, new Thickness(0)));
-        // Add a transparent border or a border matching B_BackgroundColor for the bottom
-        // to ensure consistent height and alignment with the selected tab's indicator.
-        // This creates space for where the selection indicator *would* be.
-        tabItemStyle.Setters.Add(new Setter(TabItem.BorderBrushProperty, Brushes.Transparent)); // Use transparent or _theme.B_AccentColor with 0 thickness initially
-        // Thickness for bottom border, assuming selection indicator is ~2px.
-        // This helps align text vertically if selected tab has a visible border/indicator affecting its height.
-        // We can also control this via Padding if the indicator is an overlay.
-        // For now, let's assume the indicator doesn't shift text.
+        tabItemStyle.Setters.Add(new Setter(TabItem.BorderBrushProperty, Brushes.Transparent));
+
 
         var selectedTabItemStyle = new Style(s => s.Is<TabItem>().Class(":selected"));
         selectedTabItemStyle.Setters.Add(new Setter(TabItem.BackgroundProperty, _theme.B_BackgroundColor));
         selectedTabItemStyle.Setters.Add(new Setter(TabItem.ForegroundProperty, _theme.B_TextColor));
-        // Assuming the green line indicator is handled by the theme or default TabControl template for :selected.
-        // If not, you might need to add a Setter for BorderBrushProperty to _theme.B_AccentColor
-        // and BorderThicknessProperty to something like new Thickness(0,0,0,2) for selected.
-        // For FluentTheme, TabStrip কৃতিত্বSelectionIndicatorBrush is used.
 
         var pointerOverTabItemStyle = new Style(s => s.Is<TabItem>().Class(":pointerover").Not(x => x.Class(":selected")));
-        pointerOverTabItemStyle.Setters.Add(new Setter(TabItem.BackgroundProperty, _theme.B_SlightlyLighterBackground)); // Keep hover distinct
+        pointerOverTabItemStyle.Setters.Add(new Setter(TabItem.BackgroundProperty, _theme.B_SlightlyLighterBackground));
         pointerOverTabItemStyle.Setters.Add(new Setter(TabItem.ForegroundProperty, _theme.B_TextColor));
 
         tabControl.Styles.Add(tabItemStyle);
         tabControl.Styles.Add(selectedTabItemStyle);
         tabControl.Styles.Add(pointerOverTabItemStyle);
 
-        // Library Tab
         var libraryTab = new TabItem
         {
             Header = "LIBRARY",
             Content = CreateSongListScrollViewer()
         };
 
-        // Artists Tab
         var artistsTab = new TabItem
         {
             Header = "ARTISTS",
@@ -263,19 +249,43 @@ public class MainWindow : Window
         });
 
         artistsListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("Artists"));
+        // Optional: artistsListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedArtist", BindingMode.TwoWay));
 
-        artistsListBox.ItemTemplate = new FuncDataTemplate<string>((artistName, nameScope) =>
+        artistsListBox.ItemTemplate = new FuncDataTemplate<ArtistViewModel>((artistVM, nameScope) => // Use ArtistViewModel
         {
+            var image = new Image
+            {
+                Width = 32,
+                Height = 32, // Consistent with song list
+                Margin = new Thickness(5, 0, 10, 0), // Margin between image and text
+                Source = artistVM.Thumbnail,
+                Stretch = Stretch.UniformToFill
+            };
+            RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
+
+            var artistNameBlock = new TextBlock
+            {
+                Text = artistVM.Name,
+                FontSize = 14,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            var itemGrid = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("Auto,*"), // Auto for image, * for text
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            itemGrid.Children.Add(image);
+            itemGrid.Children.Add(artistNameBlock);
+            Grid.SetColumn(image, 0);
+            Grid.SetColumn(artistNameBlock, 1);
+
             return new Border
             {
                 Padding = new Thickness(10, 8),
+                MinHeight = 44, // Ensure similar height to song items
                 Background = Brushes.Transparent,
-                Child = new TextBlock
-                {
-                    Text = artistName,
-                    FontSize = 14,
-                    VerticalAlignment = VerticalAlignment.Center
-                }
+                Child = itemGrid
             };
         }, supportsRecycling: true);
 

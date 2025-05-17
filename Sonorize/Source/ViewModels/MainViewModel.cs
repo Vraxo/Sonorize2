@@ -10,6 +10,7 @@ using System.Diagnostics;
 using Avalonia.Threading;
 using System.ComponentModel;
 using System.Collections.Generic;
+using Avalonia.Media.Imaging; // Required for Bitmap
 
 namespace Sonorize.ViewModels;
 
@@ -23,7 +24,7 @@ public class MainWindowViewModel : ViewModelBase
 
     private readonly ObservableCollection<Song> _allSongs = new();
     public ObservableCollection<Song> FilteredSongs { get; } = new();
-    public ObservableCollection<string> Artists { get; } = new();
+    public ObservableCollection<ArtistViewModel> Artists { get; } = new(); // Changed type
 
     private string _searchQuery = string.Empty;
     public string SearchQuery
@@ -237,7 +238,7 @@ public class MainWindowViewModel : ViewModelBase
                 (s.Artist?.ToLowerInvariant().Contains(query) ?? false));
         }
 
-        foreach (var song in songsToFilter.OrderBy(s => s.Artist).ThenBy(s => s.Title)) // Keep songs sorted
+        foreach (var song in songsToFilter.OrderBy(s => s.Artist).ThenBy(s => s.Title))
         {
             FilteredSongs.Add(song);
         }
@@ -420,7 +421,7 @@ public class MainWindowViewModel : ViewModelBase
 
         await Dispatcher.UIThread.InvokeAsync(() => {
             _allSongs.Clear();
-            Artists.Clear(); // Clear artists list too
+            Artists.Clear();
             StatusBarText = "Preparing to load music...";
         });
 
@@ -428,6 +429,7 @@ public class MainWindowViewModel : ViewModelBase
         {
             try
             {
+                // Load all songs first
                 await Task.Run(async () =>
                 {
                     await _musicLibraryService.LoadMusicFromDirectoriesAsync(
@@ -437,24 +439,34 @@ public class MainWindowViewModel : ViewModelBase
                     );
                 });
 
-                // Populate Artists list
-                var uniqueArtists = _allSongs
+                // Then, process songs to populate artists with thumbnails
+                var uniqueArtistNames = _allSongs
                     .Select(s => s.Artist)
-                    .Where(a => !string.IsNullOrWhiteSpace(a) && a != "Unknown Artist")
+                    .Where(a => !string.IsNullOrWhiteSpace(a)) // Includes "Unknown Artist" if present
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .OrderBy(a => a)
                     .ToList();
 
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    Artists.Clear(); // Ensure it's clear before adding
-                    foreach (var artist in uniqueArtists)
-                    {
-                        Artists.Add(artist);
-                    }
-                    OnPropertyChanged(nameof(Artists)); // Notify if the binding is to the property itself, though ObservableCollection handles internal changes.
+                    Artists.Clear(); // Ensure clear before populating
+                    Bitmap? defaultArtistThumb = _musicLibraryService.GetDefaultThumbnail();
 
-                    ApplyFilter(); // ApplyFilter should run after _allSongs is populated.
+                    foreach (var artistName in uniqueArtistNames)
+                    {
+                        Bitmap? representativeThumb = _allSongs
+                            .FirstOrDefault(s => s.Artist.Equals(artistName, StringComparison.OrdinalIgnoreCase) && s.Thumbnail != null)
+                            ?.Thumbnail;
+
+                        Artists.Add(new ArtistViewModel
+                        {
+                            Name = artistName,
+                            Thumbnail = representativeThumb ?? defaultArtistThumb
+                        });
+                    }
+                    OnPropertyChanged(nameof(Artists));
+
+                    ApplyFilter();
                     if (!_allSongs.Any() && settings.MusicDirectories.Any()) StatusBarText = "No compatible songs found in specified directories.";
                 });
             }
@@ -484,7 +496,9 @@ public class MainWindowViewModel : ViewModelBase
 
             var newSettings = _settingsService.LoadSettings();
             string originalThemeName = (_settingsService.LoadSettings() ?? new AppSettings()).PreferredThemeFileName ?? ThemeService.DefaultThemeFileName;
-            bool themeActuallyChanged = originalThemeName != newSettings.PreferredThemeFileName;
+            // Correctly get the potentially new theme name from SettingsVM *before* it's saved, if it's the source of truth for selection
+            string newlySelectedThemeFileNameInDialog = settingsVM.SelectedThemeFile ?? ThemeService.DefaultThemeFileName;
+            bool themeActuallyChanged = originalThemeName != newlySelectedThemeFileNameInDialog;
 
 
             if (dirsActuallyChanged)
@@ -497,6 +511,7 @@ public class MainWindowViewModel : ViewModelBase
             {
                 Debug.WriteLine("[MainVM] Theme changed in settings. Restart required for full effect.");
                 StatusBarText = "Theme changed. Please restart Sonorize for the changes to take full effect.";
+                _settingsService.SaveSettings(new AppSettings { MusicDirectories = newSettings.MusicDirectories, PreferredThemeFileName = newlySelectedThemeFileNameInDialog });
             }
         }
     }

@@ -22,8 +22,6 @@ public class MusicLibraryService
     public MusicLibraryService()
     {
         Debug.WriteLine("[MusicLibService] Constructor called.");
-        // Pre-generate the default thumbnail on the UI thread (constructor context).
-        // This is crucial because RenderTargetBitmap operations need to be on the UI thread.
         if (_defaultThumbnail == null)
         {
             _defaultThumbnail = CreateDefaultMusicalNoteIcon();
@@ -40,7 +38,6 @@ public class MusicLibraryService
 
     private Bitmap? CreateDefaultMusicalNoteIcon()
     {
-        // This method should now be called from the constructor, which is on the UI thread.
         Debug.WriteLine("[ThumbGen] CreateDefaultMusicalNoteIcon called.");
         try
         {
@@ -90,12 +87,11 @@ public class MusicLibraryService
         }
     }
 
-    // GetDefaultThumbnail now simply returns the pre-cached (or failed-to-create) thumbnail.
-    private Bitmap? GetDefaultThumbnail()
+    // Make this public
+    public Bitmap? GetDefaultThumbnail()
     {
         if (_defaultThumbnail == null)
         {
-            // This should ideally not happen if constructor logic is sound.
             Debug.WriteLine("[ThumbGen] GetDefaultThumbnail called, but _defaultThumbnail is null (creation failed in constructor or was never called).");
         }
         return _defaultThumbnail;
@@ -116,7 +112,7 @@ public class MusicLibraryService
                         {
                             using (var originalBitmap = new Bitmap(ms))
                             {
-                                var targetSize = new PixelSize(64, 64);
+                                var targetSize = new PixelSize(64, 64); // Actual size for song thumbnails (data)
                                 var scaledBitmap = originalBitmap.CreateScaledBitmap(targetSize, BitmapInterpolationMode.HighQuality);
                                 return scaledBitmap;
                             }
@@ -139,15 +135,13 @@ public class MusicLibraryService
         Debug.WriteLine("[MusicLibService] LoadMusicFromDirectoriesAsync (incremental) called.");
         var supportedExtensions = new[] { ".mp3", ".wav", ".flac", ".m4a", ".ogg" };
 
-        // Get the default icon; it should have been created in the constructor on the UI thread.
-        Bitmap? defaultIcon = GetDefaultThumbnail();
+        Bitmap? defaultIcon = GetDefaultThumbnail(); // Now public
         if (defaultIcon == null)
         {
             Debug.WriteLine("[MusicLibService] Warning: defaultIcon is null during library scan. Fallback thumbnails will not appear.");
         }
         int filesProcessed = 0;
 
-        // This loop runs on a background thread (due to Task.Run in ViewModel)
         foreach (var dir in directories)
         {
             if (!Directory.Exists(dir))
@@ -183,7 +177,7 @@ public class MusicLibraryService
                     Title = Path.GetFileNameWithoutExtension(file),
                     Artist = "Unknown Artist",
                     Duration = TimeSpan.Zero,
-                    Thumbnail = thumbnail ?? defaultIcon // Use album art or fallback to THE default icon
+                    Thumbnail = thumbnail ?? defaultIcon
                 };
 
                 try
