@@ -189,15 +189,8 @@ public class MainWindowViewModel : ViewModelBase
             _ => IsAdvancedPanelVisible = !IsAdvancedPanelVisible,
             _ => PlaybackService.CurrentSong != null && !IsLoadingLibrary);
 
-        // PlaybackService.CurrentPosition is now the true, unscaled time.
-        // Loop points should be captured directly from this true time.
-        CaptureLoopStartCandidateCommand = new RelayCommand(
-            _ => NewLoopStartCandidate = PlaybackService.CurrentPosition,
-            _ => PlaybackService.CurrentSong != null);
-        CaptureLoopEndCandidateCommand = new RelayCommand(
-            _ => NewLoopEndCandidate = PlaybackService.CurrentPosition,
-            _ => PlaybackService.CurrentSong != null);
-
+        CaptureLoopStartCandidateCommand = new RelayCommand(_ => NewLoopStartCandidate = PlaybackService.CurrentPosition.Divide(PlaybackService.PlaybackRate), _ => PlaybackService.CurrentSong != null);
+        CaptureLoopEndCandidateCommand = new RelayCommand(_ => NewLoopEndCandidate = PlaybackService.CurrentPosition.Divide(PlaybackService.PlaybackRate), _ => PlaybackService.CurrentSong != null);
         SaveNewLoopRegionCommand = new RelayCommand(SaveLoopCandidateAction, _ => CanSaveNewLoopRegion);
         ActivateLoopRegionCommand = new RelayCommand(_ => { if (PlaybackService.CurrentSong != null && SelectedEditableLoopRegion != null) PlaybackService.CurrentSong.ActiveLoop = SelectedEditableLoopRegion; }, _ => CanActivateLoopRegion());
         DeactivateActiveLoopCommand = new RelayCommand(_ => { if (PlaybackService.CurrentSong != null) PlaybackService.CurrentSong.ActiveLoop = null; }, _ => PlaybackService.CurrentSong?.ActiveLoop != null);
@@ -251,16 +244,13 @@ public class MainWindowViewModel : ViewModelBase
             case nameof(PlaybackService.CurrentSong):
                 (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 break;
-            case nameof(PlaybackService.IsPlaying):
-            case nameof(PlaybackService.CurrentPlaybackStatus):
+            case nameof(PlaybackService.IsPlaying): // IsPlaying changes
+            case nameof(PlaybackService.CurrentPlaybackStatus): // CurrentPlaybackStatus also changes
                 UpdateStatusBarText();
                 break;
             case nameof(PlaybackService.CurrentPosition):
             case nameof(PlaybackService.CurrentSongDuration):
                 (SaveNewLoopRegionCommand as RelayCommand)?.RaiseCanExecuteChanged();
-                // Re-evaluate CanExecute for loop capture commands if needed, though they mostly depend on CurrentSong.
-                (CaptureLoopStartCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
-                (CaptureLoopEndCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 break;
         }
     }
@@ -311,8 +301,7 @@ public class MainWindowViewModel : ViewModelBase
                                         NewLoopStartCandidate.HasValue &&
                                         NewLoopEndCandidate.HasValue &&
                                         NewLoopEndCandidate.Value > NewLoopStartCandidate.Value &&
-                                        // Compare against true song duration, as loop points are true time
-                                        NewLoopEndCandidate.Value <= PlaybackService.CurrentSongDuration &&
+                                        NewLoopEndCandidate.Value <= PlaybackService.CurrentSongDuration.Divide(PlaybackService.PlaybackRate) &&
                                         NewLoopStartCandidate.Value >= TimeSpan.Zero &&
                                         !string.IsNullOrWhiteSpace(NewLoopNameInput);
 
@@ -342,6 +331,7 @@ public class MainWindowViewModel : ViewModelBase
         if (PlaybackService.CurrentSong?.ActiveLoop != null)
         {
             var loop = PlaybackService.CurrentSong.ActiveLoop;
+            // Display loop times as they are (unadjusted by speed for clarity in definition)
             ActiveLoopDisplayText = $"Active Loop: {loop.Name} ({loop.Start:mm\\:ss\\.f} - {loop.End:mm\\:ss\\.f})";
         }
         else ActiveLoopDisplayText = "No active loop.";
@@ -354,7 +344,7 @@ public class MainWindowViewModel : ViewModelBase
 
         if (PlaybackService.CurrentSong != null)
         {
-            string stateStr = PlaybackService.CurrentPlaybackStatus switch
+            string stateStr = PlaybackService.CurrentPlaybackStatus switch // Use the new public property
             {
                 PlaybackStateStatus.Playing => "Playing",
                 PlaybackStateStatus.Paused => "Paused",
