@@ -405,7 +405,7 @@ public class MainWindow : Window
             Padding = new Thickness(10),
             BorderBrush = _theme.B_AccentColor,
             BorderThickness = new Thickness(0, 1, 0, 1),
-            MinHeight = 180, // Adjusted to accommodate new checkbox
+            MinHeight = 180,
             ClipToBounds = true
         };
         var mainStack = new StackPanel { Spacing = 10 };
@@ -505,11 +505,10 @@ public class MainWindow : Window
         loopActionsPanel.Children.Add(saveLoopBtn);
         loopActionsPanel.Children.Add(clearLoopBtn);
 
-        // Panel for the Loop Active CheckBox
         var loopActiveTogglePanel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            Margin = new Thickness(0, 8, 0, 0), // Added some top margin
+            Margin = new Thickness(0, 8, 0, 0),
             Spacing = 8,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -532,7 +531,7 @@ public class MainWindow : Window
 
         loopControlsOuterPanel.Children.Add(loopDefinitionLabel);
         loopControlsOuterPanel.Children.Add(loopActionsPanel);
-        loopControlsOuterPanel.Children.Add(loopActiveTogglePanel); // Add the new CheckBox panel here
+        loopControlsOuterPanel.Children.Add(loopActiveTogglePanel);
 
         mainStack.Children.Add(loopControlsOuterPanel);
         panelRoot.Child = mainStack;
@@ -551,45 +550,19 @@ public class MainWindow : Window
             Foreground = _theme.B_AccentColor
         };
         mainPlaybackSlider.Styles.Add(new Style(s => s.Is<Thumb>()) { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor) } });
+
+        // Bind Maximum to the duration in seconds from PlaybackService (via ViewModel if needed, but direct path is fine if PlaybackService is accessible)
         mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("PlaybackService.CurrentSongDurationSeconds"));
-        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("PlaybackService.CurrentPositionSeconds", BindingMode.TwoWay)); // TwoWay for seeking
+        // Bind Value TwoWay to the new SliderPositionSeconds property in MainWindowViewModel
+        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("SliderPositionSeconds", BindingMode.TwoWay));
         mainPlaybackSlider.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
 
-        // Listen to PointerReleased for seeking, as ValueChanged can fire too often during drag.
-        // Make sure the DataContext (MainWindowViewModel) has a method to handle the seek from slider.
-        // For simplicity, if direct binding of Value works for seeking, that's fine.
-        // However, NAudio examples often use a specific event like MouseUp or DragCompleted.
-        // The existing two-way binding to CurrentPositionSeconds implies the VM handles the update.
-        // The PlaybackService.Seek method should be triggered by this change.
-        // Let's assume the VM handles the conversion from CurrentPositionSeconds back to a Seek call if needed.
-        // No, the VM needs a specific command or event for slider-based seek.
-        // Slider Value property change should not directly call Seek for every tiny change during drag.
-        // It should update on PointerReleased or a similar "final value selected" event.
-        // For now, the binding to CurrentPositionSeconds is primarily for display and VM-initiated seeks.
-        // If the user drags the slider, the VM's setter for CurrentPositionSeconds (via PlaybackService)
-        // would need to call PlaybackService.Seek().
-        // Let's check PlaybackService.CurrentPosition setter: it doesn't call Seek.
-        // The existing WaveformSeekCommand is for the WaveformDisplayControl.
-        // We need a similar mechanism for the main slider.
-        // A common pattern is to have a temporary variable for slider value during drag,
-        // and only call Seek on drag completed. Or, if performance allows, seek on every change.
-        // Given the current setup, two-way binding will update PlaybackService.CurrentPosition.
-        // If this doesn't trigger a seek in the audio engine, then a more explicit seek mechanism is needed.
-        // The PlaybackService.CurrentPosition setter is just a property update.
-        // The ViewModel would need to observe PlaybackService.CurrentPositionSeconds changes
-        // that originate from the slider and then call PlaybackService.Seek.
-        // This is getting complex. Let's assume the current WaveformSeekCommand is the primary seek method for now
-        // and the slider is for display + programmatic seeking initiated by VM/Service.
-        // If slider dragging should seek, MainWindowViewModel.PlaybackService.CurrentPositionSeconds property
-        // (or rather, its underlying field's setter in PlaybackService) would need to invoke Seek.
-        // The current PlaybackService.CurrentPosition's setter only raises OnPropertyChanged.
 
         var mainPlayPauseButton = new Button { Content = "Play", Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(10, 5), MinWidth = 70 };
         mainPlayPauseButton.Click += (s, e) =>
         {
             if (DataContext is MainWindowViewModel vm)
             {
-                // If playing, pause. If paused or stopped, resume (which handles play from start if stopped).
                 if (vm.PlaybackService.CurrentPlaybackStatus == PlaybackStateStatus.Playing)
                     vm.PlaybackService.Pause();
                 else
@@ -640,7 +613,7 @@ public class BooleanToPlayPauseTextConverter : IValueConverter
     public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
     {
         if (value is bool isPlaying) return isPlaying ? "Pause" : "Play";
-        return "Play"; // Default
+        return "Play";
     }
     public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
         => throw new NotSupportedException();
@@ -661,8 +634,6 @@ public class NotNullToBooleanConverter : IValueConverter
     }
 }
 
-// This extension was here, assuming it's used or intended for use.
-// If not, it can be removed. For now, keeping it as it was in the original file.
 public static class BrushExtensions
 {
     public static IBrush Multiply(this IBrush brush, double factor)
