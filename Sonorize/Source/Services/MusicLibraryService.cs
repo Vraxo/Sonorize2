@@ -1,4 +1,5 @@
-﻿using Avalonia;
+﻿// Path: Source/Services/MusicLibraryService.cs
+using Avalonia;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
@@ -18,9 +19,11 @@ namespace Sonorize.Services;
 public class MusicLibraryService
 {
     private Bitmap? _defaultThumbnail;
+    private readonly LoopDataService _loopDataService; // <-- ADDED
 
-    public MusicLibraryService()
+    public MusicLibraryService(LoopDataService loopDataService) // <-- MODIFIED CONSTRUCTOR
     {
+        _loopDataService = loopDataService; // <-- STORED
         Debug.WriteLine("[MusicLibService] Constructor called.");
         if (_defaultThumbnail == null)
         {
@@ -175,7 +178,7 @@ public class MusicLibraryService
                     FilePath = file,
                     Title = Path.GetFileNameWithoutExtension(file),
                     Artist = "Unknown Artist",
-                    Album = "Unknown Album", // Initialize
+                    Album = "Unknown Album",
                     Duration = TimeSpan.Zero,
                     Thumbnail = thumbnail ?? defaultIcon
                 };
@@ -192,7 +195,7 @@ public class MusicLibraryService
                         else if (tagFile.Tag.AlbumArtists.Length > 0 && !string.IsNullOrWhiteSpace(tagFile.Tag.AlbumArtists[0]))
                             song.Artist = tagFile.Tag.AlbumArtists[0];
 
-                        if (!string.IsNullOrWhiteSpace(tagFile.Tag.Album)) // <-- POPULATE ALBUM
+                        if (!string.IsNullOrWhiteSpace(tagFile.Tag.Album))
                             song.Album = tagFile.Tag.Album;
 
                         if (tagFile.Properties.Duration > TimeSpan.Zero)
@@ -200,6 +203,15 @@ public class MusicLibraryService
                     }
                 }
                 catch (Exception) { /* Silently ignore metadata read errors for individual files */ }
+
+                // <-- LOAD PERSISTENT LOOP DATA -->
+                var storedLoopData = _loopDataService.GetLoop(song.FilePath);
+                if (storedLoopData != null)
+                {
+                    song.SavedLoop = new LoopRegion(storedLoopData.Start, storedLoopData.End);
+                    Debug.WriteLine($"[MusicLibService] Loaded persistent loop for {Path.GetFileName(song.FilePath)}: {song.SavedLoop.Start} - {song.SavedLoop.End}");
+                }
+                // <-- END LOAD PERSISTENT LOOP DATA -->
 
                 await Dispatcher.UIThread.InvokeAsync(() => songAddedCallback(song));
                 filesProcessed++;

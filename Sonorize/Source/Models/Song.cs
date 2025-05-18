@@ -17,8 +17,8 @@ public class Song : ViewModelBase
     private string _artist = "Unknown Artist";
     public string Artist { get => _artist; set => SetProperty(ref _artist, value); }
 
-    private string _album = "Unknown Album"; // <-- ADDED
-    public string Album { get => _album; set => SetProperty(ref _album, value); } // <-- ADDED
+    private string _album = "Unknown Album";
+    public string Album { get => _album; set => SetProperty(ref _album, value); }
 
     private TimeSpan _duration;
     public TimeSpan Duration { get => _duration; set => SetProperty(ref _duration, value); }
@@ -27,12 +27,13 @@ public class Song : ViewModelBase
     private Bitmap? _thumbnail;
     public Bitmap? Thumbnail { get => _thumbnail; set => SetProperty(ref _thumbnail, value); }
 
-    public ObservableCollection<LoopRegion> LoopRegions { get; } = new();
+    // Removed: LoopRegions collection
+    // public ObservableCollection<LoopRegion> LoopRegions { get; } = new();
 
-    private LoopRegion? _activeLoop;
-    public LoopRegion? ActiveLoop
+    private LoopRegion? _savedLoop; // Renamed from _activeLoop
+    public LoopRegion? SavedLoop // Renamed from ActiveLoop
     {
-        get => _activeLoop;
-        set => SetProperty(ref _activeLoop, value);
+        get => _savedLoop;
+        set => SetProperty(ref _savedLoop, value);
     }
 }

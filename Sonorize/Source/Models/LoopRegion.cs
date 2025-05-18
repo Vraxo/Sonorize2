@@ -5,37 +5,31 @@ using System.Runtime.CompilerServices;
 
 namespace Sonorize.Models;
 
-public class LoopRegion : INotifyPropertyChanged
+public class LoopRegion(TimeSpan start, TimeSpan end, string name = "Loop") : INotifyPropertyChanged
 {
-    private string _name = "New Loop";
+    private string _name = name; // Name field remains, but not prominently used in UI
     public string Name
     {
         get => _name;
         set => SetProperty(ref _name, value);
     }
 
-    private TimeSpan _start;
+    private TimeSpan _start = start;
     public TimeSpan Start
     {
         get => _start;
         set => SetProperty(ref _start, value);
     }
 
-    private TimeSpan _end;
+    private TimeSpan _end = end;
     public TimeSpan End
     {
         get => _end;
         set => SetProperty(ref _end, value);
     }
 
-    public LoopRegion(TimeSpan start, TimeSpan end, string name = "New Loop")
-    {
-        _start = start;
-        _end = end;
-        _name = name;
-    }
-
-    public string DisplayText => $"{Name} ({Start:mm\\:ss} - {End:mm\\:ss})";
+    // DisplayText no longer includes the name by default for main UI, focused on times
+    public string DisplayText => $"({Start:mm\\:ss} - {End:mm\\:ss})";
 
     public event PropertyChangedEventHandler? PropertyChanged;
     protected bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

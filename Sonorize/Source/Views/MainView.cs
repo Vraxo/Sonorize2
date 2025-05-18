@@ -1,4 +1,5 @@
-﻿using System;
+﻿// Path: Source/Views/MainView.cs
+using System;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -11,6 +12,7 @@ using Avalonia;
 using Avalonia.Controls.Templates;
 using Avalonia.Controls.Primitives;
 using Avalonia.Media.Imaging;
+// Ensure Avalonia.Data.Converters is used for IValueConverter
 using Avalonia.Data.Converters;
 using Avalonia.Styling;
 
@@ -89,7 +91,7 @@ public class MainWindow : Window
     {
         var searchBox = new TextBox
         {
-            Watermark = "Search songs by title, artist, or album...", // Updated watermark
+            Watermark = "Search songs by title, artist, or album...",
             Margin = new Thickness(10, 5, 10, 5),
             Padding = new Thickness(10, 7),
             Background = _theme.B_SlightlyLighterBackground,
@@ -159,7 +161,7 @@ public class MainWindow : Window
             Content = CreateArtistsListScrollViewer()
         };
 
-        var albumsTab = new TabItem // <-- ADDED TAB
+        var albumsTab = new TabItem
         {
             Header = "ALBUMS",
             Content = CreateAlbumsListScrollViewer()
@@ -167,7 +169,7 @@ public class MainWindow : Window
 
         tabControl.Items.Add(libraryTab);
         tabControl.Items.Add(artistsTab);
-        tabControl.Items.Add(albumsTab); // <-- ADDED TAB
+        tabControl.Items.Add(albumsTab);
 
         return tabControl;
     }
@@ -302,7 +304,7 @@ public class MainWindow : Window
         return new ScrollViewer { Content = artistsListBox, Padding = new Thickness(0, 0, 0, 5) };
     }
 
-    private ScrollViewer CreateAlbumsListScrollViewer() // <-- NEW METHOD
+    private ScrollViewer CreateAlbumsListScrollViewer()
     {
         var albumsListBox = new ListBox
         {
@@ -354,14 +356,14 @@ public class MainWindow : Window
             {
                 Text = albumVM.Title,
                 FontSize = 14,
-                FontWeight = FontWeight.Normal, // Album titles usually normal weight
+                FontWeight = FontWeight.Normal,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            var albumArtistBlock = new TextBlock // Display artist below album title
+            var albumArtistBlock = new TextBlock
             {
                 Text = albumVM.Artist,
                 FontSize = 11,
-                Foreground = _theme.B_SecondaryTextColor, // Use secondary color for artist on album list
+                Foreground = _theme.B_SecondaryTextColor,
                 VerticalAlignment = VerticalAlignment.Center
             };
             var textStack = new StackPanel
@@ -378,13 +380,13 @@ public class MainWindow : Window
                 VerticalAlignment = VerticalAlignment.Center,
             };
             itemGrid.Children.Add(image);
-            itemGrid.Children.Add(textStack); // Add StackPanel for Album Title and Artist
+            itemGrid.Children.Add(textStack);
             Grid.SetColumn(image, 0);
             Grid.SetColumn(textStack, 1);
 
             return new Border
             {
-                Padding = new Thickness(10, 6), // Consistent with song list items
+                Padding = new Thickness(10, 6),
                 MinHeight = 44,
                 Background = Brushes.Transparent,
                 Child = itemGrid
@@ -403,7 +405,7 @@ public class MainWindow : Window
             Padding = new Thickness(10),
             BorderBrush = _theme.B_AccentColor,
             BorderThickness = new Thickness(0, 1, 0, 1),
-            MinHeight = 200,
+            MinHeight = 180,
             ClipToBounds = true
         };
         var mainStack = new StackPanel { Spacing = 10 };
@@ -442,7 +444,7 @@ public class MainWindow : Window
         waveformDisplay.Bind(WaveformDisplayControl.WaveformPointsProperty, new Binding("WaveformRenderData"));
         waveformDisplay.Bind(WaveformDisplayControl.CurrentPositionProperty, new Binding("PlaybackService.CurrentPosition"));
         waveformDisplay.Bind(WaveformDisplayControl.DurationProperty, new Binding("PlaybackService.CurrentSongDuration"));
-        waveformDisplay.Bind(WaveformDisplayControl.ActiveLoopProperty, new Binding("PlaybackService.CurrentSong.ActiveLoop"));
+        waveformDisplay.Bind(WaveformDisplayControl.ActiveLoopProperty, new Binding("PlaybackService.CurrentSong.SavedLoop"));
         waveformDisplay.SeekRequested += (s, time) => { if (DataContext is MainWindowViewModel vm) vm.WaveformSeekCommand.Execute(time); };
 
         var waveformLoadingIndicator = new ProgressBar { IsIndeterminate = true, Height = 5, Margin = new Thickness(0, -5, 0, 0), Foreground = _theme.B_AccentColor, Background = Brushes.Transparent };
@@ -451,53 +453,64 @@ public class MainWindow : Window
         waveformContainer.Children.Add(waveformDisplay); waveformContainer.Children.Add(waveformLoadingIndicator);
         mainStack.Children.Add(waveformContainer);
 
-        var loopEditorGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 10, 0, 0) };
-        var createLoopPanel = new StackPanel { Spacing = 5 };
-        var loopNameInput = new TextBox { Watermark = "Loop Name", Foreground = _theme.B_TextColor, Background = _theme.B_ControlBackgroundColor };
-        loopNameInput.Bind(TextBox.TextProperty, new Binding("NewLoopNameInput", BindingMode.TwoWay));
+        var loopControlsOuterPanel = new StackPanel
+        {
+            Orientation = Orientation.Vertical,
+            Spacing = 5,
+            Margin = new Thickness(0, 10, 0, 0)
+        };
 
-        var timeSettersGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,10,Auto,*"), VerticalAlignment = VerticalAlignment.Center };
-        var setStartBtn = new Button { Content = "Set Start", FontSize = 10, Padding = new Thickness(3), Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
+        var loopDefinitionLabel = new TextBlock
+        {
+            Text = "Define Loop:",
+            FontSize = 12,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = _theme.B_TextColor
+        };
+
+        var loopActionsPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        var setStartBtn = new Button { Content = "A", FontSize = 12, Padding = new Thickness(10, 5), MinWidth = 40, Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
         setStartBtn.Bind(Button.CommandProperty, new Binding("CaptureLoopStartCandidateCommand"));
-        var startDisp = new TextBlock { FontSize = 10, Margin = new Thickness(3, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
+        var startDisp = new TextBlock { FontSize = 11, Margin = new Thickness(3, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, MinWidth = 60 };
         startDisp.Bind(TextBlock.TextProperty, new Binding("NewLoopStartCandidateDisplay"));
-        var setEndBtn = new Button { Content = "Set End", FontSize = 10, Padding = new Thickness(3), Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
+
+        var setEndBtn = new Button { Content = "B", FontSize = 12, Padding = new Thickness(10, 5), MinWidth = 40, Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
         setEndBtn.Bind(Button.CommandProperty, new Binding("CaptureLoopEndCandidateCommand"));
-        var endDisp = new TextBlock { FontSize = 10, Margin = new Thickness(3, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
+        var endDisp = new TextBlock { FontSize = 11, Margin = new Thickness(3, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, MinWidth = 60 };
         endDisp.Bind(TextBlock.TextProperty, new Binding("NewLoopEndCandidateDisplay"));
-        Grid.SetColumn(setStartBtn, 0); Grid.SetColumn(startDisp, 1); Grid.SetColumn(setEndBtn, 2); Grid.SetColumn(endDisp, 3);
-        timeSettersGrid.Children.Add(setStartBtn); timeSettersGrid.Children.Add(startDisp); timeSettersGrid.Children.Add(setEndBtn); timeSettersGrid.Children.Add(endDisp);
 
-        var saveLoopBtn = new Button { Content = "Save Loop", HorizontalAlignment = HorizontalAlignment.Stretch, Background = _theme.B_AccentColor, Foreground = _theme.B_AccentForeground };
-        saveLoopBtn.Bind(Button.CommandProperty, new Binding("SaveNewLoopRegionCommand"));
-        saveLoopBtn.Bind(Button.IsEnabledProperty, new Binding("CanSaveNewLoopRegion"));
+        var saveLoopBtn = new Button { Content = "Save Loop", FontSize = 11, Padding = new Thickness(10, 5), Background = _theme.B_AccentColor, Foreground = _theme.B_AccentForeground };
+        saveLoopBtn.Bind(Button.CommandProperty, new Binding("SaveLoopCommand"));
+        saveLoopBtn.Bind(Button.IsEnabledProperty, new Binding("CanSaveLoopRegion"));
 
-        createLoopPanel.Children.Add(new TextBlock { Text = "Create/Edit Loop Region:", FontSize = 12, Foreground = _theme.B_TextColor });
-        createLoopPanel.Children.Add(loopNameInput); createLoopPanel.Children.Add(timeSettersGrid); createLoopPanel.Children.Add(saveLoopBtn);
-        Grid.SetColumn(createLoopPanel, 0);
+        var clearLoopBtn = new Button { Content = "Clear Loop", FontSize = 11, Padding = new Thickness(10, 5), Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
+        clearLoopBtn.Bind(Button.CommandProperty, new Binding("ClearLoopCommand"));
 
-        var manageLoopsPanel = new StackPanel { Spacing = 5, Margin = new Thickness(10, 0, 0, 0), MinWidth = 180 };
-        var loopsListBox = new ListBox { MinHeight = 50, MaxHeight = 100, Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
-        loopsListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("EditableLoopRegions"));
-        loopsListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedEditableLoopRegion", BindingMode.TwoWay));
-        loopsListBox.ItemTemplate = new FuncDataTemplate<LoopRegion>((loop, _) => new TextBlock { Text = loop.DisplayText, Padding = new Thickness(3), Foreground = _theme.B_TextColor });
+        // *** Corrected Binding for clearLoopBtn.IsEnabledProperty ***
+        var clearLoopBinding = new Binding("PlaybackService.CurrentSong.SavedLoop");
+        clearLoopBinding.Converter = NotNullToBooleanConverter.Instance;
+        // You can also explicitly cast here if needed, though separating often suffices:
+        // clearLoopBinding.Converter = (Avalonia.Data.Converters.IValueConverter)NotNullToBooleanConverter.Instance;
+        clearLoopBtn.Bind(Button.IsEnabledProperty, clearLoopBinding);
 
-        var loopListButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, HorizontalAlignment = HorizontalAlignment.Right };
-        var activateBtn = new Button { Content = "Activate", FontSize = 10, Background = _theme.B_AccentColor, Foreground = _theme.B_AccentForeground };
-        activateBtn.Bind(Button.CommandProperty, new Binding("ActivateLoopRegionCommand"));
-        var deleteBtn = new Button { Content = "Delete", FontSize = 10, Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
-        deleteBtn.Bind(Button.CommandProperty, new Binding("DeleteLoopRegionCommand"));
-        loopListButtons.Children.Add(activateBtn); loopListButtons.Children.Add(deleteBtn);
 
-        var deactivateBtn = new Button { Content = "Deactivate Current Loop", HorizontalAlignment = HorizontalAlignment.Stretch, FontSize = 10, Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor, Margin = new Thickness(0, 5, 0, 0) };
-        deactivateBtn.Bind(Button.CommandProperty, new Binding("DeactivateActiveLoopCommand"));
+        loopActionsPanel.Children.Add(setStartBtn);
+        loopActionsPanel.Children.Add(startDisp);
+        loopActionsPanel.Children.Add(setEndBtn);
+        loopActionsPanel.Children.Add(endDisp);
+        loopActionsPanel.Children.Add(saveLoopBtn);
+        loopActionsPanel.Children.Add(clearLoopBtn);
 
-        manageLoopsPanel.Children.Add(new TextBlock { Text = "Defined Loops:", FontSize = 12, Foreground = _theme.B_TextColor });
-        manageLoopsPanel.Children.Add(loopsListBox); manageLoopsPanel.Children.Add(loopListButtons); manageLoopsPanel.Children.Add(deactivateBtn);
-        Grid.SetColumn(manageLoopsPanel, 1);
+        loopControlsOuterPanel.Children.Add(loopDefinitionLabel);
+        loopControlsOuterPanel.Children.Add(loopActionsPanel);
 
-        loopEditorGrid.Children.Add(createLoopPanel); loopEditorGrid.Children.Add(manageLoopsPanel);
-        mainStack.Children.Add(loopEditorGrid);
+        mainStack.Children.Add(loopControlsOuterPanel);
         panelRoot.Child = mainStack;
         return panelRoot;
     }
@@ -520,7 +533,13 @@ public class MainWindow : Window
 
         var mainPlayPauseButton = new Button { Content = "Play", Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(10, 5), MinWidth = 70 };
         mainPlayPauseButton.Click += (s, e) => { if (DataContext is MainWindowViewModel vm) { if (vm.PlaybackService.IsPlaying) vm.PlaybackService.Pause(); else vm.PlaybackService.Resume(); } };
-        mainPlayPauseButton.Bind(Button.ContentProperty, new Binding("PlaybackService.IsPlaying") { Converter = new BooleanToPlayPauseTextConverter() });
+
+        // *** Corrected Binding for mainPlayPauseButton.ContentProperty ***
+        var playPauseContentBinding = new Binding("PlaybackService.IsPlaying");
+        playPauseContentBinding.Converter = BooleanToPlayPauseTextConverter.Instance;
+        // playPauseContentBinding.Converter = (Avalonia.Data.Converters.IValueConverter)BooleanToPlayPauseTextConverter.Instance; // Optional explicit cast
+        mainPlayPauseButton.Bind(Button.ContentProperty, playPauseContentBinding);
+
         mainPlayPauseButton.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
 
         var toggleAdvPanelButton = new Button { Content = "+", Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(8, 4), MinWidth = 30, FontWeight = FontWeight.Bold, Margin = new Thickness(5, 0, 0, 0) };
@@ -552,8 +571,10 @@ public class MainWindow : Window
     }
 }
 
-public class BooleanToPlayPauseTextConverter : IValueConverter
+public class BooleanToPlayPauseTextConverter : Avalonia.Data.Converters.IValueConverter
 {
+    public static readonly BooleanToPlayPauseTextConverter Instance = new();
+
     public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
     {
         if (value is bool isPlaying) return isPlaying ? "Pause" : "Play";
@@ -561,6 +582,21 @@ public class BooleanToPlayPauseTextConverter : IValueConverter
     }
     public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
         => throw new NotSupportedException();
+}
+
+public class NotNullToBooleanConverter : Avalonia.Data.Converters.IValueConverter
+{
+    public static readonly NotNullToBooleanConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+    {
+        return value != null;
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+    {
+        throw new NotSupportedException();
+    }
 }
 
 public static class BrushExtensions { public static IBrush Multiply(this IBrush brush, double factor) { if (brush is ISolidColorBrush solidBrush) { var c = solidBrush.Color; return new SolidColorBrush(Color.FromArgb(c.A, (byte)Math.Clamp(c.R * factor, 0, 255), (byte)Math.Clamp(c.G * factor, 0, 255), (byte)Math.Clamp(c.B * factor, 0, 255))); } return brush; } }
