@@ -1,5 +1,4 @@
-﻿// Path: Source/ViewModels/MainViewModel.cs
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Sonorize.Models;
 using Sonorize.Services;
 using System.Collections.ObjectModel;
@@ -154,6 +153,8 @@ public class MainWindowViewModel : ViewModelBase
     public ICommand ClearLoopCommand { get; }
     public ICommand ToggleLoopActiveCommand { get; }
     public ICommand WaveformSeekCommand { get; }
+    public ICommand MainSliderSeekCommand { get; }
+
 
     public MainWindowViewModel(
         SettingsService settingsService,
@@ -181,6 +182,14 @@ public class MainWindowViewModel : ViewModelBase
         ClearLoopCommand = new RelayCommand(ClearSavedLoopAction, _ => PlaybackService.CurrentSong?.SavedLoop != null);
         ToggleLoopActiveCommand = new RelayCommand(ToggleCurrentSongLoopActive, _ => PlaybackService.CurrentSong?.SavedLoop != null);
         WaveformSeekCommand = new RelayCommand(timeSpanObj => { if (timeSpanObj is TimeSpan ts && PlaybackService.CurrentSong != null) PlaybackService.Seek(ts); }, _ => PlaybackService.CurrentSong != null);
+        MainSliderSeekCommand = new RelayCommand(sliderValue =>
+        {
+            if (sliderValue is double seconds && PlaybackService.CurrentSong != null)
+            {
+                Debug.WriteLine($"[MainVM] MainSliderSeekCommand: Seeking to {TimeSpan.FromSeconds(seconds)}");
+                PlaybackService.Seek(TimeSpan.FromSeconds(seconds));
+            }
+        }, _ => PlaybackService.CurrentSong != null && PlaybackService.CurrentSongDuration.TotalSeconds > 0);
 
         PlaybackService.PropertyChanged += OnPlaybackServicePropertyChanged;
         PlaybackSpeed = 1.0;
@@ -227,6 +236,7 @@ public class MainWindowViewModel : ViewModelBase
         (CaptureLoopStartCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (CaptureLoopEndCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (WaveformSeekCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (MainSliderSeekCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
     private void HandleSelectedSongChange(Song? oldSong, Song? newSong)
