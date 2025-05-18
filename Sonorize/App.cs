@@ -1,4 +1,3 @@
-// Path: App.cs
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml.Styling;
@@ -64,8 +63,8 @@ public class App : Application
             }
 
             var playbackService = new PlaybackService();
-            var loopDataService = new LoopDataService(); // <-- INSTANTIATE LoopDataService
-            var musicLibraryService = new MusicLibraryService(loopDataService); // <-- PASS LoopDataService
+            var loopDataService = new LoopDataService();
+            var musicLibraryService = new MusicLibraryService(loopDataService);
             var waveformService = new WaveformService();
 
             var mainWindowViewModel = new MainWindowViewModel(
@@ -74,7 +73,7 @@ public class App : Application
                 playbackService,
                 currentCustomTheme,
                 waveformService,
-                loopDataService); // <-- PASS LoopDataService
+                loopDataService);
 
             desktop.MainWindow = new MainWindow(currentCustomTheme)
             {

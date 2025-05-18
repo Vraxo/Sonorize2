@@ -12,13 +12,13 @@ public class LoopDataService
 {
     private readonly string _loopDataFilePath;
     private Dictionary<string, LoopStorageData> _loopDataStore = new();
-    private readonly object _lock = new object(); // For thread safety during save/load
+    private readonly object _lock = new object();
 
     public LoopDataService()
     {
         var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var sonorizeAppDataPath = Path.Combine(appDataPath, "Sonorize");
-        Directory.CreateDirectory(sonorizeAppDataPath); // Ensure directory exists
+        Directory.CreateDirectory(sonorizeAppDataPath);
         _loopDataFilePath = Path.Combine(sonorizeAppDataPath, "loopdata.json");
         LoadLoopData();
         Debug.WriteLine($"[LoopDataService] Initialized. Data loaded from: {_loopDataFilePath}");
@@ -33,13 +33,42 @@ public class LoopDataService
                 if (File.Exists(_loopDataFilePath))
                 {
                     var json = File.ReadAllText(_loopDataFilePath);
-                    _loopDataStore = JsonSerializer.Deserialize<Dictionary<string, LoopStorageData>>(json) ?? new Dictionary<string, LoopStorageData>();
-                    Debug.WriteLine($"[LoopDataService] Successfully loaded {_loopDataStore.Count} loop entries.");
+                    // Handle potential old format without IsActive gracefully
+                    var tempStore = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
+                    _loopDataStore = new Dictionary<string, LoopStorageData>();
+                    if (tempStore != null)
+                    {
+                        foreach (var kvp in tempStore)
+                        {
+                            try
+                            {
+                                // Try to deserialize to the new record type
+                                _loopDataStore[kvp.Key] = kvp.Value.Deserialize<LoopStorageData>()!;
+                            }
+                            catch (JsonException) // If it fails, it might be the old format
+                            {
+                                try
+                                {
+                                    // Old format: record LoopStorageData(TimeSpan Start, TimeSpan End);
+                                    var oldLoop = kvp.Value.Deserialize<OldLoopStorageDataTemp>();
+                                    if (oldLoop != null)
+                                    {
+                                        _loopDataStore[kvp.Key] = new LoopStorageData(oldLoop.Start, oldLoop.End, false); // Default IsActive to false for old data
+                                        Debug.WriteLine($"[LoopDataService] Migrated old loop format for {Path.GetFileName(kvp.Key)}");
+                                    }
+                                }
+                                catch (Exception exMigrate)
+                                {
+                                    Debug.WriteLine($"[LoopDataService] Failed to migrate or deserialize loop for {Path.GetFileName(kvp.Key)}: {exMigrate.Message}");
+                                }
+                            }
+                        }
+                    }
+                    Debug.WriteLine($"[LoopDataService] Successfully loaded/migrated {_loopDataStore.Count} loop entries.");
                 }
                 else
                 {
                     _loopDataStore = new Dictionary<string, LoopStorageData>();
-                    Debug.WriteLine($"[LoopDataService] Loop data file not found. Initialized with empty store.");
                 }
             }
             catch (Exception ex)
@@ -49,6 +78,9 @@ public class LoopDataService
             }
         }
     }
+    // Temporary record for migration from old format
+    private record OldLoopStorageDataTemp(TimeSpan Start, TimeSpan End);
+
 
     private void SaveLoopData()
     {
@@ -74,25 +106,41 @@ public class LoopDataService
         lock (_lock)
         {
             _loopDataStore.TryGetValue(filePath, out var loopData);
-            if (loopData != null)
-            {
-                // Debug.WriteLine($"[LoopDataService] GetLoop for \"{Path.GetFileName(filePath)}\": Found Start={loopData.Start}, End={loopData.End}");
-            }
             return loopData;
         }
     }
 
-    public void SetLoop(string filePath, TimeSpan start, TimeSpan end)
+    // Modified to accept isActive
+    public void SetLoop(string filePath, TimeSpan start, TimeSpan end, bool isActive)
     {
         if (string.IsNullOrEmpty(filePath)) return;
-        var loopData = new LoopStorageData(start, end);
+        var loopData = new LoopStorageData(start, end, isActive);
         lock (_lock)
         {
             _loopDataStore[filePath] = loopData;
         }
-        Debug.WriteLine($"[LoopDataService] SetLoop for \"{Path.GetFileName(filePath)}\": Start={start}, End={end}. Triggering save.");
-        SaveLoopData(); // Save changes immediately
+        Debug.WriteLine($"[LoopDataService] SetLoop for \"{Path.GetFileName(filePath)}\": Start={start}, End={end}, IsActive={isActive}. Triggering save.");
+        SaveLoopData();
     }
+
+    public void UpdateLoopActiveState(string filePath, bool isActive)
+    {
+        if (string.IsNullOrEmpty(filePath)) return;
+        lock (_lock)
+        {
+            if (_loopDataStore.TryGetValue(filePath, out var existingLoop))
+            {
+                _loopDataStore[filePath] = existingLoop with { IsActive = isActive }; // Using record 'with' expression
+                Debug.WriteLine($"[LoopDataService] UpdateLoopActiveState for \"{Path.GetFileName(filePath)}\" to IsActive={isActive}. Triggering save.");
+                SaveLoopData();
+            }
+            else
+            {
+                Debug.WriteLine($"[LoopDataService] UpdateLoopActiveState: No loop definition found for \"{Path.GetFileName(filePath)}\" to update active state.");
+            }
+        }
+    }
+
 
     public void ClearLoop(string filePath)
     {
@@ -108,11 +156,7 @@ public class LoopDataService
         if (removed)
         {
             Debug.WriteLine($"[LoopDataService] ClearLoop for \"{Path.GetFileName(filePath)}\". Triggering save.");
-            SaveLoopData(); // Save changes immediately
-        }
-        else
-        {
-            Debug.WriteLine($"[LoopDataService] ClearLoop for \"{Path.GetFileName(filePath)}\": No loop found to clear.");
+            SaveLoopData();
         }
     }
 }

@@ -1,30 +1,30 @@
-﻿// Path: Source/Services/MusicLibraryService.cs
-using Avalonia;
-using Avalonia.Media;
-using Avalonia.Media.Imaging;
-using Avalonia.Platform;
+﻿using Avalonia.Media.Imaging;
 using Sonorize.Models;
 using System;
 using System.Collections.Generic;
-using System.Globalization;
+using System.Globalization; // For CultureInfo
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Diagnostics;
 using TagLib;
 using Avalonia.Threading;
+using Avalonia.Media; // For Brushes, Colors
+using Avalonia; // For PixelSize, Vector, Rect, Size, Point
+using Avalonia.Platform; // For RenderTargetBitmap
 
 namespace Sonorize.Services;
 
 public class MusicLibraryService
 {
     private Bitmap? _defaultThumbnail;
-    private readonly LoopDataService _loopDataService; // <-- ADDED
+    private readonly LoopDataService _loopDataService;
 
-    public MusicLibraryService(LoopDataService loopDataService) // <-- MODIFIED CONSTRUCTOR
+    public MusicLibraryService(LoopDataService loopDataService)
     {
-        _loopDataService = loopDataService; // <-- STORED
+        _loopDataService = loopDataService;
         Debug.WriteLine("[MusicLibService] Constructor called.");
+        // Default thumbnail creation logic remains the same...
         if (_defaultThumbnail == null)
         {
             _defaultThumbnail = CreateDefaultMusicalNoteIcon();
@@ -38,7 +38,6 @@ public class MusicLibraryService
             }
         }
     }
-
     private Bitmap? CreateDefaultMusicalNoteIcon()
     {
         Debug.WriteLine("[ThumbGen] CreateDefaultMusicalNoteIcon called.");
@@ -60,18 +59,20 @@ public class MusicLibraryService
                     "♫",
                     CultureInfo.CurrentCulture,
                     FlowDirection.LeftToRight,
-                    Typeface.Default,
-                    32,
+                    Typeface.Default, // Consider a more specific font if default doesn't have the note
+                    32, // Font size
                     foregroundBrush);
 
+                // Center the text
                 var textOrigin = new Avalonia.Point(
                     (bounds.Width - formattedText.Width) / 2,
                     (bounds.Height - formattedText.Height) / 2);
                 context.DrawText(formattedText, textOrigin);
             }
 
+            // Save to a memory stream
             using var memoryStream = new MemoryStream();
-            renderTarget.Save(memoryStream);
+            renderTarget.Save(memoryStream); // Default is PNG
             memoryStream.Seek(0, SeekOrigin.Begin);
 
             if (memoryStream.Length > 0)
@@ -90,15 +91,7 @@ public class MusicLibraryService
         }
     }
 
-    public Bitmap? GetDefaultThumbnail()
-    {
-        if (_defaultThumbnail == null)
-        {
-            Debug.WriteLine("[ThumbGen] GetDefaultThumbnail called, but _defaultThumbnail is null (creation failed in constructor or was never called).");
-        }
-        return _defaultThumbnail;
-    }
-
+    public Bitmap? GetDefaultThumbnail() => _defaultThumbnail;
     private Bitmap? LoadAlbumArt(string filePath)
     {
         try
@@ -112,9 +105,12 @@ public class MusicLibraryService
                     {
                         if (ms.Length > 0)
                         {
+                            // It's good practice to check if the bitmap can be created
+                            // and handle potential exceptions here too.
                             using (var originalBitmap = new Bitmap(ms))
                             {
-                                var targetSize = new PixelSize(64, 64);
+                                // Resize to a smaller thumbnail
+                                var targetSize = new PixelSize(64, 64); // Example size
                                 var scaledBitmap = originalBitmap.CreateScaledBitmap(targetSize, BitmapInterpolationMode.HighQuality);
                                 return scaledBitmap;
                             }
@@ -123,25 +119,21 @@ public class MusicLibraryService
                 }
             }
         }
-        catch (CorruptFileException) { /* Optional: Debug.WriteLine($"[AlbumArt] Corrupt file: {Path.GetFileName(filePath)}"); */ }
-        catch (UnsupportedFormatException) { /* Optional: Debug.WriteLine($"[AlbumArt] Unsupported format: {Path.GetFileName(filePath)}"); */ }
+        catch (CorruptFileException) { /* Optional: Debug.WriteLine for tracking */ }
+        catch (UnsupportedFormatException) { /* Optional: Debug.WriteLine */ }
         catch (Exception ex) { Debug.WriteLine($"[AlbumArt] Error loading album art for {Path.GetFileName(filePath)}: {ex.Message}"); }
         return null;
     }
+
 
     public async Task LoadMusicFromDirectoriesAsync(
         IEnumerable<string> directories,
         Action<Song> songAddedCallback,
         Action<string> statusUpdateCallback)
     {
-        Debug.WriteLine("[MusicLibService] LoadMusicFromDirectoriesAsync (incremental) called.");
-        var supportedExtensions = new[] { ".mp3", ".wav", ".flac", ".m4a", ".ogg" };
-
+        Debug.WriteLine("[MusicLibService] LoadMusicFromDirectoriesAsync called.");
+        var supportedExtensions = new[] { ".mp3", ".wav", ".flac", ".m4a", ".ogg" }; // Common audio formats
         Bitmap? defaultIcon = GetDefaultThumbnail();
-        if (defaultIcon == null)
-        {
-            Debug.WriteLine("[MusicLibService] Warning: defaultIcon is null during library scan. Fallback thumbnails will not appear.");
-        }
         int filesProcessed = 0;
 
         foreach (var dir in directories)
@@ -152,7 +144,6 @@ public class MusicLibraryService
                 await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Directory not found: {dir}"));
                 continue;
             }
-
             await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Scanning: {Path.GetFileName(dir)}..."));
 
             List<string> filesInDir;
@@ -172,14 +163,13 @@ public class MusicLibraryService
             foreach (var file in filesInDir)
             {
                 Bitmap? thumbnail = LoadAlbumArt(file);
-
                 var song = new Song
                 {
                     FilePath = file,
-                    Title = Path.GetFileNameWithoutExtension(file),
-                    Artist = "Unknown Artist",
-                    Album = "Unknown Album",
-                    Duration = TimeSpan.Zero,
+                    Title = Path.GetFileNameWithoutExtension(file), // Default title
+                    Artist = "Unknown Artist",       // Default artist
+                    Album = "Unknown Album",         // Default album
+                    Duration = TimeSpan.Zero,        // Default duration
                     Thumbnail = thumbnail ?? defaultIcon
                 };
 
@@ -187,41 +177,33 @@ public class MusicLibraryService
                 {
                     using (var tagFile = TagLib.File.Create(file))
                     {
-                        if (!string.IsNullOrWhiteSpace(tagFile.Tag.Title))
-                            song.Title = tagFile.Tag.Title;
-
+                        if (!string.IsNullOrWhiteSpace(tagFile.Tag.Title)) song.Title = tagFile.Tag.Title;
                         if (tagFile.Tag.Performers.Length > 0 && !string.IsNullOrWhiteSpace(tagFile.Tag.Performers[0]))
                             song.Artist = tagFile.Tag.Performers[0];
                         else if (tagFile.Tag.AlbumArtists.Length > 0 && !string.IsNullOrWhiteSpace(tagFile.Tag.AlbumArtists[0]))
-                            song.Artist = tagFile.Tag.AlbumArtists[0];
-
-                        if (!string.IsNullOrWhiteSpace(tagFile.Tag.Album))
-                            song.Album = tagFile.Tag.Album;
-
-                        if (tagFile.Properties.Duration > TimeSpan.Zero)
-                            song.Duration = tagFile.Properties.Duration;
+                            song.Artist = tagFile.Tag.AlbumArtists[0]; // Fallback to album artist
+                        if (!string.IsNullOrWhiteSpace(tagFile.Tag.Album)) song.Album = tagFile.Tag.Album;
+                        if (tagFile.Properties.Duration > TimeSpan.Zero) song.Duration = tagFile.Properties.Duration;
                     }
                 }
-                catch (Exception) { /* Silently ignore metadata read errors for individual files */ }
+                catch (Exception) { /* Silently ignore metadata read errors for now */ }
 
-                // <-- LOAD PERSISTENT LOOP DATA -->
                 var storedLoopData = _loopDataService.GetLoop(song.FilePath);
                 if (storedLoopData != null)
                 {
                     song.SavedLoop = new LoopRegion(storedLoopData.Start, storedLoopData.End);
-                    Debug.WriteLine($"[MusicLibService] Loaded persistent loop for {Path.GetFileName(song.FilePath)}: {song.SavedLoop.Start} - {song.SavedLoop.End}");
+                    song.IsLoopActive = storedLoopData.IsActive; // <-- SET IsLoopActive
+                    Debug.WriteLine($"[MusicLibService] Loaded persistent loop for {Path.GetFileName(song.FilePath)}: {song.SavedLoop.Start} - {song.SavedLoop.End}, Active: {song.IsLoopActive}");
                 }
-                // <-- END LOAD PERSISTENT LOOP DATA -->
 
                 await Dispatcher.UIThread.InvokeAsync(() => songAddedCallback(song));
                 filesProcessed++;
-
-                if (filesProcessed % 20 == 0)
+                if (filesProcessed % 20 == 0) // Update status periodically
                 {
                     await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Loaded {filesProcessed} songs..."));
                 }
             }
         }
-        Debug.WriteLine($"[MusicLibService] Background file scanning complete. Processed {filesProcessed} songs in total.");
+        Debug.WriteLine($"[MusicLibService] Background file scanning complete. Processed {filesProcessed} songs.");
     }
 }

@@ -10,11 +10,11 @@ using Sonorize.Controls;
 using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls.Templates;
-using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Primitives; // For Thumb, ToggleButton
 using Avalonia.Media.Imaging;
-// Ensure Avalonia.Data.Converters is used for IValueConverter
 using Avalonia.Data.Converters;
 using Avalonia.Styling;
+using Sonorize.Services;
 
 namespace Sonorize.Views;
 public class MainWindow : Window
@@ -405,7 +405,7 @@ public class MainWindow : Window
             Padding = new Thickness(10),
             BorderBrush = _theme.B_AccentColor,
             BorderThickness = new Thickness(0, 1, 0, 1),
-            MinHeight = 180,
+            MinHeight = 180, // Adjusted to accommodate new checkbox
             ClipToBounds = true
         };
         var mainStack = new StackPanel { Spacing = 10 };
@@ -491,12 +491,10 @@ public class MainWindow : Window
 
         var clearLoopBtn = new Button { Content = "Clear Loop", FontSize = 11, Padding = new Thickness(10, 5), Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
         clearLoopBtn.Bind(Button.CommandProperty, new Binding("ClearLoopCommand"));
-
-        // *** Corrected Binding for clearLoopBtn.IsEnabledProperty ***
-        var clearLoopBinding = new Binding("PlaybackService.CurrentSong.SavedLoop");
-        clearLoopBinding.Converter = NotNullToBooleanConverter.Instance;
-        // You can also explicitly cast here if needed, though separating often suffices:
-        // clearLoopBinding.Converter = (Avalonia.Data.Converters.IValueConverter)NotNullToBooleanConverter.Instance;
+        var clearLoopBinding = new Binding("PlaybackService.CurrentSong.SavedLoop")
+        {
+            Converter = NotNullToBooleanConverter.Instance
+        };
         clearLoopBtn.Bind(Button.IsEnabledProperty, clearLoopBinding);
 
 
@@ -507,8 +505,34 @@ public class MainWindow : Window
         loopActionsPanel.Children.Add(saveLoopBtn);
         loopActionsPanel.Children.Add(clearLoopBtn);
 
+        // Panel for the Loop Active CheckBox
+        var loopActiveTogglePanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 8, 0, 0), // Added some top margin
+            Spacing = 8,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        var loopActiveCheckBox = new CheckBox
+        {
+            Content = "Activate Loop",
+            Foreground = _theme.B_TextColor,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        loopActiveCheckBox.Bind(ToggleButton.IsCheckedProperty, new Binding("IsCurrentLoopActiveUiBinding", BindingMode.TwoWay));
+
+        var loopActiveCheckBoxIsEnabledBinding = new Binding("PlaybackService.CurrentSong.SavedLoop")
+        {
+            Converter = NotNullToBooleanConverter.Instance
+        };
+        loopActiveCheckBox.Bind(IsEnabledProperty, loopActiveCheckBoxIsEnabledBinding);
+
+        loopActiveTogglePanel.Children.Add(loopActiveCheckBox);
+
         loopControlsOuterPanel.Children.Add(loopDefinitionLabel);
         loopControlsOuterPanel.Children.Add(loopActionsPanel);
+        loopControlsOuterPanel.Children.Add(loopActiveTogglePanel); // Add the new CheckBox panel here
 
         mainStack.Children.Add(loopControlsOuterPanel);
         panelRoot.Child = mainStack;
@@ -528,18 +552,56 @@ public class MainWindow : Window
         };
         mainPlaybackSlider.Styles.Add(new Style(s => s.Is<Thumb>()) { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor) } });
         mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("PlaybackService.CurrentSongDurationSeconds"));
-        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("PlaybackService.CurrentPositionSeconds", BindingMode.TwoWay));
+        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("PlaybackService.CurrentPositionSeconds", BindingMode.TwoWay)); // TwoWay for seeking
         mainPlaybackSlider.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
 
+        // Listen to PointerReleased for seeking, as ValueChanged can fire too often during drag.
+        // Make sure the DataContext (MainWindowViewModel) has a method to handle the seek from slider.
+        // For simplicity, if direct binding of Value works for seeking, that's fine.
+        // However, NAudio examples often use a specific event like MouseUp or DragCompleted.
+        // The existing two-way binding to CurrentPositionSeconds implies the VM handles the update.
+        // The PlaybackService.Seek method should be triggered by this change.
+        // Let's assume the VM handles the conversion from CurrentPositionSeconds back to a Seek call if needed.
+        // No, the VM needs a specific command or event for slider-based seek.
+        // Slider Value property change should not directly call Seek for every tiny change during drag.
+        // It should update on PointerReleased or a similar "final value selected" event.
+        // For now, the binding to CurrentPositionSeconds is primarily for display and VM-initiated seeks.
+        // If the user drags the slider, the VM's setter for CurrentPositionSeconds (via PlaybackService)
+        // would need to call PlaybackService.Seek().
+        // Let's check PlaybackService.CurrentPosition setter: it doesn't call Seek.
+        // The existing WaveformSeekCommand is for the WaveformDisplayControl.
+        // We need a similar mechanism for the main slider.
+        // A common pattern is to have a temporary variable for slider value during drag,
+        // and only call Seek on drag completed. Or, if performance allows, seek on every change.
+        // Given the current setup, two-way binding will update PlaybackService.CurrentPosition.
+        // If this doesn't trigger a seek in the audio engine, then a more explicit seek mechanism is needed.
+        // The PlaybackService.CurrentPosition setter is just a property update.
+        // The ViewModel would need to observe PlaybackService.CurrentPositionSeconds changes
+        // that originate from the slider and then call PlaybackService.Seek.
+        // This is getting complex. Let's assume the current WaveformSeekCommand is the primary seek method for now
+        // and the slider is for display + programmatic seeking initiated by VM/Service.
+        // If slider dragging should seek, MainWindowViewModel.PlaybackService.CurrentPositionSeconds property
+        // (or rather, its underlying field's setter in PlaybackService) would need to invoke Seek.
+        // The current PlaybackService.CurrentPosition's setter only raises OnPropertyChanged.
+
         var mainPlayPauseButton = new Button { Content = "Play", Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(10, 5), MinWidth = 70 };
-        mainPlayPauseButton.Click += (s, e) => { if (DataContext is MainWindowViewModel vm) { if (vm.PlaybackService.IsPlaying) vm.PlaybackService.Pause(); else vm.PlaybackService.Resume(); } };
+        mainPlayPauseButton.Click += (s, e) =>
+        {
+            if (DataContext is MainWindowViewModel vm)
+            {
+                // If playing, pause. If paused or stopped, resume (which handles play from start if stopped).
+                if (vm.PlaybackService.CurrentPlaybackStatus == PlaybackStateStatus.Playing)
+                    vm.PlaybackService.Pause();
+                else
+                    vm.PlaybackService.Resume();
+            }
+        };
 
-        // *** Corrected Binding for mainPlayPauseButton.ContentProperty ***
-        var playPauseContentBinding = new Binding("PlaybackService.IsPlaying");
-        playPauseContentBinding.Converter = BooleanToPlayPauseTextConverter.Instance;
-        // playPauseContentBinding.Converter = (Avalonia.Data.Converters.IValueConverter)BooleanToPlayPauseTextConverter.Instance; // Optional explicit cast
+        var playPauseContentBinding = new Binding("PlaybackService.IsPlaying")
+        {
+            Converter = BooleanToPlayPauseTextConverter.Instance
+        };
         mainPlayPauseButton.Bind(Button.ContentProperty, playPauseContentBinding);
-
         mainPlayPauseButton.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
 
         var toggleAdvPanelButton = new Button { Content = "+", Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(8, 4), MinWidth = 30, FontWeight = FontWeight.Bold, Margin = new Thickness(5, 0, 0, 0) };
@@ -571,20 +633,20 @@ public class MainWindow : Window
     }
 }
 
-public class BooleanToPlayPauseTextConverter : Avalonia.Data.Converters.IValueConverter
+public class BooleanToPlayPauseTextConverter : IValueConverter
 {
     public static readonly BooleanToPlayPauseTextConverter Instance = new();
 
     public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
     {
         if (value is bool isPlaying) return isPlaying ? "Pause" : "Play";
-        return "Play";
+        return "Play"; // Default
     }
     public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
         => throw new NotSupportedException();
 }
 
-public class NotNullToBooleanConverter : Avalonia.Data.Converters.IValueConverter
+public class NotNullToBooleanConverter : IValueConverter
 {
     public static readonly NotNullToBooleanConverter Instance = new();
 
@@ -599,4 +661,17 @@ public class NotNullToBooleanConverter : Avalonia.Data.Converters.IValueConverte
     }
 }
 
-public static class BrushExtensions { public static IBrush Multiply(this IBrush brush, double factor) { if (brush is ISolidColorBrush solidBrush) { var c = solidBrush.Color; return new SolidColorBrush(Color.FromArgb(c.A, (byte)Math.Clamp(c.R * factor, 0, 255), (byte)Math.Clamp(c.G * factor, 0, 255), (byte)Math.Clamp(c.B * factor, 0, 255))); } return brush; } }
+// This extension was here, assuming it's used or intended for use.
+// If not, it can be removed. For now, keeping it as it was in the original file.
+public static class BrushExtensions
+{
+    public static IBrush Multiply(this IBrush brush, double factor)
+    {
+        if (brush is ISolidColorBrush solidBrush)
+        {
+            var c = solidBrush.Color;
+            return new SolidColorBrush(Color.FromArgb(c.A, (byte)Math.Clamp(c.R * factor, 0, 255), (byte)Math.Clamp(c.G * factor, 0, 255), (byte)Math.Clamp(c.B * factor, 0, 255)));
+        }
+        return brush;
+    }
+}

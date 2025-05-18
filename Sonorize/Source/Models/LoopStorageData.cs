@@ -2,4 +2,4 @@
 
 namespace Sonorize.Models;
 
-public record LoopStorageData(TimeSpan Start, TimeSpan End);
+public record LoopStorageData(TimeSpan Start, TimeSpan End, bool IsActive);

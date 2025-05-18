@@ -1,8 +1,8 @@
 ﻿using Avalonia.Media.Imaging;
 using Sonorize.ViewModels; // For ViewModelBase
 using System;
-using System.Collections.ObjectModel; // For ObservableCollection
-using System.ComponentModel; // For INotifyPropertyChanged
+using System.ComponentModel;
+using System.Diagnostics; // For INotifyPropertyChanged
 
 namespace Sonorize.Models;
 
@@ -27,13 +27,25 @@ public class Song : ViewModelBase
     private Bitmap? _thumbnail;
     public Bitmap? Thumbnail { get => _thumbnail; set => SetProperty(ref _thumbnail, value); }
 
-    // Removed: LoopRegions collection
-    // public ObservableCollection<LoopRegion> LoopRegions { get; } = new();
-
-    private LoopRegion? _savedLoop; // Renamed from _activeLoop
-    public LoopRegion? SavedLoop // Renamed from ActiveLoop
+    private LoopRegion? _savedLoop;
+    public LoopRegion? SavedLoop
     {
         get => _savedLoop;
         set => SetProperty(ref _savedLoop, value);
+    }
+
+    private bool _isLoopActive;
+    public bool IsLoopActive
+    {
+        get => _isLoopActive;
+        set
+        {
+            // SetProperty handles OnPropertyChanged
+            if (SetProperty(ref _isLoopActive, value))
+            {
+                // The ViewModel will observe this change and trigger persistence
+                Debug.WriteLine($"[SongModel] {Title} - IsLoopActive set to: {value}");
+            }
+        }
     }
 }
