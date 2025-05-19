@@ -26,14 +26,5 @@
     <Compile Update="App.axaml.cs">
       <DependentUpon>App.axaml</DependentUpon>
     </Compile>
-    <Compile Update="Source\Views\MainWindow.axaml.cs">
-      <DependentUpon>MainWindow.xaml</DependentUpon>
-    </Compile>
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Update="Source\Views\MainWindow.xaml">
-      <Generator>MSBuild:Compile</Generator>
-    </None>
   </ItemGroup>
 </Project>

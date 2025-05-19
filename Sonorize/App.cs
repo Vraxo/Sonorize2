@@ -75,7 +75,7 @@ public class App : Application
                 waveformService,
                 loopDataService);
 
-            desktop.MainWindow = new MainWindow() // Removed currentCustomTheme parameter
+            desktop.MainWindow = new MainWindow(currentCustomTheme)
             {
                 DataContext = mainWindowViewModel
             };
