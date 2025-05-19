@@ -15,6 +15,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Data.Converters;
 using Avalonia.Styling;
 using Sonorize.Services;
+using Sonorize.Views.MainWindowControls; // Added for SearchBarPanel
 
 namespace Sonorize.Views;
 public class MainWindow : Window
@@ -45,7 +46,7 @@ public class MainWindow : Window
         Grid.SetRow(menu, 0);
         mainGrid.Children.Add(menu);
 
-        var searchBarPanel = CreateSearchBarPanel();
+        var searchBarPanel = SearchBarPanel.Create(_theme); // MODIFIED HERE
         Grid.SetRow(searchBarPanel, 1);
         mainGrid.Children.Add(searchBarPanel);
 
@@ -85,34 +86,6 @@ public class MainWindow : Window
         fileMenuItem.Items.Add(new Separator()); fileMenuItem.Items.Add(exitMenuItem);
         menu.Items.Add(fileMenuItem);
         return menu;
-    }
-
-    private Panel CreateSearchBarPanel()
-    {
-        var searchBox = new TextBox
-        {
-            Watermark = "Search songs by title, artist, or album...",
-            Margin = new Thickness(10, 5, 10, 5),
-            Padding = new Thickness(10, 7),
-            Background = _theme.B_SlightlyLighterBackground,
-            Foreground = _theme.B_TextColor,
-            BorderBrush = _theme.B_ControlBackgroundColor,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4),
-            FontSize = 14
-        };
-        searchBox.Bind(TextBox.TextProperty, new Binding("SearchQuery", BindingMode.TwoWay));
-        searchBox.Styles.Add(new Style(s => s.Is<TextBox>().Class(":focus"))
-        {
-            Setters = { new Setter(TextBox.BorderBrushProperty, _theme.B_AccentColor) }
-        });
-
-        var panel = new Panel
-        {
-            Children = { searchBox },
-            Margin = new Thickness(0, 5, 0, 0)
-        };
-        return panel;
     }
 
     private TabControl CreateMainTabView()
