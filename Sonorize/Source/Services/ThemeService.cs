@@ -5,7 +5,6 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Diagnostics;
-using Avalonia.Controls; // For Design.IsDesignMode
 
 namespace Sonorize.Services;
 
@@ -20,14 +19,6 @@ public class ThemeService
 
     public ThemeService(string? preferredThemeNameFromSettings)
     {
-        if (Design.IsDesignMode)
-        {
-            _themesDirectory = string.Empty;
-            CurrentTheme = new ThemeColors(); // Provide a default ThemeColors for design mode
-            Debug.WriteLine("[ThemeService] Design Mode: Initialized with default ThemeColors.");
-            return;
-        }
-
         var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var sonorizeAppDataPath = Path.Combine(appDataPath, "Sonorize");
         _themesDirectory = Path.Combine(sonorizeAppDataPath, "Themes");
@@ -50,14 +41,17 @@ public class ThemeService
             }
         }
 
-        CurrentTheme = LoadThemeFromFile(themeToLoad) ?? new ThemeColors(); // Ensure CurrentTheme is never null
+        CurrentTheme = LoadThemeFromFile(themeToLoad);
+        if (CurrentTheme == null) // If chosen (or default) theme failed, use hardcoded
+        {
+            Debug.WriteLine($"[ThemeService] Theme '{themeToLoad}' failed to load. Using hardcoded fallback (standard dark).");
+            CurrentTheme = new ThemeColors(); // Hardcoded fallback (standard dark)
+        }
         Debug.WriteLine($"[ThemeService] Current theme loaded: {themeToLoad} (BG: {CurrentTheme.BackgroundColor}, Accent: {CurrentTheme.AccentColor})");
     }
 
     private void EnsureDefaultThemesExist()
     {
-        if (Design.IsDesignMode) return;
-
         string defaultThemePath = Path.Combine(_themesDirectory, DefaultThemeFileName);
         if (!File.Exists(defaultThemePath))
         {
@@ -73,12 +67,7 @@ public class ThemeService
 
     public ThemeColors? LoadThemeFromFile(string themeFileName)
     {
-        if (Design.IsDesignMode)
-        {
-            Debug.WriteLine($"[ThemeService] Design Mode: LoadThemeFromFile returning new ThemeColors for '{themeFileName}'.");
-            return new ThemeColors(); // Provide a default ThemeColors for design mode
-        }
-
+        // ... (LoadThemeFromFile remains the same as previous correct version) ...
         string filePath = Path.Combine(_themesDirectory, themeFileName);
         Debug.WriteLine($"[ThemeService] Attempting to load theme from: {filePath}");
         if (File.Exists(filePath))
@@ -108,8 +97,7 @@ public class ThemeService
 
     public void SaveThemeToFile(ThemeColors theme, string themeFileName)
     {
-        if (Design.IsDesignMode) return;
-
+        // ... (SaveThemeToFile remains the same as previous correct version) ...
         string filePath = Path.Combine(_themesDirectory, themeFileName);
         try
         {
@@ -126,12 +114,6 @@ public class ThemeService
 
     public List<string> GetAvailableThemeFiles()
     {
-        if (Design.IsDesignMode)
-        {
-            Debug.WriteLine("[ThemeService] Design Mode: GetAvailableThemeFiles returning empty list.");
-            return new List<string>();
-        }
-
         if (!Directory.Exists(_themesDirectory))
         {
             return new List<string>();

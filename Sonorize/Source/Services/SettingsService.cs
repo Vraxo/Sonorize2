@@ -2,7 +2,6 @@
 using System;
 using System.IO;
 using System.Text.Json;
-using Avalonia.Controls; // For Design.IsDesignMode
 
 namespace Sonorize.Services;
 
@@ -12,12 +11,6 @@ public class SettingsService
 
     public SettingsService()
     {
-        if (Design.IsDesignMode)
-        {
-            _settingsFilePath = string.Empty; // Dummy path for design mode
-            return;
-        }
-
         var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var sonorizeAppDataPath = Path.Combine(appDataPath, "Sonorize");
         Directory.CreateDirectory(sonorizeAppDataPath); // Ensure directory exists
@@ -26,11 +19,6 @@ public class SettingsService
 
     public AppSettings LoadSettings()
     {
-        if (Design.IsDesignMode)
-        {
-            return new AppSettings(); // Return default, do not touch file system
-        }
-
         try
         {
             if (File.Exists(_settingsFilePath))
@@ -49,11 +37,6 @@ public class SettingsService
 
     public void SaveSettings(AppSettings settings)
     {
-        if (Design.IsDesignMode)
-        {
-            return; // Do nothing in design mode
-        }
-
         try
         {
             var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
