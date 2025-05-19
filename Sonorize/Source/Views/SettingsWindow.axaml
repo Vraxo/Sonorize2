@@ -1,0 +1,95 @@
+﻿<Window
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:Sonorize.ViewModels"
+    x:Class="Sonorize.Views.SettingsWindow"
+    Title="Sonorize Settings"
+    Width="500"
+    Height="450"
+    CanResize="False"
+    WindowStartupLocation="CenterOwner"
+    Icon="{x:Null}"
+    x:DataType="vm:SettingsViewModel">
+
+  <DockPanel Margin="15">
+    <!-- Bottom Buttons -->
+    <StackPanel
+      DockPanel.Dock="Bottom"
+      Orientation="Horizontal"
+      HorizontalAlignment="Right"
+      Spacing="10"
+      Margin="0,20,0,0">
+      <!-- Escape the ampersand here: “&amp;” -->
+      <Button
+        Content="Save &amp; Close"
+        x:Name="SaveButton"
+        Padding="15,8"
+        CornerRadius="3"
+        Click="SaveButton_Click"/>
+      <Button
+        Content="Cancel"
+        x:Name="CancelButton"
+        Padding="15,8"
+        CornerRadius="3"
+        Click="CancelButton_Click"/>
+    </StackPanel>
+
+    <StackPanel Orientation="Vertical" Spacing="5">
+      <!-- Header for Directories -->
+      <TextBlock
+        Text="Music Directories"
+        x:Name="DirHeaderBlock"
+        FontSize="18"
+        FontWeight="SemiBold"
+        Margin="0,0,0,10"/>
+
+      <!-- Music Directories Section -->
+      <DockPanel>
+        <StackPanel
+          DockPanel.Dock="Right"
+          Orientation="Vertical"
+          Spacing="5"
+          Margin="0,0,10,0">
+          <Button
+            Content="Add"
+            x:Name="AddButton"
+            HorizontalAlignment="Stretch"
+            Command="{Binding AddDirectoryCommand}"
+            CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"/>
+          <Button
+            Content="Remove"
+            x:Name="RemoveButton"
+            HorizontalAlignment="Stretch"
+            Command="{Binding RemoveDirectoryCommand}"
+            IsEnabled="{Binding CanRemoveDirectory}"/>
+        </StackPanel>
+        <ListBox
+          x:Name="DirectoryListBox"
+          Height="150"
+          BorderThickness="1"
+          ItemsSource="{Binding MusicDirectories}"
+          SelectedItem="{Binding SelectedDirectory, Mode=TwoWay}"/>
+      </DockPanel>
+
+      <!-- Theme Selection Section -->
+      <TextBlock
+        Text="Application Theme"
+        x:Name="ThemeHeaderBlock"
+        FontSize="16"
+        FontWeight="SemiBold"
+        Margin="0,15,0,5"/>
+      <ComboBox
+        x:Name="ThemeComboBox"
+        HorizontalAlignment="Stretch"
+        ItemsSource="{Binding AvailableThemes}"
+        SelectedItem="{Binding SelectedThemeFile, Mode=TwoWay}"/>
+      <TextBlock
+        Text="A restart is required for theme changes to take full effect."
+        x:Name="ThemeRestartNotice"
+        FontSize="10"
+        FontStyle="Italic"
+        Margin="0,5,0,0"
+        TextWrapping="Wrap"/>
+    </StackPanel>
+  </DockPanel>
+</Window>
