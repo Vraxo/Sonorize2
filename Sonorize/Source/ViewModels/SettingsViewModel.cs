@@ -7,7 +7,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using System.Diagnostics;
-using System.Collections.Generic; // Required for List<string>
+using System.Collections.Generic;
+using System; // Required for List<string>
 
 namespace Sonorize.ViewModels;
 
@@ -93,58 +94,119 @@ public class SettingsViewModel : ViewModelBase
     private async Task AddDirectory(Window? owner)
     {
         if (owner == null) return;
-        var dialog = new OpenFolderDialog() { Title = "Select Music Directory" };
-        var result = await dialog.ShowAsync(owner);
-        if (result != null && !string.IsNullOrEmpty(result))
+        // Use Avalonia's StorageProvider for modern file/folder picking
+        var result = await owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
-            if (!MusicDirectories.Contains(result))
+            Title = "Select Music Directory",
+            AllowMultiple = false
+        });
+
+        if (result != null && result.Count > 0)
+        {
+            // Get the path from the first selected folder
+            // Try LocalPath first, then fall back to parsing the URI if needed
+            string? folderPath = result[0].Path.LocalPath;
+
+            // Fallback for systems/providers where LocalPath might be null or incorrect
+            if (string.IsNullOrEmpty(folderPath) && result[0].Path.IsAbsoluteUri)
             {
-                MusicDirectories.Add(result);
-                // SettingsChanged will be set by the CollectionChanged event handler
+                try
+                {
+                    // Attempt to convert the URI to a local path string
+                    folderPath = new Uri(result[0].Path.ToString()).LocalPath;
+                }
+                catch (Exception ex)
+                {
+                    // Log any errors during URI conversion
+                    Debug.WriteLine($"[SettingsVM] Error converting folder URI to local path: {result[0].Path}. Exception: {ex.Message}");
+                    folderPath = null; // Ensure folderPath is null if conversion fails
+                }
+            }
+
+            if (!string.IsNullOrEmpty(folderPath))
+            {
+                Debug.WriteLine($"[SettingsVM] Selected directory via StorageProvider: {folderPath}");
+                // Check if already exists before adding
+                if (!MusicDirectories.Contains(folderPath))
+                {
+                    MusicDirectories.Add(folderPath);
+                    // SettingsChanged will be set by the CollectionChanged event handler
+                }
+                else
+                {
+                    Debug.WriteLine($"[SettingsVM] Directory '{folderPath}' already in list. Not adding.");
+                    // Optionally, provide user feedback (e.g., via a status message in the settings window)
+                }
+            }
+            else
+            {
+                Debug.WriteLine($"[SettingsVM] Could not get a valid path from the selected folder.");
+                // Optionally, provide user feedback
             }
         }
+        else
+        {
+            Debug.WriteLine("[SettingsVM] Folder picker dialog cancelled or returned no result.");
+        }
     }
+
 
     private void RemoveSelectedDirectory(object? parameter)
     {
         if (SelectedDirectory != null)
         {
             MusicDirectories.Remove(SelectedDirectory);
-            SelectedDirectory = null;
+            SelectedDirectory = null; // Clear selection after removing
             // SettingsChanged will be set by the CollectionChanged event handler
         }
     }
 
     private void SaveSettings(object? parameter)
     {
-        var currentSettings = _settingsService.LoadSettings(); // Load current to preserve other settings if any
+        // Load current settings to preserve other settings if any (e.g., future settings)
+        var currentSettings = _settingsService.LoadSettings();
 
-        // Check if directories actually changed before saving and marking
-        bool dirsActuallyChanged = !InitialMusicDirectories.SequenceEqual(MusicDirectories);
+        // Check if directories actually changed from their initial state when the dialog opened
+        bool dirsActuallyChanged = !InitialMusicDirectories.OrderBy(d => d).SequenceEqual(MusicDirectories.OrderBy(d => d)); // Compare sorted lists
+
+        // Check if the selected theme file name actually changed
         bool themeActuallyChanged = currentSettings.PreferredThemeFileName != SelectedThemeFile;
 
+        // Update settings object only if there were actual changes
         if (dirsActuallyChanged)
         {
             currentSettings.MusicDirectories = MusicDirectories.ToList();
-            Debug.WriteLine($"[SettingsVM] Saved directories count: {currentSettings.MusicDirectories.Count}");
+            Debug.WriteLine($"[SettingsVM] Directories changed. Saving {currentSettings.MusicDirectories.Count} directories.");
         }
 
         if (themeActuallyChanged)
         {
             currentSettings.PreferredThemeFileName = SelectedThemeFile;
-            Debug.WriteLine($"[SettingsVM] Saved theme: {SelectedThemeFile}");
+            Debug.WriteLine($"[SettingsVM] Preferred theme changed. Saving: {SelectedThemeFile}");
         }
 
+        // Save the settings object back to the file only if any changes occurred
         if (dirsActuallyChanged || themeActuallyChanged)
         {
             _settingsService.SaveSettings(currentSettings);
-            SettingsChanged = true; // Ensure this is true if anything was actually saved
-                                    // Update InitialMusicDirectories to reflect the saved state for subsequent checks if dialog is reopened
-            if (dirsActuallyChanged) InitialMusicDirectories = new List<string>(currentSettings.MusicDirectories);
+            // Keep SettingsChanged true to signal the main window that something relevant happened
+            SettingsChanged = true;
+
+            // Update InitialMusicDirectories to reflect the saved state for subsequent comparisons
+            if (dirsActuallyChanged)
+            {
+                InitialMusicDirectories = new List<string>(currentSettings.MusicDirectories);
+            }
         }
         else
         {
-            SettingsChanged = false; // No actual changes were made that need saving.
+            // If no directories or theme changed, but the property `SettingsChanged` was true
+            // due to intermediate ObservableCollection changes, explicitly set it back to false
+            // because no critical settings requiring reload/restart were saved.
+            SettingsChanged = false;
+            Debug.WriteLine("[SettingsVM] No changes to directories or theme detected. Not saving.");
         }
+
+        // The dialog window will be closed by the SaveButton_Click handler in SettingsWindow.axaml.cs
     }
 }
