@@ -5,7 +5,7 @@ namespace Sonorize.Models;
 
 public class ThemeColors
 {
-    // --- Main UI Colors ---
+    // --- Main UI Colors (Strings) ---
     public string BackgroundColor { get; set; } = "#FF1E1E1E";
     public string SlightlyLighterBackground { get; set; } = "#FF2D2D30";
     public string ControlBackgroundColor { get; set; } = "#FF3C3C3C";
@@ -13,11 +13,9 @@ public class ThemeColors
     public string SecondaryTextColor { get; set; } = "#FFAAAAAA";
     public string AccentColor { get; set; } = "#FF007ACC";
     public string AccentForeground { get; set; } = "#FFFFFFFF";
+    public string ListBoxBackground { get; set; } = "#FF2D2D30";
 
-    // --- ListBox Specific Colors ---
-    public string ListBoxBackground { get; set; } = "#FF2D2D30"; // Default: Same as SlightlyLighterBackground
-
-    // --- Brush Properties ---
+    // --- Brush Properties (IBrush) ---
     [JsonIgnore] public IBrush B_BackgroundColor => SolidColorBrush.Parse(BackgroundColor);
     [JsonIgnore] public IBrush B_SlightlyLighterBackground => SolidColorBrush.Parse(SlightlyLighterBackground);
     [JsonIgnore] public IBrush B_ControlBackgroundColor => SolidColorBrush.Parse(ControlBackgroundColor);
@@ -26,6 +24,16 @@ public class ThemeColors
     [JsonIgnore] public IBrush B_AccentColor => SolidColorBrush.Parse(AccentColor);
     [JsonIgnore] public IBrush B_AccentForeground => SolidColorBrush.Parse(AccentForeground);
     [JsonIgnore] public IBrush B_ListBoxBackground => SolidColorBrush.Parse(ListBoxBackground);
+
+    // --- Color Struct Properties (Color) ---
+    [JsonIgnore] public Color C_BackgroundColor => Color.Parse(BackgroundColor);
+    [JsonIgnore] public Color C_SlightlyLighterBackground => Color.Parse(SlightlyLighterBackground);
+    [JsonIgnore] public Color C_ControlBackgroundColor => Color.Parse(ControlBackgroundColor);
+    [JsonIgnore] public Color C_TextColor => Color.Parse(TextColor);
+    [JsonIgnore] public Color C_SecondaryTextColor => Color.Parse(SecondaryTextColor);
+    [JsonIgnore] public Color C_AccentColor => Color.Parse(AccentColor);
+    [JsonIgnore] public Color C_AccentForeground => Color.Parse(AccentForeground);
+    [JsonIgnore] public Color C_ListBoxBackground => Color.Parse(ListBoxBackground);
 
     public static ThemeColors CreateAmoledSpotifyTheme()
     {
@@ -38,7 +46,7 @@ public class ThemeColors
             SecondaryTextColor = "#FFB3B3B3",
             AccentColor = "#FF1DB954",      // Spotify Green
             AccentForeground = "#FF000000",  // Black text on green buttons
-            ListBoxBackground = "#FF000000"   // <<< CRUCIAL FOR AMOLED LIST ITEMS (unselected)
+            ListBoxBackground = "#FF000000"
         };
     }
 }

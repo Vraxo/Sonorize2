@@ -1,6 +1,6 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Markup.Xaml.Styling;
+using Avalonia.Markup.Xaml; // Required for AvaloniaXamlLoader or InitializeComponent
 using Avalonia.Styling;
 using Sonorize.ViewModels;
 using Sonorize.Views;
@@ -12,11 +12,17 @@ using System.Diagnostics;
 
 namespace Sonorize;
 
-public class App : Application
+public partial class App : Application // Add 'partial' keyword
 {
     public override void Initialize()
     {
-        // Delay adding FluentTheme until OnFrameworkInitializationCompleted
+        AvaloniaXamlLoader.Load(this); // Loads the XAML content from App.axaml
+        // Or, if your build system generates InitializeComponent():
+        // InitializeComponent(); 
+        // The line above is typically generated for .axaml files.
+        // If InitializeComponent() is available, it calls AvaloniaXamlLoader.Load(this) internally.
+        // Your original Initialize() was empty, which is fine.
+        // The FluentTheme is added later in OnFrameworkInitializationCompleted.
     }
 
     public override void OnFrameworkInitializationCompleted()
@@ -31,7 +37,7 @@ public class App : Application
 
             var fluentTheme = new FluentTheme();
             Styles.Add(fluentTheme);
-            RequestedThemeVariant = ThemeVariant.Dark;
+            RequestedThemeVariant = ThemeVariant.Dark; // This will override XAML if set there
             Debug.WriteLine($"[App] RequestedThemeVariant set to: {RequestedThemeVariant}");
 
             if (currentCustomTheme.B_AccentColor is ISolidColorBrush accentSolidBrush &&
@@ -75,7 +81,8 @@ public class App : Application
                 waveformService,
                 loopDataService);
 
-            desktop.MainWindow = new MainWindow() // Removed currentCustomTheme parameter
+            // Pass the theme to the MainWindow constructor
+            desktop.MainWindow = new MainWindow(currentCustomTheme)
             {
                 DataContext = mainWindowViewModel
             };
@@ -86,6 +93,10 @@ public class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 }
+
+// ColorManipulationExtensions and ColorExtensions remain the same
+// Ensure they are either in this file or accessible via a 'using' statement if in another file.
+// For brevity, I'm assuming they are still in this file or correctly referenced.
 
 public static class ColorManipulationExtensions
 {

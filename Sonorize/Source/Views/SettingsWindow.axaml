@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -6,6 +6,7 @@
         xmlns:models="using:Sonorize.Models"
         xmlns:controls="using:Sonorize.Controls"
         xmlns:views="using:Sonorize.Views"
+        xmlns:utils="using:Sonorize.Utils"
         mc:Ignorable="d" d:DesignWidth="950" d:DesignHeight="750"
         x:Class="Sonorize.Views.MainWindow"
         Title="Sonorize" Width="950" Height="750" MinWidth="700" MinHeight="500"
@@ -15,6 +16,7 @@
 	<Window.Resources>
 		<views:BooleanToPlayPauseTextConverter x:Key="BooleanToPlayPauseConverter" />
 		<views:NotNullToBooleanConverter x:Key="NotNullToBooleanConverter" />
+		<utils:BindingProxy x:Key="Proxy" Data="{Binding CurrentTheme}" />
 	</Window.Resources>
 
 	<Grid>
@@ -63,7 +65,7 @@
 			<TabControl.Styles>
 				<Style Selector="TabItem">
 					<Setter Property="Background" Value="{Binding CurrentTheme.B_BackgroundColor}"/>
-					<Setter Property="Foreground" Value="{Binding CurrentTheme.B_SecondaryTextColor}"/>
+					<Setter Property="Foreground" Value="{Binding DataContext.CurrentTheme.B_SecondaryTextColor, Source={StaticResource Proxy}}"/>
 					<Setter Property="Padding" Value="12,7"/>
 					<Setter Property="FontSize" Value="13"/>
 					<Setter Property="FontWeight" Value="SemiBold"/>
@@ -72,11 +74,11 @@
 				</Style>
 				<Style Selector="TabItem:selected">
 					<Setter Property="Background" Value="{Binding CurrentTheme.B_BackgroundColor}"/>
-					<Setter Property="Foreground" Value="{Binding CurrentTheme.B_TextColor}"/>
+					<Setter Property="Foreground" Value="{Binding DataContext.CurrentTheme.B_TextColor, Source={StaticResource Proxy}}"/>
 				</Style>
 				<Style Selector="TabItem:pointerover:not(:selected)">
-					<Setter Property="Background" Value="{Binding CurrentTheme.B_SlightlyLighterBackground}"/>
-					<Setter Property="Foreground" Value="{Binding CurrentTheme.B_TextColor}"/>
+					<Setter Property="Background" Value="{Binding DataContext.CurrentTheme.B_SlightlyLighterBackground, Source={StaticResource Proxy}}"/>
+					<Setter Property="Foreground" Value="{Binding DataContext.CurrentTheme.B_TextColor, Source={StaticResource Proxy}}"/>
 				</Style>
 			</TabControl.Styles>
 			<TabItem Header="LIBRARY">
@@ -87,19 +89,19 @@
                              SelectedItem="{Binding SelectedSong, Mode=TwoWay}">
 						<ListBox.Styles>
 							<Style Selector="ListBoxItem">
-								<Setter Property="Background" Value="{Binding CurrentTheme.B_ListBoxBackground}"/>
-								<Setter Property="Foreground" Value="{Binding CurrentTheme.B_TextColor}"/>
+								<Setter Property="Background" Value="{Binding DataContext.CurrentTheme.B_ListBoxBackground, Source={StaticResource Proxy}}"/>
+								<Setter Property="Foreground" Value="{Binding DataContext.CurrentTheme.B_TextColor, Source={StaticResource Proxy}}"/>
 							</Style>
 							<Style Selector="ListBoxItem:pointerover:not(:selected)">
-								<Setter Property="Background" Value="{Binding CurrentTheme.B_ControlBackgroundColor}"/>
+								<Setter Property="Background" Value="{Binding DataContext.CurrentTheme.B_ControlBackgroundColor, Source={StaticResource Proxy}}"/>
 							</Style>
 							<Style Selector="ListBoxItem:selected">
-								<Setter Property="Background" Value="{Binding CurrentTheme.B_AccentColor}"/>
-								<Setter Property="Foreground" Value="{Binding CurrentTheme.B_AccentForeground}"/>
+								<Setter Property="Background" Value="{Binding DataContext.CurrentTheme.B_AccentColor, Source={StaticResource Proxy}}"/>
+								<Setter Property="Foreground" Value="{Binding DataContext.CurrentTheme.B_AccentForeground, Source={StaticResource Proxy}}"/>
 							</Style>
 							<Style Selector="ListBoxItem:selected:pointerover">
-								<Setter Property="Background" Value="{Binding CurrentTheme.B_AccentColor}"/>
-								<Setter Property="Foreground" Value="{Binding CurrentTheme.B_AccentForeground}"/>
+								<Setter Property="Background" Value="{Binding DataContext.CurrentTheme.B_AccentColor, Source={StaticResource Proxy}}"/>
+								<Setter Property="Foreground" Value="{Binding DataContext.CurrentTheme.B_AccentForeground, Source={StaticResource Proxy}}"/>
 							</Style>
 						</ListBox.Styles>
 						<ListBox.ItemTemplate>
@@ -114,9 +116,9 @@
 										<Image Grid.Column="0" Width="32" Height="32" Margin="5,0,5,0" Source="{Binding Thumbnail}" Stretch="UniformToFill" RenderOptions.BitmapInterpolationMode="HighQuality"/>
 										<StackPanel Grid.Column="1" Orientation="Vertical" VerticalAlignment="Center" Margin="8,0,0,0">
 											<TextBlock Text="{Binding Title}" FontSize="14" FontWeight="Normal" VerticalAlignment="Center" Margin="0,0,0,1"/>
-											<TextBlock Text="{Binding Artist}" FontSize="11" VerticalAlignment="Center" Foreground="{Binding DataContext.CurrentTheme.B_SecondaryTextColor, RelativeSource={RelativeSource AncestorType=Window}}"/>
+											<TextBlock Text="{Binding Artist}" FontSize="11" VerticalAlignment="Center" Foreground="{Binding DataContext.CurrentTheme.B_SecondaryTextColor, Source={StaticResource Proxy}}"/>
 										</StackPanel>
-										<TextBlock Grid.Column="2" Text="{Binding DurationString}" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{Binding DataContext.CurrentTheme.B_SecondaryTextColor, RelativeSource={RelativeSource AncestorType=Window}}"/>
+										<TextBlock Grid.Column="2" Text="{Binding DurationString}" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{Binding DataContext.CurrentTheme.B_SecondaryTextColor, Source={StaticResource Proxy}}"/>
 									</Grid>
 								</Border>
 							</DataTemplate>
@@ -131,19 +133,19 @@
                              SelectedItem="{Binding SelectedArtist, Mode=TwoWay}">
 						<ListBox.Styles>
 							<Style Selector="ListBoxItem">
-								<Setter Property="Background" Value="{Binding CurrentTheme.B_ListBoxBackground}"/>
-								<Setter Property="Foreground" Value="{Binding CurrentTheme.B_TextColor}"/>
+								<Setter Property="Background" Value="{Binding DataContext.CurrentTheme.B_ListBoxBackground, Source={StaticResource Proxy}}"/>
+								<Setter Property="Foreground" Value="{Binding DataContext.CurrentTheme.B_TextColor, Source={StaticResource Proxy}}"/>
 							</Style>
 							<Style Selector="ListBoxItem:pointerover:not(:selected)">
-								<Setter Property="Background" Value="{Binding CurrentTheme.B_ControlBackgroundColor}"/>
+								<Setter Property="Background" Value="{Binding DataContext.CurrentTheme.B_ControlBackgroundColor, Source={StaticResource Proxy}}"/>
 							</Style>
 							<Style Selector="ListBoxItem:selected">
-								<Setter Property="Background" Value="{Binding CurrentTheme.B_AccentColor}"/>
-								<Setter Property="Foreground" Value="{Binding CurrentTheme.B_AccentForeground}"/>
+								<Setter Property="Background" Value="{Binding DataContext.CurrentTheme.B_AccentColor, Source={StaticResource Proxy}}"/>
+								<Setter Property="Foreground" Value="{Binding DataContext.CurrentTheme.B_AccentForeground, Source={StaticResource Proxy}}"/>
 							</Style>
 							<Style Selector="ListBoxItem:selected:pointerover">
-								<Setter Property="Background" Value="{Binding CurrentTheme.B_AccentColor}"/>
-								<Setter Property="Foreground" Value="{Binding CurrentTheme.B_AccentForeground}"/>
+								<Setter Property="Background" Value="{Binding DataContext.CurrentTheme.B_AccentColor, Source={StaticResource Proxy}}"/>
+								<Setter Property="Foreground" Value="{Binding DataContext.CurrentTheme.B_AccentForeground, Source={StaticResource Proxy}}"/>
 							</Style>
 						</ListBox.Styles>
 						<ListBox.ItemTemplate>
@@ -170,19 +172,19 @@
                              SelectedItem="{Binding SelectedAlbum, Mode=TwoWay}">
 						<ListBox.Styles>
 							<Style Selector="ListBoxItem">
-								<Setter Property="Background" Value="{Binding CurrentTheme.B_ListBoxBackground}"/>
-								<Setter Property="Foreground" Value="{Binding CurrentTheme.B_TextColor}"/>
+								<Setter Property="Background" Value="{Binding DataContext.CurrentTheme.B_ListBoxBackground, Source={StaticResource Proxy}}"/>
+								<Setter Property="Foreground" Value="{Binding DataContext.CurrentTheme.B_TextColor, Source={StaticResource Proxy}}"/>
 							</Style>
 							<Style Selector="ListBoxItem:pointerover:not(:selected)">
-								<Setter Property="Background" Value="{Binding CurrentTheme.B_ControlBackgroundColor}"/>
+								<Setter Property="Background" Value="{Binding DataContext.CurrentTheme.B_ControlBackgroundColor, Source={StaticResource Proxy}}"/>
 							</Style>
 							<Style Selector="ListBoxItem:selected">
-								<Setter Property="Background" Value="{Binding CurrentTheme.B_AccentColor}"/>
-								<Setter Property="Foreground" Value="{Binding CurrentTheme.B_AccentForeground}"/>
+								<Setter Property="Background" Value="{Binding DataContext.CurrentTheme.B_AccentColor, Source={StaticResource Proxy}}"/>
+								<Setter Property="Foreground" Value="{Binding DataContext.CurrentTheme.B_AccentForeground, Source={StaticResource Proxy}}"/>
 							</Style>
 							<Style Selector="ListBoxItem:selected:pointerover">
-								<Setter Property="Background" Value="{Binding CurrentTheme.B_AccentColor}"/>
-								<Setter Property="Foreground" Value="{Binding CurrentTheme.B_AccentForeground}"/>
+								<Setter Property="Background" Value="{Binding DataContext.CurrentTheme.B_AccentColor, Source={StaticResource Proxy}}"/>
+								<Setter Property="Foreground" Value="{Binding DataContext.CurrentTheme.B_AccentForeground, Source={StaticResource Proxy}}"/>
 							</Style>
 						</ListBox.Styles>
 						<ListBox.ItemTemplate>
@@ -196,7 +198,7 @@
 										<Image Grid.Column="0" Width="32" Height="32" Margin="5,0,10,0" Source="{Binding Thumbnail}" Stretch="UniformToFill" RenderOptions.BitmapInterpolationMode="HighQuality"/>
 										<StackPanel Grid.Column="1" Orientation="Vertical" VerticalAlignment="Center">
 											<TextBlock Text="{Binding Title}" FontSize="14" FontWeight="Normal" VerticalAlignment="Center"/>
-											<TextBlock Text="{Binding Artist}" FontSize="11" Foreground="{Binding DataContext.CurrentTheme.B_SecondaryTextColor, RelativeSource={RelativeSource AncestorType=Window}}" VerticalAlignment="Center"/>
+											<TextBlock Text="{Binding Artist}" FontSize="11" Foreground="{Binding DataContext.CurrentTheme.B_SecondaryTextColor, Source={StaticResource Proxy}}" VerticalAlignment="Center"/>
 										</StackPanel>
 									</Grid>
 								</Border>
@@ -228,7 +230,7 @@
                             Value="{Binding PlaybackSpeed, Mode=TwoWay}">
 						<Slider.Styles>
 							<Style Selector="Thumb">
-								<Setter Property="Background" Value="{Binding CurrentTheme.B_AccentColor}"/>
+								<Setter Property="Background" Value="{Binding DataContext.CurrentTheme.B_AccentColor, Source={StaticResource Proxy}}"/>
 							</Style>
 						</Slider.Styles>
 					</Slider>
@@ -240,7 +242,7 @@
                             Value="{Binding PlaybackPitch, Mode=TwoWay}">
 						<Slider.Styles>
 							<Style Selector="Thumb">
-								<Setter Property="Background" Value="{Binding CurrentTheme.B_AccentColor}"/>
+								<Setter Property="Background" Value="{Binding DataContext.CurrentTheme.B_AccentColor, Source={StaticResource Proxy}}"/>
 							</Style>
 						</Slider.Styles>
 					</Slider>
@@ -252,6 +254,7 @@
                                                      Background="{Binding CurrentTheme.B_ControlBackgroundColor}"
                                                      WaveformBrush="{Binding CurrentTheme.B_AccentColor}"
                                                      PositionMarkerBrush="OrangeRed"
+                                                     LoopRegionBrush="{Binding DataContext.CurrentTheme.B_AccentColor, Converter={StaticResource BrushAlphaConverter}, ConverterParameter=0.3, Source={StaticResource Proxy}}"
                                                      WaveformPoints="{Binding WaveformRenderData}"
                                                      CurrentPosition="{Binding PlaybackService.CurrentPosition}"
                                                      Duration="{Binding PlaybackService.CurrentSongDuration}"
@@ -308,7 +311,7 @@
                         IsEnabled="{Binding PlaybackService.HasCurrentSong}">
 					<Slider.Styles>
 						<Style Selector="Thumb">
-							<Setter Property="Background" Value="{Binding CurrentTheme.B_AccentColor}"/>
+							<Setter Property="Background" Value="{Binding DataContext.CurrentTheme.B_AccentColor, Source={StaticResource Proxy}}"/>
 						</Style>
 					</Slider.Styles>
 				</Slider>

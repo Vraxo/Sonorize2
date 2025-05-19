@@ -18,22 +18,40 @@
       <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
     </PackageReference>
     <PackageReference Include="NAudio" Version="1.9.0" />
-    <PackageReference Include="SoundTouch.Net.NAudioSupport" Version="2.3.2" /> <!-- This is the one we want -->
+    <PackageReference Include="SoundTouch.Net.NAudioSupport" Version="2.3.2" />
     <PackageReference Include="TagLibSharp" Version="2.3.0" />
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Assuming you have an App.axaml file -->
     <Compile Update="App.axaml.cs">
       <DependentUpon>App.axaml</DependentUpon>
     </Compile>
+
+    <!-- Updated entries for MainWindow -->
+    <AvaloniaXaml Include="Source\Views\MainWindow.axaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </AvaloniaXaml>
     <Compile Update="Source\Views\MainWindow.axaml.cs">
-      <DependentUpon>MainWindow.xaml</DependentUpon>
+      <DependentUpon>MainWindow.axaml</DependentUpon>
+    </Compile>
+
+    <!-- Assuming you have a SettingsWindow.axaml file -->
+    <Compile Update="Source\Views\SettingsWindow.axaml.cs">
+      <DependentUpon>SettingsWindow.axaml</DependentUpon>
     </Compile>
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="Source\Views\MainWindow.xaml">
-      <Generator>MSBuild:Compile</Generator>
-    </None>
+    <Folder Include="Source\Converters\" />
   </ItemGroup>
+
+  <!-- If you have an app.manifest file, ensure it's correctly referenced -->
+  <!-- <ItemGroup>
+    <None Update="app.manifest">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup> -->
+
 </Project>

@@ -1,44 +1,72 @@
-﻿using Avalonia;
+﻿using System;
 using Avalonia.Controls;
-using Avalonia.Data.Converters;
-using Avalonia.Interactivity;
 using Avalonia.Media;
-using Sonorize.Services;
+using Sonorize.Models;
 using Sonorize.ViewModels;
-using System;
+using Sonorize.Controls; // Required for WaveformDisplayControl
+using Avalonia.Data.Converters; // Required for IValueConverter (if defined here)
+using Avalonia.Interactivity; // Required for RoutedEventArgs
 using System.Globalization;
+using Sonorize.Services; // Required for CultureInfo
 
 namespace Sonorize.Views
 {
-    public partial class MainWindow : Window
+    public partial class MainWindow : Window // Ensure 'partial' keyword
     {
-        public MainWindow()
+        private readonly ThemeColors _theme;
+
+        public MainWindow() // Parameterless constructor for XAML
         {
             InitializeComponent();
-#if DEBUG
-            this.AttachDevTools();
-#endif
+            // _theme might not be available here if not passed.
+            // If default theme values are needed before DataContext is set, handle appropriately.
+            // For this example, we assume ThemeColors comes from DataContext or is passed.
         }
 
-        private void WaveformDisplay_SeekRequested(object? sender, TimeSpan time)
+        public MainWindow(ThemeColors theme)
         {
-            if (this.DataContext is MainWindowViewModel vm && vm.WaveformSeekCommand.CanExecute(time))
+            _theme = theme;
+            InitializeComponent();
+
+            var waveformDisplay = this.FindControl<WaveformDisplayControl>("WaveformDisplay");
+            if (waveformDisplay != null)
             {
-                vm.WaveformSeekCommand.Execute(time);
+                if (_theme.B_AccentColor is ISolidColorBrush accentBrush)
+                {
+                    waveformDisplay.LoopRegionBrush = new SolidColorBrush(accentBrush.Color, 0.3);
+                }
+                else
+                {
+                    // Fallback if B_AccentColor is not a SolidColorBrush, though your model implies it is.
+                    waveformDisplay.LoopRegionBrush = new SolidColorBrush(Colors.Orange, 0.3);
+                }
             }
         }
 
         private void MainPlayPauseButton_Click(object? sender, RoutedEventArgs e)
         {
-            if (this.DataContext is MainWindowViewModel vm)
+            if (DataContext is MainWindowViewModel vm)
             {
                 if (vm.PlaybackService.CurrentPlaybackStatus == PlaybackStateStatus.Playing)
                     vm.PlaybackService.Pause();
                 else
-                    vm.PlaybackService.Resume();
+                    vm.PlaybackService.Resume(); // Resume will handle playing from stopped or paused
+            }
+        }
+
+        private void WaveformDisplay_SeekRequested(object? sender, TimeSpan time)
+        {
+            if (DataContext is MainWindowViewModel vm)
+            {
+                vm.WaveformSeekCommand.Execute(time);
             }
         }
     }
+
+    // Converters are better placed in their own files or a shared Converters namespace/file,
+    // but kept here for direct translation from your original structure.
+    // If they are already in separate files (as they seem to be, based on your MainView.cs),
+    // you don't need to redefine them here. The XAML will use xmlns to find them.
 
     public class BooleanToPlayPauseTextConverter : IValueConverter
     {
@@ -65,19 +93,6 @@ namespace Sonorize.Views
         public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         {
             throw new NotSupportedException();
-        }
-    }
-
-    public static class BrushExtensions
-    {
-        public static IBrush Multiply(this IBrush brush, double factor)
-        {
-            if (brush is ISolidColorBrush solidBrush)
-            {
-                var c = solidBrush.Color;
-                return new SolidColorBrush(Color.FromArgb(c.A, (byte)Math.Clamp(c.R * factor, 0, 255), (byte)Math.Clamp(c.G * factor, 0, 255), (byte)Math.Clamp(c.B * factor, 0, 255)));
-            }
-            return brush;
         }
     }
 }
