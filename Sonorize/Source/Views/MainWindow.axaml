@@ -4,310 +4,245 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:controls="using:Sonorize.Controls"
-        xmlns:views="using:Sonorize.Views"
-        xmlns:models="using:Sonorize.Models"
-        mc:Ignorable="d" d:DesignWidth="950" d:DesignHeight="750"
+        xmlns:conv="using:Sonorize.Views"
+        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
         x:Class="Sonorize.Views.MainWindow"
-        Title="Sonorize"
-        Width="950" Height="750" MinWidth="700" MinHeight="500"
-        WindowStartupLocation="CenterScreen"
-        Background="{Binding CurrentTheme.B_BackgroundColor}"
-        x:DataType="vm:MainWindowViewModel"  >
-	<!-- ADDED x:DataType HERE -->
+        Icon="/Assets/avalonia-logo.ico"
+        Title="Sonorize">
 
 	<Design.DataContext>
-		<!-- This is only for design time previews -->
-		<vm:MainWindowViewModel/>
+		<!-- This only sets DataContext for design time. -->
+		<vm:MainWindowViewModel />
 	</Design.DataContext>
 
 	<Window.Resources>
-		<!-- Define static instances of converters -->
-		<views:BooleanToPlayPauseTextConverter x:Key="BooleanToPlayPauseTextConverter"/>
-		<views:NotNullToBooleanConverter x:Key="NotNullToBooleanConverter"/>
-		<views:AccentBrushWithAlphaConverter x:Key="AccentBrushWithAlphaConverter"/>
+		<conv:BooleanToPlayPauseTextConverter x:Key="PlayPauseTextConverter"/>
+		<conv:NotNullToBooleanConverter x:Key="NotNullToBooleanConverter"/>
+		<conv:AccentBrushWithAlphaConverter x:Key="AccentBrushWithAlphaConverter"/>
+
+		<!-- Fluent Theme Resources (will be overridden by custom theme in App.cs) -->
+		<!-- Keeping these here for design time previews and fallback -->
+		<SolidColorBrush x:Key="SystemAccentColor" Color="#007ACC"/>
+		<SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="{StaticResource SystemAccentColor}"/>
+		<SolidColorBrush x:Key="TextOnAccentFillColorPrimaryBrush" Color="White"/>
+
+		<!-- Basic styles for demonstration/fallback -->
+		<SolidColorBrush x:Key="DefaultBackgroundBrush" Color="#1E1E1E"/>
+		<SolidColorBrush x:Key="DefaultForegroundBrush" Color="#F1F1F1"/>
+		<SolidColorBrush x:Key="DefaultControlBackgroundBrush" Color="#2D2D30"/>
+		<SolidColorBrush x:Key="DefaultBorderBrush" Color="#3C3C3C"/>
 	</Window.Resources>
 
-	<Window.Styles>
-		<!-- Global ListBoxItem Styles -->
-		<Style Selector="ListBoxItem">
-			<Setter Property="Padding" Value="10,6,10,6"/>
-			<Setter Property="MinHeight" Value="44"/>
-			<Setter Property="Background" Value="Transparent"/>
-			<!-- Use AncestorRelativeSource to bind to the ListBox Foreground -->
-			<Setter Property="Foreground" Value="{Binding $parent[ListBox].Foreground}"/>
-		</Style>
-		<Style Selector="ListBoxItem:pointerover:not(:selected)">
-			<!-- Use AncestorRelativeSource to bind to the ListBox Background (or ControlBackground) -->
-			<Setter Property="Background" Value="{Binding CurrentTheme.B_ControlBackgroundColor}"/>
-		</Style>
-		<Style Selector="ListBoxItem:selected">
-			<Setter Property="Background" Value="{Binding CurrentTheme.B_AccentColor}"/>
-			<Setter Property="Foreground" Value="{Binding CurrentTheme.B_AccentForeground}"/>
-		</Style>
-		<Style Selector="ListBoxItem:selected:pointerover">
-			<Setter Property="Background" Value="{Binding CurrentTheme.B_AccentColor}"/>
-			<Setter Property="Foreground" Value="{Binding CurrentTheme.B_AccentForeground}"/>
-		</Style>
-
-		<!-- TextBox Focus Style -->
-		<Style Selector="TextBox:focus">
-			<Setter Property="BorderBrush" Value="{Binding CurrentTheme.B_AccentColor}"/>
-		</Style>
-
-		<!-- Slider Thumb Style -->
-		<Style Selector="Slider /template/ Thumb">
-			<Setter Property="Background" Value="{Binding CurrentTheme.B_AccentColor}"/>
-		</Style>
-
-		<!-- TabItem Styles -->
-		<Style Selector="TabItem">
-			<Setter Property="Background" Value="{Binding CurrentTheme.B_BackgroundColor}"/>
-			<Setter Property="Foreground" Value="{Binding CurrentTheme.B_SecondaryTextColor}"/>
-			<Setter Property="Padding" Value="12,7"/>
-			<Setter Property="FontSize" Value="13"/>
-			<Setter Property="FontWeight" Value="SemiBold"/>
-			<Setter Property="BorderThickness" Value="0"/>
-			<Setter Property="BorderBrush" Value="Transparent"/>
-		</Style>
-		<Style Selector="TabItem:selected">
-			<Setter Property="Background" Value="{Binding CurrentTheme.B_BackgroundColor}"/>
-			<Setter Property="Foreground" Value="{Binding CurrentTheme.B_TextColor}"/>
-		</Style>
-		<Style Selector="TabItem:pointerover:not(:selected)">
-			<Setter Property="Background" Value="{Binding CurrentTheme.B_SlightlyLighterBackground}"/>
-			<Setter Property="Foreground" Value="{Binding CurrentTheme.B_TextColor}"/>
-		</Style>
-	</Window.Styles>
-
-	<Grid RowDefinitions="Auto,Auto,*,Auto,Auto,Auto">
-
+	<Grid RowDefinitions="Auto, Auto, *, Auto, Auto">
 		<!-- Menu -->
-		<Menu Grid.Row="0" Background="{Binding CurrentTheme.B_SlightlyLighterBackground}" Foreground="{Binding CurrentTheme.B_TextColor}">
-			<MenuItem Header="_File" Foreground="{Binding CurrentTheme.B_TextColor}">
-				<MenuItem Header="_Add Music Directory..." Foreground="{Binding CurrentTheme.B_TextColor}" Command="{Binding AddDirectoryAndRefreshCommand}" CommandParameter="{Binding $parent[Window]}"/>
-				<MenuItem Header="_Settings..." Foreground="{Binding CurrentTheme.B_TextColor}" Command="{Binding OpenSettingsCommand}" CommandParameter="{Binding $parent[Window]}"/>
+		<Menu Grid.Row="0" DataContext="{Binding}">
+			<MenuItem Header="_File">
+				<MenuItem Header="_Add Music Directory..." Command="{Binding AddDirectoryAndRefreshCommand}" CommandParameter="{Binding $parent[Window]}"/>
+				<MenuItem Header="_Settings..." Command="{Binding OpenSettingsCommand}" CommandParameter="{Binding $parent[Window]}"/>
 				<Separator/>
-				<MenuItem Header="E_xit" Foreground="{Binding CurrentTheme.B_TextColor}" Command="{Binding ExitCommand}"/>
+				<MenuItem Header="E_xit" Command="{Binding ExitCommand}"/>
 			</MenuItem>
 		</Menu>
 
-		<!-- Search Bar -->
-		<Panel Grid.Row="1" Margin="0,5,0,0">
-			<TextBox Watermark="Search songs by title, artist, or album..."
-                     Margin="10,5,10,5"
-                     Padding="10,7"
-                     Background="{Binding CurrentTheme.B_SlightlyLighterBackground}"
-                     Foreground="{Binding CurrentTheme.B_TextColor}"
-                     BorderBrush="{Binding CurrentTheme.B_ControlBackgroundColor}"
-                     BorderThickness="1"
-                     CornerRadius="4"
-                     FontSize="14"
-                     Text="{Binding SearchQuery, Mode=TwoWay}"/>
-		</Panel>
+		<!-- Search Bar (Extracted to Control) -->
+		<Border Grid.Row="1" Padding="10"
+                Background="{Binding CurrentTheme.B_SlightlyLighterBackground, FallbackValue={StaticResource DefaultControlBackgroundBrush}}">
+			<controls:SearchBarControl QueryText="{Binding SearchQuery}"/>
+		</Border>
 
-		<!-- Main Tabs (Library, Artists, Albums) -->
-		<TabControl Grid.Row="2"
-                    Background="{Binding CurrentTheme.B_BackgroundColor}"
-                    Margin="10,5,10,5"
-                    BorderThickness="0" Padding="0"
-                    SelectedIndex="{Binding ActiveTabIndex, Mode=TwoWay}">
 
-			<!-- Library Tab -->
-			<TabItem Header="LIBRARY">
-				<ScrollViewer Padding="0,0,0,5">
+		<!-- Content Area (Tabs) -->
+		<TabControl Grid.Row="2" SelectedIndex="{Binding ActiveTabIndex}"
+                    Background="{Binding CurrentTheme.B_SlightlyLighterBackground, FallbackValue={StaticResource DefaultBackgroundBrush}}">
+			<TabItem Header="Songs">
+				<DockPanel>
+					<!-- Song List -->
 					<ListBox ItemsSource="{Binding FilteredSongs}"
-                             SelectedItem="{Binding SelectedSong, Mode=TwoWay}"
-                             Background="{Binding CurrentTheme.B_ListBoxBackground}"
-                             BorderThickness="0" Margin="10"
-                             Foreground="{Binding CurrentTheme.B_TextColor}">
+                             SelectedItem="{Binding SelectedSong}"
+                             Background="{Binding CurrentTheme.B_ListBoxBackground, FallbackValue={StaticResource DefaultBackgroundBrush}}">
 						<ListBox.ItemTemplate>
-							<DataTemplate DataType="models:Song">
-								<Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
-									<Image Grid.Column="0" Width="32" Height="32" Margin="5,0,5,0"
-                                           Source="{Binding Thumbnail}"
-                                           Stretch="UniformToFill"
-                                           RenderOptions.BitmapInterpolationMode="HighQuality"/>
-									<StackPanel Grid.Column="1" Orientation="Vertical" VerticalAlignment="Center" Margin="8,0,0,0">
-										<TextBlock Text="{Binding Title}" FontSize="14" FontWeight="Normal" VerticalAlignment="Center" Margin="0,0,0,1"/>
-										<TextBlock Text="{Binding Artist}" FontSize="11" VerticalAlignment="Center"
-                                                   Foreground="{Binding $parent[ListBox].Foreground, Mode=OneWay}"/>
+							<DataTemplate>
+								<StackPanel Orientation="Horizontal" Margin="5">
+									<Image Source="{Binding Thumbnail}" Width="30" Height="30" Margin="0,0,10,0"/>
+									<StackPanel>
+										<TextBlock Text="{Binding Title}" FontWeight="Bold"
+                                                   Foreground="{Binding $parent[ListBox].Parent.Parent.Parent.DataContext.CurrentTheme.B_TextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+										<StackPanel Orientation="Horizontal" Spacing="5">
+											<TextBlock Text="{Binding Artist}" FontSize="11" Opacity="0.7"
+													   Foreground="{Binding $parent[ListBox].Parent.Parent.Parent.DataContext.CurrentTheme.B_SecondaryTextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+											<TextBlock Text=" - " FontSize="11" Opacity="0.7"
+													   Foreground="{Binding $parent[ListBox].Parent.Parent.Parent.DataContext.CurrentTheme.B_SecondaryTextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+											<TextBlock Text="{Binding Album}" FontSize="11" Opacity="0.7"
+													   Foreground="{Binding $parent[ListBox].Parent.Parent.Parent.DataContext.CurrentTheme.B_SecondaryTextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+										</StackPanel>
 									</StackPanel>
-									<TextBlock Grid.Column="2" Text="{Binding DurationString}" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                               Foreground="{Binding $parent[ListBox].Foreground, Mode=OneWay}"/>
-								</Grid>
+								</StackPanel>
 							</DataTemplate>
 						</ListBox.ItemTemplate>
 					</ListBox>
-				</ScrollViewer>
+				</DockPanel>
 			</TabItem>
-
-			<!-- Artists Tab -->
-			<TabItem Header="ARTISTS">
-				<ScrollViewer Padding="0,0,0,5">
-					<ListBox ItemsSource="{Binding Artists}"
-                             SelectedItem="{Binding SelectedArtist, Mode=TwoWay}"
-                             Background="{Binding CurrentTheme.B_ControlBackgroundColor}"
-                             BorderThickness="0" Margin="10"
-                             Foreground="{Binding CurrentTheme.B_TextColor}">
-						<ListBox.ItemTemplate>
-							<DataTemplate DataType="vm:ArtistViewModel">
-								<Grid ColumnDefinitions="Auto,*" VerticalAlignment="Center">
-									<Image Grid.Column="0" Width="32" Height="32" Margin="5,0,10,0"
-                                           Source="{Binding Thumbnail}"
-                                           Stretch="UniformToFill"
-                                           RenderOptions.BitmapInterpolationMode="HighQuality"/>
-									<TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="14" VerticalAlignment="Center"/>
-								</Grid>
-							</DataTemplate>
-						</ListBox.ItemTemplate>
-					</ListBox>
-				</ScrollViewer>
+			<TabItem Header="Artists">
+				<ListBox ItemsSource="{Binding Artists}"
+						 SelectedItem="{Binding SelectedArtist}"
+						 Background="{Binding CurrentTheme.B_ListBoxBackground, FallbackValue={StaticResource DefaultBackgroundBrush}}">
+					<ListBox.ItemTemplate>
+						<DataTemplate>
+							<StackPanel Orientation="Horizontal" Margin="5">
+								<Image Source="{Binding Thumbnail}" Width="30" Height="30" Margin="0,0,10,0"/>
+								<TextBlock Text="{Binding Name}" FontWeight="Bold" VerticalAlignment="Center"
+                                           Foreground="{Binding $parent[ListBox].Parent.Parent.Parent.DataContext.CurrentTheme.B_TextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+							</StackPanel>
+						</DataTemplate>
+					</ListBox.ItemTemplate>
+				</ListBox>
 			</TabItem>
-
-			<!-- Albums Tab -->
-			<TabItem Header="ALBUMS">
-				<ScrollViewer Padding="0,0,0,5">
-					<ListBox ItemsSource="{Binding Albums}"
-                             SelectedItem="{Binding SelectedAlbum, Mode=TwoWay}"
-                             Background="{Binding CurrentTheme.B_ControlBackgroundColor}"
-                             BorderThickness="0" Margin="10"
-                             Foreground="{Binding CurrentTheme.B_TextColor}">
-						<ListBox.ItemTemplate>
-							<DataTemplate DataType="vm:AlbumViewModel">
-								<Grid ColumnDefinitions="Auto,*" VerticalAlignment="Center">
-									<Image Grid.Column="0" Width="32" Height="32" Margin="5,0,10,0"
-                                           Source="{Binding Thumbnail}"
-                                           Stretch="UniformToFill"
-                                           RenderOptions.BitmapInterpolationMode="HighQuality"/>
-									<StackPanel Grid.Column="1" Orientation="Vertical" VerticalAlignment="Center">
-										<TextBlock Text="{Binding Title}" FontSize="14" FontWeight="Normal" VerticalAlignment="Center"/>
-										<TextBlock Text="{Binding Artist}" FontSize="11" VerticalAlignment="Center"
-                                                   Foreground="{Binding $parent[ListBox].Foreground, Mode=OneWay}"/>
-									</StackPanel>
-								</Grid>
-							</DataTemplate>
-						</ListBox.ItemTemplate>
-					</ListBox>
-				</ScrollViewer>
+			<TabItem Header="Albums">
+				<ListBox ItemsSource="{Binding Albums}"
+						 SelectedItem="{Binding SelectedAlbum}"
+						 Background="{Binding CurrentTheme.B_ListBoxBackground, FallbackValue={StaticResource DefaultBackgroundBrush}}">
+					<ListBox.ItemTemplate>
+						<DataTemplate>
+							<StackPanel Orientation="Horizontal" Margin="5">
+								<Image Source="{Binding Thumbnail}" Width="30" Height="30" Margin="0,0,10,0"/>
+								<TextBlock Text="{Binding DisplayText}" FontWeight="Bold" VerticalAlignment="Center"
+                                           Foreground="{Binding $parent[ListBox].Parent.Parent.Parent.DataContext.CurrentTheme.B_TextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+							</StackPanel>
+						</DataTemplate>
+					</ListBox.ItemTemplate>
+				</ListBox>
 			</TabItem>
 		</TabControl>
 
-		<!-- Advanced Playback Panel -->
-		<Border Grid.Row="3"
-                Background="{Binding CurrentTheme.B_SlightlyLighterBackground}"
-                Padding="10"
-                BorderBrush="{Binding CurrentTheme.B_AccentColor}"
-                BorderThickness="0,1,0,1"
-                MinHeight="180"
-                ClipToBounds="True"
-                IsVisible="{Binding IsAdvancedPanelVisible}">
-			<StackPanel Spacing="10">
-				<!-- Speed and Pitch Controls -->
-				<Grid ColumnDefinitions="Auto,*,Auto,15,Auto,*,Auto" Margin="0,0,0,5">
-					<TextBlock Grid.Column="0" Text="Tempo:" VerticalAlignment="Center" Foreground="{Binding CurrentTheme.B_TextColor}" Margin="0,0,5,0"/>
-					<Slider Grid.Column="1" Minimum="0.5" Maximum="2.0" SmallChange="0.05" LargeChange="0.25" TickFrequency="0.25"
-                            Foreground="{Binding CurrentTheme.B_AccentColor}" Background="{Binding CurrentTheme.B_SecondaryTextColor}"
-                            Value="{Binding PlaybackSpeed, Mode=TwoWay}"/>
-					<TextBlock Grid.Column="2" Text="{Binding PlaybackSpeedDisplay}" VerticalAlignment="Center" Margin="5,0" Foreground="{Binding CurrentTheme.B_TextColor}" MinWidth="35" HorizontalAlignment="Right"/>
-
-					<TextBlock Grid.Column="4" Text="Pitch:" VerticalAlignment="Center" Foreground="{Binding CurrentTheme.B_TextColor}" Margin="0,0,5,0"/>
-					<Slider Grid.Column="5" Minimum="-4" Maximum="4" SmallChange="0.1" LargeChange="0.5" TickFrequency="0.5"
-                            Foreground="{Binding CurrentTheme.B_AccentColor}" Background="{Binding CurrentTheme.B_SecondaryTextColor}"
-                            Value="{Binding PlaybackPitch, Mode=TwoWay}"/>
-					<TextBlock Grid.Column="6" Text="{Binding PlaybackPitchDisplay}" VerticalAlignment="Center" Margin="5,0" Foreground="{Binding CurrentTheme.B_TextColor}" MinWidth="45" HorizontalAlignment="Right"/>
-				</Grid>
-
-				<!-- Waveform Display -->
-				<Panel>
-					<controls:WaveformDisplayControl Height="80" MinHeight="60"
-                                                     Background="{Binding CurrentTheme.B_ControlBackgroundColor}"
-                                                     WaveformBrush="{Binding CurrentTheme.B_AccentColor}"
-                                                     PositionMarkerBrush="OrangeRed"
-                                                     LoopRegionBrush="{Binding CurrentTheme.B_AccentColor, Converter={StaticResource AccentBrushWithAlphaConverter}, ConverterParameter=0.3}"
+		<!-- Advanced Panel (Collapsible) -->
+		<Expander Grid.Row="3"
+                  IsExpanded="{Binding IsAdvancedPanelVisible}"
+                  HorizontalAlignment="Stretch"
+                  VerticalAlignment="Stretch"
+                  IsEnabled="{Binding HasCurrentSong}">
+			<Expander.Header>
+				<Button Content="Toggle Advanced Panel" Command="{Binding ToggleAdvancedPanelCommand}"
+                        Background="{Binding CurrentTheme.B_ControlBackgroundColor, FallbackValue={StaticResource DefaultControlBackgroundBrush}}"
+                        Foreground="{Binding CurrentTheme.B_TextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+			</Expander.Header>
+			<Border BorderBrush="{Binding CurrentTheme.B_BorderBrush, FallbackValue={StaticResource DefaultBorderBrush}}" BorderThickness="1" Padding="10"
+                    Background="{Binding CurrentTheme.B_SlightlyLighterBackground, FallbackValue={StaticResource DefaultBackgroundBrush}}">
+				<Grid ColumnDefinitions="*, *" RowDefinitions="Auto, Auto, Auto, Auto" RowSpacing="10" ColumnSpacing="10">
+					<!-- Waveform Display -->
+					<controls:WaveformDisplayControl Grid.ColumnSpan="2" Grid.Row="0" Height="80" Margin="0,0,0,10"
                                                      WaveformPoints="{Binding WaveformRenderData}"
                                                      CurrentPosition="{Binding PlaybackService.CurrentPosition}"
                                                      Duration="{Binding PlaybackService.CurrentSongDuration}"
                                                      ActiveLoop="{Binding PlaybackService.CurrentSong.SavedLoop}"
+                                                     Background="{Binding CurrentTheme.B_ControlBackgroundColor, FallbackValue={StaticResource DefaultControlBackgroundBrush}}"
+                                                     WaveformBrush="{Binding CurrentTheme.B_AccentColor, FallbackValue={StaticResource AccentFillColorDefaultBrush}}"
+                                                     PositionMarkerBrush="{Binding PlaybackService.CurrentSong.IsLoopActive, Converter={StaticResource NotNullToBooleanConverter}, ConverterParameter=Red, FallbackValue=Red}"
+                                                     LoopRegionBrush="{Binding CurrentTheme.B_AccentColor, Converter={StaticResource AccentBrushWithAlphaConverter}, ConverterParameter=0.3, FallbackValue={StaticResource AccentFillColorDefaultBrush}}"
+                                                     IsEnabled="{Binding !IsWaveformLoading}"
                                                      SeekRequested="WaveformDisplay_SeekRequested"/>
 
-					<ProgressBar IsIndeterminate="True" Height="5" Margin="0,-5,0,0"
-                                 Foreground="{Binding CurrentTheme.B_AccentColor}" Background="Transparent"
-                                 IsVisible="{Binding IsWaveformLoading}"/>
-				</Panel>
+					<!-- Loading Indicator for Waveform -->
+					<TextBlock Grid.ColumnSpan="2" Grid.Row="0" Text="Generating Waveform..." HorizontalAlignment="Center" VerticalAlignment="Center"
+                               IsVisible="{Binding IsWaveformLoading}"
+                               Foreground="{Binding CurrentTheme.B_SecondaryTextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
 
 
-				<!-- Loop Controls -->
-				<StackPanel Orientation="Vertical" Spacing="5" Margin="0,10,0,0">
-					<TextBlock Text="Define Loop:" FontSize="12" FontWeight="SemiBold" Foreground="{Binding CurrentTheme.B_TextColor}"/>
-					<StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-						<Button Content="A" FontSize="12" Padding="10,5" MinWidth="40"
-                                Background="{Binding CurrentTheme.B_ControlBackgroundColor}" Foreground="{Binding CurrentTheme.B_TextColor}"
-                                Command="{Binding CaptureLoopStartCandidateCommand}"/>
-						<TextBlock Text="{Binding NewLoopStartCandidateDisplay}" FontSize="11" Margin="3,0" VerticalAlignment="Center"
-                                   Foreground="{Binding CurrentTheme.B_SecondaryTextColor}" MinWidth="60"/>
-
-						<Button Content="B" FontSize="12" Padding="10,5" MinWidth="40"
-                                Background="{Binding CurrentTheme.B_ControlBackgroundColor}" Foreground="{Binding CurrentTheme.B_TextColor}"
-                                Command="{Binding CaptureLoopEndCandidateCommand}"/>
-						<TextBlock Text="{Binding NewLoopEndCandidateDisplay}" FontSize="11" Margin="3,0" VerticalAlignment="Center"
-                                   Foreground="{Binding CurrentTheme.B_SecondaryTextColor}" MinWidth="60"/>
-
-						<Button Content="Save Loop" FontSize="11" Padding="10,5"
-                                Background="{Binding CurrentTheme.B_AccentColor}" Foreground="{Binding CurrentTheme.B_AccentForeground}"
-                                Command="{Binding SaveLoopCommand}" IsEnabled="{Binding CanSaveLoopRegion}"/>
-
-						<Button Content="Clear Loop" FontSize="11" Padding="10,5"
-                                Background="{Binding CurrentTheme.B_ControlBackgroundColor}" Foreground="{Binding CurrentTheme.B_TextColor}"
-                                Command="{Binding ClearLoopCommand}"
-                                IsEnabled="{Binding PlaybackService.CurrentSong.SavedLoop, Converter={StaticResource NotNullToBooleanConverter}}"/>
-
+					<!-- Playback Speed Controls -->
+					<StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Spacing="5">
+						<TextBlock Text="Speed:" VerticalAlignment="Center" Foreground="{Binding CurrentTheme.B_TextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+						<Slider Value="{Binding PlaybackSpeed}" Minimum="0.5" Maximum="2.0" TickFrequency="0.05" IsSnapToTickEnabled="True" Width="150" VerticalAlignment="Center"/>
+						<TextBlock Text="{Binding PlaybackSpeedDisplay}" VerticalAlignment="Center" Foreground="{Binding CurrentTheme.B_TextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
 					</StackPanel>
-					<StackPanel Orientation="Horizontal" Margin="0,8,0,0" Spacing="8" VerticalAlignment="Center">
-						<CheckBox Content="Activate Loop"
-                                  Foreground="{Binding CurrentTheme.B_TextColor}"
-                                  VerticalAlignment="Center"
-                                  IsChecked="{Binding IsCurrentLoopActiveUiBinding, Mode=TwoWay}"
-                                  IsEnabled="{Binding PlaybackService.CurrentSong.SavedLoop, Converter={StaticResource NotNullToBooleanConverter}}"/>
+
+					<!-- Playback Pitch Controls -->
+					<StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Spacing="5">
+						<TextBlock Text="Pitch:" VerticalAlignment="Center" Foreground="{Binding CurrentTheme.B_TextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+						<Slider Value="{Binding PlaybackPitch}" Minimum="-4.0" Maximum="4.0" TickFrequency="0.5" IsSnapToTickEnabled="True" Width="150" VerticalAlignment="Center"/>
+						<TextBlock Text="{Binding PlaybackPitchDisplay}" VerticalAlignment="Center" Foreground="{Binding CurrentTheme.B_TextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
 					</StackPanel>
+
+					<!-- Loop Point Capture -->
+					<StackPanel Grid.Row="2" Grid.Column="0" Orientation="Vertical" Spacing="5">
+						<TextBlock Text="Loop Markers:" FontWeight="Bold" Foreground="{Binding CurrentTheme.B_TextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+						<StackPanel Orientation="Horizontal" Spacing="5">
+							<TextBlock Text="Start:" VerticalAlignment="Center" Foreground="{Binding CurrentTheme.B_SecondaryTextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+							<Button Content="Set (Ctrl+Q)" Command="{Binding CaptureLoopStartCandidateCommand}" Background="{Binding CurrentTheme.B_ControlBackgroundColor, FallbackValue={StaticResource DefaultControlBackgroundBrush}}" Foreground="{Binding CurrentTheme.B_TextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+							<TextBlock Text="{Binding NewLoopStartCandidateDisplay}" VerticalAlignment="Center" FontWeight="Bold" Foreground="{Binding CurrentTheme.B_TextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+						</StackPanel>
+						<StackPanel Orientation="Horizontal" Spacing="5">
+							<TextBlock Text="End:" VerticalAlignment="Center" Foreground="{Binding CurrentTheme.B_SecondaryTextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+							<Button Content="Set (Ctrl+W)" Command="{Binding CaptureLoopEndCandidateCommand}" Background="{Binding CurrentTheme.B_ControlBackgroundColor, FallbackValue={StaticResource DefaultControlBackgroundBrush}}" Foreground="{Binding CurrentTheme.B_TextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+							<TextBlock Text="{Binding NewLoopEndCandidateDisplay}" VerticalAlignment="Center" FontWeight="Bold" Foreground="{Binding CurrentTheme.B_TextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+						</StackPanel>
+					</StackPanel>
+
+					<!-- Loop Actions -->
+					<StackPanel Grid.Row="2" Grid.Column="1" Orientation="Vertical" Spacing="5">
+						<TextBlock Text="Loop Actions:" FontWeight="Bold" Foreground="{Binding CurrentTheme.B_TextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+						<Button Content="Save Loop" Command="{Binding SaveLoopCommand}"
+                                Background="{Binding CurrentTheme.B_AccentColor, FallbackValue={StaticResource AccentFillColorDefaultBrush}}"
+                                Foreground="{Binding CurrentTheme.B_AccentForeground, FallbackValue={StaticResource TextOnAccentFillColorPrimaryBrush}}"/>
+						<Button Content="Clear Saved Loop" Command="{Binding ClearLoopCommand}"
+							   Background="{Binding CurrentTheme.B_ControlBackgroundColor, FallbackValue={StaticResource DefaultControlBackgroundBrush}}"
+							   Foreground="{Binding CurrentTheme.B_TextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+						<StackPanel Orientation="Horizontal" Spacing="5">
+							<CheckBox IsChecked="{Binding IsCurrentLoopActiveUiBinding}" VerticalAlignment="Center" IsEnabled="{Binding PlaybackService.CurrentSong.SavedLoop, Converter={StaticResource NotNullToBooleanConverter}}">
+								<TextBlock Text="Loop Active" VerticalAlignment="Center" Foreground="{Binding CurrentTheme.B_TextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+							</CheckBox>
+						</StackPanel>
+						<TextBlock Text="{Binding ActiveLoopDisplayText}" FontSize="11" FontStyle="Italic" VerticalAlignment="Center"
+                                   Foreground="{Binding CurrentTheme.B_SecondaryTextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+					</StackPanel>
+				</Grid>
+			</Border>
+		</Expander>
+
+
+		<!-- Playback Controls -->
+		<Border Grid.Row="4" Padding="10"
+                Background="{Binding CurrentTheme.B_SlightlyLighterBackground, FallbackValue={StaticResource DefaultControlBackgroundBrush}}">
+			<StackPanel Orientation="Vertical" Spacing="5">
+				<!-- Song Info -->
+				<TextBlock Text="{Binding PlaybackService.CurrentSong.Title, FallbackValue='No song selected'}" FontWeight="Bold" HorizontalAlignment="Center"
+                           Foreground="{Binding CurrentTheme.B_TextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+				<TextBlock Text="{Binding PlaybackService.CurrentSong.Artist, FallbackValue='- Unknown Artist -'}" FontSize="12" HorizontalAlignment="Center" Opacity="0.8"
+						   IsVisible="{Binding HasCurrentSong}"
+						   Foreground="{Binding CurrentTheme.B_SecondaryTextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+
+				<!-- Play/Pause/Stop Buttons -->
+				<StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10">
+					<Button Content="{Binding PlaybackService.IsPlaying, Converter={StaticResource PlayPauseTextConverter}}"
+                            Click="PlayPauseButton_Click"
+                            IsEnabled="{Binding HasCurrentSong}"
+                            Background="{Binding CurrentTheme.B_AccentColor, FallbackValue={StaticResource AccentFillColorDefaultBrush}}"
+                            Foreground="{Binding CurrentTheme.B_AccentForeground, FallbackValue={StaticResource TextOnAccentFillColorPrimaryBrush}}">
+					</Button>
 				</StackPanel>
+
+				<!-- Seek Slider and Time Labels -->
+				<Grid ColumnDefinitions="Auto, *, Auto">
+					<TextBlock Grid.Column="0" Text="{Binding PlaybackService.CurrentPosition, StringFormat='mm\\:ss'}" VerticalAlignment="Center" Margin="0,0,5,0"
+                               Foreground="{Binding CurrentTheme.B_TextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+					<Slider Grid.Column="1" Value="{Binding SliderPositionSeconds, Mode=TwoWay}"
+                            Minimum="0" Maximum="{Binding PlaybackService.CurrentSongDurationSeconds}"
+                            VerticalAlignment="Center"
+                            IsEnabled="{Binding HasCurrentSong}"/>
+					<TextBlock Grid.Column="2" Text="{Binding PlaybackService.CurrentSongDuration, StringFormat='mm\\:ss'}" VerticalAlignment="Center" Margin="5,0,0,0"
+							   Foreground="{Binding CurrentTheme.B_TextColor, FallbackValue={StaticResource DefaultForegroundBrush}}"/>
+				</Grid>
+
 			</StackPanel>
 		</Border>
 
-		<!-- Main Playback Controls (Slider, Play/Pause, Toggle Advanced) -->
-		<StackPanel Grid.Row="4" Orientation="Vertical" Background="{Binding CurrentTheme.B_BackgroundColor}" Margin="0,5,0,5">
-			<DockPanel LastChildFill="True" Height="35" Margin="5,0,5,0">
-				<StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" Margin="5,0,10,0">
-					<Button Content="{Binding PlaybackService.IsPlaying, Converter={StaticResource BooleanToPlayPauseTextConverter}}"
-                            Background="{Binding CurrentTheme.B_SlightlyLighterBackground}"
-                            Foreground="{Binding CurrentTheme.B_TextColor}"
-                            BorderBrush="{Binding CurrentTheme.B_AccentColor}" BorderThickness="1" CornerRadius="3" Padding="10,5" MinWidth="70"
-                            Click="PlayPauseButton_Click"
-                            IsEnabled="{Binding PlaybackService.HasCurrentSong}"/>
-
-					<Button Content="+"
-                            Background="{Binding CurrentTheme.B_SlightlyLighterBackground}"
-                            Foreground="{Binding CurrentTheme.B_TextColor}"
-                            BorderBrush="{Binding CurrentTheme.B_AccentColor}" BorderThickness="1" CornerRadius="3" Padding="8,4" MinWidth="30" FontWeight="Bold" Margin="5,0,0,0"
-                            Command="{Binding ToggleAdvancedPanelCommand}"
-                            IsEnabled="{Binding PlaybackService.HasCurrentSong}"/>
-				</StackPanel>
-
-				<Slider Name="MainPlaybackSliderInstance"
-                        Minimum="0" Margin="10,0" VerticalAlignment="Center"
-                        Background="{Binding CurrentTheme.B_SecondaryTextColor}" Foreground="{Binding CurrentTheme.B_AccentColor}"
-                        Maximum="{Binding PlaybackService.CurrentSongDurationSeconds}"
-                        Value="{Binding SliderPositionSeconds, Mode=TwoWay}"
-                        IsEnabled="{Binding PlaybackService.HasCurrentSong}"/>
-			</DockPanel>
-			<TextBlock Text="{Binding ActiveLoopDisplayText}"
-                       Foreground="{Binding CurrentTheme.B_SecondaryTextColor}" FontSize="10" HorizontalAlignment="Center" Margin="10,0,10,2" MinHeight="14"/>
-		</StackPanel>
-
-
 		<!-- Status Bar -->
-		<Border Grid.Row="5" Background="{Binding CurrentTheme.B_SlightlyLighterBackground}" Padding="10,4" Height="26">
-			<TextBlock Text="{Binding StatusBarText}" Foreground="{Binding CurrentTheme.B_SecondaryTextColor}" VerticalAlignment="Center" FontSize="11"/>
-		</Border>
-
+		<StatusBar Grid.Row="5" DataContext="{Binding}">
+			<StatusBar.Background>
+				<SolidColorBrush Color="{Binding CurrentTheme.BackgroundColor, FallbackValue=#1E1E1E}"/>
+			</StatusBar.Background>
+			<StatusBar.Foreground>
+				<SolidColorBrush Color="{Binding CurrentTheme.TextColor, FallbackValue=#F1F1F1}"/>
+			</StatusBar.Foreground>
+			<TextBlock Text="{Binding StatusBarText}"/>
+		</StatusBar>
 	</Grid>
 </Window>

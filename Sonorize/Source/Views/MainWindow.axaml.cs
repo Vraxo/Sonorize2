@@ -6,7 +6,7 @@ using Avalonia.Data.Converters;
 using Avalonia.Media; // Required for Color
 using Sonorize.Models; // Required for ThemeColors, PlaybackStateStatus
 using Sonorize.ViewModels; // Required for MainWindowViewModel
-using Sonorize.Controls; // Required for WaveformDisplayControl
+using Sonorize.Controls; // Required for WaveformDisplayControl, SearchBarControl
 using System;
 using System.Globalization;
 using Sonorize.Services; // Required for CultureInfo
@@ -44,6 +44,13 @@ public partial class MainWindow : Window
 
     // --- Event Handlers from XAML ---
 
+    // PlayPauseButton_Click event handler is commented out in XAML,
+    // binding to a command is the preferred Avalonia approach.
+    // Re-adding it here for now as it was present in the previous version.
+    // The XAML still has a placeholder Command="{Binding PlayPauseButton_Click_Command}"
+    // which suggests a command should be used instead of the click handler.
+    // For this step, I will keep the code-behind handler as it was in the input,
+    // assuming the XAML binding is just a non-functional placeholder for now.
     private void PlayPauseButton_Click(object? sender, RoutedEventArgs e)
     {
         // This logic was moved from the C# MainView definition
@@ -55,6 +62,7 @@ public partial class MainWindow : Window
                 vm.PlaybackService.Resume();
         }
     }
+
 
     private void WaveformDisplay_SeekRequested(object? sender, TimeSpan e)
     {
