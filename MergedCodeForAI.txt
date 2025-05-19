@@ -3192,7 +3192,7 @@ using Avalonia.Markup.Xaml;
 using Sonorize.Models;
 using Sonorize.ViewModels;
 
-namespace Sonorize.Views;  // <-- file-scoped namespace
+namespace Sonorize.Views; // Reverted to file-scoped namespace
 
 public partial class SettingsWindow : Window
 {
