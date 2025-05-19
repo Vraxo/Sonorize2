@@ -8,7 +8,7 @@
         xmlns:views="using:Sonorize.Views"
         xmlns:utils="using:Sonorize.Utils"
         mc:Ignorable="d" d:DesignWidth="950" d:DesignHeight="750"
-        x:Class="Sonorize.Views.SettingsWindow"
+        x:Class="Sonorize.Views.MainWindow"
         Title="Sonorize" Width="950" Height="750" MinWidth="700" MinHeight="500"
         WindowStartupLocation="CenterScreen"
         Background="{Binding CurrentTheme.B_BackgroundColor}">
