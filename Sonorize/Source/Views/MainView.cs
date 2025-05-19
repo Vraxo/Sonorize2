@@ -15,7 +15,8 @@ using Avalonia.Media.Imaging;
 using Avalonia.Data.Converters;
 using Avalonia.Styling;
 using Sonorize.Services;
-using Sonorize.Views.MainWindowControls; // Added for SearchBarPanel
+using Sonorize.Views.MainWindowControls; // Added for SearchBarPanel and MainMenu
+using Sonorize.Converters;
 
 namespace Sonorize.Views;
 public class MainWindow : Window
@@ -42,11 +43,11 @@ public class MainWindow : Window
             }
         };
 
-        var menu = CreateMenu();
+        var menu = MainMenu.Create(_theme, this); // MODIFIED HERE
         Grid.SetRow(menu, 0);
         mainGrid.Children.Add(menu);
 
-        var searchBarPanel = SearchBarPanel.Create(_theme); // MODIFIED HERE
+        var searchBarPanel = SearchBarPanel.Create(_theme);
         Grid.SetRow(searchBarPanel, 1);
         mainGrid.Children.Add(searchBarPanel);
 
@@ -68,24 +69,6 @@ public class MainWindow : Window
         mainGrid.Children.Add(statusBar);
 
         Content = mainGrid;
-    }
-
-    private Menu CreateMenu()
-    {
-        var menu = new Menu { Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor };
-        var fileMenuItem = new MenuItem { Header = "_File", Foreground = _theme.B_TextColor };
-        var addDirectoryMenuItem = new MenuItem { Header = "_Add Music Directory...", Foreground = _theme.B_TextColor };
-        addDirectoryMenuItem.Bind(MenuItem.CommandProperty, new Binding("AddDirectoryAndRefreshCommand"));
-        addDirectoryMenuItem.CommandParameter = this;
-        var settingsMenuItem = new MenuItem { Header = "_Settings...", Foreground = _theme.B_TextColor };
-        settingsMenuItem.Bind(MenuItem.CommandProperty, new Binding("OpenSettingsCommand"));
-        settingsMenuItem.CommandParameter = this;
-        var exitMenuItem = new MenuItem { Header = "E_xit", Foreground = _theme.B_TextColor };
-        exitMenuItem.Bind(MenuItem.CommandProperty, new Binding("ExitCommand"));
-        fileMenuItem.Items.Add(addDirectoryMenuItem); fileMenuItem.Items.Add(settingsMenuItem);
-        fileMenuItem.Items.Add(new Separator()); fileMenuItem.Items.Add(exitMenuItem);
-        menu.Items.Add(fileMenuItem);
-        return menu;
     }
 
     private TabControl CreateMainTabView()
@@ -576,46 +559,5 @@ public class MainWindow : Window
         statusBarText.Bind(TextBlock.TextProperty, new Binding("StatusBarText"));
         statusBar.Child = statusBarText;
         return statusBar;
-    }
-}
-
-public class BooleanToPlayPauseTextConverter : IValueConverter
-{
-    public static readonly BooleanToPlayPauseTextConverter Instance = new();
-
-    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-    {
-        if (value is bool isPlaying) return isPlaying ? "Pause" : "Play";
-        return "Play";
-    }
-    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-        => throw new NotSupportedException();
-}
-
-public class NotNullToBooleanConverter : IValueConverter
-{
-    public static readonly NotNullToBooleanConverter Instance = new();
-
-    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-    {
-        return value != null;
-    }
-
-    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-    {
-        throw new NotSupportedException();
-    }
-}
-
-public static class BrushExtensions
-{
-    public static IBrush Multiply(this IBrush brush, double factor)
-    {
-        if (brush is ISolidColorBrush solidBrush)
-        {
-            var c = solidBrush.Color;
-            return new SolidColorBrush(Color.FromArgb(c.A, (byte)Math.Clamp(c.R * factor, 0, 255), (byte)Math.Clamp(c.G * factor, 0, 255), (byte)Math.Clamp(c.B * factor, 0, 255)));
-        }
-        return brush;
     }
 }

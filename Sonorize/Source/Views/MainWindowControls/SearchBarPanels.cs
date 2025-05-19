@@ -1,8 +1,6 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
-using Avalonia.Layout;
-using Avalonia.Media;
 using Avalonia.Styling;
 using Sonorize.Models; // For ThemeColors
 
