@@ -337,6 +337,50 @@ public class WaveformDisplayControl : Control
 }
 </file>
 
+<file path="Source\Converters\BooleanToPlayPauseTextConverter.cs">
+// Path: Source/Views/MainView.cs
+using System;
+using Avalonia.Data.Converters;
+
+namespace Sonorize.Converters;
+
+public class BooleanToPlayPauseTextConverter : IValueConverter
+{
+    public static readonly BooleanToPlayPauseTextConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+    {
+        if (value is bool isPlaying) return isPlaying ? "Pause" : "Play";
+        return "Play";
+    }
+    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        => throw new NotSupportedException();
+}
+</file>
+
+<file path="Source\Converters\NotNullToBooleanConverter.cs">
+// Path: Source/Views/MainView.cs
+using System;
+using Avalonia.Data.Converters;
+
+namespace Sonorize.Converters;
+
+public class NotNullToBooleanConverter : IValueConverter
+{
+    public static readonly NotNullToBooleanConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+    {
+        return value != null;
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+    {
+        throw new NotSupportedException();
+    }
+}
+</file>
+
 <file path="Source\Models\AppSettings.cs">
 using System.Collections.Generic;
 
@@ -2533,6 +2577,27 @@ public class ViewModelBase : INotifyPropertyChanged
 }
 </file>
 
+<file path="Source\Views\BrushExtensions.cs">
+// Path: Source/Views/MainView.cs
+using System;
+using Avalonia.Media;
+
+namespace Sonorize.Views;
+
+public static class BrushExtensions
+{
+    public static IBrush Multiply(this IBrush brush, double factor)
+    {
+        if (brush is ISolidColorBrush solidBrush)
+        {
+            var c = solidBrush.Color;
+            return new SolidColorBrush(Color.FromArgb(c.A, (byte)Math.Clamp(c.R * factor, 0, 255), (byte)Math.Clamp(c.G * factor, 0, 255), (byte)Math.Clamp(c.B * factor, 0, 255)));
+        }
+        return brush;
+    }
+}
+</file>
+
 <file path="Source\Views\MainView.cs">
 // Path: Source/Views/MainView.cs
 using System;
@@ -2551,6 +2616,8 @@ using Avalonia.Media.Imaging;
 using Avalonia.Data.Converters;
 using Avalonia.Styling;
 using Sonorize.Services;
+using Sonorize.Views.MainWindowControls; // Added for SearchBarPanel and MainMenu
+using Sonorize.Converters;
 
 namespace Sonorize.Views;
 public class MainWindow : Window
@@ -2577,11 +2644,11 @@ public class MainWindow : Window
             }
         };
 
-        var menu = CreateMenu();
+        var menu = MainMenu.Create(_theme, this); // MODIFIED HERE
         Grid.SetRow(menu, 0);
         mainGrid.Children.Add(menu);
 
-        var searchBarPanel = CreateSearchBarPanel();
+        var searchBarPanel = SearchBarPanel.Create(_theme);
         Grid.SetRow(searchBarPanel, 1);
         mainGrid.Children.Add(searchBarPanel);
 
@@ -2603,52 +2670,6 @@ public class MainWindow : Window
         mainGrid.Children.Add(statusBar);
 
         Content = mainGrid;
-    }
-
-    private Menu CreateMenu()
-    {
-        var menu = new Menu { Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor };
-        var fileMenuItem = new MenuItem { Header = "_File", Foreground = _theme.B_TextColor };
-        var addDirectoryMenuItem = new MenuItem { Header = "_Add Music Directory...", Foreground = _theme.B_TextColor };
-        addDirectoryMenuItem.Bind(MenuItem.CommandProperty, new Binding("AddDirectoryAndRefreshCommand"));
-        addDirectoryMenuItem.CommandParameter = this;
-        var settingsMenuItem = new MenuItem { Header = "_Settings...", Foreground = _theme.B_TextColor };
-        settingsMenuItem.Bind(MenuItem.CommandProperty, new Binding("OpenSettingsCommand"));
-        settingsMenuItem.CommandParameter = this;
-        var exitMenuItem = new MenuItem { Header = "E_xit", Foreground = _theme.B_TextColor };
-        exitMenuItem.Bind(MenuItem.CommandProperty, new Binding("ExitCommand"));
-        fileMenuItem.Items.Add(addDirectoryMenuItem); fileMenuItem.Items.Add(settingsMenuItem);
-        fileMenuItem.Items.Add(new Separator()); fileMenuItem.Items.Add(exitMenuItem);
-        menu.Items.Add(fileMenuItem);
-        return menu;
-    }
-
-    private Panel CreateSearchBarPanel()
-    {
-        var searchBox = new TextBox
-        {
-            Watermark = "Search songs by title, artist, or album...",
-            Margin = new Thickness(10, 5, 10, 5),
-            Padding = new Thickness(10, 7),
-            Background = _theme.B_SlightlyLighterBackground,
-            Foreground = _theme.B_TextColor,
-            BorderBrush = _theme.B_ControlBackgroundColor,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4),
-            FontSize = 14
-        };
-        searchBox.Bind(TextBox.TextProperty, new Binding("SearchQuery", BindingMode.TwoWay));
-        searchBox.Styles.Add(new Style(s => s.Is<TextBox>().Class(":focus"))
-        {
-            Setters = { new Setter(TextBox.BorderBrushProperty, _theme.B_AccentColor) }
-        });
-
-        var panel = new Panel
-        {
-            Children = { searchBox },
-            Margin = new Thickness(0, 5, 0, 0)
-        };
-        return panel;
     }
 
     private TabControl CreateMainTabView()
@@ -3141,47 +3162,6 @@ public class MainWindow : Window
         return statusBar;
     }
 }
-
-public class BooleanToPlayPauseTextConverter : IValueConverter
-{
-    public static readonly BooleanToPlayPauseTextConverter Instance = new();
-
-    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-    {
-        if (value is bool isPlaying) return isPlaying ? "Pause" : "Play";
-        return "Play";
-    }
-    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-        => throw new NotSupportedException();
-}
-
-public class NotNullToBooleanConverter : IValueConverter
-{
-    public static readonly NotNullToBooleanConverter Instance = new();
-
-    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-    {
-        return value != null;
-    }
-
-    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-    {
-        throw new NotSupportedException();
-    }
-}
-
-public static class BrushExtensions
-{
-    public static IBrush Multiply(this IBrush brush, double factor)
-    {
-        if (brush is ISolidColorBrush solidBrush)
-        {
-            var c = solidBrush.Color;
-            return new SolidColorBrush(Color.FromArgb(c.A, (byte)Math.Clamp(c.R * factor, 0, 255), (byte)Math.Clamp(c.G * factor, 0, 255), (byte)Math.Clamp(c.B * factor, 0, 255)));
-        }
-        return brush;
-    }
-}
 </file>
 
 <file path="Source\Views\SettingsWindow.cs">
@@ -3286,6 +3266,107 @@ public class SettingsWindow : Window
         mainPanel.Children.Add(sectionsStackPanel); // This will fill the center
 
         Content = mainPanel;
+    }
+}
+</file>
+
+<file path="Source\Views\MainWindowControls\MainMenu.cs">
+using Avalonia.Controls;
+using Avalonia.Data;
+using Sonorize.Models; // For ThemeColors
+
+namespace Sonorize.Views.MainWindowControls;
+
+public static class MainMenu
+{
+    public static Menu Create(ThemeColors theme, Window ownerWindow)
+    {
+        var menu = new Menu 
+        { 
+            Background = theme.B_SlightlyLighterBackground,
+            Foreground = theme.B_TextColor
+        };
+
+        var fileMenuItem = new MenuItem
+        {
+            Header = "_File",
+            Foreground = theme.B_TextColor
+        };
+
+        var addDirectoryMenuItem = new MenuItem
+        {
+            Header = "_Add Music Directory...",
+            Foreground = theme.B_TextColor
+        };
+
+        addDirectoryMenuItem.Bind(MenuItem.CommandProperty, new Binding("AddDirectoryAndRefreshCommand"));
+        addDirectoryMenuItem.CommandParameter = ownerWindow; // Use the passed owner window
+
+        var settingsMenuItem = new MenuItem
+        {
+            Header = "_Settings...",
+            Foreground = theme.B_TextColor
+        };
+
+        settingsMenuItem.Bind(MenuItem.CommandProperty, new Binding("OpenSettingsCommand"));
+        settingsMenuItem.CommandParameter = ownerWindow; // Use the passed owner window
+
+        var exitMenuItem = new MenuItem
+        {
+            Header = "E_xit",
+            Foreground = theme.B_TextColor
+        };
+
+        exitMenuItem.Bind(MenuItem.CommandProperty, new Binding("ExitCommand"));
+
+        fileMenuItem.Items.Add(addDirectoryMenuItem);
+        fileMenuItem.Items.Add(settingsMenuItem);
+        fileMenuItem.Items.Add(new Separator());
+        fileMenuItem.Items.Add(exitMenuItem);
+
+        menu.Items.Add(fileMenuItem);
+        return menu;
+    }
+}
+</file>
+
+<file path="Source\Views\MainWindowControls\SearchBarPanels.cs">
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Data;
+using Avalonia.Styling;
+using Sonorize.Models; // For ThemeColors
+
+namespace Sonorize.Views.MainWindowControls;
+
+public static class SearchBarPanel
+{
+    public static Panel Create(ThemeColors theme)
+    {
+        var searchBox = new TextBox
+        {
+            Watermark = "Search songs by title, artist, or album...",
+            Margin = new Thickness(10, 5, 10, 5),
+            Padding = new Thickness(10, 7),
+            Background = theme.B_SlightlyLighterBackground,
+            Foreground = theme.B_TextColor,
+            BorderBrush = theme.B_ControlBackgroundColor,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            FontSize = 14
+        };
+        searchBox.Bind(TextBox.TextProperty, new Binding("SearchQuery", BindingMode.TwoWay));
+        searchBox.Styles.Add(new Style(s => s.Is<TextBox>().Class(":focus"))
+        {
+            Setters = { new Setter(TextBox.BorderBrushProperty, theme.B_AccentColor) }
+        });
+
+        var panel = new Panel
+        {
+            Children = { searchBox },
+            Margin = new Thickness(0, 5, 0, 0)
+        };
+        return panel;
     }
 }
 </file>

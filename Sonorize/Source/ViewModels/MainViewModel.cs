@@ -1,18 +1,16 @@
-﻿// Path: Source/ViewModels/MainViewModel.cs
-using Avalonia.Controls;
-using Sonorize.Models;
-using Sonorize.Services;
+﻿using System;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
-using System;
-using System.Diagnostics;
-using Avalonia.Threading;
-using System.ComponentModel;
-using System.Collections.Generic;
+using Avalonia.Controls;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
+using Sonorize.Models;
+using Sonorize.Services;
 using Sonorize.Utils; // For AlbumArtistTupleComparer
 
 namespace Sonorize.ViewModels;
@@ -261,31 +259,36 @@ public class MainWindowViewModel : ViewModelBase
             oldSong.PropertyChanged -= OnCurrentSongIsLoopActiveChanged;
         }
 
-        if (newSong != null)
+        if (newSong != null) // A new song is selected in the UI
         {
+            // If this new UI selection is different from what's currently playing,
+            // or if nothing is playing, then tell PlaybackService to play this new song.
             if (newSong != PlaybackService.CurrentSong || PlaybackService.CurrentPlaybackStatus == PlaybackStateStatus.Stopped)
             {
                 PlaybackService.Play(newSong);
             }
-            else
+            else // UI selected the song that's already current in PlaybackService (and it's playing/paused)
             {
+                // Ensure UI state for loop active reflects the song's actual state.
                 IsCurrentLoopActiveUiBinding = newSong.IsLoopActive;
             }
 
-            if (_selectedSongInternal != null)
-            {
-                _selectedSongInternal.PropertyChanged += OnCurrentSongSavedLoopChanged;
-                _selectedSongInternal.PropertyChanged += OnCurrentSongIsLoopActiveChanged;
-            }
+            // Subscribe to PropertyChanged for the newly selected (and now likely playing) song.
+            // It's safe to add handler even if already present; PropertyChanged event invocation list handles duplicates.
+            newSong.PropertyChanged += OnCurrentSongSavedLoopChanged;
+            newSong.PropertyChanged += OnCurrentSongIsLoopActiveChanged;
         }
-        else
+        else // newSong is null (UI deselected a song, e.g., due to filtering or clicking empty space)
         {
-            if (PlaybackService.CurrentSong != null)
-            {
-                PlaybackService.Stop();
-            }
+            // IMPORTANT: Do NOT stop playback here.
+            // The PlaybackService.CurrentSong should continue to play if it was playing.
+            // UI deselection does not mean playback stops.
+            Debug.WriteLine($"[MainVM] UI deselected a song (newSong is null). Current playing song '{PlaybackService.CurrentSong?.Title ?? "null"}' will continue if it was playing.");
         }
+
+        // Update command states and other UI dependent states as the selection has changed.
         (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        UpdateAllUIDependentStates(); // Ensures UI elements depending on SelectedSong or PlaybackService.CurrentSong refresh.
     }
 
     private void OnPlaybackServicePropertyChanged(object? sender, PropertyChangedEventArgs args)
@@ -298,29 +301,45 @@ public class MainWindowViewModel : ViewModelBase
                     var currentServiceSong = PlaybackService.CurrentSong;
                     Debug.WriteLine($"[MainVM_PSPChanged] Service.CurrentSong is now: {currentServiceSong?.Title ?? "null"}");
 
+                    // If the ViewModel's _selectedSongInternal is not null and is different from the new service song,
+                    // unsubscribe its PropertyChanged handlers. This handles cases where PlaybackService changes song
+                    // due to reasons other than UI selection (e.g., playlist auto-advance in future).
                     if (_selectedSongInternal != null && _selectedSongInternal != currentServiceSong)
                     {
                         _selectedSongInternal.PropertyChanged -= OnCurrentSongSavedLoopChanged;
                         _selectedSongInternal.PropertyChanged -= OnCurrentSongIsLoopActiveChanged;
                     }
 
+                    // If the new service song is not null, ensure its PropertyChanged handlers are attached
+                    // and UI bindings like IsCurrentLoopActiveUiBinding are synced.
                     if (currentServiceSong != null)
                     {
                         IsCurrentLoopActiveUiBinding = currentServiceSong.IsLoopActive;
+                        // Ensure handlers are attached. If _selectedSongInternal is already currentServiceSong,
+                        // HandleSelectedSongChange would have already attached them. This is a safeguard.
                         if (_selectedSongInternal != currentServiceSong)
                         {
+                            // Detach from any previous _selectedSongInternal if it's different and not null
+                            if (_selectedSongInternal != null)
+                            {
+                                _selectedSongInternal.PropertyChanged -= OnCurrentSongSavedLoopChanged;
+                                _selectedSongInternal.PropertyChanged -= OnCurrentSongIsLoopActiveChanged;
+                            }
+                            // Attach to the new currentServiceSong
                             currentServiceSong.PropertyChanged += OnCurrentSongSavedLoopChanged;
                             currentServiceSong.PropertyChanged += OnCurrentSongIsLoopActiveChanged;
                         }
                     }
-                    else
+                    else // PlaybackService.CurrentSong is now null
                     {
                         IsCurrentLoopActiveUiBinding = false;
                         WaveformRenderData.Clear();
                         OnPropertyChanged(nameof(WaveformRenderData));
                     }
+
+                    // Update UI based on the new state of PlaybackService.CurrentSong
                     UpdateAllUIDependentStates();
-                    OnPropertyChanged(nameof(SliderPositionSeconds)); // Update slider when song changes
+                    OnPropertyChanged(nameof(SliderPositionSeconds));
                     if (currentServiceSong != null) _ = LoadWaveformForCurrentSong();
                     break;
 
@@ -331,15 +350,14 @@ public class MainWindowViewModel : ViewModelBase
                     break;
 
                 case nameof(PlaybackService.CurrentPosition):
-                    OnPropertyChanged(nameof(SliderPositionSeconds)); // Update slider when position changes
+                    OnPropertyChanged(nameof(SliderPositionSeconds));
                     OnPropertyChanged(nameof(CanSaveLoopRegion));
-                    (CaptureLoopStartCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged(); // Position changed
-                    (CaptureLoopEndCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged(); // Position changed
-                    // No need to call RaiseAllCommandsCanExecuteChanged() generally, as slider itself doesn't use CanExecute
+                    (CaptureLoopStartCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                    (CaptureLoopEndCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
                     break;
 
                 case nameof(PlaybackService.CurrentSongDuration):
-                    OnPropertyChanged(nameof(SliderPositionSeconds)); // Max value might have changed
+                    OnPropertyChanged(nameof(SliderPositionSeconds));
                     OnPropertyChanged(nameof(CanSaveLoopRegion));
                     break;
             }
@@ -424,6 +442,8 @@ public class MainWindowViewModel : ViewModelBase
         {
             FilteredSongs.Add(song);
         }
+        // If the ListBox's SelectedItem changes due to FilteredSongs update,
+        // the SelectedSong property setter and HandleSelectedSongChange will be invoked.
         UpdateStatusBarText();
         ActiveTabIndex = 0;
     }
@@ -445,9 +465,18 @@ public class MainWindowViewModel : ViewModelBase
         {
             FilteredSongs.Add(song);
         }
+
+        // If the ListBox's SelectedItem is no longer in FilteredSongs, its SelectedItem property
+        // will likely be set to null by the control itself. This will trigger our SelectedSong setter.
+        // No explicit clearing of SelectedSong is needed here if it's the currently playing song.
+        // HandleSelectedSongChange is now designed to not stop playback on simple deselection.
         if (SelectedSong != null && !FilteredSongs.Contains(SelectedSong))
         {
-            SelectedSong = null;
+            // If the currently selected song is filtered out, the ListBox will update its
+            // SelectedItem, which will call our `SelectedSong` setter with `null` or a new item.
+            // Our revised HandleSelectedSongChange logic will correctly handle this without stopping playback
+            // if SelectedSong becomes null but was the PlaybackService.CurrentSong.
+            Debug.WriteLine($"[MainVM ApplyFilter] Current SelectedSong '{SelectedSong.Title}' is no longer in FilteredSongs. ListBox should update selection.");
         }
         UpdateStatusBarText();
     }
@@ -493,7 +522,6 @@ public class MainWindowViewModel : ViewModelBase
             NewLoopStartCandidate = null; NewLoopEndCandidate = null; IsCurrentLoopActiveUiBinding = false;
         }
         OnPropertyChanged(nameof(CanSaveLoopRegion));
-        // Commands related to loop editing might need CanExecuteChanged raised here
         (CaptureLoopStartCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (CaptureLoopEndCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (SaveLoopCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -501,7 +529,7 @@ public class MainWindowViewModel : ViewModelBase
         (ToggleLoopActiveCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
-    private void ClearLoopCandidateInputs() { NewLoopStartCandidate = null; NewLoopEndCandidate = null; /* CanSaveLoopRegion will update, and its command */ }
+    private void ClearLoopCandidateInputs() { NewLoopStartCandidate = null; NewLoopEndCandidate = null; }
     public bool CanSaveLoopRegion => PlaybackService.CurrentSong != null && NewLoopStartCandidate.HasValue && NewLoopEndCandidate.HasValue && NewLoopEndCandidate.Value > NewLoopStartCandidate.Value && NewLoopEndCandidate.Value <= PlaybackService.CurrentSongDuration && NewLoopStartCandidate.Value >= TimeSpan.Zero;
 
     private void SaveLoopAction(object? param)
@@ -509,12 +537,12 @@ public class MainWindowViewModel : ViewModelBase
         var currentServiceSong = PlaybackService.CurrentSong;
         if (!CanSaveLoopRegion || currentServiceSong == null || !NewLoopStartCandidate.HasValue || !NewLoopEndCandidate.HasValue) return;
         var newLoop = new LoopRegion(NewLoopStartCandidate.Value, NewLoopEndCandidate.Value, "User Loop");
-        bool shouldBeActive = (currentServiceSong.SavedLoop != null && currentServiceSong.IsLoopActive) || currentServiceSong.SavedLoop == null; // Default to active if new, or preserve current state
+        bool shouldBeActive = (currentServiceSong.SavedLoop != null && currentServiceSong.IsLoopActive) || currentServiceSong.SavedLoop == null;
         currentServiceSong.SavedLoop = newLoop;
-        if (currentServiceSong.IsLoopActive != shouldBeActive) { currentServiceSong.IsLoopActive = shouldBeActive; } // This will trigger persistence via OnCurrentSongIsLoopActiveChanged
-        else { _loopDataService.SetLoop(currentServiceSong.FilePath, newLoop.Start, newLoop.End, currentServiceSong.IsLoopActive); } // Persist if IsLoopActive didn't change but loop did
+        if (currentServiceSong.IsLoopActive != shouldBeActive) { currentServiceSong.IsLoopActive = shouldBeActive; }
+        else { _loopDataService.SetLoop(currentServiceSong.FilePath, newLoop.Start, newLoop.End, currentServiceSong.IsLoopActive); }
         Debug.WriteLine($"[MainVM] Loop saved for {currentServiceSong.Title}. Active: {currentServiceSong.IsLoopActive}");
-        UpdateLoopEditorForCurrentSong(); // Refresh editor state (e.g. CanExecute for Clear)
+        UpdateLoopEditorForCurrentSong();
     }
 
     private void ClearSavedLoopAction(object? param)
@@ -523,8 +551,8 @@ public class MainWindowViewModel : ViewModelBase
         if (currentServiceSong != null)
         {
             var filePath = currentServiceSong.FilePath;
-            currentServiceSong.SavedLoop = null; // This will trigger OnCurrentSongSavedLoopChanged, then OnCurrentSongIsLoopActiveChanged if it's set to false by the former's logic
-            currentServiceSong.IsLoopActive = false; // Explicitly set to false and ensure persistence if SavedLoop was already null by some chance
+            currentServiceSong.SavedLoop = null;
+            currentServiceSong.IsLoopActive = false;
             if (!string.IsNullOrEmpty(filePath)) { _loopDataService.ClearLoop(filePath); }
         }
         ClearLoopCandidateInputs();
@@ -580,13 +608,12 @@ public class MainWindowViewModel : ViewModelBase
                         .Select(g => new { AlbumTitle = g.First().Album, ArtistName = g.First().Artist, ThumbSong = g.FirstOrDefault(s => s.Thumbnail != null) })
                         .OrderBy(a => a.ArtistName, StringComparer.OrdinalIgnoreCase).ThenBy(a => a.AlbumTitle, StringComparer.OrdinalIgnoreCase).ToList();
                     foreach (var albumData in uniqueAlbums) Albums.Add(new AlbumViewModel { Title = albumData.AlbumTitle, Artist = albumData.ArtistName, Thumbnail = albumData.ThumbSong?.Thumbnail ?? defaultThumb }); OnPropertyChanged(nameof(Albums));
-                    ApplyFilter(); // This populates FilteredSongs
+                    ApplyFilter();
                 });
             }
             catch (Exception ex) { Debug.WriteLine($"[MainVM] Error loading library: {ex}"); await Dispatcher.UIThread.InvokeAsync(() => StatusBarText = "Error loading music library."); }
         }
-        // This should be called after ApplyFilter to accurately reflect count.
-        IsLoadingLibrary = false; UpdateStatusBarText(); // Update status after loading finishes.
+        IsLoadingLibrary = false; UpdateStatusBarText();
     }
 
     private async Task OpenSettingsDialog(object? ownerWindow)
@@ -594,9 +621,9 @@ public class MainWindowViewModel : ViewModelBase
         if (ownerWindow is not Window owner || IsLoadingLibrary) return; IsAdvancedPanelVisible = false; var currentSettingsBeforeDialog = _settingsService.LoadSettings();
         var settingsVM = new SettingsViewModel(_settingsService); var settingsDialog = new Sonorize.Views.SettingsWindow(CurrentTheme) { DataContext = settingsVM };
         await settingsDialog.ShowDialog(owner);
-        if (settingsVM.SettingsChanged) // This flag is now more accurately set by SettingsViewModel
+        if (settingsVM.SettingsChanged)
         {
-            var newSettingsAfterDialog = _settingsService.LoadSettings(); // Re-load to get what was actually saved
+            var newSettingsAfterDialog = _settingsService.LoadSettings();
             bool dirsActuallyChanged = !currentSettingsBeforeDialog.MusicDirectories.SequenceEqual(newSettingsAfterDialog.MusicDirectories);
             bool themeActuallyChanged = currentSettingsBeforeDialog.PreferredThemeFileName != newSettingsAfterDialog.PreferredThemeFileName;
 
