@@ -27,4 +27,8 @@
       <DependentUpon>App.axaml</DependentUpon>
     </Compile>
   </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaXaml Include="Source\Views\SettingsWindow.xaml" />
+  </ItemGroup>
 </Project>

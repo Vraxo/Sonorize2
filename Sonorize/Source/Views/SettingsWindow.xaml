@@ -1,0 +1,44 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:Sonorize.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="500" d:DesignHeight="450"
+        x:Class="Sonorize.Views.SettingsWindow"
+        Title="Sonorize Settings"
+        Width="500" Height="450"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+
+    <Design.DataContext>
+        <vm:SettingsViewModel/>
+    </Design.DataContext>
+
+    <DockPanel Margin="15">
+        <!-- Main sections -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Vertical" Spacing="5">
+            <!-- Header for Directories -->
+            <TextBlock Text="Music Directories" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,10"/>
+
+            <!-- Music Directories Section -->
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Vertical" Spacing="5" Margin="0,0,10,0">
+                    <Button Content="Add" HorizontalAlignment="Stretch" Command="{Binding AddDirectoryCommand}" CommandParameter="{Binding RelativeSource={RelativeSource FindAncestor, AncestorType=Window}}"/>
+                    <Button Content="Remove" HorizontalAlignment="Stretch" Command="{Binding RemoveDirectoryCommand}" IsEnabled="{Binding CanRemoveDirectory}"/>
+                </StackPanel>
+                <ListBox ItemsSource="{Binding MusicDirectories}" SelectedItem="{Binding SelectedDirectory, Mode=TwoWay}" Height="150"/>
+            </DockPanel>
+
+            <!-- Theme Selection Section -->
+            <TextBlock Text="Application Theme" FontSize="16" FontWeight="SemiBold" Margin="0,15,0,5"/>
+            <ComboBox ItemsSource="{Binding AvailableThemes}" SelectedItem="{Binding SelectedThemeFile, Mode=TwoWay}" HorizontalAlignment="Stretch"/>
+            <TextBlock Text="A restart is required for theme changes to take full effect." FontSize="10" FontStyle="Italic" Margin="0,5,0,0" TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <!-- Buttons Panel (Bottom) -->
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="0,20,0,0">
+            <Button Content="Save & Close" Padding="15,8" CornerRadius="3" Click="SaveAndCloseButton_Click"/>
+            <Button Content="Cancel" Padding="15,8" CornerRadius="3" Click="CancelButton_Click"/>
+        </StackPanel>
+    </DockPanel>
+</Window>
