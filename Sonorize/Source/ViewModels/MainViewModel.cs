@@ -148,19 +148,24 @@ public class MainWindowViewModel : ViewModelBase
         {
             if (PlaybackService.HasCurrentSong && PlaybackService.CurrentSongDuration.TotalSeconds > 0)
             {
-                // Check if the new value is significantly different from the current playback position
-                // to avoid seeking for tiny adjustments that might come from the binding itself during updates.
-                // A threshold of 50-100ms might be reasonable.
                 if (Math.Abs(PlaybackService.CurrentPosition.TotalSeconds - value) > 0.1)
                 {
                     Debug.WriteLine($"[MainVM.SliderPositionSeconds.set] User seeking via slider to: {value:F2}s. Current playback pos: {PlaybackService.CurrentPosition.TotalSeconds:F2}s");
                     PlaybackService.Seek(TimeSpan.FromSeconds(value));
                 }
             }
-            // We don't call OnPropertyChanged(nameof(SliderPositionSeconds)) here.
-            // The slider will be updated when PlaybackService.CurrentPosition changes,
-            // which triggers OnPlaybackServicePropertyChanged, which then calls
-            // OnPropertyChanged(nameof(SliderPositionSeconds)). This creates the correct notification loop.
+        }
+    }
+
+    public string CurrentTimeTotalTimeDisplay
+    {
+        get
+        {
+            if (PlaybackService.CurrentSong != null && PlaybackService.CurrentSongDuration.TotalSeconds > 0)
+            {
+                return $"{PlaybackService.CurrentPosition:mm\\:ss} / {PlaybackService.CurrentSongDuration:mm\\:ss}";
+            }
+            return "--:-- / --:--";
         }
     }
 
@@ -233,6 +238,7 @@ public class MainWindowViewModel : ViewModelBase
         UpdateLoopEditorForCurrentSong();
         UpdateActiveLoopDisplayText();
         UpdateStatusBarText();
+        OnPropertyChanged(nameof(CurrentTimeTotalTimeDisplay));
         RaiseAllCommandsCanExecuteChanged();
     }
 
@@ -259,36 +265,25 @@ public class MainWindowViewModel : ViewModelBase
             oldSong.PropertyChanged -= OnCurrentSongIsLoopActiveChanged;
         }
 
-        if (newSong != null) // A new song is selected in the UI
+        if (newSong != null)
         {
-            // If this new UI selection is different from what's currently playing,
-            // or if nothing is playing, then tell PlaybackService to play this new song.
             if (newSong != PlaybackService.CurrentSong || PlaybackService.CurrentPlaybackStatus == PlaybackStateStatus.Stopped)
             {
                 PlaybackService.Play(newSong);
             }
-            else // UI selected the song that's already current in PlaybackService (and it's playing/paused)
+            else
             {
-                // Ensure UI state for loop active reflects the song's actual state.
                 IsCurrentLoopActiveUiBinding = newSong.IsLoopActive;
             }
-
-            // Subscribe to PropertyChanged for the newly selected (and now likely playing) song.
-            // It's safe to add handler even if already present; PropertyChanged event invocation list handles duplicates.
             newSong.PropertyChanged += OnCurrentSongSavedLoopChanged;
             newSong.PropertyChanged += OnCurrentSongIsLoopActiveChanged;
         }
-        else // newSong is null (UI deselected a song, e.g., due to filtering or clicking empty space)
+        else
         {
-            // IMPORTANT: Do NOT stop playback here.
-            // The PlaybackService.CurrentSong should continue to play if it was playing.
-            // UI deselection does not mean playback stops.
             Debug.WriteLine($"[MainVM] UI deselected a song (newSong is null). Current playing song '{PlaybackService.CurrentSong?.Title ?? "null"}' will continue if it was playing.");
         }
-
-        // Update command states and other UI dependent states as the selection has changed.
         (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        UpdateAllUIDependentStates(); // Ensures UI elements depending on SelectedSong or PlaybackService.CurrentSong refresh.
+        UpdateAllUIDependentStates();
     }
 
     private void OnPlaybackServicePropertyChanged(object? sender, PropertyChangedEventArgs args)
@@ -301,45 +296,35 @@ public class MainWindowViewModel : ViewModelBase
                     var currentServiceSong = PlaybackService.CurrentSong;
                     Debug.WriteLine($"[MainVM_PSPChanged] Service.CurrentSong is now: {currentServiceSong?.Title ?? "null"}");
 
-                    // If the ViewModel's _selectedSongInternal is not null and is different from the new service song,
-                    // unsubscribe its PropertyChanged handlers. This handles cases where PlaybackService changes song
-                    // due to reasons other than UI selection (e.g., playlist auto-advance in future).
                     if (_selectedSongInternal != null && _selectedSongInternal != currentServiceSong)
                     {
                         _selectedSongInternal.PropertyChanged -= OnCurrentSongSavedLoopChanged;
                         _selectedSongInternal.PropertyChanged -= OnCurrentSongIsLoopActiveChanged;
                     }
 
-                    // If the new service song is not null, ensure its PropertyChanged handlers are attached
-                    // and UI bindings like IsCurrentLoopActiveUiBinding are synced.
                     if (currentServiceSong != null)
                     {
                         IsCurrentLoopActiveUiBinding = currentServiceSong.IsLoopActive;
-                        // Ensure handlers are attached. If _selectedSongInternal is already currentServiceSong,
-                        // HandleSelectedSongChange would have already attached them. This is a safeguard.
                         if (_selectedSongInternal != currentServiceSong)
                         {
-                            // Detach from any previous _selectedSongInternal if it's different and not null
                             if (_selectedSongInternal != null)
                             {
                                 _selectedSongInternal.PropertyChanged -= OnCurrentSongSavedLoopChanged;
                                 _selectedSongInternal.PropertyChanged -= OnCurrentSongIsLoopActiveChanged;
                             }
-                            // Attach to the new currentServiceSong
                             currentServiceSong.PropertyChanged += OnCurrentSongSavedLoopChanged;
                             currentServiceSong.PropertyChanged += OnCurrentSongIsLoopActiveChanged;
                         }
                     }
-                    else // PlaybackService.CurrentSong is now null
+                    else
                     {
                         IsCurrentLoopActiveUiBinding = false;
                         WaveformRenderData.Clear();
                         OnPropertyChanged(nameof(WaveformRenderData));
                     }
-
-                    // Update UI based on the new state of PlaybackService.CurrentSong
                     UpdateAllUIDependentStates();
                     OnPropertyChanged(nameof(SliderPositionSeconds));
+                    OnPropertyChanged(nameof(CurrentTimeTotalTimeDisplay));
                     if (currentServiceSong != null) _ = LoadWaveformForCurrentSong();
                     break;
 
@@ -354,11 +339,13 @@ public class MainWindowViewModel : ViewModelBase
                     OnPropertyChanged(nameof(CanSaveLoopRegion));
                     (CaptureLoopStartCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
                     (CaptureLoopEndCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                    OnPropertyChanged(nameof(CurrentTimeTotalTimeDisplay));
                     break;
 
                 case nameof(PlaybackService.CurrentSongDuration):
                     OnPropertyChanged(nameof(SliderPositionSeconds));
                     OnPropertyChanged(nameof(CanSaveLoopRegion));
+                    OnPropertyChanged(nameof(CurrentTimeTotalTimeDisplay));
                     break;
             }
         });
@@ -442,8 +429,6 @@ public class MainWindowViewModel : ViewModelBase
         {
             FilteredSongs.Add(song);
         }
-        // If the ListBox's SelectedItem changes due to FilteredSongs update,
-        // the SelectedSong property setter and HandleSelectedSongChange will be invoked.
         UpdateStatusBarText();
         ActiveTabIndex = 0;
     }
@@ -465,17 +450,8 @@ public class MainWindowViewModel : ViewModelBase
         {
             FilteredSongs.Add(song);
         }
-
-        // If the ListBox's SelectedItem is no longer in FilteredSongs, its SelectedItem property
-        // will likely be set to null by the control itself. This will trigger our SelectedSong setter.
-        // No explicit clearing of SelectedSong is needed here if it's the currently playing song.
-        // HandleSelectedSongChange is now designed to not stop playback on simple deselection.
         if (SelectedSong != null && !FilteredSongs.Contains(SelectedSong))
         {
-            // If the currently selected song is filtered out, the ListBox will update its
-            // SelectedItem, which will call our `SelectedSong` setter with `null` or a new item.
-            // Our revised HandleSelectedSongChange logic will correctly handle this without stopping playback
-            // if SelectedSong becomes null but was the PlaybackService.CurrentSong.
             Debug.WriteLine($"[MainVM ApplyFilter] Current SelectedSong '{SelectedSong.Title}' is no longer in FilteredSongs. ListBox should update selection.");
         }
         UpdateStatusBarText();
@@ -493,7 +469,7 @@ public class MainWindowViewModel : ViewModelBase
         {
             Debug.WriteLine($"[MainVM] Requesting waveform for: {songToLoadWaveformFor.Title}");
             var points = await _waveformService.GetWaveformAsync(songToLoadWaveformFor.FilePath, 1000);
-            if (PlaybackService.CurrentSong == songToLoadWaveformFor) // Check if song is still current
+            if (PlaybackService.CurrentSong == songToLoadWaveformFor)
             {
                 WaveformRenderData.Clear(); foreach (var p in points) WaveformRenderData.Add(p); OnPropertyChanged(nameof(WaveformRenderData));
                 Debug.WriteLine($"[MainVM] Waveform loaded for: {songToLoadWaveformFor.Title}, {points.Count} points.");
@@ -501,7 +477,7 @@ public class MainWindowViewModel : ViewModelBase
             else
             {
                 Debug.WriteLine($"[MainVM] Waveform for {songToLoadWaveformFor.Title} loaded, but current song is now {PlaybackService.CurrentSong?.Title ?? "null"}. Discarding.");
-                WaveformRenderData.Clear(); OnPropertyChanged(nameof(WaveformRenderData)); // Clear if stale
+                WaveformRenderData.Clear(); OnPropertyChanged(nameof(WaveformRenderData));
             }
         }
         catch (Exception ex) { Debug.WriteLine($"[MainVM] Failed to load waveform for {songToLoadWaveformFor.Title}: {ex.Message}"); WaveformRenderData.Clear(); OnPropertyChanged(nameof(WaveformRenderData)); }

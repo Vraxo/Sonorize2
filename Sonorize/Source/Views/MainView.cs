@@ -1,22 +1,18 @@
-﻿// Path: Source/Views/MainView.cs
-using System;
+﻿using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives; // For Thumb, ToggleButton
+using Avalonia.Controls.Templates;
+using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Sonorize.Models;
-using Sonorize.ViewModels;
-using Avalonia.Data;
-using Sonorize.Controls;
-using System.Diagnostics;
-using Avalonia;
-using Avalonia.Controls.Templates;
-using Avalonia.Controls.Primitives; // For Thumb, ToggleButton
 using Avalonia.Media.Imaging;
-using Avalonia.Data.Converters;
 using Avalonia.Styling;
-using Sonorize.Services;
-using Sonorize.Views.MainWindowControls; // Added for SearchBarPanel and MainMenu
+using Sonorize.Controls;
 using Sonorize.Converters;
+using Sonorize.Models;
+using Sonorize.Services;
+using Sonorize.ViewModels;
+using Sonorize.Views.MainWindowControls; // Added for SearchBarPanel and MainMenu
 
 namespace Sonorize.Views;
 public class MainWindow : Window
@@ -500,19 +496,15 @@ public class MainWindow : Window
         {
             Name = "MainPlaybackSliderInstance",
             Minimum = 0,
-            Margin = new Thickness(10, 0),
             VerticalAlignment = VerticalAlignment.Center,
             Background = _theme.B_SecondaryTextColor,
             Foreground = _theme.B_AccentColor
+            // Margin removed, will be handled by DockPanel spacing or parent margin
         };
         mainPlaybackSlider.Styles.Add(new Style(s => s.Is<Thumb>()) { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor) } });
-
-        // Bind Maximum to the duration in seconds from PlaybackService (via ViewModel if needed, but direct path is fine if PlaybackService is accessible)
         mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("PlaybackService.CurrentSongDurationSeconds"));
-        // Bind Value TwoWay to the new SliderPositionSeconds property in MainWindowViewModel
         mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("SliderPositionSeconds", BindingMode.TwoWay));
         mainPlaybackSlider.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
-
 
         var mainPlayPauseButton = new Button { Content = "Play", Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(10, 5), MinWidth = 70 };
         mainPlayPauseButton.Click += (s, e) =>
@@ -525,24 +517,47 @@ public class MainWindow : Window
                     vm.PlaybackService.Resume();
             }
         };
-
-        var playPauseContentBinding = new Binding("PlaybackService.IsPlaying")
-        {
-            Converter = BooleanToPlayPauseTextConverter.Instance
-        };
+        var playPauseContentBinding = new Binding("PlaybackService.IsPlaying") { Converter = BooleanToPlayPauseTextConverter.Instance };
         mainPlayPauseButton.Bind(Button.ContentProperty, playPauseContentBinding);
         mainPlayPauseButton.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
 
-        var toggleAdvPanelButton = new Button { Content = "+", Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(8, 4), MinWidth = 30, FontWeight = FontWeight.Bold, Margin = new Thickness(5, 0, 0, 0) };
+        var toggleAdvPanelButton = new Button { Content = "+", Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(8, 4), MinWidth = 30, FontWeight = FontWeight.Bold };
         toggleAdvPanelButton.Bind(Button.CommandProperty, new Binding("ToggleAdvancedPanelCommand"));
         toggleAdvPanelButton.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
 
-        var controlsButtonPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0, 10, 0) };
+        var controlsButtonPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 5,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 5, 0) // 5px right margin to space from slider
+        };
         controlsButtonPanel.Children.Add(mainPlayPauseButton); controlsButtonPanel.Children.Add(toggleAdvPanelButton);
 
-        var topMainPlaybackControls = new DockPanel { LastChildFill = true, Height = 35, Margin = new Thickness(5, 0, 5, 0) };
+        var timeDisplayTextBlock = new TextBlock
+        {
+            Foreground = _theme.B_TextColor,
+            FontSize = 11,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(8, 0, 0, 0), // 8px left margin to space from slider
+            MinWidth = 75 // "00:00 / 00:00"
+        };
+        timeDisplayTextBlock.Bind(TextBlock.TextProperty, new Binding("CurrentTimeTotalTimeDisplay"));
+        timeDisplayTextBlock.Bind(IsVisibleProperty, new Binding("PlaybackService.HasCurrentSong"));
+
+
+        var topMainPlaybackControls = new DockPanel
+        {
+            LastChildFill = true,
+            Height = 35,
+            Margin = new Thickness(10, 0) // Overall horizontal padding for the control group
+        };
         DockPanel.SetDock(controlsButtonPanel, Dock.Left);
-        topMainPlaybackControls.Children.Add(controlsButtonPanel); topMainPlaybackControls.Children.Add(mainPlaybackSlider);
+        DockPanel.SetDock(timeDisplayTextBlock, Dock.Right);
+
+        topMainPlaybackControls.Children.Add(controlsButtonPanel);
+        topMainPlaybackControls.Children.Add(timeDisplayTextBlock);
+        topMainPlaybackControls.Children.Add(mainPlaybackSlider); // Added last to fill remaining space
 
         var activeLoopDisplayText = new TextBlock { Foreground = _theme.B_SecondaryTextColor, FontSize = 10, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(10, 0, 10, 2), MinHeight = 14 };
         activeLoopDisplayText.Bind(TextBlock.TextProperty, new Binding("ActiveLoopDisplayText"));
