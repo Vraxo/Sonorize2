@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Diagnostics;
+using Avalonia.Controls; // For Design.IsDesignMode
 
 namespace Sonorize.Services;
 
@@ -18,7 +19,10 @@ public class LoopDataService
     {
         var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var sonorizeAppDataPath = Path.Combine(appDataPath, "Sonorize");
-        Directory.CreateDirectory(sonorizeAppDataPath);
+        if (!Design.IsDesignMode) // Only create directory if not in design mode
+        {
+            Directory.CreateDirectory(sonorizeAppDataPath);
+        }
         _loopDataFilePath = Path.Combine(sonorizeAppDataPath, "loopdata.json");
         LoadLoopData();
         Debug.WriteLine($"[LoopDataService] Initialized. Data loaded from: {_loopDataFilePath}");
@@ -26,6 +30,13 @@ public class LoopDataService
 
     private void LoadLoopData()
     {
+        if (Design.IsDesignMode)
+        {
+            Debug.WriteLine("[LoopDataService] Design Mode: Skipping file system access for loop data loading.");
+            _loopDataStore = new Dictionary<string, LoopStorageData>();
+            return;
+        }
+
         lock (_lock)
         {
             try
@@ -84,6 +95,12 @@ public class LoopDataService
 
     private void SaveLoopData()
     {
+        if (Design.IsDesignMode)
+        {
+            Debug.WriteLine("[LoopDataService] Design Mode: Skipping file system access for loop data saving.");
+            return;
+        }
+
         lock (_lock)
         {
             try

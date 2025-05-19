@@ -12,6 +12,7 @@ using Avalonia.Threading;
 using Avalonia.Media; // For Brushes, Colors
 using Avalonia; // For PixelSize, Vector, Rect, Size, Point
 using Avalonia.Platform; // For RenderTargetBitmap
+using Avalonia.Controls; // For Design.IsDesignMode
 
 namespace Sonorize.Services;
 
@@ -27,20 +28,31 @@ public class MusicLibraryService
         // Default thumbnail creation logic remains the same...
         if (_defaultThumbnail == null)
         {
+            // Check for design mode moved into CreateDefaultMusicalNoteIcon
             _defaultThumbnail = CreateDefaultMusicalNoteIcon();
-            if (_defaultThumbnail == null)
+            if (_defaultThumbnail == null && !Design.IsDesignMode) // Log error only if not in design mode and it failed
             {
                 Debug.WriteLine("[MusicLibService] CRITICAL: Failed to create default thumbnail in constructor.");
             }
-            else
+            else if (_defaultThumbnail != null)
             {
                 Debug.WriteLine("[MusicLibService] Default thumbnail created successfully in constructor.");
+            }
+            else if (Design.IsDesignMode)
+            {
+                Debug.WriteLine("[MusicLibService] Design Mode: Default thumbnail not created as intended.");
             }
         }
     }
     private Bitmap? CreateDefaultMusicalNoteIcon()
     {
         Debug.WriteLine("[ThumbGen] CreateDefaultMusicalNoteIcon called.");
+        if (Design.IsDesignMode) // Check if running in design mode
+        {
+            Debug.WriteLine("[ThumbGen] Design Mode: Skipping RenderTargetBitmap creation for default icon. Returning null.");
+            return null;
+        }
+
         try
         {
             var pixelSize = new Avalonia.PixelSize(64, 64);
@@ -133,7 +145,7 @@ public class MusicLibraryService
     {
         Debug.WriteLine("[MusicLibService] LoadMusicFromDirectoriesAsync called.");
         var supportedExtensions = new[] { ".mp3", ".wav", ".flac", ".m4a", ".ogg" }; // Common audio formats
-        Bitmap? defaultIcon = GetDefaultThumbnail();
+        Bitmap? defaultIcon = GetDefaultThumbnail(); // This will be null in design mode if CreateDefaultMusicalNoteIcon returns null
         int filesProcessed = 0;
 
         foreach (var dir in directories)
@@ -170,7 +182,7 @@ public class MusicLibraryService
                     Artist = "Unknown Artist",       // Default artist
                     Album = "Unknown Album",         // Default album
                     Duration = TimeSpan.Zero,        // Default duration
-                    Thumbnail = thumbnail ?? defaultIcon
+                    Thumbnail = thumbnail ?? defaultIcon // If defaultIcon is null (design mode), thumbnail might be null.
                 };
 
                 try

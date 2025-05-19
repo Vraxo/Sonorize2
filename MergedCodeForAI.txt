@@ -515,6 +515,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Diagnostics;
+using Avalonia.Controls; // For Design.IsDesignMode
 
 namespace Sonorize.Services;
 
@@ -528,7 +529,10 @@ public class LoopDataService
     {
         var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var sonorizeAppDataPath = Path.Combine(appDataPath, "Sonorize");
-        Directory.CreateDirectory(sonorizeAppDataPath);
+        if (!Design.IsDesignMode) // Only create directory if not in design mode
+        {
+            Directory.CreateDirectory(sonorizeAppDataPath);
+        }
         _loopDataFilePath = Path.Combine(sonorizeAppDataPath, "loopdata.json");
         LoadLoopData();
         Debug.WriteLine($"[LoopDataService] Initialized. Data loaded from: {_loopDataFilePath}");
@@ -536,6 +540,13 @@ public class LoopDataService
 
     private void LoadLoopData()
     {
+        if (Design.IsDesignMode)
+        {
+            Debug.WriteLine("[LoopDataService] Design Mode: Skipping file system access for loop data loading.");
+            _loopDataStore = new Dictionary<string, LoopStorageData>();
+            return;
+        }
+
         lock (_lock)
         {
             try
@@ -594,6 +605,12 @@ public class LoopDataService
 
     private void SaveLoopData()
     {
+        if (Design.IsDesignMode)
+        {
+            Debug.WriteLine("[LoopDataService] Design Mode: Skipping file system access for loop data saving.");
+            return;
+        }
+
         lock (_lock)
         {
             try
@@ -687,6 +704,7 @@ using Avalonia.Threading;
 using Avalonia.Media; // For Brushes, Colors
 using Avalonia; // For PixelSize, Vector, Rect, Size, Point
 using Avalonia.Platform; // For RenderTargetBitmap
+using Avalonia.Controls; // For Design.IsDesignMode
 
 namespace Sonorize.Services;
 
@@ -702,20 +720,31 @@ public class MusicLibraryService
         // Default thumbnail creation logic remains the same...
         if (_defaultThumbnail == null)
         {
+            // Check for design mode moved into CreateDefaultMusicalNoteIcon
             _defaultThumbnail = CreateDefaultMusicalNoteIcon();
-            if (_defaultThumbnail == null)
+            if (_defaultThumbnail == null && !Design.IsDesignMode) // Log error only if not in design mode and it failed
             {
                 Debug.WriteLine("[MusicLibService] CRITICAL: Failed to create default thumbnail in constructor.");
             }
-            else
+            else if (_defaultThumbnail != null)
             {
                 Debug.WriteLine("[MusicLibService] Default thumbnail created successfully in constructor.");
+            }
+            else if (Design.IsDesignMode)
+            {
+                Debug.WriteLine("[MusicLibService] Design Mode: Default thumbnail not created as intended.");
             }
         }
     }
     private Bitmap? CreateDefaultMusicalNoteIcon()
     {
         Debug.WriteLine("[ThumbGen] CreateDefaultMusicalNoteIcon called.");
+        if (Design.IsDesignMode) // Check if running in design mode
+        {
+            Debug.WriteLine("[ThumbGen] Design Mode: Skipping RenderTargetBitmap creation for default icon. Returning null.");
+            return null;
+        }
+
         try
         {
             var pixelSize = new Avalonia.PixelSize(64, 64);
@@ -808,7 +837,7 @@ public class MusicLibraryService
     {
         Debug.WriteLine("[MusicLibService] LoadMusicFromDirectoriesAsync called.");
         var supportedExtensions = new[] { ".mp3", ".wav", ".flac", ".m4a", ".ogg" }; // Common audio formats
-        Bitmap? defaultIcon = GetDefaultThumbnail();
+        Bitmap? defaultIcon = GetDefaultThumbnail(); // This will be null in design mode if CreateDefaultMusicalNoteIcon returns null
         int filesProcessed = 0;
 
         foreach (var dir in directories)
@@ -845,7 +874,7 @@ public class MusicLibraryService
                     Artist = "Unknown Artist",       // Default artist
                     Album = "Unknown Album",         // Default album
                     Duration = TimeSpan.Zero,        // Default duration
-                    Thumbnail = thumbnail ?? defaultIcon
+                    Thumbnail = thumbnail ?? defaultIcon // If defaultIcon is null (design mode), thumbnail might be null.
                 };
 
                 try
@@ -1307,6 +1336,7 @@ using Sonorize.Models;
 using System;
 using System.IO;
 using System.Text.Json;
+using Avalonia.Controls; // For Design.IsDesignMode
 
 namespace Sonorize.Services;
 
@@ -1316,6 +1346,12 @@ public class SettingsService
 
     public SettingsService()
     {
+        if (Design.IsDesignMode)
+        {
+            _settingsFilePath = string.Empty; // Dummy path for design mode
+            return;
+        }
+
         var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var sonorizeAppDataPath = Path.Combine(appDataPath, "Sonorize");
         Directory.CreateDirectory(sonorizeAppDataPath); // Ensure directory exists
@@ -1324,6 +1360,11 @@ public class SettingsService
 
     public AppSettings LoadSettings()
     {
+        if (Design.IsDesignMode)
+        {
+            return new AppSettings(); // Return default, do not touch file system
+        }
+
         try
         {
             if (File.Exists(_settingsFilePath))
@@ -1342,6 +1383,11 @@ public class SettingsService
 
     public void SaveSettings(AppSettings settings)
     {
+        if (Design.IsDesignMode)
+        {
+            return; // Do nothing in design mode
+        }
+
         try
         {
             var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
@@ -1363,6 +1409,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Diagnostics;
+using Avalonia.Controls; // For Design.IsDesignMode
 
 namespace Sonorize.Services;
 
@@ -1377,6 +1424,14 @@ public class ThemeService
 
     public ThemeService(string? preferredThemeNameFromSettings)
     {
+        if (Design.IsDesignMode)
+        {
+            _themesDirectory = string.Empty;
+            CurrentTheme = new ThemeColors(); // Provide a default ThemeColors for design mode
+            Debug.WriteLine("[ThemeService] Design Mode: Initialized with default ThemeColors.");
+            return;
+        }
+
         var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var sonorizeAppDataPath = Path.Combine(appDataPath, "Sonorize");
         _themesDirectory = Path.Combine(sonorizeAppDataPath, "Themes");
@@ -1399,17 +1454,14 @@ public class ThemeService
             }
         }
 
-        CurrentTheme = LoadThemeFromFile(themeToLoad);
-        if (CurrentTheme == null) // If chosen (or default) theme failed, use hardcoded
-        {
-            Debug.WriteLine($"[ThemeService] Theme '{themeToLoad}' failed to load. Using hardcoded fallback (standard dark).");
-            CurrentTheme = new ThemeColors(); // Hardcoded fallback (standard dark)
-        }
+        CurrentTheme = LoadThemeFromFile(themeToLoad) ?? new ThemeColors(); // Ensure CurrentTheme is never null
         Debug.WriteLine($"[ThemeService] Current theme loaded: {themeToLoad} (BG: {CurrentTheme.BackgroundColor}, Accent: {CurrentTheme.AccentColor})");
     }
 
     private void EnsureDefaultThemesExist()
     {
+        if (Design.IsDesignMode) return;
+
         string defaultThemePath = Path.Combine(_themesDirectory, DefaultThemeFileName);
         if (!File.Exists(defaultThemePath))
         {
@@ -1425,7 +1477,12 @@ public class ThemeService
 
     public ThemeColors? LoadThemeFromFile(string themeFileName)
     {
-        // ... (LoadThemeFromFile remains the same as previous correct version) ...
+        if (Design.IsDesignMode)
+        {
+            Debug.WriteLine($"[ThemeService] Design Mode: LoadThemeFromFile returning new ThemeColors for '{themeFileName}'.");
+            return new ThemeColors(); // Provide a default ThemeColors for design mode
+        }
+
         string filePath = Path.Combine(_themesDirectory, themeFileName);
         Debug.WriteLine($"[ThemeService] Attempting to load theme from: {filePath}");
         if (File.Exists(filePath))
@@ -1455,7 +1512,8 @@ public class ThemeService
 
     public void SaveThemeToFile(ThemeColors theme, string themeFileName)
     {
-        // ... (SaveThemeToFile remains the same as previous correct version) ...
+        if (Design.IsDesignMode) return;
+
         string filePath = Path.Combine(_themesDirectory, themeFileName);
         try
         {
@@ -1472,6 +1530,12 @@ public class ThemeService
 
     public List<string> GetAvailableThemeFiles()
     {
+        if (Design.IsDesignMode)
+        {
+            Debug.WriteLine("[ThemeService] Design Mode: GetAvailableThemeFiles returning empty list.");
+            return new List<string>();
+        }
+
         if (!Directory.Exists(_themesDirectory))
         {
             return new List<string>();
@@ -2533,569 +2597,189 @@ public class ViewModelBase : INotifyPropertyChanged
 }
 </file>
 
-<file path="Source\Views\MainView.cs">
-// Path: Source/Views/MainView.cs
-using System;
-using Avalonia.Controls;
-using Avalonia.Layout;
-using Avalonia.Media;
-using Sonorize.Models;
-using Sonorize.ViewModels;
-using Avalonia.Data;
-using Sonorize.Controls;
-using System.Diagnostics;
+<file path="Source\Views\MainView.axaml.cs">
+// Path: Source/Views/MainView.axaml.cs
 using Avalonia;
-using Avalonia.Controls.Templates;
-using Avalonia.Controls.Primitives; // For Thumb, ToggleButton
-using Avalonia.Media.Imaging;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives; // For Thumb
 using Avalonia.Data.Converters;
-using Avalonia.Styling;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Markup.Xaml;
+using Avalonia.Media;
+using Sonorize.Controls;
+using Sonorize.Models;
 using Sonorize.Services;
+using Sonorize.ViewModels;
+using System;
+using System.Diagnostics; // For Design.IsDesignMode if used
 
-namespace Sonorize.Views;
-public class MainWindow : Window
+namespace Sonorize.Views
 {
-    private readonly ThemeColors _theme;
-
-    public MainWindow(ThemeColors theme)
+    public partial class MainWindow : Window
     {
-        _theme = theme;
-        Title = "Sonorize"; Width = 950; Height = 750; MinWidth = 700; MinHeight = 500;
-        WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        Background = _theme.B_BackgroundColor;
+        private readonly ThemeColors? _theme;
 
-        var mainGrid = new Grid
+        // Parameterless constructor for XAML previewer and instantiation by Avalonia
+        public MainWindow()
         {
-            RowDefinitions = new RowDefinitions
+            InitializeComponent();
+#if DEBUG
+            if (Design.IsDesignMode)
             {
-                new RowDefinition(GridLength.Auto),
-                new RowDefinition(GridLength.Auto),
-                new RowDefinition(GridLength.Star),
-                new RowDefinition(GridLength.Auto),
-                new RowDefinition(GridLength.Auto),
-                new RowDefinition(GridLength.Auto)
+                // Design-time specific logic or DataContext setup can go here
+                // For example:
+                var loopDataService = new LoopDataService();
+                var settingsService = new SettingsService();
+                var musicLibraryService = new MusicLibraryService(loopDataService);
+                var playbackService = new PlaybackService();
+                var designTimeThemeColors = new ThemeColors();
+                var waveformService = new WaveformService();
+
+                DataContext = new MainWindowViewModel(
+                    settingsService,
+                    musicLibraryService,
+                    playbackService,
+                    designTimeThemeColors,
+                    waveformService,
+                    loopDataService
+                );
             }
-        };
-
-        var menu = CreateMenu();
-        Grid.SetRow(menu, 0);
-        mainGrid.Children.Add(menu);
-
-        var searchBarPanel = CreateSearchBarPanel();
-        Grid.SetRow(searchBarPanel, 1);
-        mainGrid.Children.Add(searchBarPanel);
-
-        var tabControl = CreateMainTabView();
-        Grid.SetRow(tabControl, 2);
-        mainGrid.Children.Add(tabControl);
-
-        var advancedPlaybackPanel = CreateAdvancedPlaybackPanel();
-        advancedPlaybackPanel.Bind(Visual.IsVisibleProperty, new Binding("IsAdvancedPanelVisible"));
-        Grid.SetRow(advancedPlaybackPanel, 3);
-        mainGrid.Children.Add(advancedPlaybackPanel);
-
-        var mainPlaybackControls = CreateMainPlaybackControls();
-        Grid.SetRow(mainPlaybackControls, 4);
-        mainGrid.Children.Add(mainPlaybackControls);
-
-        var statusBar = CreateStatusBar();
-        Grid.SetRow(statusBar, 5);
-        mainGrid.Children.Add(statusBar);
-
-        Content = mainGrid;
-    }
-
-    private Menu CreateMenu()
-    {
-        var menu = new Menu { Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor };
-        var fileMenuItem = new MenuItem { Header = "_File", Foreground = _theme.B_TextColor };
-        var addDirectoryMenuItem = new MenuItem { Header = "_Add Music Directory...", Foreground = _theme.B_TextColor };
-        addDirectoryMenuItem.Bind(MenuItem.CommandProperty, new Binding("AddDirectoryAndRefreshCommand"));
-        addDirectoryMenuItem.CommandParameter = this;
-        var settingsMenuItem = new MenuItem { Header = "_Settings...", Foreground = _theme.B_TextColor };
-        settingsMenuItem.Bind(MenuItem.CommandProperty, new Binding("OpenSettingsCommand"));
-        settingsMenuItem.CommandParameter = this;
-        var exitMenuItem = new MenuItem { Header = "E_xit", Foreground = _theme.B_TextColor };
-        exitMenuItem.Bind(MenuItem.CommandProperty, new Binding("ExitCommand"));
-        fileMenuItem.Items.Add(addDirectoryMenuItem); fileMenuItem.Items.Add(settingsMenuItem);
-        fileMenuItem.Items.Add(new Separator()); fileMenuItem.Items.Add(exitMenuItem);
-        menu.Items.Add(fileMenuItem);
-        return menu;
-    }
-
-    private Panel CreateSearchBarPanel()
-    {
-        var searchBox = new TextBox
-        {
-            Watermark = "Search songs by title, artist, or album...",
-            Margin = new Thickness(10, 5, 10, 5),
-            Padding = new Thickness(10, 7),
-            Background = _theme.B_SlightlyLighterBackground,
-            Foreground = _theme.B_TextColor,
-            BorderBrush = _theme.B_ControlBackgroundColor,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4),
-            FontSize = 14
-        };
-        searchBox.Bind(TextBox.TextProperty, new Binding("SearchQuery", BindingMode.TwoWay));
-        searchBox.Styles.Add(new Style(s => s.Is<TextBox>().Class(":focus"))
-        {
-            Setters = { new Setter(TextBox.BorderBrushProperty, _theme.B_AccentColor) }
-        });
-
-        var panel = new Panel
-        {
-            Children = { searchBox },
-            Margin = new Thickness(0, 5, 0, 0)
-        };
-        return panel;
-    }
-
-    private TabControl CreateMainTabView()
-    {
-        var tabControl = new TabControl
-        {
-            Background = _theme.B_BackgroundColor,
-            Margin = new Thickness(10, 5, 10, 5),
-            BorderThickness = new Thickness(0),
-            Padding = new Thickness(0)
-        };
-        tabControl.Bind(TabControl.SelectedIndexProperty, new Binding("ActiveTabIndex", BindingMode.TwoWay));
-
-
-        var tabItemStyle = new Style(s => s.Is<TabItem>());
-        tabItemStyle.Setters.Add(new Setter(TabItem.BackgroundProperty, _theme.B_BackgroundColor));
-        tabItemStyle.Setters.Add(new Setter(TabItem.ForegroundProperty, _theme.B_SecondaryTextColor));
-        tabItemStyle.Setters.Add(new Setter(TabItem.PaddingProperty, new Thickness(12, 7)));
-        tabItemStyle.Setters.Add(new Setter(TabItem.FontSizeProperty, 13.0));
-        tabItemStyle.Setters.Add(new Setter(TabItem.FontWeightProperty, FontWeight.SemiBold));
-        tabItemStyle.Setters.Add(new Setter(TabItem.BorderThicknessProperty, new Thickness(0)));
-        tabItemStyle.Setters.Add(new Setter(TabItem.BorderBrushProperty, Brushes.Transparent));
-
-
-        var selectedTabItemStyle = new Style(s => s.Is<TabItem>().Class(":selected"));
-        selectedTabItemStyle.Setters.Add(new Setter(TabItem.BackgroundProperty, _theme.B_BackgroundColor));
-        selectedTabItemStyle.Setters.Add(new Setter(TabItem.ForegroundProperty, _theme.B_TextColor));
-
-        var pointerOverTabItemStyle = new Style(s => s.Is<TabItem>().Class(":pointerover").Not(x => x.Class(":selected")));
-        pointerOverTabItemStyle.Setters.Add(new Setter(TabItem.BackgroundProperty, _theme.B_SlightlyLighterBackground));
-        pointerOverTabItemStyle.Setters.Add(new Setter(TabItem.ForegroundProperty, _theme.B_TextColor));
-
-        tabControl.Styles.Add(tabItemStyle);
-        tabControl.Styles.Add(selectedTabItemStyle);
-        tabControl.Styles.Add(pointerOverTabItemStyle);
-
-        var libraryTab = new TabItem
-        {
-            Header = "LIBRARY",
-            Content = CreateSongListScrollViewer()
-        };
-
-        var artistsTab = new TabItem
-        {
-            Header = "ARTISTS",
-            Content = CreateArtistsListScrollViewer()
-        };
-
-        var albumsTab = new TabItem
-        {
-            Header = "ALBUMS",
-            Content = CreateAlbumsListScrollViewer()
-        };
-
-        tabControl.Items.Add(libraryTab);
-        tabControl.Items.Add(artistsTab);
-        tabControl.Items.Add(albumsTab);
-
-        return tabControl;
-    }
-
-    private ScrollViewer CreateSongListScrollViewer()
-    {
-        var songListBox = new ListBox
-        {
-            Background = _theme.B_ListBoxBackground,
-            BorderThickness = new Thickness(0),
-            Margin = new Thickness(10),
-            Name = "SongListBox"
-        };
-
-        songListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>())
-        {
-            Setters = {
-            new Setter(TemplatedControl.BackgroundProperty, _theme.B_ListBoxBackground),
-            new Setter(TextBlock.ForegroundProperty, _theme.B_TextColor)
+#endif
         }
-        });
-        songListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":pointerover").Not(xx => xx.Class(":selected")))
-        { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_ControlBackgroundColor) } });
-        songListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected"))
+
+        public MainWindow(ThemeColors theme) : this() // Chain to parameterless constructor
         {
-            Setters = {
-            new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
-            new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
+            _theme = theme;
+            ApplyThemeStyles();
         }
-        });
-        songListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected").Class(":pointerover"))
+
+        private void InitializeComponent()
         {
-            Setters = {
-            new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
-            new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
+            AvaloniaXamlLoader.Load(this);
         }
-        });
 
-        songListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("FilteredSongs"));
-        songListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedSong", BindingMode.TwoWay));
-
-        songListBox.ItemTemplate = new FuncDataTemplate<Song>((song, nameScope) => {
-            var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 5, 0), Source = song.Thumbnail, Stretch = Stretch.UniformToFill };
-            RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
-            var titleBlock = new TextBlock { Text = song.Title, FontSize = 14, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 1) };
-            var artistBlock = new TextBlock { Text = song.Artist, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
-            var durationBlock = new TextBlock { Text = song.DurationString, FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
-            var textStack = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Children = { titleBlock, artistBlock } };
-            var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), VerticalAlignment = VerticalAlignment.Center, Children = { image, textStack, durationBlock } };
-            Grid.SetColumn(image, 0); Grid.SetColumn(textStack, 1); Grid.SetColumn(durationBlock, 2);
-            return new Border { Padding = new Thickness(10, 6, 10, 6), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
-        }, supportsRecycling: true);
-
-        return new ScrollViewer { Content = songListBox, Padding = new Thickness(0, 0, 0, 5) };
-    }
-
-    private ScrollViewer CreateArtistsListScrollViewer()
-    {
-        var artistsListBox = new ListBox
+        private void ApplyThemeStyles()
         {
-            Background = _theme.B_ListBoxBackground,
-            BorderThickness = new Thickness(0),
-            Margin = new Thickness(10)
-        };
+            if (_theme == null) return;
 
-        artistsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>())
-        {
-            Setters = {
-            new Setter(TemplatedControl.BackgroundProperty, _theme.B_ListBoxBackground),
-            new Setter(TextBlock.ForegroundProperty, _theme.B_TextColor)
+            // Window Background
+            this.Background = _theme.B_BackgroundColor;
+
+            // Menu
+            var appMenu = this.FindControl<Menu>("AppMenu");
+            if (appMenu != null)
+            {
+                appMenu.Background = _theme.B_SlightlyLighterBackground;
+                appMenu.Foreground = _theme.B_TextColor; // Default for items
+            }
+            var fileMenuItem = this.FindControl<MenuItem>("FileMenuItem");
+            if (fileMenuItem != null) fileMenuItem.Foreground = _theme.B_TextColor;
+            var addDirectoryMenuItem = this.FindControl<MenuItem>("AddDirectoryMenuItem");
+            if (addDirectoryMenuItem != null) addDirectoryMenuItem.Foreground = _theme.B_TextColor;
+            var settingsMenuItem = this.FindControl<MenuItem>("SettingsMenuItem");
+            if (settingsMenuItem != null) settingsMenuItem.Foreground = _theme.B_TextColor;
+            var exitMenuItem = this.FindControl<MenuItem>("ExitMenuItem");
+            if (exitMenuItem != null) exitMenuItem.Foreground = _theme.B_TextColor;
+
+            // SearchBox
+            var searchBox = this.FindControl<TextBox>("SearchBox");
+            if (searchBox != null)
+            {
+                searchBox.Background = _theme.B_SlightlyLighterBackground;
+                searchBox.Foreground = _theme.B_TextColor;
+                searchBox.BorderBrush = _theme.B_ControlBackgroundColor;
+            }
+
+            // TabControl
+            var mainTabControl = this.FindControl<TabControl>("MainTabControl");
+            if (mainTabControl != null)
+            {
+                mainTabControl.Background = _theme.B_BackgroundColor;
+            }
+            // TabItem styles are handled by XAML bindings to DataContext.CurrentTheme
+
+            // ListBoxes
+            var songListBox = this.FindControl<ListBox>("SongListBox");
+            if (songListBox != null) songListBox.Background = _theme.B_ListBoxBackground;
+            var artistsListBox = this.FindControl<ListBox>("ArtistsListBox");
+            if (artistsListBox != null) artistsListBox.Background = _theme.B_ListBoxBackground;
+            var albumsListBox = this.FindControl<ListBox>("AlbumsListBox");
+            if (albumsListBox != null) albumsListBox.Background = _theme.B_ListBoxBackground;
+            // ListBoxItem styles are handled by XAML bindings to DataContext.CurrentTheme
+
+            // AdvancedPlaybackPanel Elements
+            var advancedPlaybackPanelBorder = this.FindControl<Border>("AdvancedPlaybackPanelBorder");
+            if (advancedPlaybackPanelBorder != null)
+            {
+                advancedPlaybackPanelBorder.Background = _theme.B_SlightlyLighterBackground;
+                advancedPlaybackPanelBorder.BorderBrush = _theme.B_AccentColor;
+            }
+
+            var speedLabel = this.FindControl<TextBlock>("SpeedLabel");
+            if (speedLabel != null) speedLabel.Foreground = _theme.B_TextColor;
+            var speedSlider = this.FindControl<Slider>("SpeedSlider");
+            if (speedSlider != null) { speedSlider.Foreground = _theme.B_AccentColor; speedSlider.Background = _theme.B_SecondaryTextColor; } // Background here is track background
+            var speedDisplay = this.FindControl<TextBlock>("SpeedDisplay");
+            if (speedDisplay != null) speedDisplay.Foreground = _theme.B_TextColor;
+
+            var pitchLabel = this.FindControl<TextBlock>("PitchLabel");
+            if (pitchLabel != null) pitchLabel.Foreground = _theme.B_TextColor;
+            var pitchSlider = this.FindControl<Slider>("PitchSlider");
+            if (pitchSlider != null) { pitchSlider.Foreground = _theme.B_AccentColor; pitchSlider.Background = _theme.B_SecondaryTextColor; }
+            var pitchDisplay = this.FindControl<TextBlock>("PitchDisplay");
+            if (pitchDisplay != null) pitchDisplay.Foreground = _theme.B_TextColor;
+
+            var waveformDisplay = this.FindControl<WaveformDisplayControl>("WaveformDisplay");
+            if (waveformDisplay != null)
+            {
+                waveformDisplay.Background = _theme.B_ControlBackgroundColor;
+                waveformDisplay.WaveformBrush = _theme.B_AccentColor;
+                waveformDisplay.PositionMarkerBrush = Brushes.OrangeRed; // Or from theme
+                Color accentColorForLoopRegion = (_theme.B_AccentColor as ISolidColorBrush)?.Color ?? Colors.Orange;
+                waveformDisplay.LoopRegionBrush = new SolidColorBrush(accentColorForLoopRegion, 0.3);
+            }
+            var waveformLoadingIndicator = this.FindControl<ProgressBar>("WaveformLoadingIndicator");
+            if (waveformLoadingIndicator != null) waveformLoadingIndicator.Foreground = _theme.B_AccentColor;
+
+            var loopDefinitionLabel = this.FindControl<TextBlock>("LoopDefinitionLabel");
+            if (loopDefinitionLabel != null) loopDefinitionLabel.Foreground = _theme.B_TextColor;
+            var setStartBtn = this.FindControl<Button>("SetStartBtn");
+            if (setStartBtn != null) { setStartBtn.Background = _theme.B_ControlBackgroundColor; setStartBtn.Foreground = _theme.B_TextColor; }
+            var startDisp = this.FindControl<TextBlock>("StartDisp");
+            if (startDisp != null) startDisp.Foreground = _theme.B_SecondaryTextColor;
+            var setEndBtn = this.FindControl<Button>("SetEndBtn");
+            if (setEndBtn != null) { setEndBtn.Background = _theme.B_ControlBackgroundColor; setEndBtn.Foreground = _theme.B_TextColor; }
+            var endDisp = this.FindControl<TextBlock>("EndDisp");
+            if (endDisp != null) endDisp.Foreground = _theme.B_SecondaryTextColor;
+            var saveLoopBtn = this.FindControl<Button>("SaveLoopBtn");
+            if (saveLoopBtn != null) { saveLoopBtn.Background = _theme.B_AccentColor; saveLoopBtn.Foreground = _theme.B_AccentForeground; }
+            var clearLoopBtn = this.FindControl<Button>("ClearLoopBtn");
+            if (clearLoopBtn != null) { clearLoopBtn.Background = _theme.B_ControlBackgroundColor; clearLoopBtn.Foreground = _theme.B_TextColor; }
+            var loopActiveCheckBox = this.FindControl<CheckBox>("LoopActiveCheckBox");
+            if (loopActiveCheckBox != null) loopActiveCheckBox.Foreground = _theme.B_TextColor;
+
+            // Main Playback Controls
+            var mainPlaybackControlsPanel = this.FindControl<StackPanel>("MainPlaybackControlsPanel");
+            if (mainPlaybackControlsPanel != null) mainPlaybackControlsPanel.Background = _theme.B_BackgroundColor;
+
+            var mainPlayPauseButton = this.FindControl<Button>("MainPlayPauseButton");
+            if (mainPlayPauseButton != null) { mainPlayPauseButton.Background = _theme.B_SlightlyLighterBackground; mainPlayPauseButton.Foreground = _theme.B_TextColor; mainPlayPauseButton.BorderBrush = _theme.B_AccentColor; }
+            var toggleAdvPanelButton = this.FindControl<Button>("ToggleAdvPanelButton");
+            if (toggleAdvPanelButton != null) { toggleAdvPanelButton.Background = _theme.B_SlightlyLighterBackground; toggleAdvPanelButton.Foreground = _theme.B_TextColor; toggleAdvPanelButton.BorderBrush = _theme.B_AccentColor; }
+            var mainPlaybackSlider = this.FindControl<Slider>("MainPlaybackSlider");
+            if (mainPlaybackSlider != null) { mainPlaybackSlider.Background = _theme.B_SecondaryTextColor; mainPlaybackSlider.Foreground = _theme.B_AccentColor; }
+            var activeLoopDisplayTextLabel = this.FindControl<TextBlock>("ActiveLoopDisplayTextLabel");
+            if (activeLoopDisplayTextLabel != null) activeLoopDisplayTextLabel.Foreground = _theme.B_SecondaryTextColor;
+
+            // StatusBar
+            var statusBarBorder = this.FindControl<Border>("StatusBarBorder");
+            if (statusBarBorder != null) statusBarBorder.Background = _theme.B_SlightlyLighterBackground;
+            var statusBarTextLabel = this.FindControl<TextBlock>("StatusBarTextLabel");
+            if (statusBarTextLabel != null) statusBarTextLabel.Foreground = _theme.B_SecondaryTextColor;
         }
-        });
-        artistsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":pointerover").Not(xx => xx.Class(":selected")))
-        { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_ControlBackgroundColor) } });
-        artistsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected"))
-        {
-            Setters = {
-            new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
-            new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
-        }
-        });
-        artistsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected").Class(":pointerover"))
-        {
-            Setters = {
-            new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
-            new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
-        }
-        });
 
-        artistsListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("Artists"));
-        artistsListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedArtist", BindingMode.TwoWay));
-
-
-        artistsListBox.ItemTemplate = new FuncDataTemplate<ArtistViewModel>((artistVM, nameScope) =>
-        {
-            var image = new Image
-            {
-                Width = 32,
-                Height = 32,
-                Margin = new Thickness(5, 0, 10, 0),
-                Source = artistVM.Thumbnail,
-                Stretch = Stretch.UniformToFill
-            };
-            RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
-
-            var artistNameBlock = new TextBlock
-            {
-                Text = artistVM.Name,
-                FontSize = 14,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-
-            var itemGrid = new Grid
-            {
-                ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            itemGrid.Children.Add(image);
-            itemGrid.Children.Add(artistNameBlock);
-            Grid.SetColumn(image, 0);
-            Grid.SetColumn(artistNameBlock, 1);
-
-            return new Border
-            {
-                Padding = new Thickness(10, 8),
-                MinHeight = 44,
-                Background = Brushes.Transparent,
-                Child = itemGrid
-            };
-        }, supportsRecycling: true);
-
-        return new ScrollViewer { Content = artistsListBox, Padding = new Thickness(0, 0, 0, 5) };
-    }
-
-    private ScrollViewer CreateAlbumsListScrollViewer()
-    {
-        var albumsListBox = new ListBox
-        {
-            Background = _theme.B_ListBoxBackground,
-            BorderThickness = new Thickness(0),
-            Margin = new Thickness(10)
-        };
-
-        albumsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>())
-        {
-            Setters = {
-            new Setter(TemplatedControl.BackgroundProperty, _theme.B_ListBoxBackground),
-            new Setter(TextBlock.ForegroundProperty, _theme.B_TextColor)
-        }
-        });
-        albumsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":pointerover").Not(xx => xx.Class(":selected")))
-        { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_ControlBackgroundColor) } });
-        albumsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected"))
-        {
-            Setters = {
-            new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
-            new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
-        }
-        });
-        albumsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected").Class(":pointerover"))
-        {
-            Setters = {
-            new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
-            new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
-        }
-        });
-
-        albumsListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("Albums"));
-        albumsListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedAlbum", BindingMode.TwoWay));
-
-        albumsListBox.ItemTemplate = new FuncDataTemplate<AlbumViewModel>((albumVM, nameScope) =>
-        {
-            var image = new Image
-            {
-                Width = 32,
-                Height = 32,
-                Margin = new Thickness(5, 0, 10, 0),
-                Source = albumVM.Thumbnail,
-                Stretch = Stretch.UniformToFill
-            };
-            RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
-
-            var albumTitleBlock = new TextBlock
-            {
-                Text = albumVM.Title,
-                FontSize = 14,
-                FontWeight = FontWeight.Normal,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            var albumArtistBlock = new TextBlock
-            {
-                Text = albumVM.Artist,
-                FontSize = 11,
-                Foreground = _theme.B_SecondaryTextColor,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            var textStack = new StackPanel
-            {
-                Orientation = Orientation.Vertical,
-                VerticalAlignment = VerticalAlignment.Center,
-                Children = { albumTitleBlock, albumArtistBlock }
-            };
-
-
-            var itemGrid = new Grid
-            {
-                ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            itemGrid.Children.Add(image);
-            itemGrid.Children.Add(textStack);
-            Grid.SetColumn(image, 0);
-            Grid.SetColumn(textStack, 1);
-
-            return new Border
-            {
-                Padding = new Thickness(10, 6),
-                MinHeight = 44,
-                Background = Brushes.Transparent,
-                Child = itemGrid
-            };
-        }, supportsRecycling: true);
-
-        return new ScrollViewer { Content = albumsListBox, Padding = new Thickness(0, 0, 0, 5) };
-    }
-
-
-    private Border CreateAdvancedPlaybackPanel()
-    {
-        var panelRoot = new Border
-        {
-            Background = _theme.B_SlightlyLighterBackground,
-            Padding = new Thickness(10),
-            BorderBrush = _theme.B_AccentColor,
-            BorderThickness = new Thickness(0, 1, 0, 1),
-            MinHeight = 180,
-            ClipToBounds = true
-        };
-        var mainStack = new StackPanel { Spacing = 10 };
-
-        var speedPitchGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,15,Auto,*,Auto"), Margin = new Thickness(0, 0, 0, 5) };
-        var speedLabel = new TextBlock { Text = "Tempo:", VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_TextColor, Margin = new Thickness(0, 0, 5, 0) };
-        var speedSlider = new Slider { Minimum = 0.5, Maximum = 2.0, SmallChange = 0.05, LargeChange = 0.25, TickFrequency = 0.25, Foreground = _theme.B_AccentColor, Background = _theme.B_SecondaryTextColor };
-        speedSlider.Styles.Add(new Style(s => s.Is<Thumb>()) { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor) } });
-        speedSlider.Bind(Slider.ValueProperty, new Binding("PlaybackSpeed", BindingMode.TwoWay));
-        var speedDisplay = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0), Foreground = _theme.B_TextColor, MinWidth = 35, HorizontalAlignment = HorizontalAlignment.Right };
-        speedDisplay.Bind(TextBlock.TextProperty, new Binding("PlaybackSpeedDisplay"));
-
-        var pitchLabel = new TextBlock { Text = "Pitch:", VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_TextColor, Margin = new Thickness(0, 0, 5, 0) };
-        var pitchSlider = new Slider { Minimum = -4, Maximum = 4, SmallChange = 0.1, LargeChange = 0.5, TickFrequency = 0.5, Foreground = _theme.B_AccentColor, Background = _theme.B_SecondaryTextColor };
-        pitchSlider.Styles.Add(new Style(s => s.Is<Thumb>()) { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor) } });
-        pitchSlider.Bind(Slider.ValueProperty, new Binding("PlaybackPitch", BindingMode.TwoWay));
-        var pitchDisplay = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0), Foreground = _theme.B_TextColor, MinWidth = 45, HorizontalAlignment = HorizontalAlignment.Right };
-        pitchDisplay.Bind(TextBlock.TextProperty, new Binding("PlaybackPitchDisplay"));
-
-        Grid.SetColumn(speedLabel, 0); Grid.SetColumn(speedSlider, 1); Grid.SetColumn(speedDisplay, 2);
-        Grid.SetColumn(pitchLabel, 4); Grid.SetColumn(pitchSlider, 5); Grid.SetColumn(pitchDisplay, 6);
-        speedPitchGrid.Children.Add(speedLabel); speedPitchGrid.Children.Add(speedSlider); speedPitchGrid.Children.Add(speedDisplay);
-        speedPitchGrid.Children.Add(pitchLabel); speedPitchGrid.Children.Add(pitchSlider); speedPitchGrid.Children.Add(pitchDisplay);
-        mainStack.Children.Add(speedPitchGrid);
-
-        Color accentColorForLoopRegion = (_theme.B_AccentColor as ISolidColorBrush)?.Color ?? Colors.Orange;
-        var waveformDisplay = new WaveformDisplayControl
-        {
-            Height = 80,
-            MinHeight = 60,
-            Background = _theme.B_ControlBackgroundColor,
-            WaveformBrush = _theme.B_AccentColor,
-            PositionMarkerBrush = Brushes.OrangeRed,
-            LoopRegionBrush = new SolidColorBrush(accentColorForLoopRegion, 0.3)
-        };
-        waveformDisplay.Bind(WaveformDisplayControl.WaveformPointsProperty, new Binding("WaveformRenderData"));
-        waveformDisplay.Bind(WaveformDisplayControl.CurrentPositionProperty, new Binding("PlaybackService.CurrentPosition"));
-        waveformDisplay.Bind(WaveformDisplayControl.DurationProperty, new Binding("PlaybackService.CurrentSongDuration"));
-        waveformDisplay.Bind(WaveformDisplayControl.ActiveLoopProperty, new Binding("PlaybackService.CurrentSong.SavedLoop"));
-        waveformDisplay.SeekRequested += (s, time) => { if (DataContext is MainWindowViewModel vm) vm.WaveformSeekCommand.Execute(time); };
-
-        var waveformLoadingIndicator = new ProgressBar { IsIndeterminate = true, Height = 5, Margin = new Thickness(0, -5, 0, 0), Foreground = _theme.B_AccentColor, Background = Brushes.Transparent };
-        waveformLoadingIndicator.Bind(Visual.IsVisibleProperty, new Binding("IsWaveformLoading"));
-        var waveformContainer = new Panel();
-        waveformContainer.Children.Add(waveformDisplay); waveformContainer.Children.Add(waveformLoadingIndicator);
-        mainStack.Children.Add(waveformContainer);
-
-        var loopControlsOuterPanel = new StackPanel
-        {
-            Orientation = Orientation.Vertical,
-            Spacing = 5,
-            Margin = new Thickness(0, 10, 0, 0)
-        };
-
-        var loopDefinitionLabel = new TextBlock
-        {
-            Text = "Define Loop:",
-            FontSize = 12,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = _theme.B_TextColor
-        };
-
-        var loopActionsPanel = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        var setStartBtn = new Button { Content = "A", FontSize = 12, Padding = new Thickness(10, 5), MinWidth = 40, Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
-        setStartBtn.Bind(Button.CommandProperty, new Binding("CaptureLoopStartCandidateCommand"));
-        var startDisp = new TextBlock { FontSize = 11, Margin = new Thickness(3, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, MinWidth = 60 };
-        startDisp.Bind(TextBlock.TextProperty, new Binding("NewLoopStartCandidateDisplay"));
-
-        var setEndBtn = new Button { Content = "B", FontSize = 12, Padding = new Thickness(10, 5), MinWidth = 40, Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
-        setEndBtn.Bind(Button.CommandProperty, new Binding("CaptureLoopEndCandidateCommand"));
-        var endDisp = new TextBlock { FontSize = 11, Margin = new Thickness(3, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, MinWidth = 60 };
-        endDisp.Bind(TextBlock.TextProperty, new Binding("NewLoopEndCandidateDisplay"));
-
-        var saveLoopBtn = new Button { Content = "Save Loop", FontSize = 11, Padding = new Thickness(10, 5), Background = _theme.B_AccentColor, Foreground = _theme.B_AccentForeground };
-        saveLoopBtn.Bind(Button.CommandProperty, new Binding("SaveLoopCommand"));
-        saveLoopBtn.Bind(Button.IsEnabledProperty, new Binding("CanSaveLoopRegion"));
-
-        var clearLoopBtn = new Button { Content = "Clear Loop", FontSize = 11, Padding = new Thickness(10, 5), Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
-        clearLoopBtn.Bind(Button.CommandProperty, new Binding("ClearLoopCommand"));
-        var clearLoopBinding = new Binding("PlaybackService.CurrentSong.SavedLoop")
-        {
-            Converter = NotNullToBooleanConverter.Instance
-        };
-        clearLoopBtn.Bind(Button.IsEnabledProperty, clearLoopBinding);
-
-
-        loopActionsPanel.Children.Add(setStartBtn);
-        loopActionsPanel.Children.Add(startDisp);
-        loopActionsPanel.Children.Add(setEndBtn);
-        loopActionsPanel.Children.Add(endDisp);
-        loopActionsPanel.Children.Add(saveLoopBtn);
-        loopActionsPanel.Children.Add(clearLoopBtn);
-
-        var loopActiveTogglePanel = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Margin = new Thickness(0, 8, 0, 0),
-            Spacing = 8,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        var loopActiveCheckBox = new CheckBox
-        {
-            Content = "Activate Loop",
-            Foreground = _theme.B_TextColor,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        loopActiveCheckBox.Bind(ToggleButton.IsCheckedProperty, new Binding("IsCurrentLoopActiveUiBinding", BindingMode.TwoWay));
-
-        var loopActiveCheckBoxIsEnabledBinding = new Binding("PlaybackService.CurrentSong.SavedLoop")
-        {
-            Converter = NotNullToBooleanConverter.Instance
-        };
-        loopActiveCheckBox.Bind(IsEnabledProperty, loopActiveCheckBoxIsEnabledBinding);
-
-        loopActiveTogglePanel.Children.Add(loopActiveCheckBox);
-
-        loopControlsOuterPanel.Children.Add(loopDefinitionLabel);
-        loopControlsOuterPanel.Children.Add(loopActionsPanel);
-        loopControlsOuterPanel.Children.Add(loopActiveTogglePanel);
-
-        mainStack.Children.Add(loopControlsOuterPanel);
-        panelRoot.Child = mainStack;
-        return panelRoot;
-    }
-
-    private StackPanel CreateMainPlaybackControls()
-    {
-        var mainPlaybackSlider = new Slider
-        {
-            Name = "MainPlaybackSliderInstance",
-            Minimum = 0,
-            Margin = new Thickness(10, 0),
-            VerticalAlignment = VerticalAlignment.Center,
-            Background = _theme.B_SecondaryTextColor,
-            Foreground = _theme.B_AccentColor
-        };
-        mainPlaybackSlider.Styles.Add(new Style(s => s.Is<Thumb>()) { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor) } });
-
-        // Bind Maximum to the duration in seconds from PlaybackService (via ViewModel if needed, but direct path is fine if PlaybackService is accessible)
-        mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("PlaybackService.CurrentSongDurationSeconds"));
-        // Bind Value TwoWay to the new SliderPositionSeconds property in MainWindowViewModel
-        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("SliderPositionSeconds", BindingMode.TwoWay));
-        mainPlaybackSlider.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
-
-
-        var mainPlayPauseButton = new Button { Content = "Play", Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(10, 5), MinWidth = 70 };
-        mainPlayPauseButton.Click += (s, e) =>
+        private void MainPlayPauseButton_Click(object? sender, RoutedEventArgs e)
         {
             if (DataContext is MainWindowViewModel vm)
             {
@@ -3104,82 +2788,43 @@ public class MainWindow : Window
                 else
                     vm.PlaybackService.Resume();
             }
-        };
-
-        var playPauseContentBinding = new Binding("PlaybackService.IsPlaying")
-        {
-            Converter = BooleanToPlayPauseTextConverter.Instance
-        };
-        mainPlayPauseButton.Bind(Button.ContentProperty, playPauseContentBinding);
-        mainPlayPauseButton.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
-
-        var toggleAdvPanelButton = new Button { Content = "+", Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(8, 4), MinWidth = 30, FontWeight = FontWeight.Bold, Margin = new Thickness(5, 0, 0, 0) };
-        toggleAdvPanelButton.Bind(Button.CommandProperty, new Binding("ToggleAdvancedPanelCommand"));
-        toggleAdvPanelButton.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
-
-        var controlsButtonPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0, 10, 0) };
-        controlsButtonPanel.Children.Add(mainPlayPauseButton); controlsButtonPanel.Children.Add(toggleAdvPanelButton);
-
-        var topMainPlaybackControls = new DockPanel { LastChildFill = true, Height = 35, Margin = new Thickness(5, 0, 5, 0) };
-        DockPanel.SetDock(controlsButtonPanel, Dock.Left);
-        topMainPlaybackControls.Children.Add(controlsButtonPanel); topMainPlaybackControls.Children.Add(mainPlaybackSlider);
-
-        var activeLoopDisplayText = new TextBlock { Foreground = _theme.B_SecondaryTextColor, FontSize = 10, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(10, 0, 10, 2), MinHeight = 14 };
-        activeLoopDisplayText.Bind(TextBlock.TextProperty, new Binding("ActiveLoopDisplayText"));
-
-        var outerPanel = new StackPanel { Orientation = Orientation.Vertical, Background = _theme.B_BackgroundColor, Margin = new Thickness(0, 5, 0, 5) };
-        outerPanel.Children.Add(topMainPlaybackControls); outerPanel.Children.Add(activeLoopDisplayText);
-        return outerPanel;
-    }
-
-    private Border CreateStatusBar()
-    {
-        var statusBar = new Border { Background = _theme.B_SlightlyLighterBackground, Padding = new Thickness(10, 4), Height = 26 };
-        var statusBarText = new TextBlock { Foreground = _theme.B_SecondaryTextColor, VerticalAlignment = VerticalAlignment.Center, FontSize = 11 };
-        statusBarText.Bind(TextBlock.TextProperty, new Binding("StatusBarText"));
-        statusBar.Child = statusBarText;
-        return statusBar;
-    }
-}
-
-public class BooleanToPlayPauseTextConverter : IValueConverter
-{
-    public static readonly BooleanToPlayPauseTextConverter Instance = new();
-
-    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-    {
-        if (value is bool isPlaying) return isPlaying ? "Pause" : "Play";
-        return "Play";
-    }
-    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-        => throw new NotSupportedException();
-}
-
-public class NotNullToBooleanConverter : IValueConverter
-{
-    public static readonly NotNullToBooleanConverter Instance = new();
-
-    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-    {
-        return value != null;
-    }
-
-    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-    {
-        throw new NotSupportedException();
-    }
-}
-
-public static class BrushExtensions
-{
-    public static IBrush Multiply(this IBrush brush, double factor)
-    {
-        if (brush is ISolidColorBrush solidBrush)
-        {
-            var c = solidBrush.Color;
-            return new SolidColorBrush(Color.FromArgb(c.A, (byte)Math.Clamp(c.R * factor, 0, 255), (byte)Math.Clamp(c.G * factor, 0, 255), (byte)Math.Clamp(c.B * factor, 0, 255)));
         }
-        return brush;
+
+        private void WaveformDisplay_SeekRequested(object? sender, TimeSpan time)
+        {
+            if (DataContext is MainWindowViewModel vm)
+            {
+                vm.WaveformSeekCommand.Execute(time);
+            }
+        }
+    }
+
+    public class BooleanToPlayPauseTextConverter : IValueConverter
+    {
+        public static readonly BooleanToPlayPauseTextConverter Instance = new();
+
+        public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        {
+            if (value is bool isPlaying) return isPlaying ? "Pause" : "Play";
+            return "Play";
+        }
+        public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+            => throw new NotSupportedException();
+    }
+
+    public class NotNullToBooleanConverter : IValueConverter
+    {
+        public static readonly NotNullToBooleanConverter Instance = new();
+
+        public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        {
+            return value != null;
+        }
+
+        public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        {
+            throw new NotSupportedException();
+        }
     }
 }
 </file>
@@ -3192,7 +2837,7 @@ using Avalonia.Markup.Xaml;
 using Sonorize.Models;
 using Sonorize.ViewModels;
 
-namespace Sonorize.Views;  // <-- file-scoped namespace
+namespace Sonorize.Views; // Reverted to file-scoped namespace
 
 public partial class SettingsWindow : Window
 {
