@@ -2,12 +2,14 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
-// Removed converter usings as they are no longer defined here
-using Sonorize.Models; // Required for ThemeColors
+using Avalonia.Data.Converters;
+using Avalonia.Media; // Required for Color
+using Sonorize.Models; // Required for ThemeColors, PlaybackStateStatus
 using Sonorize.ViewModels; // Required for MainWindowViewModel
-// Removed Control usings if controls are now referenced only in XAML via namespace
-// using Sonorize.Controls; // May still be needed if interacting with controls in code-behind
-// Removed System, System.Globalization if not used directly anymore
+using Sonorize.Controls; // Required for WaveformDisplayControl
+using System;
+using System.Globalization;
+using Sonorize.Services; // Required for CultureInfo
 
 namespace Sonorize.Views;
 
@@ -41,18 +43,83 @@ public partial class MainWindow : Window
     }
 
     // --- Event Handlers from XAML ---
-    // These handlers are now on the specific UserControl code-behinds
 
-    // private void PlayPauseButton_Click(object? sender, RoutedEventArgs e) { ... moved to MainPlaybackControl.axaml.cs }
-    // private void WaveformDisplay_SeekRequested(object? sender, TimeSpan e) { ... moved to AdvancedPlaybackControl.axaml.cs }
+    private void PlayPauseButton_Click(object? sender, RoutedEventArgs e)
+    {
+        // This logic was moved from the C# MainView definition
+        if (DataContext is MainWindowViewModel vm)
+        {
+            if (vm.PlaybackService.CurrentPlaybackStatus == PlaybackStateStatus.Playing)
+                vm.PlaybackService.Pause();
+            else
+                vm.PlaybackService.Resume();
+        }
+    }
 
-    // --- Converters (moved outside the MainWindow partial class to separate files) ---
+    private void WaveformDisplay_SeekRequested(object? sender, TimeSpan e)
+    {
+        // This logic was moved from the C# MainView definition
+        if (DataContext is MainWindowViewModel vm)
+        {
+            vm.WaveformSeekCommand.Execute(e);
+        }
+    }
 }
 
-// Converters are now in their own files and are top-level classes in the Sonorize.Views namespace.
-// They are no longer defined within MainWindow.axaml.cs.
-/*
-public class BooleanToPlayPauseTextConverter : IValueConverter { ... moved }
-public class NotNullToBooleanConverter : IValueConverter { ... moved }
-public class AccentBrushWithAlphaConverter : IValueConverter { ... moved }
-*/
+// --- Converters (moved outside the MainWindow partial class) ---
+// Make converters public so they can be referenced in XAML resources using just the namespace prefix
+
+public class BooleanToPlayPauseTextConverter : IValueConverter
+{
+    public static readonly BooleanToPlayPauseTextConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+    {
+        if (value is bool isPlaying) return isPlaying ? "Pause" : "Play";
+        return "Play";
+    }
+    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+public class NotNullToBooleanConverter : IValueConverter
+{
+    public static readonly NotNullToBooleanConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+    {
+        return value != null;
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+    {
+        throw new NotSupportedException();
+    }
+}
+
+// --- Dedicated converter for applying Alpha to a SolidColorBrush ---
+// This replaces the incorrect usage of BrushExtensions.Multiply as a converter in the initial XAML attempt.
+public class AccentBrushWithAlphaConverter : IValueConverter
+{
+    public static readonly AccentBrushWithAlphaConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is ISolidColorBrush solidBrush && parameter is double alphaFactor)
+        {
+            // Use the color from the brush and apply the alpha factor to create a new brush
+            var color = solidBrush.Color;
+            byte newAlpha = (byte)(Math.Clamp(alphaFactor, 0.0, 1.0) * 255);
+            return new SolidColorBrush(Color.FromArgb(newAlpha, color.R, color.G, color.B));
+        }
+        // Fallback if input is not a SolidColorBrush or parameter is not a double
+        return new SolidColorBrush(Colors.Transparent); // Or a default semi-transparent color
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        throw new NotSupportedException();
+    }
+}
+
+// Removing the old BrushExtensions class as it was not used correctly in XAML and the new converter serves the purpose.
