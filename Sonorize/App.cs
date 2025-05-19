@@ -1,6 +1,6 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Markup.Xaml; // Required for AvaloniaXamlLoader or InitializeComponent
+using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Styling;
 using Sonorize.ViewModels;
 using Sonorize.Views;
@@ -12,17 +12,11 @@ using System.Diagnostics;
 
 namespace Sonorize;
 
-public partial class App : Application // Add 'partial' keyword
+public class App : Application
 {
     public override void Initialize()
     {
-        AvaloniaXamlLoader.Load(this); // Loads the XAML content from App.axaml
-        // Or, if your build system generates InitializeComponent():
-        // InitializeComponent(); 
-        // The line above is typically generated for .axaml files.
-        // If InitializeComponent() is available, it calls AvaloniaXamlLoader.Load(this) internally.
-        // Your original Initialize() was empty, which is fine.
-        // The FluentTheme is added later in OnFrameworkInitializationCompleted.
+        // Delay adding FluentTheme until OnFrameworkInitializationCompleted
     }
 
     public override void OnFrameworkInitializationCompleted()
@@ -37,7 +31,7 @@ public partial class App : Application // Add 'partial' keyword
 
             var fluentTheme = new FluentTheme();
             Styles.Add(fluentTheme);
-            RequestedThemeVariant = ThemeVariant.Dark; // This will override XAML if set there
+            RequestedThemeVariant = ThemeVariant.Dark;
             Debug.WriteLine($"[App] RequestedThemeVariant set to: {RequestedThemeVariant}");
 
             if (currentCustomTheme.B_AccentColor is ISolidColorBrush accentSolidBrush &&
@@ -81,8 +75,7 @@ public partial class App : Application // Add 'partial' keyword
                 waveformService,
                 loopDataService);
 
-            // Pass the theme to the MainWindow constructor
-            desktop.MainWindow = new MainWindow(currentCustomTheme)
+            desktop.MainWindow = new MainWindow() // Removed currentCustomTheme parameter
             {
                 DataContext = mainWindowViewModel
             };
@@ -93,10 +86,6 @@ public partial class App : Application // Add 'partial' keyword
         base.OnFrameworkInitializationCompleted();
     }
 }
-
-// ColorManipulationExtensions and ColorExtensions remain the same
-// Ensure they are either in this file or accessible via a 'using' statement if in another file.
-// For brevity, I'm assuming they are still in this file or correctly referenced.
 
 public static class ColorManipulationExtensions
 {

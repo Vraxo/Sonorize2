@@ -14,9 +14,7 @@ namespace Sonorize.ViewModels;
 public class SettingsViewModel : ViewModelBase
 {
     private readonly SettingsService _settingsService;
-    private readonly ThemeService _themeService; // For GetAvailableThemeFiles
-
-    public ThemeColors CurrentTheme { get; } // Added to hold the theme
+    private readonly ThemeService _themeService;
 
     public ObservableCollection<string> MusicDirectories { get; } = new();
     public List<string> InitialMusicDirectories { get; private set; } // To track changes
@@ -42,6 +40,7 @@ public class SettingsViewModel : ViewModelBase
         }
     }
 
+    // This flag indicates if any setting that requires action (like reload or restart) has changed.
     public bool SettingsChanged { get; private set; } = false;
 
     public ICommand AddDirectoryCommand { get; }
@@ -50,14 +49,13 @@ public class SettingsViewModel : ViewModelBase
 
     public bool CanRemoveDirectory => SelectedDirectory != null;
 
-    public SettingsViewModel(SettingsService settingsService, ThemeColors currentTheme) // Modified constructor
+    public SettingsViewModel(SettingsService settingsService)
     {
         _settingsService = settingsService;
-        CurrentTheme = currentTheme; // Store the passed theme
-        _themeService = new ThemeService(null); // Temporary instance to list files, doesn't use CurrentTheme for this purpose
+        _themeService = new ThemeService(null); // Create a temporary instance to list files
 
         var settings = _settingsService.LoadSettings();
-        InitialMusicDirectories = new List<string>(settings.MusicDirectories);
+        InitialMusicDirectories = new List<string>(settings.MusicDirectories); // Store initial state
 
         foreach (var dir in settings.MusicDirectories)
         {
@@ -72,9 +70,10 @@ public class SettingsViewModel : ViewModelBase
         SelectedThemeFile = settings.PreferredThemeFileName ?? ThemeService.DefaultThemeFileName;
         if (!AvailableThemes.Contains(SelectedThemeFile) && AvailableThemes.Any())
         {
-            SelectedThemeFile = AvailableThemes.First();
+            SelectedThemeFile = AvailableThemes.First(); // Fallback if saved theme not found
         }
 
+        // Reset SettingsChanged after initial load, as SelectedThemeFile property set might trigger it
         SettingsChanged = false;
 
         AddDirectoryCommand = new RelayCommand(async owner => await AddDirectory(owner as Window));
@@ -87,28 +86,21 @@ public class SettingsViewModel : ViewModelBase
                 (RemoveDirectoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
             }
         };
+        // Any change to MusicDirectories collection or SelectedThemeFile marks settings as changed.
         MusicDirectories.CollectionChanged += (s, e) => SettingsChanged = true;
     }
 
     private async Task AddDirectory(Window? owner)
     {
         if (owner == null) return;
-        // In Avalonia 11+, use StorageProvider
-        var topLevel = TopLevel.GetTopLevel(owner);
-        if (topLevel == null) return;
-
-        var result = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        var dialog = new OpenFolderDialog() { Title = "Select Music Directory" };
+        var result = await dialog.ShowAsync(owner);
+        if (result != null && !string.IsNullOrEmpty(result))
         {
-            Title = "Select Music Directory",
-            AllowMultiple = false
-        });
-
-        if (result.Count > 0)
-        {
-            string? folderPath = result[0].TryGetLocalPath();
-            if (!string.IsNullOrEmpty(folderPath) && !MusicDirectories.Contains(folderPath))
+            if (!MusicDirectories.Contains(result))
             {
-                MusicDirectories.Add(folderPath);
+                MusicDirectories.Add(result);
+                // SettingsChanged will be set by the CollectionChanged event handler
             }
         }
     }
@@ -119,13 +111,15 @@ public class SettingsViewModel : ViewModelBase
         {
             MusicDirectories.Remove(SelectedDirectory);
             SelectedDirectory = null;
+            // SettingsChanged will be set by the CollectionChanged event handler
         }
     }
 
     private void SaveSettings(object? parameter)
     {
-        var currentSettings = _settingsService.LoadSettings();
+        var currentSettings = _settingsService.LoadSettings(); // Load current to preserve other settings if any
 
+        // Check if directories actually changed before saving and marking
         bool dirsActuallyChanged = !InitialMusicDirectories.SequenceEqual(MusicDirectories);
         bool themeActuallyChanged = currentSettings.PreferredThemeFileName != SelectedThemeFile;
 
@@ -144,12 +138,13 @@ public class SettingsViewModel : ViewModelBase
         if (dirsActuallyChanged || themeActuallyChanged)
         {
             _settingsService.SaveSettings(currentSettings);
-            SettingsChanged = true;
+            SettingsChanged = true; // Ensure this is true if anything was actually saved
+                                    // Update InitialMusicDirectories to reflect the saved state for subsequent checks if dialog is reopened
             if (dirsActuallyChanged) InitialMusicDirectories = new List<string>(currentSettings.MusicDirectories);
         }
         else
         {
-            SettingsChanged = false;
+            SettingsChanged = false; // No actual changes were made that need saving.
         }
     }
 }

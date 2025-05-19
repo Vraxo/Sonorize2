@@ -1,4 +1,5 @@
-﻿using Avalonia.Controls;
+﻿// Path: Source/ViewModels/MainViewModel.cs
+using Avalonia.Controls;
 using Sonorize.Models;
 using Sonorize.Services;
 using System.Collections.ObjectModel;
@@ -149,12 +150,19 @@ public class MainWindowViewModel : ViewModelBase
         {
             if (PlaybackService.HasCurrentSong && PlaybackService.CurrentSongDuration.TotalSeconds > 0)
             {
+                // Check if the new value is significantly different from the current playback position
+                // to avoid seeking for tiny adjustments that might come from the binding itself during updates.
+                // A threshold of 50-100ms might be reasonable.
                 if (Math.Abs(PlaybackService.CurrentPosition.TotalSeconds - value) > 0.1)
                 {
                     Debug.WriteLine($"[MainVM.SliderPositionSeconds.set] User seeking via slider to: {value:F2}s. Current playback pos: {PlaybackService.CurrentPosition.TotalSeconds:F2}s");
                     PlaybackService.Seek(TimeSpan.FromSeconds(value));
                 }
             }
+            // We don't call OnPropertyChanged(nameof(SliderPositionSeconds)) here.
+            // The slider will be updated when PlaybackService.CurrentPosition changes,
+            // which triggers OnPlaybackServicePropertyChanged, which then calls
+            // OnPropertyChanged(nameof(SliderPositionSeconds)). This creates the correct notification loop.
         }
     }
 
@@ -312,7 +320,7 @@ public class MainWindowViewModel : ViewModelBase
                         OnPropertyChanged(nameof(WaveformRenderData));
                     }
                     UpdateAllUIDependentStates();
-                    OnPropertyChanged(nameof(SliderPositionSeconds));
+                    OnPropertyChanged(nameof(SliderPositionSeconds)); // Update slider when song changes
                     if (currentServiceSong != null) _ = LoadWaveformForCurrentSong();
                     break;
 
@@ -323,14 +331,15 @@ public class MainWindowViewModel : ViewModelBase
                     break;
 
                 case nameof(PlaybackService.CurrentPosition):
-                    OnPropertyChanged(nameof(SliderPositionSeconds));
+                    OnPropertyChanged(nameof(SliderPositionSeconds)); // Update slider when position changes
                     OnPropertyChanged(nameof(CanSaveLoopRegion));
-                    (CaptureLoopStartCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
-                    (CaptureLoopEndCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                    (CaptureLoopStartCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged(); // Position changed
+                    (CaptureLoopEndCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged(); // Position changed
+                    // No need to call RaiseAllCommandsCanExecuteChanged() generally, as slider itself doesn't use CanExecute
                     break;
 
                 case nameof(PlaybackService.CurrentSongDuration):
-                    OnPropertyChanged(nameof(SliderPositionSeconds));
+                    OnPropertyChanged(nameof(SliderPositionSeconds)); // Max value might have changed
                     OnPropertyChanged(nameof(CanSaveLoopRegion));
                     break;
             }
@@ -455,7 +464,7 @@ public class MainWindowViewModel : ViewModelBase
         {
             Debug.WriteLine($"[MainVM] Requesting waveform for: {songToLoadWaveformFor.Title}");
             var points = await _waveformService.GetWaveformAsync(songToLoadWaveformFor.FilePath, 1000);
-            if (PlaybackService.CurrentSong == songToLoadWaveformFor)
+            if (PlaybackService.CurrentSong == songToLoadWaveformFor) // Check if song is still current
             {
                 WaveformRenderData.Clear(); foreach (var p in points) WaveformRenderData.Add(p); OnPropertyChanged(nameof(WaveformRenderData));
                 Debug.WriteLine($"[MainVM] Waveform loaded for: {songToLoadWaveformFor.Title}, {points.Count} points.");
@@ -463,7 +472,7 @@ public class MainWindowViewModel : ViewModelBase
             else
             {
                 Debug.WriteLine($"[MainVM] Waveform for {songToLoadWaveformFor.Title} loaded, but current song is now {PlaybackService.CurrentSong?.Title ?? "null"}. Discarding.");
-                WaveformRenderData.Clear(); OnPropertyChanged(nameof(WaveformRenderData));
+                WaveformRenderData.Clear(); OnPropertyChanged(nameof(WaveformRenderData)); // Clear if stale
             }
         }
         catch (Exception ex) { Debug.WriteLine($"[MainVM] Failed to load waveform for {songToLoadWaveformFor.Title}: {ex.Message}"); WaveformRenderData.Clear(); OnPropertyChanged(nameof(WaveformRenderData)); }
@@ -484,6 +493,7 @@ public class MainWindowViewModel : ViewModelBase
             NewLoopStartCandidate = null; NewLoopEndCandidate = null; IsCurrentLoopActiveUiBinding = false;
         }
         OnPropertyChanged(nameof(CanSaveLoopRegion));
+        // Commands related to loop editing might need CanExecuteChanged raised here
         (CaptureLoopStartCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (CaptureLoopEndCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (SaveLoopCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -491,7 +501,7 @@ public class MainWindowViewModel : ViewModelBase
         (ToggleLoopActiveCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
-    private void ClearLoopCandidateInputs() { NewLoopStartCandidate = null; NewLoopEndCandidate = null; }
+    private void ClearLoopCandidateInputs() { NewLoopStartCandidate = null; NewLoopEndCandidate = null; /* CanSaveLoopRegion will update, and its command */ }
     public bool CanSaveLoopRegion => PlaybackService.CurrentSong != null && NewLoopStartCandidate.HasValue && NewLoopEndCandidate.HasValue && NewLoopEndCandidate.Value > NewLoopStartCandidate.Value && NewLoopEndCandidate.Value <= PlaybackService.CurrentSongDuration && NewLoopStartCandidate.Value >= TimeSpan.Zero;
 
     private void SaveLoopAction(object? param)
@@ -499,12 +509,12 @@ public class MainWindowViewModel : ViewModelBase
         var currentServiceSong = PlaybackService.CurrentSong;
         if (!CanSaveLoopRegion || currentServiceSong == null || !NewLoopStartCandidate.HasValue || !NewLoopEndCandidate.HasValue) return;
         var newLoop = new LoopRegion(NewLoopStartCandidate.Value, NewLoopEndCandidate.Value, "User Loop");
-        bool shouldBeActive = (currentServiceSong.SavedLoop != null && currentServiceSong.IsLoopActive) || currentServiceSong.SavedLoop == null;
+        bool shouldBeActive = (currentServiceSong.SavedLoop != null && currentServiceSong.IsLoopActive) || currentServiceSong.SavedLoop == null; // Default to active if new, or preserve current state
         currentServiceSong.SavedLoop = newLoop;
-        if (currentServiceSong.IsLoopActive != shouldBeActive) { currentServiceSong.IsLoopActive = shouldBeActive; }
-        else { _loopDataService.SetLoop(currentServiceSong.FilePath, newLoop.Start, newLoop.End, currentServiceSong.IsLoopActive); }
+        if (currentServiceSong.IsLoopActive != shouldBeActive) { currentServiceSong.IsLoopActive = shouldBeActive; } // This will trigger persistence via OnCurrentSongIsLoopActiveChanged
+        else { _loopDataService.SetLoop(currentServiceSong.FilePath, newLoop.Start, newLoop.End, currentServiceSong.IsLoopActive); } // Persist if IsLoopActive didn't change but loop did
         Debug.WriteLine($"[MainVM] Loop saved for {currentServiceSong.Title}. Active: {currentServiceSong.IsLoopActive}");
-        UpdateLoopEditorForCurrentSong();
+        UpdateLoopEditorForCurrentSong(); // Refresh editor state (e.g. CanExecute for Clear)
     }
 
     private void ClearSavedLoopAction(object? param)
@@ -513,8 +523,8 @@ public class MainWindowViewModel : ViewModelBase
         if (currentServiceSong != null)
         {
             var filePath = currentServiceSong.FilePath;
-            currentServiceSong.SavedLoop = null;
-            currentServiceSong.IsLoopActive = false;
+            currentServiceSong.SavedLoop = null; // This will trigger OnCurrentSongSavedLoopChanged, then OnCurrentSongIsLoopActiveChanged if it's set to false by the former's logic
+            currentServiceSong.IsLoopActive = false; // Explicitly set to false and ensure persistence if SavedLoop was already null by some chance
             if (!string.IsNullOrEmpty(filePath)) { _loopDataService.ClearLoop(filePath); }
         }
         ClearLoopCandidateInputs();
@@ -570,32 +580,23 @@ public class MainWindowViewModel : ViewModelBase
                         .Select(g => new { AlbumTitle = g.First().Album, ArtistName = g.First().Artist, ThumbSong = g.FirstOrDefault(s => s.Thumbnail != null) })
                         .OrderBy(a => a.ArtistName, StringComparer.OrdinalIgnoreCase).ThenBy(a => a.AlbumTitle, StringComparer.OrdinalIgnoreCase).ToList();
                     foreach (var albumData in uniqueAlbums) Albums.Add(new AlbumViewModel { Title = albumData.AlbumTitle, Artist = albumData.ArtistName, Thumbnail = albumData.ThumbSong?.Thumbnail ?? defaultThumb }); OnPropertyChanged(nameof(Albums));
-                    ApplyFilter();
+                    ApplyFilter(); // This populates FilteredSongs
                 });
             }
             catch (Exception ex) { Debug.WriteLine($"[MainVM] Error loading library: {ex}"); await Dispatcher.UIThread.InvokeAsync(() => StatusBarText = "Error loading music library."); }
         }
-        IsLoadingLibrary = false; UpdateStatusBarText();
+        // This should be called after ApplyFilter to accurately reflect count.
+        IsLoadingLibrary = false; UpdateStatusBarText(); // Update status after loading finishes.
     }
 
     private async Task OpenSettingsDialog(object? ownerWindow)
     {
-        if (ownerWindow is not Window owner || IsLoadingLibrary) return;
-        IsAdvancedPanelVisible = false;
-        var currentSettingsBeforeDialog = _settingsService.LoadSettings();
-
-        // Pass CurrentTheme to SettingsViewModel constructor
-        var settingsVM = new SettingsViewModel(_settingsService, this.CurrentTheme);
-
-        var settingsDialog = new Sonorize.Views.SettingsWindow(this.CurrentTheme)
-        {
-            DataContext = settingsVM
-        };
+        if (ownerWindow is not Window owner || IsLoadingLibrary) return; IsAdvancedPanelVisible = false; var currentSettingsBeforeDialog = _settingsService.LoadSettings();
+        var settingsVM = new SettingsViewModel(_settingsService); var settingsDialog = new Sonorize.Views.SettingsWindow(CurrentTheme) { DataContext = settingsVM };
         await settingsDialog.ShowDialog(owner);
-
-        if (settingsVM.SettingsChanged)
+        if (settingsVM.SettingsChanged) // This flag is now more accurately set by SettingsViewModel
         {
-            var newSettingsAfterDialog = _settingsService.LoadSettings();
+            var newSettingsAfterDialog = _settingsService.LoadSettings(); // Re-load to get what was actually saved
             bool dirsActuallyChanged = !currentSettingsBeforeDialog.MusicDirectories.SequenceEqual(newSettingsAfterDialog.MusicDirectories);
             bool themeActuallyChanged = currentSettingsBeforeDialog.PreferredThemeFileName != newSettingsAfterDialog.PreferredThemeFileName;
 
@@ -606,37 +607,17 @@ public class MainWindowViewModel : ViewModelBase
 
     private async Task AddMusicDirectoryAndRefresh(object? ownerWindow)
     {
-        if (ownerWindow is not Window owner || IsLoadingLibrary) return;
-        IsAdvancedPanelVisible = false;
-
-        // Use StorageProvider for folder picking in Avalonia 11+
-        var topLevel = TopLevel.GetTopLevel(owner);
-        if (topLevel == null) return;
-
-        var result = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        if (ownerWindow is not Window owner || IsLoadingLibrary) return; IsAdvancedPanelVisible = false;
+        var result = await owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Select Music Directory", AllowMultiple = false });
+        if (result != null && result.Count > 0)
         {
-            Title = "Select Music Directory",
-            AllowMultiple = false
-        });
-
-        if (result.Count > 0)
-        {
-            string? folderPath = result[0].TryGetLocalPath(); // Preferred way to get local path
-
+            string? folderPath = result[0].Path.LocalPath;
+            if (string.IsNullOrEmpty(folderPath) && result[0].Path.IsAbsoluteUri) { try { folderPath = new Uri(result[0].Path.ToString()).LocalPath; } catch { folderPath = null; Debug.WriteLine($"[MainVM] Could not convert folder URI: {result[0].Path}"); } }
             if (!string.IsNullOrEmpty(folderPath))
             {
-                var settings = _settingsService.LoadSettings();
-                if (!settings.MusicDirectories.Contains(folderPath))
-                {
-                    settings.MusicDirectories.Add(folderPath);
-                    _settingsService.SaveSettings(settings);
-                    await LoadMusicLibrary();
-                }
+                var settings = _settingsService.LoadSettings(); if (!settings.MusicDirectories.Contains(folderPath)) { settings.MusicDirectories.Add(folderPath); _settingsService.SaveSettings(settings); await LoadMusicLibrary(); }
             }
-            else
-            {
-                Debug.WriteLine($"[MainVM] Selected folder path could not be determined: {result[0].Name}");
-            }
+            else { Debug.WriteLine($"[MainVM] Selected folder path could not be determined: {result[0].Name}"); }
         }
     }
 }
