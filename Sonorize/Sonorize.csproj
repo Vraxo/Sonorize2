@@ -7,6 +7,20 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
+  <ItemGroup>
+    <AvaloniaXaml Remove="Source\Controls\AdvancedPlaybackControl.axaml" />
+    <AvaloniaXaml Remove="Source\Controls\MainPlaybackControl.axaml" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="Source\Controls\SearchBarControl.axaml.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <AvaloniaXaml Include="Source\Controls\SearchBarControl.axaml.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Source\Controls\AdvancedPlaybackControl.axaml" />
+    <Compile Include="Source\Controls\MainPlaybackControl.axaml" />
+  </ItemGroup>
 
   <!-- Include SettingsWindow.axaml so Avalonia’s XAML compiler runs -->
 
@@ -28,5 +42,14 @@
     <Compile Update="App.axaml.cs">
       <DependentUpon>App.axaml</DependentUpon>
     </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Source\Controls\SearchBarControl.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </None>
+    <None Update="Source\Controls\StatusBarControl.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </None>
   </ItemGroup>
 </Project>

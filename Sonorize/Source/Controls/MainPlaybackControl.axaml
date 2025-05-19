@@ -1,0 +1,52 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Sonorize.ViewModels"
+             xmlns:views="using:Sonorize.Views"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="60"
+             x:Class="Sonorize.Controls.MainPlaybackControl"
+             x:DataType="vm:MainWindowViewModel">
+    <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+     <UserControl.Resources>
+        <views:BooleanToPlayPauseTextConverter x:Key="BooleanToPlayPauseTextConverter"/>
+    </UserControl.Resources>
+
+    <UserControl.Styles>
+        <Style Selector="Slider /template/ Thumb">
+            <Setter Property="Background" Value="{Binding CurrentTheme.B_AccentColor}"/>
+        </Style>
+    </UserControl.Styles>
+
+    <StackPanel Orientation="Vertical" Background="{Binding CurrentTheme.B_BackgroundColor}" Margin="0,5,0,5">
+        <DockPanel LastChildFill="True" Height="35" Margin="5,0,5,0">
+            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" Margin="5,0,10,0">
+                <Button Content="{Binding PlaybackService.IsPlaying, Converter={StaticResource BooleanToPlayPauseTextConverter}}"
+                        Background="{Binding CurrentTheme.B_SlightlyLighterBackground}"
+                        Foreground="{Binding CurrentTheme.B_TextColor}"
+                        BorderBrush="{Binding CurrentTheme.B_AccentColor}" BorderThickness="1" CornerRadius="3" Padding="10,5" MinWidth="70"
+                        Click="PlayPauseButton_Click"
+                        IsEnabled="{Binding PlaybackService.HasCurrentSong}"/>
+
+                <Button Content="+"
+                        Background="{Binding CurrentTheme.B_SlightlyLighterBackground}"
+                        Foreground="{Binding CurrentTheme.B_TextColor}"
+                        BorderBrush="{Binding CurrentTheme.B_AccentColor}" BorderThickness="1" CornerRadius="3" Padding="8,4" MinWidth="30" FontWeight="Bold" Margin="5,0,0,0"
+                        Command="{Binding ToggleAdvancedPanelCommand}"
+                        IsEnabled="{Binding PlaybackService.HasCurrentSong}"/>
+            </StackPanel>
+
+            <Slider Name="MainPlaybackSliderInstance"
+                    Minimum="0" Margin="10,0" VerticalAlignment="Center"
+                    Background="{Binding CurrentTheme.B_SecondaryTextColor}" Foreground="{Binding CurrentTheme.B_AccentColor}"
+                    Maximum="{Binding PlaybackService.CurrentSongDurationSeconds}"
+                    Value="{Binding SliderPositionSeconds, Mode=TwoWay}"
+                    IsEnabled="{Binding PlaybackService.HasCurrentSong}"/>
+        </DockPanel>
+        <TextBlock Text="{Binding ActiveLoopDisplayText}"
+                   Foreground="{Binding CurrentTheme.B_SecondaryTextColor}" FontSize="10" HorizontalAlignment="Center" Margin="10,0,10,2" MinHeight="14"/>
+    </StackPanel>
+</UserControl>

@@ -1,0 +1,41 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Sonorize.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="Sonorize.Views.AlbumsView"
+             x:DataType="vm:MainWindowViewModel"> <!-- DataContext will be MainWindowViewModel -->
+     <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <UserControl.Styles>
+         <!-- ListBoxItem styles are likely needed here -->
+         <!-- Keeping global ListBoxItem styles in MainWindow for now -->
+    </UserControl.Styles>
+
+    <ScrollViewer Padding="0,0,0,5">
+        <ListBox ItemsSource="{Binding Albums}"
+                 SelectedItem="{Binding SelectedAlbum, Mode=TwoWay}"
+                 Background="{Binding CurrentTheme.B_ControlBackgroundColor}"
+                 BorderThickness="0" Margin="10"
+                 Foreground="{Binding CurrentTheme.B_TextColor}">
+            <ListBox.ItemTemplate>
+                <DataTemplate DataType="vm:AlbumViewModel">
+                    <Grid ColumnDefinitions="Auto,*" VerticalAlignment="Center">
+                         <Image Grid.Column="0" Width="32" Height="32" Margin="5,0,10,0"
+                               Source="{Binding Thumbnail}"
+                               Stretch="UniformToFill"
+                               RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                        <StackPanel Grid.Column="1" Orientation="Vertical" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="Normal" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding Artist}" FontSize="11" VerticalAlignment="Center"
+                                       Foreground="{Binding $parent[ListBox].Foreground, Mode=OneWay}"/>
+                        </StackPanel>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </ScrollViewer>
+</UserControl>

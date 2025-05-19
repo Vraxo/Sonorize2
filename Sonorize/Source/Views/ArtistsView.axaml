@@ -1,0 +1,37 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Sonorize.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="Sonorize.Views.ArtistsView"
+             x:DataType="vm:MainWindowViewModel"> <!-- DataContext will be MainWindowViewModel -->
+     <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <UserControl.Styles>
+         <!-- ListBoxItem styles are likely needed here -->
+         <!-- Keeping global ListBoxItem styles in MainWindow for now -->
+    </UserControl.Styles>
+
+    <ScrollViewer Padding="0,0,0,5">
+        <ListBox ItemsSource="{Binding Artists}"
+                 SelectedItem="{Binding SelectedArtist, Mode=TwoWay}"
+                 Background="{Binding CurrentTheme.B_ControlBackgroundColor}"
+                 BorderThickness="0" Margin="10"
+                 Foreground="{Binding CurrentTheme.B_TextColor}">
+            <ListBox.ItemTemplate>
+                <DataTemplate DataType="vm:ArtistViewModel">
+                    <Grid ColumnDefinitions="Auto,*" VerticalAlignment="Center">
+                        <Image Grid.Column="0" Width="32" Height="32" Margin="5,0,10,0"
+                               Source="{Binding Thumbnail}"
+                               Stretch="UniformToFill"
+                               RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                        <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="14" VerticalAlignment="Center"/>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </ScrollViewer>
+</UserControl>
