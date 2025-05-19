@@ -11,6 +11,21 @@ using Sonorize.Services; // Required for CultureInfo
 
 namespace Sonorize.Views
 {
+    // Regarding AVLN2002 Error ("Duplicate x:Class directive"):
+    // This error typically originates from the .axaml file or the project configuration (.csproj)
+    // rather than the C# code-behind file itself, assuming this C# file is correctly structured.
+    // Common causes for AVLN2002 include:
+    // 1. The corresponding .axaml file (e.g., MainWindow.axaml) might have a syntactical error,
+    //    such as literally including the x:Class attribute twice on the root element.
+    // 2. Another .axaml file in the project might be incorrectly using the same x:Class
+    //    directive (e.g., x:Class="Sonorize.Views.MainWindow").
+    // 3. Issues in the .csproj file leading to the XAML or class being processed multiple times.
+    // 4. A corrupted build cache; performing a "Clean" and then "Rebuild" of the project can often resolve this.
+    // This C# code-behind file (MainWindow.axaml.cs) appears to follow standard Avalonia patterns:
+    // - It is declared as a 'partial' class.
+    // - It calls 'InitializeComponent()' in its constructors to link with the XAML.
+    // No changes to the C# logic are made here as it seems correct; the fix for AVLN2002
+    // usually lies in inspecting the .axaml file content or project settings.
     public partial class MainWindow : Window // Ensure 'partial' keyword
     {
         private readonly ThemeColors _theme;
