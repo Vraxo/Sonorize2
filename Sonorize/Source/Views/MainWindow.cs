@@ -373,16 +373,20 @@ public class MainWindow : Window
         var speedLabel = new TextBlock { Text = "Tempo:", VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_TextColor, Margin = new Thickness(0, 0, 5, 0) };
         var speedSlider = new Slider { Minimum = 0.5, Maximum = 2.0, SmallChange = 0.05, LargeChange = 0.25, TickFrequency = 0.25, Foreground = _theme.B_AccentColor, Background = _theme.B_SecondaryTextColor };
         speedSlider.Styles.Add(new Style(s => s.Is<Thumb>()) { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor) } });
-        speedSlider.Bind(Slider.ValueProperty, new Binding("PlaybackSpeed", BindingMode.TwoWay));
+        // Bind speed/pitch to Playback.PlaybackSpeed/Pitch
+        speedSlider.Bind(Slider.ValueProperty, new Binding("Playback.PlaybackSpeed", BindingMode.TwoWay));
         var speedDisplay = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0), Foreground = _theme.B_TextColor, MinWidth = 35, HorizontalAlignment = HorizontalAlignment.Right };
-        speedDisplay.Bind(TextBlock.TextProperty, new Binding("PlaybackSpeedDisplay"));
+        // Bind speed/pitch display to Playback.PlaybackSpeedDisplay/PitchDisplay
+        speedDisplay.Bind(TextBlock.TextProperty, new Binding("Playback.PlaybackSpeedDisplay"));
 
         var pitchLabel = new TextBlock { Text = "Pitch:", VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_TextColor, Margin = new Thickness(0, 0, 5, 0) };
         var pitchSlider = new Slider { Minimum = -4, Maximum = 4, SmallChange = 0.1, LargeChange = 0.5, TickFrequency = 0.5, Foreground = _theme.B_AccentColor, Background = _theme.B_SecondaryTextColor };
         pitchSlider.Styles.Add(new Style(s => s.Is<Thumb>()) { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor) } });
-        pitchSlider.Bind(Slider.ValueProperty, new Binding("PlaybackPitch", BindingMode.TwoWay));
+        // Bind speed/pitch to Playback.PlaybackSpeed/Pitch
+        pitchSlider.Bind(Slider.ValueProperty, new Binding("Playback.PlaybackPitch", BindingMode.TwoWay));
         var pitchDisplay = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0), Foreground = _theme.B_TextColor, MinWidth = 45, HorizontalAlignment = HorizontalAlignment.Right };
-        pitchDisplay.Bind(TextBlock.TextProperty, new Binding("PlaybackPitchDisplay"));
+        // Bind speed/pitch display to Playback.PlaybackSpeedDisplay/PitchDisplay
+        pitchDisplay.Bind(TextBlock.TextProperty, new Binding("Playback.PlaybackPitchDisplay"));
 
         Grid.SetColumn(speedLabel, 0); Grid.SetColumn(speedSlider, 1); Grid.SetColumn(speedDisplay, 2);
         Grid.SetColumn(pitchLabel, 4); Grid.SetColumn(pitchSlider, 5); Grid.SetColumn(pitchDisplay, 6);
@@ -400,18 +404,19 @@ public class MainWindow : Window
             PositionMarkerBrush = Brushes.OrangeRed,
             LoopRegionBrush = new SolidColorBrush(accentColorForLoopRegion, 0.3)
         };
-        // WaveformRenderData remains on MainVM, but binds to Playing Song state
-        waveformDisplay.Bind(WaveformDisplayControl.WaveformPointsProperty, new Binding("WaveformRenderData"));
-        // Bind to PlaybackService properties directly as they are exposed
-        waveformDisplay.Bind(WaveformDisplayControl.CurrentPositionProperty, new Binding("PlaybackService.CurrentPosition"));
-        waveformDisplay.Bind(WaveformDisplayControl.DurationProperty, new Binding("PlaybackService.CurrentSongDuration"));
-        waveformDisplay.Bind(WaveformDisplayControl.ActiveLoopProperty, new Binding("PlaybackService.CurrentSong.SavedLoop"));
+        // Bind waveform data/state to Playback.Waveform properties
+        waveformDisplay.Bind(WaveformDisplayControl.WaveformPointsProperty, new Binding("Playback.WaveformRenderData"));
+        // Bind to PlaybackService properties via Playback property
+        waveformDisplay.Bind(WaveformDisplayControl.CurrentPositionProperty, new Binding("Playback.CurrentPosition"));
+        waveformDisplay.Bind(WaveformDisplayControl.DurationProperty, new Binding("Playback.CurrentSongDuration"));
+        waveformDisplay.Bind(WaveformDisplayControl.ActiveLoopProperty, new Binding("Playback.PlaybackService.CurrentSong.SavedLoop")); // Active loop is on the Song model itself
         // Bind WaveformSeekCommand to the one in LoopEditorViewModel
         waveformDisplay.SeekRequested += (s, time) => { if (DataContext is MainWindowViewModel vm) vm.LoopEditor.WaveformSeekCommand.Execute(time); };
 
 
         var waveformLoadingIndicator = new ProgressBar { IsIndeterminate = true, Height = 5, Margin = new Thickness(0, -5, 0, 0), Foreground = _theme.B_AccentColor, Background = Brushes.Transparent };
-        waveformLoadingIndicator.Bind(Visual.IsVisibleProperty, new Binding("IsWaveformLoading"));
+        // Bind loading indicator visibility to Playback.IsWaveformLoading
+        waveformLoadingIndicator.Bind(Visual.IsVisibleProperty, new Binding("Playback.IsWaveformLoading"));
         var waveformContainer = new Panel();
         waveformContainer.Children.Add(waveformDisplay); waveformContainer.Children.Add(waveformLoadingIndicator);
         mainStack.Children.Add(waveformContainer);
@@ -462,7 +467,7 @@ public class MainWindow : Window
         // Bind commands to LoopEditor property
         clearLoopBtn.Bind(Button.CommandProperty, new Binding("LoopEditor.ClearLoopCommand"));
         // The IsEnabled binding for clear loop checks if a loop exists on the *currently playing* song.
-        var clearLoopBinding = new Binding("PlaybackService.CurrentSong.SavedLoop")
+        var clearLoopBinding = new Binding("PlaybackService.CurrentSong.SavedLoop") // Can still bind directly to PlaybackService via MainVM property
         {
             Converter = NotNullToBooleanConverter.Instance
         };
@@ -494,7 +499,7 @@ public class MainWindow : Window
         loopActiveCheckBox.Bind(ToggleButton.IsCheckedProperty, new Binding("LoopEditor.IsCurrentLoopActiveUiBinding", BindingMode.TwoWay));
 
         // IsEnabled binding for the checkbox should check if a loop exists on the *currently playing* song.
-        var loopActiveCheckBoxIsEnabledBinding = new Binding("PlaybackService.CurrentSong.SavedLoop")
+        var loopActiveCheckBoxIsEnabledBinding = new Binding("PlaybackService.CurrentSong.SavedLoop") // Can still bind directly to PlaybackService via MainVM property
         {
             Converter = NotNullToBooleanConverter.Instance
         };
@@ -524,32 +529,28 @@ public class MainWindow : Window
             // Margin removed, will be handled by DockPanel spacing or parent margin
         };
         mainPlaybackSlider.Styles.Add(new Style(s => s.Is<Thumb>()) { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor) } });
-        // Bind to PlaybackService properties directly
-        mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("PlaybackService.CurrentSongDurationSeconds"));
-        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("SliderPositionSeconds", BindingMode.TwoWay)); // SliderPositionSeconds is on MainVM
-        mainPlaybackSlider.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
+        // Bind to Playback.CurrentSongDurationSeconds and Playback.CurrentPositionSeconds
+        mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("Playback.CurrentSongDurationSeconds"));
+        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("Playback.CurrentPositionSeconds", BindingMode.TwoWay)); // Bind 2-way for seeking
+        // IsEnabled depends on Playback.HasCurrentSong
+        mainPlaybackSlider.Bind(IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
+
 
         var mainPlayPauseButton = new Button { Content = "Play", Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(10, 5), MinWidth = 70 };
-        mainPlayPauseButton.Click += (s, e) =>
-        {
-            if (DataContext is MainWindowViewModel vm)
-            {
-                if (vm.PlaybackService.CurrentPlaybackStatus == PlaybackStateStatus.Playing)
-                    vm.PlaybackService.Pause();
-                else
-                    vm.PlaybackService.Resume();
-            }
-        };
-        // Bind to PlaybackService properties directly
-        var playPauseContentBinding = new Binding("PlaybackService.IsPlaying") { Converter = BooleanToPlayPauseTextConverter.Instance };
+        // Bind command to Playback.PlayPauseResumeCommand
+        mainPlayPauseButton.Bind(Button.CommandProperty, new Binding("Playback.PlayPauseResumeCommand"));
+        // Bind content to Playback.IsPlaying
+        var playPauseContentBinding = new Binding("Playback.IsPlaying") { Converter = BooleanToPlayPauseTextConverter.Instance };
         mainPlayPauseButton.Bind(Button.ContentProperty, playPauseContentBinding);
-        mainPlayPauseButton.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
+        // IsEnabled depends on Playback.HasCurrentSong (handled by command CanExecute)
+        // mainPlayPauseButton.Bind(IsEnabledProperty, new Binding("Playback.HasCurrentSong")); // Handled by Command CanExecute
+
 
         var toggleAdvPanelButton = new Button { Content = "+", Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(8, 4), MinWidth = 30, FontWeight = FontWeight.Bold };
         // This command is on MainVM
         toggleAdvPanelButton.Bind(Button.CommandProperty, new Binding("ToggleAdvancedPanelCommand"));
-        // IsEnabled should check if a song is selected or playing - relies on HasCurrentSong which is on MainVM
-        toggleAdvPanelButton.Bind(IsEnabledProperty, new Binding("HasCurrentSong"));
+        // IsEnabled should check if a song is selected or playing - depends on Playback.HasCurrentSong
+        toggleAdvPanelButton.Bind(IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
 
         var controlsButtonPanel = new StackPanel
@@ -569,9 +570,10 @@ public class MainWindow : Window
             Margin = new Thickness(8, 0, 0, 0), // 8px left margin to space from slider
             MinWidth = 75 // "00:00 / 00:00"
         };
-        // Bind to CurrentTimeTotalTimeDisplay which is on MainVM
-        timeDisplayTextBlock.Bind(TextBlock.TextProperty, new Binding("CurrentTimeTotalTimeDisplay"));
-        timeDisplayTextBlock.Bind(IsVisibleProperty, new Binding("PlaybackService.HasCurrentSong"));
+        // Bind to Playback.CurrentTimeTotalTimeDisplay
+        timeDisplayTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentTimeTotalTimeDisplay"));
+        // IsVisible depends on Playback.HasCurrentSong
+        timeDisplayTextBlock.Bind(IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
 
 
         var topMainPlaybackControls = new DockPanel
