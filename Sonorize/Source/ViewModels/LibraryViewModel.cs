@@ -14,18 +14,18 @@ using System.Windows.Input;
 
 namespace Sonorize.ViewModels;
 
-public enum SongDisplayMode
+public enum SongDisplayMode // Keep this enum as it defines the modes
 {
     Detailed,
     Compact,
     Grid
 }
 
-public class LibraryViewModel : ViewModelBase // Ensure this is public
+public class LibraryViewModel : ViewModelBase
 {
     private readonly SettingsService _settingsService;
     private readonly MusicLibraryService _musicLibraryService;
-    private readonly LoopDataService _loopDataService; // Needed to load loops during scan
+    private readonly LoopDataService _loopDataService;
 
     private readonly ObservableCollection<Song> _allSongs = new();
     public ObservableCollection<Song> FilteredSongs { get; } = new();
@@ -36,10 +36,6 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
     public string SearchQuery { get => _searchQuery; set { if (SetProperty(ref _searchQuery, value)) ApplyFilter(); } }
 
     private Song? _selectedSongInternal;
-    /// <summary>
-    /// Represents the currently selected song in the library list.
-    /// MainWindowViewModel should subscribe to changes on this property.
-    /// </summary>
     public Song? SelectedSong
     {
         get => _selectedSongInternal;
@@ -47,9 +43,7 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
         {
             if (SetProperty(ref _selectedSongInternal, value))
             {
-                // The MainWindowViewModel will handle the actual playback when this changes.
                 Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"}");
-                // No need to call HandleSelectedSongChange here, MainVM will react.
             }
         }
     }
@@ -68,7 +62,6 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
                 }
                 else
                 {
-                    // If artist selection is cleared, reset filter
                     SearchQuery = string.Empty;
                     ApplyFilter();
                 }
@@ -90,7 +83,6 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
                 }
                 else
                 {
-                    // If album selection is cleared, reset filter
                     SearchQuery = string.Empty;
                     ApplyFilter();
                 }
@@ -106,19 +98,30 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
     }
 
     private string _libraryStatusText = "";
-    /// <summary>
-    /// Status text related to the library loading or song counts.
-    /// </summary>
     public string LibraryStatusText { get => _libraryStatusText; private set => SetProperty(ref _libraryStatusText, value); }
 
-    private SongDisplayMode _currentSongDisplayMode = SongDisplayMode.Detailed;
-    public SongDisplayMode CurrentSongDisplayMode
+    // Individual display modes for each tab
+    private SongDisplayMode _libraryViewMode = SongDisplayMode.Detailed;
+    public SongDisplayMode LibraryViewMode
     {
-        get => _currentSongDisplayMode;
-        set => SetProperty(ref _currentSongDisplayMode, value); // This will trigger UI update for ItemTemplate via MainWindow listener
+        get => _libraryViewMode;
+        set => SetProperty(ref _libraryViewMode, value);
     }
 
-    // Commands owned by LibraryViewModel
+    private SongDisplayMode _artistViewMode = SongDisplayMode.Detailed;
+    public SongDisplayMode ArtistViewMode
+    {
+        get => _artistViewMode;
+        set => SetProperty(ref _artistViewMode, value);
+    }
+
+    private SongDisplayMode _albumViewMode = SongDisplayMode.Detailed;
+    public SongDisplayMode AlbumViewMode
+    {
+        get => _albumViewMode;
+        set => SetProperty(ref _albumViewMode, value);
+    }
+
     public ICommand SetDisplayModeCommand { get; }
 
 
@@ -128,24 +131,32 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
         _musicLibraryService = musicLibraryService;
         _loopDataService = loopDataService;
 
+        // Command parameter is now expected to be (string TargetView, SongDisplayMode Mode)
         SetDisplayModeCommand = new RelayCommand(
-            mode => CurrentSongDisplayMode = (SongDisplayMode)mode!,
-            _ => true // Always executable
+            param =>
+            {
+                if (param is (string targetView, SongDisplayMode mode))
+                {
+                    switch (targetView)
+                    {
+                        case "Library": LibraryViewMode = mode; break;
+                        case "Artists": ArtistViewMode = mode; break;
+                        case "Albums": AlbumViewMode = mode; break;
+                    }
+                }
+            },
+            _ => true
         );
 
-        // Initial state
-        UpdateStatusBarText(); // Initialize status text
+        UpdateStatusBarText();
     }
 
-    /// <summary>
-    /// Loads the music library from configured directories. Designed to be called by the MainWindowViewModel.
-    /// </summary>
     public async Task LoadLibraryAsync()
     {
         if (IsLoadingLibrary) return;
 
         IsLoadingLibrary = true;
-        SearchQuery = string.Empty; // Clear search when reloading library
+        SearchQuery = string.Empty;
 
         await Dispatcher.UIThread.InvokeAsync(() => {
             SelectedSong = null;
@@ -154,7 +165,6 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
             FilteredSongs.Clear();
             _allSongs.Clear();
             LibraryStatusText = "Preparing to load music...";
-            // MainWindowViewModel will update its overall status text
         });
 
         var settings = _settingsService.LoadSettings();
@@ -172,15 +182,14 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
                     await _musicLibraryService.LoadMusicFromDirectoriesAsync(
                         settings.MusicDirectories,
                         song => Dispatcher.UIThread.InvokeAsync(() => _allSongs.Add(song)),
-                        s => Dispatcher.UIThread.InvokeAsync(() => LibraryStatusText = s)); // Update status text here
+                        s => Dispatcher.UIThread.InvokeAsync(() => LibraryStatusText = s));
                 });
 
                 await Dispatcher.UIThread.InvokeAsync(() => {
-                    // Populate Artists
                     Artists.Clear();
                     var uniqueArtistNames = _allSongs
                         .Where(s => !string.IsNullOrWhiteSpace(s.Artist))
-                        .Select(s => s.Artist!) // We filtered out null/whitespace
+                        .Select(s => s.Artist!)
                         .Distinct(StringComparer.OrdinalIgnoreCase)
                         .OrderBy(a => a, StringComparer.OrdinalIgnoreCase)
                         .ToList();
@@ -190,9 +199,8 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
                         Bitmap? repThumb = _allSongs.FirstOrDefault(s => (s.Artist?.Equals(artistName, StringComparison.OrdinalIgnoreCase) ?? false) && s.Thumbnail != null)?.Thumbnail ?? defaultSongThumbnail;
                         Artists.Add(new ArtistViewModel { Name = artistName, Thumbnail = repThumb });
                     }
-                    OnPropertyChanged(nameof(Artists)); // Notify UI Artist list changed
+                    OnPropertyChanged(nameof(Artists));
 
-                    // Populate Albums
                     Albums.Clear();
                     Func<Song, (string Album, string Artist)> keySelector = s => (s.Album?.Trim() ?? string.Empty, s.Artist?.Trim() ?? string.Empty);
                     var uniqueAlbumsData = _allSongs
@@ -202,7 +210,7 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
                         {
                             AlbumTitle = g.Key.Item1,
                             ArtistName = g.Key.Item2,
-                            SongsInAlbum = g.ToList() // Get all songs for this album grouping
+                            SongsInAlbum = g.ToList()
                         })
                         .OrderBy(a => a.ArtistName, StringComparer.OrdinalIgnoreCase).ThenBy(a => a.AlbumTitle, StringComparer.OrdinalIgnoreCase)
                         .ToList();
@@ -215,11 +223,10 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
                             Artist = albumData.ArtistName
                         };
 
-                        var songThumbnailsForGrid = new List<Bitmap?>(new Bitmap?[4]); // Initialize with 4 nulls
+                        var songThumbnailsForGrid = new List<Bitmap?>(new Bitmap?[4]);
                         var distinctSongThumbs = albumData.SongsInAlbum
                                                      .Select(s => s.Thumbnail ?? defaultSongThumbnail)
-                                                     // .Where(t => t != null) // defaultSongThumbnail should ensure non-null
-                                                     .Distinct() // Ensure distinct thumbnails if multiple songs share same art
+                                                     .Distinct()
                                                      .Take(4)
                                                      .ToList();
 

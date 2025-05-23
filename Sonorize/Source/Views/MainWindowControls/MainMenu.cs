@@ -35,21 +35,55 @@ public static class MainMenu
 
         // View Menu
         var viewMenuItem = new MenuItem { Header = "_View", Foreground = theme.B_TextColor };
-        var displayModeDetailedItem = new MenuItem { Header = "Detailed Song List", Foreground = theme.B_TextColor };
-        displayModeDetailedItem.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
-        displayModeDetailedItem.CommandParameter = SongDisplayMode.Detailed;
 
-        var displayModeCompactItem = new MenuItem { Header = "Compact Song List", Foreground = theme.B_TextColor };
-        displayModeCompactItem.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
-        displayModeCompactItem.CommandParameter = SongDisplayMode.Compact;
+        // Library View SubMenu
+        var libraryViewSubMenu = new MenuItem { Header = "Library View", Foreground = theme.B_TextColor };
+        var libDetailed = new MenuItem { Header = "Detailed", Foreground = theme.B_TextColor };
+        libDetailed.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        libDetailed.CommandParameter = ("Library", SongDisplayMode.Detailed);
+        var libCompact = new MenuItem { Header = "Compact", Foreground = theme.B_TextColor };
+        libCompact.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        libCompact.CommandParameter = ("Library", SongDisplayMode.Compact);
+        var libGrid = new MenuItem { Header = "Grid", Foreground = theme.B_TextColor };
+        libGrid.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        libGrid.CommandParameter = ("Library", SongDisplayMode.Grid);
+        libraryViewSubMenu.Items.Add(libDetailed);
+        libraryViewSubMenu.Items.Add(libCompact);
+        libraryViewSubMenu.Items.Add(libGrid);
 
-        var displayModeGridItem = new MenuItem { Header = "Grid Song View", Foreground = theme.B_TextColor };
-        displayModeGridItem.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
-        displayModeGridItem.CommandParameter = SongDisplayMode.Grid;
+        // Artists View SubMenu
+        var artistsViewSubMenu = new MenuItem { Header = "Artists View", Foreground = theme.B_TextColor };
+        var artDetailed = new MenuItem { Header = "Detailed", Foreground = theme.B_TextColor };
+        artDetailed.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        artDetailed.CommandParameter = ("Artists", SongDisplayMode.Detailed);
+        var artCompact = new MenuItem { Header = "Compact", Foreground = theme.B_TextColor };
+        artCompact.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        artCompact.CommandParameter = ("Artists", SongDisplayMode.Compact);
+        var artGrid = new MenuItem { Header = "Grid", Foreground = theme.B_TextColor };
+        artGrid.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        artGrid.CommandParameter = ("Artists", SongDisplayMode.Grid);
+        artistsViewSubMenu.Items.Add(artDetailed);
+        artistsViewSubMenu.Items.Add(artCompact);
+        artistsViewSubMenu.Items.Add(artGrid);
 
-        viewMenuItem.Items.Add(displayModeDetailedItem);
-        viewMenuItem.Items.Add(displayModeCompactItem);
-        viewMenuItem.Items.Add(displayModeGridItem);
+        // Albums View SubMenu
+        var albumsViewSubMenu = new MenuItem { Header = "Albums View", Foreground = theme.B_TextColor };
+        var albDetailed = new MenuItem { Header = "Detailed", Foreground = theme.B_TextColor };
+        albDetailed.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        albDetailed.CommandParameter = ("Albums", SongDisplayMode.Detailed);
+        var albCompact = new MenuItem { Header = "Compact", Foreground = theme.B_TextColor };
+        albCompact.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        albCompact.CommandParameter = ("Albums", SongDisplayMode.Compact);
+        var albGrid = new MenuItem { Header = "Grid", Foreground = theme.B_TextColor };
+        albGrid.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        albGrid.CommandParameter = ("Albums", SongDisplayMode.Grid);
+        albumsViewSubMenu.Items.Add(albDetailed);
+        albumsViewSubMenu.Items.Add(albCompact);
+        albumsViewSubMenu.Items.Add(albGrid);
+
+        viewMenuItem.Items.Add(libraryViewSubMenu);
+        viewMenuItem.Items.Add(artistsViewSubMenu);
+        viewMenuItem.Items.Add(albumsViewSubMenu);
 
         menu.Items.Add(fileMenuItem);
         menu.Items.Add(viewMenuItem);
