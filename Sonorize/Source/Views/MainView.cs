@@ -164,8 +164,9 @@ public class MainWindow : Window
         }
         });
 
-        songListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("FilteredSongs"));
-        songListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedSong", BindingMode.TwoWay));
+        // Bind to Library.FilteredSongs and Library.SelectedSong
+        songListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.FilteredSongs"));
+        songListBox.Bind(ListBox.SelectedItemProperty, new Binding("Library.SelectedSong", BindingMode.TwoWay));
 
         songListBox.ItemTemplate = new FuncDataTemplate<Song>((song, nameScope) => {
             var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 5, 0), Source = song.Thumbnail, Stretch = Stretch.UniformToFill };
@@ -215,8 +216,9 @@ public class MainWindow : Window
         }
         });
 
-        artistsListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("Artists"));
-        artistsListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedArtist", BindingMode.TwoWay));
+        // Bind to Library.Artists and Library.SelectedArtist
+        artistsListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Artists"));
+        artistsListBox.Bind(ListBox.SelectedItemProperty, new Binding("Library.SelectedArtist", BindingMode.TwoWay));
 
 
         artistsListBox.ItemTemplate = new FuncDataTemplate<ArtistViewModel>((artistVM, nameScope) =>
@@ -293,8 +295,9 @@ public class MainWindow : Window
         }
         });
 
-        albumsListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("Albums"));
-        albumsListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedAlbum", BindingMode.TwoWay));
+        // Bind to Library.Albums and Library.SelectedAlbum
+        albumsListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Albums"));
+        albumsListBox.Bind(ListBox.SelectedItemProperty, new Binding("Library.SelectedAlbum", BindingMode.TwoWay));
 
         albumsListBox.ItemTemplate = new FuncDataTemplate<AlbumViewModel>((albumVM, nameScope) =>
         {
@@ -397,6 +400,7 @@ public class MainWindow : Window
             PositionMarkerBrush = Brushes.OrangeRed,
             LoopRegionBrush = new SolidColorBrush(accentColorForLoopRegion, 0.3)
         };
+        // WaveformRenderData remains on MainVM, but binds to Playing Song state
         waveformDisplay.Bind(WaveformDisplayControl.WaveformPointsProperty, new Binding("WaveformRenderData"));
         // Bind to PlaybackService properties directly as they are exposed
         waveformDisplay.Bind(WaveformDisplayControl.CurrentPositionProperty, new Binding("PlaybackService.CurrentPosition"));
@@ -457,10 +461,7 @@ public class MainWindow : Window
         var clearLoopBtn = new Button { Content = "Clear Loop", FontSize = 11, Padding = new Thickness(10, 5), Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
         // Bind commands to LoopEditor property
         clearLoopBtn.Bind(Button.CommandProperty, new Binding("LoopEditor.ClearLoopCommand"));
-        // The IsEnabled binding for clear loop should check if a loop exists on the current song.
-        // We can bind to the song through the PlaybackService.CurrentSong property.
-        // This binding logic was kept in the view for now, but it's simple enough.
-        // Alternatively, LoopEditor could expose a CanClearLoop property.
+        // The IsEnabled binding for clear loop checks if a loop exists on the *currently playing* song.
         var clearLoopBinding = new Binding("PlaybackService.CurrentSong.SavedLoop")
         {
             Converter = NotNullToBooleanConverter.Instance
@@ -492,7 +493,7 @@ public class MainWindow : Window
         // Bind CheckBox IsChecked to LoopEditor property
         loopActiveCheckBox.Bind(ToggleButton.IsCheckedProperty, new Binding("LoopEditor.IsCurrentLoopActiveUiBinding", BindingMode.TwoWay));
 
-        // IsEnabled binding for the checkbox should check if a loop exists, same as Clear button
+        // IsEnabled binding for the checkbox should check if a loop exists on the *currently playing* song.
         var loopActiveCheckBoxIsEnabledBinding = new Binding("PlaybackService.CurrentSong.SavedLoop")
         {
             Converter = NotNullToBooleanConverter.Instance
@@ -523,8 +524,9 @@ public class MainWindow : Window
             // Margin removed, will be handled by DockPanel spacing or parent margin
         };
         mainPlaybackSlider.Styles.Add(new Style(s => s.Is<Thumb>()) { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor) } });
+        // Bind to PlaybackService properties directly
         mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("PlaybackService.CurrentSongDurationSeconds"));
-        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("SliderPositionSeconds", BindingMode.TwoWay));
+        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("SliderPositionSeconds", BindingMode.TwoWay)); // SliderPositionSeconds is on MainVM
         mainPlaybackSlider.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
 
         var mainPlayPauseButton = new Button { Content = "Play", Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(10, 5), MinWidth = 70 };
@@ -538,13 +540,17 @@ public class MainWindow : Window
                     vm.PlaybackService.Resume();
             }
         };
+        // Bind to PlaybackService properties directly
         var playPauseContentBinding = new Binding("PlaybackService.IsPlaying") { Converter = BooleanToPlayPauseTextConverter.Instance };
         mainPlayPauseButton.Bind(Button.ContentProperty, playPauseContentBinding);
         mainPlayPauseButton.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
 
         var toggleAdvPanelButton = new Button { Content = "+", Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(8, 4), MinWidth = 30, FontWeight = FontWeight.Bold };
+        // This command is on MainVM
         toggleAdvPanelButton.Bind(Button.CommandProperty, new Binding("ToggleAdvancedPanelCommand"));
-        toggleAdvPanelButton.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
+        // IsEnabled should check if a song is selected or playing - relies on HasCurrentSong which is on MainVM
+        toggleAdvPanelButton.Bind(IsEnabledProperty, new Binding("HasCurrentSong"));
+
 
         var controlsButtonPanel = new StackPanel
         {
@@ -563,6 +569,7 @@ public class MainWindow : Window
             Margin = new Thickness(8, 0, 0, 0), // 8px left margin to space from slider
             MinWidth = 75 // "00:00 / 00:00"
         };
+        // Bind to CurrentTimeTotalTimeDisplay which is on MainVM
         timeDisplayTextBlock.Bind(TextBlock.TextProperty, new Binding("CurrentTimeTotalTimeDisplay"));
         timeDisplayTextBlock.Bind(IsVisibleProperty, new Binding("PlaybackService.HasCurrentSong"));
 
@@ -593,6 +600,7 @@ public class MainWindow : Window
     {
         var statusBar = new Border { Background = _theme.B_SlightlyLighterBackground, Padding = new Thickness(10, 4), Height = 26 };
         var statusBarText = new TextBlock { Foreground = _theme.B_SecondaryTextColor, VerticalAlignment = VerticalAlignment.Center, FontSize = 11 };
+        // Bind status bar text to MainVM property
         statusBarText.Bind(TextBlock.TextProperty, new Binding("StatusBarText"));
         statusBar.Child = statusBarText;
         return statusBar;

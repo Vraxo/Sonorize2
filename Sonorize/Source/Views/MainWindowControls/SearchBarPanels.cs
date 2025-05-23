@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Styling;
 using Sonorize.Models; // For ThemeColors
+using Sonorize.ViewModels; // Required for Binding
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -22,7 +23,9 @@ public static class SearchBarPanel
             CornerRadius = new CornerRadius(4),
             FontSize = 14
         };
-        searchBox.Bind(TextBox.TextProperty, new Binding("SearchQuery", BindingMode.TwoWay));
+        // Bind to Library.SearchQuery
+        searchBox.Bind(TextBox.TextProperty, new Binding("Library.SearchQuery", BindingMode.TwoWay));
+
         searchBox.Styles.Add(new Style(s => s.Is<TextBox>().Class(":focus"))
         {
             Setters = { new Setter(TextBox.BorderBrushProperty, theme.B_AccentColor) }

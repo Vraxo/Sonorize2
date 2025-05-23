@@ -11,7 +11,8 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Sonorize.Models;
 using Sonorize.Services;
-using Sonorize.Utils; // For AlbumArtistTupleComparer
+using Sonorize.Utils;
+using System.IO; // Required for Path and Directory
 
 namespace Sonorize.ViewModels;
 
@@ -20,83 +21,25 @@ public class MainWindowViewModel : ViewModelBase
     private readonly SettingsService _settingsService;
     private readonly MusicLibraryService _musicLibraryService;
     private readonly WaveformService _waveformService;
-    private readonly LoopDataService _loopDataService; // Keep LoopDataService for library loading persistence
+    private readonly LoopDataService _loopDataService;
 
     public PlaybackService PlaybackService { get; }
     public ThemeColors CurrentTheme { get; }
 
-    // Expose the new LoopEditorViewModel
+    // Expose the child ViewModels
+    // Removed the explicit 'public' from 'set' as it's redundant when the property is public
+    public LibraryViewModel Library { get; set; }
     public LoopEditorViewModel LoopEditor { get; }
 
+    // HasCurrentSong and SliderPositionSeconds/CurrentTimeTotalTimeDisplay remain here
+    // as they relate directly to the *currently playing* song, which is PlaybackService's concern.
     public bool HasCurrentSong => PlaybackService.CurrentSong != null;
-
-    private readonly ObservableCollection<Song> _allSongs = new();
-    public ObservableCollection<Song> FilteredSongs { get; } = new();
-    public ObservableCollection<ArtistViewModel> Artists { get; } = new();
-    public ObservableCollection<AlbumViewModel> Albums { get; } = new();
-
-    private string _searchQuery = string.Empty;
-    public string SearchQuery { get => _searchQuery; set { if (SetProperty(ref _searchQuery, value)) ApplyFilter(); } }
-
-    private Song? _selectedSongInternal;
-    public Song? SelectedSong
-    {
-        get => _selectedSongInternal;
-        set
-        {
-            if (_selectedSongInternal != value)
-            {
-                var previousSong = _selectedSongInternal;
-                if (SetProperty(ref _selectedSongInternal, value))
-                {
-                    HandleSelectedSongChange(previousSong, _selectedSongInternal);
-                }
-            }
-        }
-    }
-
-    private ArtistViewModel? _selectedArtist;
-    public ArtistViewModel? SelectedArtist
-    {
-        get => _selectedArtist;
-        set
-        {
-            if (SetProperty(ref _selectedArtist, value))
-            {
-                if (value != null)
-                {
-                    OnArtistSelected(value);
-                }
-            }
-        }
-    }
-
-    private AlbumViewModel? _selectedAlbum;
-    public AlbumViewModel? SelectedAlbum
-    {
-        get => _selectedAlbum;
-        set
-        {
-            if (SetProperty(ref _selectedAlbum, value))
-            {
-                if (value != null)
-                {
-                    OnAlbumSelected(value);
-                }
-            }
-        }
-    }
-
-    private int _activeTabIndex = 0;
-    public int ActiveTabIndex { get => _activeTabIndex; set => SetProperty(ref _activeTabIndex, value); }
-
-    // Loop related properties moved to LoopEditorViewModel
 
     private string _statusBarText = "Welcome to Sonorize!";
     public string StatusBarText { get => _statusBarText; set => SetProperty(ref _statusBarText, value); }
 
-    private bool _isLoadingLibrary = false;
-    public bool IsLoadingLibrary { get => _isLoadingLibrary; set { if (SetProperty(ref _isLoadingLibrary, value)) OnIsLoadingLibraryChanged(); } }
+    // IsLoadingLibrary is now tied to the Library ViewModel's state
+    public bool IsLoadingLibrary { get => Library.IsLoadingLibrary; } // Removed setter and internal field
 
     private bool _isAdvancedPanelVisible;
     public bool IsAdvancedPanelVisible { get => _isAdvancedPanelVisible; set { if (SetProperty(ref _isAdvancedPanelVisible, value)) OnAdvancedPanelVisibleChanged(); } }
@@ -146,7 +89,6 @@ public class MainWindowViewModel : ViewModelBase
     public ICommand ExitCommand { get; }
     public ICommand AddDirectoryAndRefreshCommand { get; }
     public ICommand ToggleAdvancedPanelCommand { get; }
-    // Loop commands moved to LoopEditorViewModel
 
     public MainWindowViewModel(
         SettingsService settingsService,
@@ -154,7 +96,7 @@ public class MainWindowViewModel : ViewModelBase
         PlaybackService playbackService,
         ThemeColors theme,
         WaveformService waveformService,
-        LoopDataService loopDataService) // Keep LoopDataService for library loading persistence
+        LoopDataService loopDataService)
     {
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
@@ -163,15 +105,23 @@ public class MainWindowViewModel : ViewModelBase
         _waveformService = waveformService;
         _loopDataService = loopDataService;
 
-        // Initialize the new LoopEditorViewModel
+        // Initialize child ViewModels
+        Library = new LibraryViewModel(settingsService, musicLibraryService, loopDataService);
         LoopEditor = new LoopEditorViewModel(PlaybackService, loopDataService);
 
+        // Subscribe to child ViewModel property changes relevant to the parent VM
+        Library.PropertyChanged += Library_PropertyChanged;
+        // LoopEditor changes are handled by its internal PlaybackService listener and the PlaybackService_PropertyChanged handler here.
 
-        LoadInitialDataCommand = new RelayCommand(async _ => await LoadMusicLibrary(), _ => !IsLoadingLibrary);
-        OpenSettingsCommand = new RelayCommand(async owner => await OpenSettingsDialog(owner), _ => !IsLoadingLibrary);
+        LoadInitialDataCommand = new RelayCommand(async _ => await Library.LoadLibraryAsync(), _ => !Library.IsLoadingLibrary);
+        OpenSettingsCommand = new RelayCommand(async owner => await OpenSettingsDialog(owner), _ => !Library.IsLoadingLibrary);
         ExitCommand = new RelayCommand(_ => Environment.Exit(0));
-        AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefresh(owner), _ => !IsLoadingLibrary);
-        ToggleAdvancedPanelCommand = new RelayCommand(_ => IsAdvancedPanelVisible = !IsAdvancedPanelVisible, _ => (SelectedSong != null || PlaybackService.CurrentSong != null) && !IsLoadingLibrary);
+        AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefresh(owner), _ => !Library.IsLoadingLibrary);
+        ToggleAdvancedPanelCommand = new RelayCommand(
+            _ => IsAdvancedPanelVisible = !IsAdvancedPanelVisible,
+            // Can only toggle if there's a song selected or playing
+            _ => (Library.SelectedSong != null || PlaybackService.CurrentSong != null) && !Library.IsLoadingLibrary);
+
 
         PlaybackService.PropertyChanged += OnPlaybackServicePropertyChanged;
         PlaybackSpeed = 1.0;
@@ -181,14 +131,39 @@ public class MainWindowViewModel : ViewModelBase
         UpdateAllUIDependentStates();
     }
 
-    private void OnIsLoadingLibraryChanged()
+    private void Library_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        (LoadInitialDataCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        (OpenSettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        if (_isLoadingLibrary) IsAdvancedPanelVisible = false;
+        Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            switch (e.PropertyName)
+            {
+                case nameof(Library.SelectedSong):
+                    Debug.WriteLine($"[MainVM_LibChanged] Library.SelectedSong changed to: {Library.SelectedSong?.Title ?? "null"}");
+                    // React to song selection by potentially starting playback
+                    HandleSelectedSongChange(PlaybackService.CurrentSong, Library.SelectedSong);
+                    // Update toggle button CanExecute as HasCurrentSong might change
+                    (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                    break;
+                case nameof(Library.IsLoadingLibrary):
+                    // Propagate the loading state change
+                    OnPropertyChanged(nameof(IsLoadingLibrary));
+                    // Update commands dependent on loading state
+                    (LoadInitialDataCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                    (OpenSettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                    (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                    (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged(); // Depends on !IsLoadingLibrary
+                    UpdateStatusBarText(); // Status text includes loading info
+                    break;
+                case nameof(Library.LibraryStatusText):
+                    UpdateStatusBarText(); // Library status affects overall status bar
+                    break;
+                    // Properties like Artists, Albums, FilteredSongs changing don't need explicit handling here
+                    // as the UI is bound directly to Library.*
+            }
+        });
     }
+
+    // OnIsLoadingLibraryChanged removed as IsLoadingLibrary is now a proxy property
 
     private void OnAdvancedPanelVisibleChanged()
     {
@@ -206,48 +181,51 @@ public class MainWindowViewModel : ViewModelBase
         // Loop editor state is updated by LoopEditorViewModel's internal logic/PlaybackService handler
         UpdateStatusBarText();
         OnPropertyChanged(nameof(CurrentTimeTotalTimeDisplay));
-        RaiseAllCommandsCanExecuteChanged();
+        RaiseAllCommandsCanExecuteChanged(); // Check commands potentially affected by HasCurrentSong, IsLoadingLibrary etc.
     }
 
     private void RaiseAllCommandsCanExecuteChanged()
     {
+        // Commands on MainViewModel
         (LoadInitialDataCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (OpenSettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
 
-        // Trigger CanExecute changes for LoopEditor commands via the LoopEditor instance
+        // Commands on child ViewModels need to be triggered via their Raise method
         LoopEditor.RaiseLoopCommandCanExecuteChanged();
+        Library.RaiseLibraryCommandsCanExecuteChanged(); // Call the new method in LibraryVM
     }
 
+    /// <summary>
+    /// Handles the change in the *selected* song from the library list,
+    /// potentially triggering playback in the PlaybackService.
+    /// </summary>
+    /// <param name="oldSong">The previously selected song (or currently playing).</param>
+    /// <param name="newSong">The newly selected song from the list.</param>
     private void HandleSelectedSongChange(Song? oldSong, Song? newSong)
     {
-        Debug.WriteLine($"[MainVM] HandleSelectedSongChange. Old: {oldSong?.Title ?? "null"}, New: {newSong?.Title ?? "null"}");
+        Debug.WriteLine($"[MainVM] HandleSelectedSongChange triggered by Library.SelectedSong change. Playing: {PlaybackService.CurrentSong?.Title ?? "null"}, New Selection: {newSong?.Title ?? "null"}");
 
-        // Play the new song if different or if stopped
-        if (newSong != null)
+        // If a new song is selected and it's different from the current playing song, or if playback is stopped, start playback of the new song.
+        if (newSong != null && (newSong != PlaybackService.CurrentSong || PlaybackService.CurrentPlaybackStatus == PlaybackStateStatus.Stopped))
         {
-            if (newSong != PlaybackService.CurrentSong || PlaybackService.CurrentPlaybackStatus == PlaybackStateStatus.Stopped)
-            {
-                PlaybackService.Play(newSong); // PlaybackService.CurrentSong will be updated here
-                // The LoopEditorViewModel listens to PlaybackService.CurrentSong changes
-                // and updates its state accordingly, including subscribing/unsubscribing
-                // from Song.PropertyChanged for SavedLoop/IsLoopActive.
-            }
-            // If newSong is the same as the current playing song, no Play() call is needed.
-            // LoopEditorViewModel's state is already in sync via PlaybackService.CurrentSong changes.
+            PlaybackService.Play(newSong); // This updates PlaybackService.CurrentSong
+            // PlaybackService_PropertyChanged handler will react to this and update other UI elements and child VMs.
         }
-        else
+        else if (newSong == null)
         {
-            // UI deselected song, don't automatically stop playback
-            Debug.WriteLine($"[MainVM] UI deselected a song (newSong is null). Current playing song '{PlaybackService.CurrentSong?.Title ?? "null"}' will continue if it was playing.");
+            // If selection is cleared in the list, do NOT stop playback.
+            // Playback stops only via explicit Stop button or song end.
+            Debug.WriteLine($"[MainVM] Library selection cleared (newSong is null). Current playing song '{PlaybackService.CurrentSong?.Title ?? "null"}' continues if it was playing.");
         }
+        // If newSong is the same as PlaybackService.CurrentSong and is already playing/paused, do nothing here.
+        // The LoopEditorViewModel's state should already be synced via its listener to PlaybackService.CurrentSong.
 
-        (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        UpdateAllUIDependentStates(); // Update non-loop specific UI state
+        // Update UI elements that depend on the current song
+        UpdateAllUIDependentStates(); // This will sync things like HasCurrentSong, status bar, command states
     }
 
-    // Renamed to be specific about PlaybackService changes
     private void OnPlaybackServicePropertyChanged(object? sender, PropertyChangedEventArgs args)
     {
         Dispatcher.UIThread.InvokeAsync(() =>
@@ -255,12 +233,16 @@ public class MainWindowViewModel : ViewModelBase
             switch (args.PropertyName)
             {
                 case nameof(PlaybackService.CurrentSong):
-                    // When CurrentSong changes in the service, HandleSelectedSongChange or Play() was called.
-                    // LoopEditorViewModel already listens to this property and updates its state.
-                    // We only need to update MainVM-specific UI elements and trigger waveform loading.
+                    // The PlaybackService.CurrentSong changing is the source of truth for *what is playing*.
+                    // The LibraryViewModel.SelectedSong triggered the Play() call, which caused this.
+                    // We need to update UI elements that show info about the *playing* song,
+                    // not necessarily the *selected* song in the list (though they are often the same).
+
+                    // Update MainVM-specific UI elements and trigger waveform loading.
                     UpdateAllUIDependentStates();
-                    OnPropertyChanged(nameof(SliderPositionSeconds));
-                    OnPropertyChanged(nameof(CurrentTimeTotalTimeDisplay));
+                    OnPropertyChanged(nameof(SliderPositionSeconds)); // Slider max changes with song
+                    OnPropertyChanged(nameof(CurrentTimeTotalTimeDisplay)); // Total time changes with song
+
                     // Trigger waveform load for the new song if Advanced Panel is visible
                     if (PlaybackService.CurrentSong != null && IsAdvancedPanelVisible)
                     {
@@ -268,93 +250,50 @@ public class MainWindowViewModel : ViewModelBase
                     }
                     else if (PlaybackService.CurrentSong == null)
                     {
-                        // Clear waveform if no song is loaded
+                        // Clear waveform if no song is loaded (e.g., after calling Stop)
                         WaveformRenderData.Clear(); OnPropertyChanged(nameof(WaveformRenderData)); IsWaveformLoading = false;
                     }
+                    // The LoopEditorViewModel already listens to PlaybackService.CurrentSong and updates its internal state.
+
+                    // Ensure the selected song in the list stays in sync IF the playback was triggered
+                    // by selecting it in the list. This is handled by HandleSelectedSongChange now.
+                    // But if playback changes *not* due to list selection (e.g., 'Next Song' button in future),
+                    // we might want to update Library.SelectedSong here. For now, keep it simple.
+                    // If CurrentSong changes to null due to Stop(), we should also clear Library.SelectedSong
+                    if (PlaybackService.CurrentSong == null && Library.SelectedSong != null)
+                    {
+                        Library.SelectedSong = null;
+                    }
+
+
                     break;
 
                 case nameof(PlaybackService.IsPlaying):
                 case nameof(PlaybackService.CurrentPlaybackStatus):
-                    UpdateStatusBarText();
-                    RaiseAllCommandsCanExecuteChanged();
+                    UpdateStatusBarText(); // Playback status affects the overall status bar
+                    RaiseAllCommandsCanExecuteChanged(); // Commands like Play/Pause need state update
                     // LoopEditorViewModel also listens to PlaybackService status for command CanExecute
                     break;
 
                 case nameof(PlaybackService.CurrentPosition):
                     // Slider binding handles this directly.
                     // LoopEditorViewModel also listens to CurrentPosition for candidate updates and CanSaveLoopRegion.
-                    OnPropertyChanged(nameof(SliderPositionSeconds));
+                    // We still need to notify the view that CurrentTimeTotalTimeDisplay might have changed
                     OnPropertyChanged(nameof(CurrentTimeTotalTimeDisplay));
+                    LoopEditor.RaiseLoopCommandCanExecuteChanged(); // Ensure loop commands update based on position
                     break;
 
                 case nameof(PlaybackService.CurrentSongDuration):
                     // Slider binding handles this directly.
                     // LoopEditorViewModel also listens to CurrentSongDuration for CanSaveLoopRegion.
-                    OnPropertyChanged(nameof(SliderPositionSeconds));
+                    // We still need to notify the view that CurrentTimeTotalTimeDisplay might have changed
                     OnPropertyChanged(nameof(CurrentTimeTotalTimeDisplay));
+                    LoopEditor.RaiseLoopCommandCanExecuteChanged(); // Ensure loop commands update based on duration
                     break;
             }
         });
     }
 
-    // Song.PropertyChanged handlers moved to LoopEditorViewModel (CurrentSong_PropertyChanged)
-    // ToggleCurrentSongLoopActive moved to LoopEditorViewModel
-
-    private void OnArtistSelected(ArtistViewModel artist)
-    {
-        if (artist?.Name == null) return;
-        Debug.WriteLine($"[MainVM] Artist selected: {artist.Name}");
-        SearchQuery = artist.Name;
-        ActiveTabIndex = 0;
-    }
-
-    private void OnAlbumSelected(AlbumViewModel album)
-    {
-        if (album?.Title == null || album.Artist == null) return;
-        Debug.WriteLine($"[MainVM] Album selected: {album.Title} by {album.Artist}");
-        SearchQuery = string.Empty;
-
-        FilteredSongs.Clear();
-        var songsInAlbum = _allSongs.Where(s =>
-            s.Album.Equals(album.Title, StringComparison.OrdinalIgnoreCase) &&
-            s.Artist.Equals(album.Artist, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(s => s.Title); // Always sort by title within an album
-
-        foreach (var song in songsInAlbum)
-        {
-            FilteredSongs.Add(song);
-        }
-        UpdateStatusBarText();
-        ActiveTabIndex = 0;
-    }
-
-
-    private void ApplyFilter()
-    {
-        FilteredSongs.Clear();
-        var songsToFilter = _allSongs.AsEnumerable();
-        if (!string.IsNullOrWhiteSpace(SearchQuery))
-        {
-            var query = SearchQuery.ToLowerInvariant().Trim();
-            songsToFilter = songsToFilter.Where(s =>
-                (s.Title?.ToLowerInvariant().Contains(query) ?? false) ||
-                (s.Artist?.ToLowerInvariant().Contains(query) ?? false) ||
-                (s.Album?.ToLowerInvariant().Contains(query) ?? false));
-        }
-
-        // Sorting for the main song list (Library tab) - Sort by Title
-        songsToFilter = songsToFilter.OrderBy(s => s.Title, StringComparer.OrdinalIgnoreCase);
-
-        foreach (var song in songsToFilter)
-        {
-            FilteredSongs.Add(song);
-        }
-        if (SelectedSong != null && !FilteredSongs.Contains(SelectedSong))
-        {
-            Debug.WriteLine($"[MainVM ApplyFilter] Current SelectedSong '{SelectedSong.Title}' is no longer in FilteredSongs. ListBox should update selection.");
-        }
-        UpdateStatusBarText();
-    }
 
     private async Task LoadWaveformForCurrentSong()
     {
@@ -368,8 +307,9 @@ public class MainWindowViewModel : ViewModelBase
         {
             Debug.WriteLine($"[MainVM] Requesting waveform for: {songToLoadWaveformFor.Title}");
             // Target points should probably be based on control width or a fixed resolution
-            var points = await _waveformService.GetWaveformAsync(songToLoadWaveformFor.FilePath, 1000); // Use a reasonable fixed number for now
-            // Check if the song is still the same after the async operation
+            // For a fixed 80px height control, 1000 points is likely sufficient detail.
+            var points = await _waveformService.GetWaveformAsync(songToLoadWaveformFor.FilePath, 1000);
+            // Check if the song is still the same after the async operation before updating the UI
             if (PlaybackService.CurrentSong == songToLoadWaveformFor)
             {
                 WaveformRenderData.Clear(); foreach (var p in points) WaveformRenderData.Add(p); OnPropertyChanged(nameof(WaveformRenderData));
@@ -377,108 +317,150 @@ public class MainWindowViewModel : ViewModelBase
             }
             else
             {
+                // Song changed during waveform generation, discard the result for the old song.
                 Debug.WriteLine($"[MainVM] Waveform for {songToLoadWaveformFor.Title} loaded, but current song is now {PlaybackService.CurrentSong?.Title ?? "null"}. Discarding.");
-                WaveformRenderData.Clear(); OnPropertyChanged(nameof(WaveformRenderData));
+                // Note: If the new song is null or different, the PlaybackService_PropertyChanged
+                // handler for the new song would have cleared the waveform already if advanced panel is visible.
+                // This ensures it's cleared if it wasn't already.
+                if (PlaybackService.CurrentSong != songToLoadWaveformFor)
+                {
+                    WaveformRenderData.Clear(); OnPropertyChanged(nameof(WaveformRenderData));
+                }
             }
         }
         catch (Exception ex) { Debug.WriteLine($"[MainVM] Failed to load waveform for {songToLoadWaveformFor.Title}: {ex.Message}"); WaveformRenderData.Clear(); OnPropertyChanged(nameof(WaveformRenderData)); }
         finally { IsWaveformLoading = false; }
     }
 
-    // UpdateLoopEditorForCurrentSong moved logic into LoopEditorViewModel's internal state management
-    // ClearLoopCandidateInputs moved to LoopEditorViewModel
-    // CanSaveLoopRegion logic moved to LoopEditorViewModel
-    // SaveLoopAction moved to LoopEditorViewModel
-    // ClearSavedLoopAction moved to LoopEditorViewModel
-    // UpdateActiveLoopDisplayText moved to LoopEditorViewModel
 
     private void UpdateStatusBarText()
     {
-        if (IsLoadingLibrary) return; string status; var currentServiceSong = PlaybackService.CurrentSong;
+        // Combine status from PlaybackService and LibraryViewModel
+        string playbackStatus;
+        var currentServiceSong = PlaybackService.CurrentSong;
         if (currentServiceSong != null)
         {
             string stateStr = PlaybackService.CurrentPlaybackStatus switch { PlaybackStateStatus.Playing => "Playing", PlaybackStateStatus.Paused => "Paused", PlaybackStateStatus.Stopped => "Stopped", _ => "Idle" };
-            status = $"{stateStr}: {currentServiceSong.Title}";
-            // Get active loop status from LoopEditor
+            playbackStatus = $"{stateStr}: {currentServiceSong.Title}";
+            // Use LoopEditor's property for loop active state displayed in status bar
             if (LoopEditor.IsCurrentLoopActiveUiBinding && currentServiceSong.SavedLoop != null)
             {
-                status += $" (Loop Active)";
+                playbackStatus += $" (Loop Active)";
             }
         }
         else
         {
-            status = $"Sonorize - {FilteredSongs.Count} of {_allSongs.Count} songs displayed.";
-            var settings = _settingsService.LoadSettings(); // Load settings just for this status check
-            if (_allSongs.Count == 0 && !IsLoadingLibrary && !settings.MusicDirectories.Any())
-            {
-                status = "Sonorize - Library empty. Add directories via File menu.";
-            }
-            else if (_allSongs.Count == 0 && !IsLoadingLibrary && settings.MusicDirectories.Any())
-            {
-                status = "Sonorize - No songs found in configured directories.";
-            }
+            // No playback info, use library status
+            playbackStatus = Library.LibraryStatusText;
         }
-        StatusBarText = status;
+        StatusBarText = playbackStatus;
     }
 
     private async Task LoadMusicLibrary()
     {
-        if (IsLoadingLibrary) return; IsAdvancedPanelVisible = false; IsLoadingLibrary = true; SearchQuery = string.Empty; var settings = _settingsService.LoadSettings();
-        await Dispatcher.UIThread.InvokeAsync(() => {
-            SelectedSong = null; _allSongs.Clear(); Artists.Clear(); Albums.Clear(); FilteredSongs.Clear(); WaveformRenderData.Clear(); OnPropertyChanged(nameof(WaveformRenderData)); StatusBarText = "Preparing to load music..."; UpdateAllUIDependentStates();
-        });
-        if (settings.MusicDirectories.Any())
-        {
-            try
-            {
-                // Pass the existing LoopDataService instance to MusicLibraryService during song loading
-                await Task.Run(async () => { await _musicLibraryService.LoadMusicFromDirectoriesAsync(settings.MusicDirectories, song => Dispatcher.UIThread.InvokeAsync(() => _allSongs.Add(song)), s => Dispatcher.UIThread.InvokeAsync(() => StatusBarText = s)); });
-                await Dispatcher.UIThread.InvokeAsync(() => {
-                    Artists.Clear(); var uniqueArtistNames = _allSongs.Select(s => s.Artist).Where(a => !string.IsNullOrWhiteSpace(a)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(a => a, StringComparer.OrdinalIgnoreCase).ToList();
-                    Bitmap? defaultThumb = _musicLibraryService.GetDefaultThumbnail(); foreach (var artistName in uniqueArtistNames!) { Bitmap? repThumb = _allSongs.FirstOrDefault(s => (s.Artist?.Equals(artistName, StringComparison.OrdinalIgnoreCase) ?? false) && s.Thumbnail != null)?.Thumbnail ?? defaultThumb; Artists.Add(new ArtistViewModel { Name = artistName, Thumbnail = repThumb }); }
-                    OnPropertyChanged(nameof(Artists));
-                    Albums.Clear(); Func<Song, (string Album, string Artist)> keySelector = s => (s.Album?.Trim() ?? string.Empty, s.Artist?.Trim() ?? string.Empty);
-                    var uniqueAlbums = _allSongs.Where(s => !string.IsNullOrWhiteSpace(s.Album) && !string.IsNullOrWhiteSpace(s.Artist)).GroupBy(keySelector, AlbumArtistTupleComparer.Instance)
-                        .Select(g => new { AlbumTitle = g.First().Album, ArtistName = g.First().Artist, ThumbSong = g.FirstOrDefault(s => s.Thumbnail != null) })
-                        .OrderBy(a => a.ArtistName, StringComparer.OrdinalIgnoreCase).ThenBy(a => a.AlbumTitle, StringComparer.OrdinalIgnoreCase).ToList(); // Keep album sort by artist, then album title
-                    foreach (var albumData in uniqueAlbums) Albums.Add(new AlbumViewModel { Title = albumData.AlbumTitle, Artist = albumData.ArtistName, Thumbnail = albumData.ThumbSong?.Thumbnail ?? defaultThumb }); OnPropertyChanged(nameof(Albums));
-                    ApplyFilter(); // Apply filter with the new sorting logic
-                });
-            }
-            catch (Exception ex) { Debug.WriteLine($"[MainVM] Error loading library: {ex}"); await Dispatcher.UIThread.InvokeAsync(() => StatusBarText = "Error loading music library."); }
-        }
-        IsLoadingLibrary = false; UpdateStatusBarText();
+        // Delegate the core loading logic to the LibraryViewModel
+        await Library.LoadLibraryAsync();
+        // The Library_PropertyChanged handler for IsLoadingLibrary will update the status bar.
+        // No need to call UpdateStatusBarText directly here after the await.
     }
 
     private async Task OpenSettingsDialog(object? ownerWindow)
     {
-        if (ownerWindow is not Window owner || IsLoadingLibrary) return; IsAdvancedPanelVisible = false; var currentSettingsBeforeDialog = _settingsService.LoadSettings();
-        var settingsVM = new SettingsViewModel(_settingsService); var settingsDialog = new Sonorize.Views.SettingsWindow(CurrentTheme) { DataContext = settingsVM };
-        await settingsDialog.ShowDialog(owner);
+        if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
+        IsAdvancedPanelVisible = false; // Hide advanced panel when opening settings
+
+        var currentSettingsBeforeDialog = _settingsService.LoadSettings();
+        var settingsVM = new SettingsViewModel(_settingsService);
+        var settingsDialog = new Sonorize.Views.SettingsWindow(CurrentTheme) { DataContext = settingsVM };
+
+        await settingsDialog.ShowDialog(owner); // Show dialog modally
+
+        // After the dialog is closed
         if (settingsVM.SettingsChanged)
         {
+            Debug.WriteLine("[MainVM] Settings changed detected after dialog closed.");
             var newSettingsAfterDialog = _settingsService.LoadSettings();
             bool dirsActuallyChanged = !currentSettingsBeforeDialog.MusicDirectories.SequenceEqual(newSettingsAfterDialog.MusicDirectories);
             bool themeActuallyChanged = currentSettingsBeforeDialog.PreferredThemeFileName != newSettingsAfterDialog.PreferredThemeFileName;
 
-            if (dirsActuallyChanged) { await LoadMusicLibrary(); }
-            if (themeActuallyChanged) { StatusBarText = "Theme changed. Please restart Sonorize for the changes to take full effect."; }
+            if (dirsActuallyChanged)
+            {
+                Debug.WriteLine("[MainVM] Music directories changed. Reloading library.");
+                await Library.LoadLibraryAsync(); // Delegate library reload
+            }
+
+            if (themeActuallyChanged)
+            {
+                Debug.WriteLine("[MainVM] Theme changed. Restart recommended.");
+                // Update status bar to inform user about restart
+                StatusBarText = "Theme changed. Please restart Sonorize for the changes to take full effect.";
+            }
+            // If settings changed but neither dirs nor theme changed (e.g., future settings),
+            // SettingsChanged flag might be set incorrectly or indicates a different type of setting.
+            // For now, only directory and theme changes trigger actions here.
         }
+        else
+        {
+            Debug.WriteLine("[MainVM] Settings dialog closed, no changes reported by SettingsViewModel.");
+        }
+        // Ensure status bar reflects current state after dialog if no reload/theme change occurred
+        UpdateStatusBarText();
     }
 
     private async Task AddMusicDirectoryAndRefresh(object? ownerWindow)
     {
-        if (ownerWindow is not Window owner || IsLoadingLibrary) return; IsAdvancedPanelVisible = false;
+        if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
+        IsAdvancedPanelVisible = false; // Hide advanced panel
+
+        // Use StorageProvider from the Window
         var result = await owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Select Music Directory", AllowMultiple = false });
+
         if (result != null && result.Count > 0)
         {
-            string? folderPath = result[0].Path.LocalPath;
-            if (string.IsNullOrEmpty(folderPath) && result[0].Path.IsAbsoluteUri) { try { folderPath = new Uri(result[0].Path.ToString()).LocalPath; } catch { folderPath = null; Debug.WriteLine($"[MainVM] Could not convert folder URI: {result[0].Path}"); } }
-            if (!string.IsNullOrEmpty(folderPath))
+            // Use Path.GetFullPath to normalize the path and handle potential Uri issues robustly
+            string? folderPath = null;
+            try
             {
-                var settings = _settingsService.LoadSettings(); if (!settings.MusicDirectories.Contains(folderPath)) { settings.MusicDirectories.Add(folderPath); _settingsService.SaveSettings(settings); await LoadMusicLibrary(); }
+                folderPath = Path.GetFullPath(result[0].Path.LocalPath);
             }
-            else { Debug.WriteLine($"[MainVM] Selected folder path could not be determined: {result[0].Name}"); }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[MainVM] Error getting full path for selected directory: {ex.Message}");
+                // Handle error or inform user
+                StatusBarText = "Error getting path for selected directory.";
+                return; // Exit the method if path is invalid
+            }
+
+
+            if (!string.IsNullOrEmpty(folderPath) && Directory.Exists(folderPath)) // Also double-check it exists
+            {
+                var settings = _settingsService.LoadSettings();
+                // Use normalized path for checking and adding
+                if (!settings.MusicDirectories.Contains(folderPath))
+                {
+                    settings.MusicDirectories.Add(folderPath);
+                    _settingsService.SaveSettings(settings);
+                    Debug.WriteLine($"[MainVM] Added new directory: {folderPath}. Reloading library.");
+                    await Library.LoadLibraryAsync(); // Delegate library reload
+                    // Library_PropertyChanged handler will update status
+                }
+                else
+                {
+                    Debug.WriteLine($"[MainVM] Directory already exists: {folderPath}");
+                    StatusBarText = "Directory already in library.";
+                }
+            }
+            else
+            {
+                Debug.WriteLine($"[MainVM] Selected directory path is invalid or does not exist: {folderPath}");
+                StatusBarText = "Invalid directory selected.";
+            }
+        }
+        else
+        {
+            Debug.WriteLine("[MainVM] Folder picker cancelled or returned no results.");
+            // Optionally update status bar if folder picker was cancelled
+            UpdateStatusBarText(); // Revert status bar to normal if not loading
         }
     }
 }

@@ -8,8 +8,8 @@ public static class MainMenu
 {
     public static Menu Create(ThemeColors theme, Window ownerWindow)
     {
-        var menu = new Menu 
-        { 
+        var menu = new Menu
+        {
             Background = theme.B_SlightlyLighterBackground,
             Foreground = theme.B_TextColor
         };
@@ -26,8 +26,10 @@ public static class MainMenu
             Foreground = theme.B_TextColor
         };
 
+        // Bind to AddDirectoryAndRefreshCommand on the MainWindowViewModel
         addDirectoryMenuItem.Bind(MenuItem.CommandProperty, new Binding("AddDirectoryAndRefreshCommand"));
-        addDirectoryMenuItem.CommandParameter = ownerWindow; // Use the passed owner window
+        addDirectoryMenuItem.CommandParameter = ownerWindow; // Pass the owner window
+
 
         var settingsMenuItem = new MenuItem
         {
@@ -35,8 +37,9 @@ public static class MainMenu
             Foreground = theme.B_TextColor
         };
 
+        // Bind to OpenSettingsCommand on the MainWindowViewModel
         settingsMenuItem.Bind(MenuItem.CommandProperty, new Binding("OpenSettingsCommand"));
-        settingsMenuItem.CommandParameter = ownerWindow; // Use the passed owner window
+        settingsMenuItem.CommandParameter = ownerWindow; // Pass the owner window
 
         var exitMenuItem = new MenuItem
         {
@@ -44,6 +47,7 @@ public static class MainMenu
             Foreground = theme.B_TextColor
         };
 
+        // Bind to ExitCommand on the MainWindowViewModel
         exitMenuItem.Bind(MenuItem.CommandProperty, new Binding("ExitCommand"));
 
         fileMenuItem.Items.Add(addDirectoryMenuItem);
