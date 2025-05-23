@@ -102,7 +102,7 @@ public static class MainPlaybackControlsPanel
             HorizontalAlignment = HorizontalAlignment.Right
         };
         timeDisplayTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentTimeTotalTimeDisplay"));
-        // Removed: timeDisplayTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
+        timeDisplayTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
 
         var seekerAreaPanel = new Panel
         {
