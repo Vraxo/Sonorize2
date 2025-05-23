@@ -12,7 +12,7 @@ using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.Services;
 using Sonorize.ViewModels;
-using Sonorize.Views.MainWindowControls; // Added for SearchBarPanel and MainMenu
+using Sonorize.Views.MainWindowControls;
 
 namespace Sonorize.Views;
 public class MainWindow : Window
@@ -22,10 +22,10 @@ public class MainWindow : Window
     public MainWindow(ThemeColors theme)
     {
         _theme = theme;
-        Title = "Sonorize"; 
+        Title = "Sonorize";
         Width = 950;
         Height = 750;
-        MinWidth = 700; 
+        MinWidth = 700;
         MinHeight = 500;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Background = _theme.B_BackgroundColor;
@@ -43,7 +43,7 @@ public class MainWindow : Window
             ]
         };
 
-        var menu = MainMenu.Create(_theme, this); // MODIFIED HERE
+        var menu = MainMenu.Create(_theme, this);
         Grid.SetRow(menu, 0);
         mainGrid.Children.Add(menu);
 
@@ -398,10 +398,13 @@ public class MainWindow : Window
             LoopRegionBrush = new SolidColorBrush(accentColorForLoopRegion, 0.3)
         };
         waveformDisplay.Bind(WaveformDisplayControl.WaveformPointsProperty, new Binding("WaveformRenderData"));
+        // Bind to PlaybackService properties directly as they are exposed
         waveformDisplay.Bind(WaveformDisplayControl.CurrentPositionProperty, new Binding("PlaybackService.CurrentPosition"));
         waveformDisplay.Bind(WaveformDisplayControl.DurationProperty, new Binding("PlaybackService.CurrentSongDuration"));
         waveformDisplay.Bind(WaveformDisplayControl.ActiveLoopProperty, new Binding("PlaybackService.CurrentSong.SavedLoop"));
-        waveformDisplay.SeekRequested += (s, time) => { if (DataContext is MainWindowViewModel vm) vm.WaveformSeekCommand.Execute(time); };
+        // Bind WaveformSeekCommand to the one in LoopEditorViewModel
+        waveformDisplay.SeekRequested += (s, time) => { if (DataContext is MainWindowViewModel vm) vm.LoopEditor.WaveformSeekCommand.Execute(time); };
+
 
         var waveformLoadingIndicator = new ProgressBar { IsIndeterminate = true, Height = 5, Margin = new Thickness(0, -5, 0, 0), Foreground = _theme.B_AccentColor, Background = Brushes.Transparent };
         waveformLoadingIndicator.Bind(Visual.IsVisibleProperty, new Binding("IsWaveformLoading"));
@@ -432,21 +435,32 @@ public class MainWindow : Window
         };
 
         var setStartBtn = new Button { Content = "A", FontSize = 12, Padding = new Thickness(10, 5), MinWidth = 40, Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
-        setStartBtn.Bind(Button.CommandProperty, new Binding("CaptureLoopStartCandidateCommand"));
+        // Bind commands to LoopEditor property
+        setStartBtn.Bind(Button.CommandProperty, new Binding("LoopEditor.CaptureLoopStartCandidateCommand"));
         var startDisp = new TextBlock { FontSize = 11, Margin = new Thickness(3, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, MinWidth = 60 };
-        startDisp.Bind(TextBlock.TextProperty, new Binding("NewLoopStartCandidateDisplay"));
+        // Bind display text to LoopEditor property
+        startDisp.Bind(TextBlock.TextProperty, new Binding("LoopEditor.NewLoopStartCandidateDisplay"));
 
         var setEndBtn = new Button { Content = "B", FontSize = 12, Padding = new Thickness(10, 5), MinWidth = 40, Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
-        setEndBtn.Bind(Button.CommandProperty, new Binding("CaptureLoopEndCandidateCommand"));
+        // Bind commands to LoopEditor property
+        setEndBtn.Bind(Button.CommandProperty, new Binding("LoopEditor.CaptureLoopEndCandidateCommand"));
         var endDisp = new TextBlock { FontSize = 11, Margin = new Thickness(3, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, MinWidth = 60 };
-        endDisp.Bind(TextBlock.TextProperty, new Binding("NewLoopEndCandidateDisplay"));
+        // Bind display text to LoopEditor property
+        endDisp.Bind(TextBlock.TextProperty, new Binding("LoopEditor.NewLoopEndCandidateDisplay"));
 
         var saveLoopBtn = new Button { Content = "Save Loop", FontSize = 11, Padding = new Thickness(10, 5), Background = _theme.B_AccentColor, Foreground = _theme.B_AccentForeground };
-        saveLoopBtn.Bind(Button.CommandProperty, new Binding("SaveLoopCommand"));
-        saveLoopBtn.Bind(Button.IsEnabledProperty, new Binding("CanSaveLoopRegion"));
+        // Bind commands to LoopEditor property
+        saveLoopBtn.Bind(Button.CommandProperty, new Binding("LoopEditor.SaveLoopCommand"));
+        // Bind CanExecute state to LoopEditor property
+        saveLoopBtn.Bind(Button.IsEnabledProperty, new Binding("LoopEditor.CanSaveLoopRegion"));
 
         var clearLoopBtn = new Button { Content = "Clear Loop", FontSize = 11, Padding = new Thickness(10, 5), Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
-        clearLoopBtn.Bind(Button.CommandProperty, new Binding("ClearLoopCommand"));
+        // Bind commands to LoopEditor property
+        clearLoopBtn.Bind(Button.CommandProperty, new Binding("LoopEditor.ClearLoopCommand"));
+        // The IsEnabled binding for clear loop should check if a loop exists on the current song.
+        // We can bind to the song through the PlaybackService.CurrentSong property.
+        // This binding logic was kept in the view for now, but it's simple enough.
+        // Alternatively, LoopEditor could expose a CanClearLoop property.
         var clearLoopBinding = new Binding("PlaybackService.CurrentSong.SavedLoop")
         {
             Converter = NotNullToBooleanConverter.Instance
@@ -475,13 +489,16 @@ public class MainWindow : Window
             Foreground = _theme.B_TextColor,
             VerticalAlignment = VerticalAlignment.Center
         };
-        loopActiveCheckBox.Bind(ToggleButton.IsCheckedProperty, new Binding("IsCurrentLoopActiveUiBinding", BindingMode.TwoWay));
+        // Bind CheckBox IsChecked to LoopEditor property
+        loopActiveCheckBox.Bind(ToggleButton.IsCheckedProperty, new Binding("LoopEditor.IsCurrentLoopActiveUiBinding", BindingMode.TwoWay));
 
+        // IsEnabled binding for the checkbox should check if a loop exists, same as Clear button
         var loopActiveCheckBoxIsEnabledBinding = new Binding("PlaybackService.CurrentSong.SavedLoop")
         {
             Converter = NotNullToBooleanConverter.Instance
         };
         loopActiveCheckBox.Bind(IsEnabledProperty, loopActiveCheckBoxIsEnabledBinding);
+
 
         loopActiveTogglePanel.Children.Add(loopActiveCheckBox);
 
@@ -564,7 +581,8 @@ public class MainWindow : Window
         topMainPlaybackControls.Children.Add(mainPlaybackSlider); // Added last to fill remaining space
 
         var activeLoopDisplayText = new TextBlock { Foreground = _theme.B_SecondaryTextColor, FontSize = 10, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(10, 0, 10, 2), MinHeight = 14 };
-        activeLoopDisplayText.Bind(TextBlock.TextProperty, new Binding("ActiveLoopDisplayText"));
+        // Bind loop display text to LoopEditor property
+        activeLoopDisplayText.Bind(TextBlock.TextProperty, new Binding("LoopEditor.ActiveLoopDisplayText"));
 
         var outerPanel = new StackPanel { Orientation = Orientation.Vertical, Background = _theme.B_BackgroundColor, Margin = new Thickness(0, 5, 0, 5) };
         outerPanel.Children.Add(topMainPlaybackControls); outerPanel.Children.Add(activeLoopDisplayText);
