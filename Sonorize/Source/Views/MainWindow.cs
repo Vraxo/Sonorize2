@@ -22,17 +22,19 @@ namespace Sonorize.Views;
 public class MainWindow : Window
 {
     private readonly ThemeColors _theme;
-    private ListBox _songListBox; // Field to hold the reference to the song ListBox, populated by MainTabViewControls
+    private ListBox _songListBox;
+    private ListBox _artistsListBox; // Added
+    private ListBox _albumsListBox;  // Added
     private LibraryViewModel? _currentLibraryVM;
-    private readonly SongListTemplates _songListTemplates;
+    private readonly SharedViewTemplates _sharedViewTemplates; // Changed from SongListTemplates
     private readonly MainTabViewControls _mainTabViewControls;
 
 
     public MainWindow(ThemeColors theme)
     {
         _theme = theme;
-        _songListTemplates = new SongListTemplates(_theme);
-        _mainTabViewControls = new MainTabViewControls(_theme, _songListTemplates);
+        _sharedViewTemplates = new SharedViewTemplates(_theme); // Changed from SongListTemplates
+        _mainTabViewControls = new MainTabViewControls(_theme, _sharedViewTemplates); // Changed parameter
 
         Title = "Sonorize";
         Width = 950;
@@ -64,7 +66,7 @@ public class MainWindow : Window
         mainGrid.Children.Add(searchBarPanel);
 
         // Use the new MainTabViewControls class
-        var tabControl = _mainTabViewControls.CreateMainTabView(out _songListBox);
+        var tabControl = _mainTabViewControls.CreateMainTabView(out _songListBox, out _artistsListBox, out _albumsListBox); // Updated call
         Grid.SetRow(tabControl, 2);
         mainGrid.Children.Add(tabControl);
 
@@ -113,12 +115,26 @@ public class MainWindow : Window
 
     private void ApplySongDisplayMode(SongDisplayMode mode)
     {
-        if (_songListBox == null)
+        if (_songListBox == null || _artistsListBox == null || _albumsListBox == null)
         {
-            Debug.WriteLine("[MainWindow] ApplySongDisplayMode called but _songListBox is null. This might happen if DataContext changes before UI is fully ready.");
+            Debug.WriteLine("[MainWindow] ApplySongDisplayMode called but one or more ListBoxes are null.");
             return;
         }
-        _mainTabViewControls.UpdateSongListDisplayMode(mode, _songListBox);
+
+        _mainTabViewControls.UpdateListViewMode(mode, _songListBox,
+            _sharedViewTemplates.DetailedSongTemplate,
+            _sharedViewTemplates.CompactSongTemplate,
+            _sharedViewTemplates.GridSongTemplate);
+
+        _mainTabViewControls.UpdateListViewMode(mode, _artistsListBox,
+            _sharedViewTemplates.DetailedArtistTemplate,
+            _sharedViewTemplates.CompactArtistTemplate,
+            _sharedViewTemplates.GridArtistTemplate);
+
+        _mainTabViewControls.UpdateListViewMode(mode, _albumsListBox,
+            _sharedViewTemplates.DetailedAlbumTemplate,
+            _sharedViewTemplates.CompactAlbumTemplate,
+            _sharedViewTemplates.GridAlbumTemplate);
     }
 
     private Border CreateStatusBar()

@@ -7,25 +7,27 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
-using Sonorize.Models; // For ThemeColors, Song, ArtistViewModel, AlbumViewModel
-using Sonorize.ViewModels; // For SongDisplayMode
-using System.Diagnostics; // For Debug
+using Sonorize.Models;
+using Sonorize.ViewModels;
+using System.Diagnostics;
 
 namespace Sonorize.Views.MainWindowControls
 {
     public class MainTabViewControls
     {
         private readonly ThemeColors _theme;
-        private readonly SongListTemplates _songListTemplates;
-        private ListBox? _songListBoxInstance; // Instance of the song ListBox created by this class
+        private readonly SharedViewTemplates _sharedViewTemplates; // Changed from SongListTemplates
+        private ListBox? _songListBoxInstance;
+        private ListBox? _artistsListBoxInstance; // Added
+        private ListBox? _albumsListBoxInstance;  // Added
 
-        public MainTabViewControls(ThemeColors theme, SongListTemplates songListTemplates)
+        public MainTabViewControls(ThemeColors theme, SharedViewTemplates sharedViewTemplates) // Changed parameter type
         {
             _theme = theme;
-            _songListTemplates = songListTemplates;
+            _sharedViewTemplates = sharedViewTemplates;
         }
 
-        public TabControl CreateMainTabView(out ListBox songListBox)
+        public TabControl CreateMainTabView(out ListBox songListBox, out ListBox artistsListBox, out ListBox albumsListBox) // Added out params
         {
             var tabControl = new TabControl
             {
@@ -60,7 +62,7 @@ namespace Sonorize.Views.MainWindowControls
             var libraryTab = new TabItem
             {
                 Header = "LIBRARY",
-                Content = CreateSongListScrollViewer() // This will set _songListBoxInstance
+                Content = CreateSongListScrollViewer()
             };
 
             var artistsTab = new TabItem
@@ -79,7 +81,9 @@ namespace Sonorize.Views.MainWindowControls
             tabControl.Items.Add(artistsTab);
             tabControl.Items.Add(albumsTab);
 
-            songListBox = _songListBoxInstance!; // Assign the created ListBox to the out parameter
+            songListBox = _songListBoxInstance!;
+            artistsListBox = _artistsListBoxInstance!; // Assign out param
+            albumsListBox = _albumsListBoxInstance!;   // Assign out param
             return tabControl;
         }
 
@@ -93,143 +97,116 @@ namespace Sonorize.Views.MainWindowControls
                 Name = "SongListBox"
             };
 
-            _songListBoxInstance.Styles.Add(new Style(s => s.Is<ListBoxItem>())
-            {
-                Setters = {
-                    new Setter(TemplatedControl.BackgroundProperty, _theme.B_ListBoxBackground),
-                    new Setter(TextBlock.ForegroundProperty, _theme.B_TextColor),
-                    new Setter(ListBoxItem.PaddingProperty, new Thickness(3))
-                }
-            });
-            _songListBoxInstance.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":pointerover").Not(xx => xx.Class(":selected")))
-            { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_ControlBackgroundColor) } });
-            _songListBoxInstance.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected"))
-            {
-                Setters = {
-                    new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
-                    new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
-                }
-            });
-            _songListBoxInstance.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected").Class(":pointerover"))
-            {
-                Setters = {
-                    new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
-                    new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
-                }
-            });
+            // Common ListBoxItem styles
+            ApplyListBoxItemStyles(_songListBoxInstance);
 
             _songListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.FilteredSongs"));
             _songListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.SelectedSong", BindingMode.TwoWay));
 
-            // Initial template is set by MainWindow after DataContext is available.
-            // Setting a default here might be briefly visible but will be overridden.
-            _songListBoxInstance.ItemTemplate = _songListTemplates.DetailedSongTemplate;
-            _songListBoxInstance.ItemsPanel = _songListTemplates.StackPanelItemsPanelTemplate;
+            _songListBoxInstance.ItemTemplate = _sharedViewTemplates.DetailedSongTemplate;
+            _songListBoxInstance.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
 
-            return new ScrollViewer { Content = _songListBoxInstance, Padding = new Thickness(0, 0, 0, 5) };
-        }
-
-        public void UpdateSongListDisplayMode(SongDisplayMode mode, ListBox songListBox)
-        {
-            if (songListBox == null)
-            {
-                Debug.WriteLine("[MainTabViewControls] UpdateSongListDisplayMode called but songListBox is null.");
-                return;
-            }
-
-            Debug.WriteLine($"[MainTabViewControls] Applying song display mode: {mode}");
-            var scrollViewer = songListBox.Parent as ScrollViewer;
-
-            switch (mode)
-            {
-                case SongDisplayMode.Detailed:
-                    songListBox.ItemTemplate = _songListTemplates.DetailedSongTemplate;
-                    songListBox.ItemsPanel = _songListTemplates.StackPanelItemsPanelTemplate;
-                    if (scrollViewer != null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
-                    break;
-                case SongDisplayMode.Compact:
-                    songListBox.ItemTemplate = _songListTemplates.CompactSongTemplate;
-                    songListBox.ItemsPanel = _songListTemplates.StackPanelItemsPanelTemplate;
-                    if (scrollViewer != null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
-                    break;
-                case SongDisplayMode.Grid:
-                    songListBox.ItemTemplate = _songListTemplates.GridSongTemplate;
-                    songListBox.ItemsPanel = _songListTemplates.WrapPanelItemsPanelTemplate;
-                    if (scrollViewer != null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled; // Changed from .Auto to .Disabled
-                    break;
-            }
+            return new ScrollViewer { Content = _songListBoxInstance, Padding = new Thickness(0, 0, 0, 5), HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         }
 
         private ScrollViewer CreateArtistsListScrollViewer()
         {
-            var artistsListBox = new ListBox
+            _artistsListBoxInstance = new ListBox
             {
                 Background = _theme.B_ListBoxBackground,
                 BorderThickness = new Thickness(0),
-                Margin = new Thickness(10)
+                Margin = new Thickness(10),
+                Name = "ArtistsListBox"
             };
+            ApplyListBoxItemStyles(_artistsListBoxInstance);
 
-            artistsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>())
-            { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_ListBoxBackground), new Setter(TextBlock.ForegroundProperty, _theme.B_TextColor) } });
-            artistsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":pointerover").Not(xx => xx.Class(":selected")))
-            { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_ControlBackgroundColor) } });
-            artistsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected"))
-            { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor), new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground) } });
-            artistsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected").Class(":pointerover"))
-            { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor), new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground) } });
+            _artistsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Artists"));
+            _artistsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.SelectedArtist", BindingMode.TwoWay));
 
-            artistsListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Artists"));
-            artistsListBox.Bind(ListBox.SelectedItemProperty, new Binding("Library.SelectedArtist", BindingMode.TwoWay));
+            _artistsListBoxInstance.ItemTemplate = _sharedViewTemplates.DetailedArtistTemplate;
+            _artistsListBoxInstance.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
 
-            artistsListBox.ItemTemplate = new FuncDataTemplate<ArtistViewModel>((artistVM, nameScope) =>
-            {
-                var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 10, 0), Source = artistVM.Thumbnail, Stretch = Stretch.UniformToFill };
-                RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
-                var artistNameBlock = new TextBlock { Text = artistVM.Name, FontSize = 14, VerticalAlignment = VerticalAlignment.Center };
-                var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), VerticalAlignment = VerticalAlignment.Center };
-                itemGrid.Children.Add(image); itemGrid.Children.Add(artistNameBlock);
-                Grid.SetColumn(image, 0); Grid.SetColumn(artistNameBlock, 1);
-                return new Border { Padding = new Thickness(10, 8), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
-            }, supportsRecycling: true);
-
-            return new ScrollViewer { Content = artistsListBox, Padding = new Thickness(0, 0, 0, 5) };
+            return new ScrollViewer { Content = _artistsListBoxInstance, Padding = new Thickness(0, 0, 0, 5), HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         }
 
         private ScrollViewer CreateAlbumsListScrollViewer()
         {
-            var albumsListBox = new ListBox
+            _albumsListBoxInstance = new ListBox
             {
                 Background = _theme.B_ListBoxBackground,
                 BorderThickness = new Thickness(0),
-                Margin = new Thickness(10)
+                Margin = new Thickness(10),
+                Name = "AlbumsListBox"
             };
+            ApplyListBoxItemStyles(_albumsListBoxInstance);
 
-            albumsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>())
-            { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_ListBoxBackground), new Setter(TextBlock.ForegroundProperty, _theme.B_TextColor) } });
-            albumsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":pointerover").Not(xx => xx.Class(":selected")))
-            { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_ControlBackgroundColor) } });
-            albumsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected"))
-            { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor), new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground) } });
-            albumsListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected").Class(":pointerover"))
-            { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor), new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground) } });
+            _albumsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Albums"));
+            _albumsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.SelectedAlbum", BindingMode.TwoWay));
 
-            albumsListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Albums"));
-            albumsListBox.Bind(ListBox.SelectedItemProperty, new Binding("Library.SelectedAlbum", BindingMode.TwoWay));
+            _albumsListBoxInstance.ItemTemplate = _sharedViewTemplates.DetailedAlbumTemplate;
+            _albumsListBoxInstance.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
 
-            albumsListBox.ItemTemplate = new FuncDataTemplate<AlbumViewModel>((albumVM, nameScope) =>
+            return new ScrollViewer { Content = _albumsListBoxInstance, Padding = new Thickness(0, 0, 0, 5), HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        }
+
+        private void ApplyListBoxItemStyles(ListBox listBox)
+        {
+            listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>())
             {
-                var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 10, 0), Source = albumVM.Thumbnail, Stretch = Stretch.UniformToFill };
-                RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
-                var albumTitleBlock = new TextBlock { Text = albumVM.Title, FontSize = 14, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center };
-                var albumArtistBlock = new TextBlock { Text = albumVM.Artist, FontSize = 11, Foreground = _theme.B_SecondaryTextColor, VerticalAlignment = VerticalAlignment.Center };
-                var textStack = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center, Children = { albumTitleBlock, albumArtistBlock } };
-                var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), VerticalAlignment = VerticalAlignment.Center };
-                itemGrid.Children.Add(image); itemGrid.Children.Add(textStack);
-                Grid.SetColumn(image, 0); Grid.SetColumn(textStack, 1);
-                return new Border { Padding = new Thickness(10, 6), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
-            }, supportsRecycling: true);
+                Setters = {
+                    new Setter(TemplatedControl.BackgroundProperty, _theme.B_ListBoxBackground),
+                    new Setter(TextBlock.ForegroundProperty, _theme.B_TextColor),
+                    new Setter(ListBoxItem.PaddingProperty, new Thickness(3)) // Default padding, templates can override
+                }
+            });
+            listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":pointerover").Not(xx => xx.Class(":selected")))
+            { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_ControlBackgroundColor) } });
+            listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected"))
+            {
+                Setters = {
+                    new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
+                    new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
+                }
+            });
+            listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected").Class(":pointerover"))
+            {
+                Setters = {
+                    new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor), // Keep accent when selected and hovered
+                    new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
+                }
+            });
+        }
 
-            return new ScrollViewer { Content = albumsListBox, Padding = new Thickness(0, 0, 0, 5) };
+        // Renamed and generalized
+        public void UpdateListViewMode(SongDisplayMode mode, ListBox listBox, IDataTemplate detailedTemplate, IDataTemplate compactTemplate, IDataTemplate gridTemplate)
+        {
+            if (listBox == null)
+            {
+                Debug.WriteLine($"[MainTabViewControls] UpdateListViewMode called but target ListBox is null.");
+                return;
+            }
+
+            Debug.WriteLine($"[MainTabViewControls] Applying display mode: {mode} to ListBox: {listBox.Name}");
+            var scrollViewer = listBox.Parent as ScrollViewer;
+
+            switch (mode)
+            {
+                case SongDisplayMode.Detailed:
+                    listBox.ItemTemplate = detailedTemplate;
+                    listBox.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
+                    if (scrollViewer != null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                    break;
+                case SongDisplayMode.Compact:
+                    listBox.ItemTemplate = compactTemplate;
+                    listBox.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
+                    if (scrollViewer != null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                    break;
+                case SongDisplayMode.Grid:
+                    listBox.ItemTemplate = gridTemplate;
+                    listBox.ItemsPanel = _sharedViewTemplates.WrapPanelItemsPanelTemplate;
+                    if (scrollViewer != null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                    break;
+            }
         }
     }
 }

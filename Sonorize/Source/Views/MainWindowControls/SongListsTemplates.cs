@@ -4,28 +4,45 @@ using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
-using Sonorize.Models; // For Song, ThemeColors
+using Sonorize.Models; // For Song, ArtistViewModel, AlbumViewModel, ThemeColors
 using Sonorize.ViewModels; // For SongDisplayMode (though not directly used here, context is relevant)
 
 namespace Sonorize.Views.MainWindowControls
 {
-    public class SongListTemplates
+    public class SharedViewTemplates // Renamed from SongListTemplates
     {
         private readonly ThemeColors _theme;
 
+        // Song Templates
         public FuncDataTemplate<Song> DetailedSongTemplate { get; private set; }
         public FuncDataTemplate<Song> CompactSongTemplate { get; private set; }
         public FuncDataTemplate<Song> GridSongTemplate { get; private set; }
+
+        // Artist Templates
+        public FuncDataTemplate<ArtistViewModel> DetailedArtistTemplate { get; private set; }
+        public FuncDataTemplate<ArtistViewModel> CompactArtistTemplate { get; private set; }
+        public FuncDataTemplate<ArtistViewModel> GridArtistTemplate { get; private set; }
+
+        // Album Templates
+        public FuncDataTemplate<AlbumViewModel> DetailedAlbumTemplate { get; private set; }
+        public FuncDataTemplate<AlbumViewModel> CompactAlbumTemplate { get; private set; }
+        public FuncDataTemplate<AlbumViewModel> GridAlbumTemplate { get; private set; }
+
+
+        // Panel Templates (reusable)
         public ITemplate<Panel?> StackPanelItemsPanelTemplate { get; private set; }
         public ITemplate<Panel?> WrapPanelItemsPanelTemplate { get; private set; }
 
-        public SongListTemplates(ThemeColors theme)
+        public SharedViewTemplates(ThemeColors theme)
         {
             _theme = theme;
-            Initialize();
+            InitializeSongTemplates();
+            InitializeArtistTemplates();
+            InitializeAlbumTemplates();
+            InitializePanelTemplates();
         }
 
-        private void Initialize()
+        private void InitializeSongTemplates()
         {
             // Detailed Song Template
             DetailedSongTemplate = new FuncDataTemplate<Song>((song, nameScope) => {
@@ -61,8 +78,73 @@ namespace Sonorize.Views.MainWindowControls
                 var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { image, titleBlock, artistBlock } };
                 return new Border { Width = 120, Height = 150, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             }, supportsRecycling: true);
+        }
 
-            // ItemsPanelTemplates
+        private void InitializeArtistTemplates()
+        {
+            DetailedArtistTemplate = new FuncDataTemplate<ArtistViewModel>((artistVM, nameScope) =>
+            {
+                var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 10, 0), Source = artistVM.Thumbnail, Stretch = Stretch.UniformToFill };
+                RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
+                var artistNameBlock = new TextBlock { Text = artistVM.Name, FontSize = 14, VerticalAlignment = VerticalAlignment.Center };
+                var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), VerticalAlignment = VerticalAlignment.Center };
+                itemGrid.Children.Add(image); itemGrid.Children.Add(artistNameBlock);
+                Grid.SetColumn(image, 0); Grid.SetColumn(artistNameBlock, 1);
+                return new Border { Padding = new Thickness(10, 8), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
+            }, supportsRecycling: true);
+
+            CompactArtistTemplate = new FuncDataTemplate<ArtistViewModel>((artistVM, nameScope) =>
+            {
+                var artistNameBlock = new TextBlock { Text = artistVM.Name, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+                return new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = artistNameBlock };
+            }, supportsRecycling: true);
+
+            GridArtistTemplate = new FuncDataTemplate<ArtistViewModel>((artistVM, nameScope) =>
+            {
+                var image = new Image { Width = 80, Height = 80, Source = artistVM.Thumbnail, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center };
+                RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
+                var artistNameBlock = new TextBlock { Text = artistVM.Name, FontSize = 12, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, MaxHeight = 30, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 3, 0, 0) };
+                var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { image, artistNameBlock } };
+                return new Border { Width = 120, Height = 130, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            }, supportsRecycling: true);
+        }
+
+        private void InitializeAlbumTemplates()
+        {
+            DetailedAlbumTemplate = new FuncDataTemplate<AlbumViewModel>((albumVM, nameScope) =>
+            {
+                var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 10, 0), Source = albumVM.Thumbnail, Stretch = Stretch.UniformToFill };
+                RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
+                var albumTitleBlock = new TextBlock { Text = albumVM.Title, FontSize = 14, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center };
+                var albumArtistBlock = new TextBlock { Text = albumVM.Artist, FontSize = 11, Foreground = _theme.B_SecondaryTextColor, VerticalAlignment = VerticalAlignment.Center };
+                var textStack = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center, Children = { albumTitleBlock, albumArtistBlock } };
+                var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), VerticalAlignment = VerticalAlignment.Center };
+                itemGrid.Children.Add(image); itemGrid.Children.Add(textStack);
+                Grid.SetColumn(image, 0); Grid.SetColumn(textStack, 1);
+                return new Border { Padding = new Thickness(10, 6), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
+            }, supportsRecycling: true);
+
+            CompactAlbumTemplate = new FuncDataTemplate<AlbumViewModel>((albumVM, nameScope) =>
+            {
+                var albumTitleBlock = new TextBlock { Text = albumVM.Title, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+                var albumArtistBlock = new TextBlock { Text = $" - {albumVM.Artist}", FontSize = 11, Foreground = _theme.B_SecondaryTextColor, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(5, 0, 0, 0) };
+                var panel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { albumTitleBlock, albumArtistBlock } };
+                return new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = panel };
+            }, supportsRecycling: true);
+
+            GridAlbumTemplate = new FuncDataTemplate<AlbumViewModel>((albumVM, nameScope) =>
+            {
+                var image = new Image { Width = 80, Height = 80, Source = albumVM.Thumbnail, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center };
+                RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
+                var albumTitleBlock = new TextBlock { Text = albumVM.Title, FontSize = 12, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, MaxHeight = 30, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 3, 0, 0) };
+                var albumArtistBlock = new TextBlock { Text = albumVM.Artist, FontSize = 10, Foreground = _theme.B_SecondaryTextColor, TextWrapping = TextWrapping.Wrap, MaxHeight = 15, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 1, 0, 0) };
+                var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { image, albumTitleBlock, albumArtistBlock } };
+                return new Border { Width = 120, Height = 150, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            }, supportsRecycling: true);
+        }
+
+        private void InitializePanelTemplates()
+        {
             StackPanelItemsPanelTemplate = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel { Orientation = Orientation.Vertical });
             WrapPanelItemsPanelTemplate = new FuncTemplate<Panel?>(() => new WrapPanel { Orientation = Orientation.Horizontal });
         }
