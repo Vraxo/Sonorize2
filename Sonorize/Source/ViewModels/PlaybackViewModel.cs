@@ -22,7 +22,26 @@ public class PlaybackViewModel : ViewModelBase
     public bool HasCurrentSong => PlaybackService.CurrentSong != null;
 
     public TimeSpan CurrentPosition => PlaybackService.CurrentPosition;
-    public double CurrentPositionSeconds => PlaybackService.CurrentPositionSeconds;
+    public double CurrentPositionSeconds
+    {
+        get => PlaybackService.CurrentPositionSeconds;
+        set
+        {
+            // Check if the value actually changed and if a song is loaded
+            if (PlaybackService.CurrentSong != null &&
+                Math.Abs(PlaybackService.CurrentPositionSeconds - value) > 0.01) // Use a small tolerance for double comparison
+            {
+                Debug.WriteLine($"[PlaybackVM] CurrentPositionSeconds setter called with: {value}. Current PlaybackService PositionSeconds: {PlaybackService.CurrentPositionSeconds}. Seeking.");
+                PlaybackService.Seek(TimeSpan.FromSeconds(value));
+                // After PlaybackService.Seek, it will update its CurrentPosition,
+                // which will fire PropertyChanged. This ViewModel's PlaybackService_PropertyChanged
+                // handler will then update its own properties (including this one's getter value)
+                // and notify the UI.
+            }
+            // If value is effectively the same, do nothing to prevent potential feedback loops or unnecessary seeks.
+            // If no song is loaded, seeking is not possible/meaningful.
+        }
+    }
 
     public TimeSpan CurrentSongDuration => PlaybackService.CurrentSongDuration;
     public double CurrentSongDurationSeconds => PlaybackService.CurrentSongDurationSeconds;
@@ -84,6 +103,8 @@ public class PlaybackViewModel : ViewModelBase
             positionSecondsObj => {
                 if (positionSecondsObj is double seconds && PlaybackService.CurrentSongDuration.TotalSeconds > 0)
                 {
+                    // This command is now less critical if the TwoWay binding on CurrentPositionSeconds works,
+                    // but can be kept for other programmatic seek triggers if necessary.
                     PlaybackService.Seek(TimeSpan.FromSeconds(seconds));
                 }
             },
@@ -147,7 +168,7 @@ public class PlaybackViewModel : ViewModelBase
                     break;
                 case nameof(PlaybackService.CurrentPosition):
                     OnPropertyChanged(nameof(CurrentPosition));
-                    OnPropertyChanged(nameof(CurrentPositionSeconds));
+                    OnPropertyChanged(nameof(CurrentPositionSeconds)); // This will reflect the change from PlaybackService
                     OnPropertyChanged(nameof(CurrentTimeTotalTimeDisplay)); // Derived property
                     RaisePlaybackCommandCanExecuteChanged(); // Seek command might be affected
                     break;
