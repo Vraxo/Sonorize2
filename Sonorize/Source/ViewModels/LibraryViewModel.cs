@@ -14,7 +14,7 @@ using System.Windows.Input;
 
 namespace Sonorize.ViewModels;
 
-public enum SongDisplayMode // Keep this enum as it defines the modes
+public enum SongDisplayMode
 {
     Detailed,
     Compact,
@@ -100,26 +100,49 @@ public class LibraryViewModel : ViewModelBase
     private string _libraryStatusText = "";
     public string LibraryStatusText { get => _libraryStatusText; private set => SetProperty(ref _libraryStatusText, value); }
 
-    // Individual display modes for each tab
-    private SongDisplayMode _libraryViewMode = SongDisplayMode.Detailed;
+    private SongDisplayMode _libraryViewMode;
     public SongDisplayMode LibraryViewMode
     {
         get => _libraryViewMode;
-        set => SetProperty(ref _libraryViewMode, value);
+        set
+        {
+            if (SetProperty(ref _libraryViewMode, value))
+            {
+                var settings = _settingsService.LoadSettings();
+                settings.LibraryViewModePreference = value.ToString();
+                _settingsService.SaveSettings(settings);
+            }
+        }
     }
 
-    private SongDisplayMode _artistViewMode = SongDisplayMode.Detailed;
+    private SongDisplayMode _artistViewMode;
     public SongDisplayMode ArtistViewMode
     {
         get => _artistViewMode;
-        set => SetProperty(ref _artistViewMode, value);
+        set
+        {
+            if (SetProperty(ref _artistViewMode, value))
+            {
+                var settings = _settingsService.LoadSettings();
+                settings.ArtistViewModePreference = value.ToString();
+                _settingsService.SaveSettings(settings);
+            }
+        }
     }
 
-    private SongDisplayMode _albumViewMode = SongDisplayMode.Detailed;
+    private SongDisplayMode _albumViewMode;
     public SongDisplayMode AlbumViewMode
     {
         get => _albumViewMode;
-        set => SetProperty(ref _albumViewMode, value);
+        set
+        {
+            if (SetProperty(ref _albumViewMode, value))
+            {
+                var settings = _settingsService.LoadSettings();
+                settings.AlbumViewModePreference = value.ToString();
+                _settingsService.SaveSettings(settings);
+            }
+        }
     }
 
     public ICommand SetDisplayModeCommand { get; }
@@ -131,7 +154,13 @@ public class LibraryViewModel : ViewModelBase
         _musicLibraryService = musicLibraryService;
         _loopDataService = loopDataService;
 
-        // Command parameter is now expected to be (string TargetView, SongDisplayMode Mode)
+        // Load preferences
+        var appSettings = _settingsService.LoadSettings();
+        _libraryViewMode = Enum.TryParse<SongDisplayMode>(appSettings.LibraryViewModePreference, out var libMode) ? libMode : SongDisplayMode.Detailed;
+        _artistViewMode = Enum.TryParse<SongDisplayMode>(appSettings.ArtistViewModePreference, out var artMode) ? artMode : SongDisplayMode.Detailed;
+        _albumViewMode = Enum.TryParse<SongDisplayMode>(appSettings.AlbumViewModePreference, out var albMode) ? albMode : SongDisplayMode.Detailed;
+
+
         SetDisplayModeCommand = new RelayCommand(
             param =>
             {
@@ -139,6 +168,7 @@ public class LibraryViewModel : ViewModelBase
                 {
                     switch (targetView)
                     {
+                        // Setters will handle saving
                         case "Library": LibraryViewMode = mode; break;
                         case "Artists": ArtistViewMode = mode; break;
                         case "Albums": AlbumViewMode = mode; break;
