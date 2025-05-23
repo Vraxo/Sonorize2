@@ -1,5 +1,7 @@
 ﻿// Path: Source/Views/MainView.cs
 using System;
+using Avalonia.Controls;
+using System.Globalization;
 using Avalonia.Data.Converters;
 
 namespace Sonorize.Converters;

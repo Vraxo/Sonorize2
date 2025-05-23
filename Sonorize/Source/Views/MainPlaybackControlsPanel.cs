@@ -1,12 +1,13 @@
-﻿using Avalonia;
+﻿using Avalonia.Controls.Primitives;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives; // For Thumb
 using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia;
 using Sonorize.Converters;
-using Sonorize.Models; // For ThemeColors
+using Sonorize.Models;
+using Sonorize.Views.MainWindowControls;
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -22,7 +23,16 @@ public static class MainPlaybackControlsPanel
             Background = theme.B_SecondaryTextColor,
             Foreground = theme.B_AccentColor
         };
-        mainPlaybackSlider.Styles.Add(new Style(s => s.Is<Thumb>()) { Setters = { new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor) } });
+        // Style to make the Thumb invisible
+        mainPlaybackSlider.Styles.Add(new Style(s => s.Is<Thumb>())
+        {
+            Setters =
+            {
+                new Setter(Thumb.WidthProperty, 0.0),
+                new Setter(Thumb.HeightProperty, 0.0),
+                new Setter(Thumb.OpacityProperty, 0.0)
+            }
+        });
         mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("Playback.CurrentSongDurationSeconds"));
         mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("Playback.CurrentPositionSeconds", BindingMode.TwoWay));
         mainPlaybackSlider.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
