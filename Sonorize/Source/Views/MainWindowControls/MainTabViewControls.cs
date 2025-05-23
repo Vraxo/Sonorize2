@@ -155,7 +155,7 @@ namespace Sonorize.Views.MainWindowControls
                 case SongDisplayMode.Grid:
                     songListBox.ItemTemplate = _songListTemplates.GridSongTemplate;
                     songListBox.ItemsPanel = _songListTemplates.WrapPanelItemsPanelTemplate;
-                    if (scrollViewer != null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
+                    if (scrollViewer != null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled; // Changed from .Auto to .Disabled
                     break;
             }
         }
