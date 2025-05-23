@@ -337,84 +337,6 @@ public class WaveformDisplayControl : Control
 }
 </file>
 
-<file path="Source\Converters\BooleanToPlayPauseIconConverter.cs">
-using System;
-using Avalonia.Data.Converters;
-using System.Globalization;
-
-namespace Sonorize.Converters
-{
-    public class BooleanToPlayPauseIconConverter : IValueConverter
-    {
-        public static readonly BooleanToPlayPauseIconConverter Instance = new();
-
-        private const string PlayIcon = "▶"; // U+25B6
-        private const string PauseIcon = "||"; // U+2016 (Double Vertical Line)
-
-        public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-        {
-            if (value is bool isPlaying)
-            {
-                return isPlaying ? PauseIcon : PlayIcon;
-            }
-            return PlayIcon; // Default to Play icon if value is not a bool
-        }
-
-        public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
-        {
-            throw new NotSupportedException();
-        }
-    }
-}
-
-    public class InverseBooleanConverter : IValueConverter
-    {
-        public object? Convert(object? value, System.Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-        {
-            if (value is bool b)
-            {
-                return !b;
-            }
-            return value; // Or throw, depending on desired strictness
-        }
-
-        public object? ConvertBack(object? value, System.Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-        {
-            if (value is bool b)
-            {
-                return !b;
-            }
-            return value; // Or throw
-        }
-    }
-
-    public class AndBooleanConverter : IMultiValueConverter
-    {
-        public object? Convert(System.Collections.Generic.IList<object?> values, System.Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-        {
-            bool result = true;
-            foreach (var value in values)
-            {
-                if (value is bool b)
-                {
-                    result &= b;
-                }
-                else
-                {
-                    // If any value is not a boolean, result is false
-                    return false; // Or true, depending on how non-booleans should be handled
-                }
-            }
-            return result;
-        }
-
-        public object[] ConvertBack(object? value, System.Type[] targetTypes, object? parameter, System.Globalization.CultureInfo culture)
-        {
-            throw new System.NotSupportedException();
-        }
-    }
-</file>
-
 <file path="Source\Converters\BooleanToPlayPauseTextConverter.cs">
 // Path: Source/Views/MainView.cs
 using System;
@@ -3411,11 +3333,7 @@ public class ViewModelBase : INotifyPropertyChanged
 
     protected bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {
-        if (EqualityComparer<T>.Default.Equals(field, value))
-        {
-            return false;
-        }
-
+        if (EqualityComparer<T>.Default.Equals(field, value)) return false;
         field = value;
         OnPropertyChanged(propertyName);
         return true;
@@ -3450,238 +3368,63 @@ public static class BrushExtensions
 </file>
 
 <file path="Source\Views\MainPlaybackControlsPanel.cs">
-using Avalonia;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
-using Avalonia.Media.Imaging; // Required for Image
+using Avalonia;
 using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.Views.MainWindowControls;
-using Avalonia.Data.Converters; // Required for IMultiValueConverter
 
 namespace Sonorize.Views.MainWindowControls;
 
 public static class MainPlaybackControlsPanel
 {
-    public static Panel Create(ThemeColors theme)
+    public static StackPanel Create(ThemeColors theme)
     {
-        // Main container - Use DockPanel to place song info on the left
-        var outerPanel = new DockPanel
-        {
-            Background = theme.B_BackgroundColor,
-            Margin = new Thickness(0, 5, 0, 5),
-            LastChildFill = true, // The central content will fill the remaining space
-            MinHeight = 60 // Ensure panel has enough height
-        };
-
-        // --- Song Info Panel (Left) ---
-        // This panel remains visible, but its content will be bound to Playback.HasCurrentSong or CurrentSong
-        var songInfoPanel = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(10, 0, 15, 0), // Add some space to the right
-            Spacing = 10, // Space between image and text
-            MinWidth = 200, // Give it a minimum width
-            MaxWidth = 350 // Prevent it from taking up too much space on wide screens
-        };
-        DockPanel.SetDock(songInfoPanel, Dock.Left);
-
-        // Toggle Advanced Panel Button - Placed here on the left side
-        var toggleAdvPanelButton = new Button { Content = "+", Background = theme.B_SlightlyLighterBackground, Foreground = theme.B_TextColor, BorderBrush = theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(8, 4), MinWidth = 30, FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
-        // This button should only be enabled if a song is loaded
-        toggleAdvPanelButton.Bind(Button.CommandProperty, new Binding("ToggleAdvancedPanelCommand"));
-        toggleAdvPanelButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
-        songInfoPanel.Children.Add(toggleAdvPanelButton);
-
-
-        // Song Thumbnail
-        var songThumbnail = new Image
-        {
-            Width = 40,
-            Height = 40,
-            Stretch = Stretch.UniformToFill,
-            Source = null // Will be bound - if CurrentSong is null, Source binding will likely resolve to null, which is okay
-        };
-        RenderOptions.SetBitmapInterpolationMode(songThumbnail, BitmapInterpolationMode.HighQuality);
-        songThumbnail.Bind(Image.SourceProperty, new Binding("Playback.CurrentSong.Thumbnail"));
-        songInfoPanel.Children.Add(songThumbnail);
-
-        // Song Title and Artist Text
-        var songTextStack = new StackPanel
-        {
-            Orientation = Orientation.Vertical,
-            VerticalAlignment = VerticalAlignment.Center,
-            MaxWidth = 250 // Prevent text from overflowing significantly
-        };
-        var songTitleBlock = new TextBlock
-        {
-            Foreground = theme.B_TextColor,
-            FontSize = 14,
-            FontWeight = FontWeight.SemiBold,
-            TextTrimming = TextTrimming.CharacterEllipsis
-            // Text will be bound - if CurrentSong is null, Title binding will likely resolve to null/empty string
-        };
-        songTitleBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentSong.Title"));
-
-        var songArtistBlock = new TextBlock
-        {
-            Foreground = theme.B_SecondaryTextColor,
-            FontSize = 11,
-            TextTrimming = TextTrimming.CharacterEllipsis
-            // Text will be bound - if CurrentSong is null, Artist binding will likely resolve to null/empty string
-        };
-        songArtistBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentSong.Artist"));
-
-        songTextStack.Children.Add(songTitleBlock);
-        songTextStack.Children.Add(songArtistBlock);
-
-        songInfoPanel.Children.Add(songTextStack);
-
-
-        // --- Playback Controls Grid (Center/Right) ---
-        // Using a Grid to arrange buttons above the slider/time panel
-        var playbackControlsGrid = new Grid
-        {
-            HorizontalAlignment = HorizontalAlignment.Stretch, // Let it fill the remaining space
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 10, 0), // Space on the right edge
-            RowDefinitions = new RowDefinitions("Auto,Auto") // Row 0 for buttons, Row 1 for slider/time
-        };
-
-
-        // Group for playback control buttons (Prev, Play/Pause, Next)
-        var playbackButtonControlsPanel = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 10,
-            HorizontalAlignment = HorizontalAlignment.Center, // Center buttons within their column
-            VerticalAlignment = VerticalAlignment.Center,
-            // Removed Margin below the buttons to bring the slider higher
-        };
-        Grid.SetRow(playbackButtonControlsPanel, 0);
-
-        // Previous Button
-        var previousButton = new Button
-        {
-            Content = "<", // Previous Track Symbol
-            Background = theme.B_SlightlyLighterBackground,
-            Foreground = theme.B_TextColor,
-            BorderBrush = theme.B_ControlBackgroundColor, // Slightly less prominent border
-            BorderThickness = new Thickness(1),
-            Width = 32,
-            Height = 32,
-            CornerRadius = new CornerRadius(16),
-            Padding = new Thickness(0),
-            FontSize = 16,
-            FontWeight = FontWeight.Normal,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center
-        };
-        // Bind to the actual command if implemented in PlaybackViewModel later
-        // For now, bind to a non-existent command or disable if needed.
-        // Leaving command binding commented out until implemented.
-        // previousButton.Bind(Button.CommandProperty, new Binding("Playback.PreviousTrackCommand"));
-        previousButton.Bind(Button.IsEnabledProperty, new Binding("Playback.HasCurrentSong")); // Enabled if a song is loaded
-
-        var mainPlayPauseButton = new Button
-        {
-            Background = theme.B_SlightlyLighterBackground,
-            Foreground = theme.B_TextColor,
-            BorderBrush = theme.B_AccentColor,
-            BorderThickness = new Thickness(1),
-            Width = 38,
-            Height = 38,
-            CornerRadius = new CornerRadius(19),
-            Padding = new Thickness(0),
-            FontSize = 18,
-            FontWeight = FontWeight.Normal,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            HorizontalContentAlignment = HorizontalAlignment.Center
-        };
-        mainPlayPauseButton.Bind(Button.CommandProperty, new Binding("Playback.PlayPauseResumeCommand"));
-        // Cannot play/pause if no song or waveform is loading
-        mainPlayPauseButton.Bind(Control.IsEnabledProperty, new MultiBinding
-        {
-            Bindings = {
-                new Binding("Playback.HasCurrentSong"),
-                new Binding("Playback.IsWaveformLoading") { Converter = new InverseBooleanConverter() }
-            },
-            Converter = new AndBooleanConverter()
-        });
-        var playPauseIconBinding = new Binding("Playback.IsPlaying") { Converter = BooleanToPlayPauseIconConverter.Instance };
-        mainPlayPauseButton.Bind(Button.ContentProperty, playPauseIconBinding);
-
-        // Next Button
-        var nextButton = new Button
-        {
-            Content = ">", // Next Track Symbol
-            Background = theme.B_SlightlyLighterBackground,
-            Foreground = theme.B_TextColor,
-            BorderBrush = theme.B_ControlBackgroundColor, // Slightly less prominent border
-            BorderThickness = new Thickness(1),
-            Width = 32,
-            Height = 32,
-            CornerRadius = new CornerRadius(16),
-            Padding = new Thickness(0),
-            FontSize = 16,
-            FontWeight = FontWeight.Normal,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center
-        };
-        // Bind to the actual command if implemented in PlaybackViewModel later
-        // For now, bind to a non-existent command or disable if needed.
-        // Leaving command binding commented out until implemented.
-        // nextButton.Bind(Button.CommandProperty, new Binding("Playback.NextTrackCommand"));
-        nextButton.Bind(Button.IsEnabledProperty, new Binding("Playback.HasCurrentSong")); // Enabled if a song is loaded
-
-        // Add all three buttons back
-        playbackButtonControlsPanel.Children.Add(previousButton);
-        playbackButtonControlsPanel.Children.Add(mainPlayPauseButton);
-        playbackButtonControlsPanel.Children.Add(nextButton);
-        playbackControlsGrid.Children.Add(playbackButtonControlsPanel);
-
-
-        // Slider and Time Display Panel
-        var sliderAndTimePanel = new DockPanel
-        {
-            LastChildFill = true,
-            Height = 25, // Adjust height to be less than the button height
-            Margin = new Thickness(0, -5, 0, 0) // Add negative top margin to bring it higher
-        };
-        Grid.SetRow(sliderAndTimePanel, 1);
-
         var mainPlaybackSlider = new Slider
         {
             Name = "MainPlaybackSliderInstance",
             Minimum = 0,
             VerticalAlignment = VerticalAlignment.Center,
             Background = theme.B_SecondaryTextColor,
-            Foreground = theme.B_AccentColor,
-            Classes = { "custom-thumb-style" } // Apply custom style for thumb
+            Foreground = theme.B_AccentColor
         };
-        // Apply custom thumb style to make it visible and themed
-        mainPlaybackSlider.Styles.Add(new Style(s => s.Is<Thumb>().Class("custom-thumb-style"))
+        // Style to make the Thumb invisible
+        mainPlaybackSlider.Styles.Add(new Style(s => s.Is<Thumb>())
         {
             Setters =
             {
-                new Setter(Thumb.WidthProperty, 10.0),
-                new Setter(Thumb.HeightProperty, 10.0),
-                new Setter(Thumb.BackgroundProperty, theme.B_AccentColor),
-                new Setter(Thumb.BorderBrushProperty, theme.B_AccentColor),
-                new Setter(Thumb.BorderThicknessProperty, new Thickness(1)),
-                new Setter(Thumb.CornerRadiusProperty, new CornerRadius(5)),
-                new Setter(Thumb.OpacityProperty, 1.0) // Ensure visible
+                new Setter(Thumb.WidthProperty, 0.0),
+                new Setter(Thumb.HeightProperty, 0.0),
+                new Setter(Thumb.OpacityProperty, 0.0)
             }
         });
         mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("Playback.CurrentSongDurationSeconds"));
-        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("Playback.CurrentPositionSeconds", BindingMode.TwoWay)); // TwoWay binding for seeking
-        mainPlaybackSlider.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong")); // Cannot seek if no song
+        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("Playback.CurrentPositionSeconds", BindingMode.TwoWay));
+        mainPlaybackSlider.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
+
+        var mainPlayPauseButton = new Button { Content = "Play", Background = theme.B_SlightlyLighterBackground, Foreground = theme.B_TextColor, BorderBrush = theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(10, 5), MinWidth = 70 };
+        mainPlayPauseButton.Bind(Button.CommandProperty, new Binding("Playback.PlayPauseResumeCommand"));
+        var playPauseContentBinding = new Binding("Playback.IsPlaying") { Converter = BooleanToPlayPauseTextConverter.Instance };
+        mainPlayPauseButton.Bind(Button.ContentProperty, playPauseContentBinding);
+
+        var toggleAdvPanelButton = new Button { Content = "+", Background = theme.B_SlightlyLighterBackground, Foreground = theme.B_TextColor, BorderBrush = theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(8, 4), MinWidth = 30, FontWeight = FontWeight.Bold };
+        toggleAdvPanelButton.Bind(Button.CommandProperty, new Binding("ToggleAdvancedPanelCommand"));
+        toggleAdvPanelButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
+
+        var controlsButtonPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 5,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 5, 0)
+        };
+        controlsButtonPanel.Children.Add(mainPlayPauseButton);
+        controlsButtonPanel.Children.Add(toggleAdvPanelButton);
 
         var timeDisplayTextBlock = new TextBlock
         {
@@ -3689,23 +3432,30 @@ public static class MainPlaybackControlsPanel
             FontSize = 11,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(8, 0, 0, 0),
-            MinWidth = 75,
-            TextAlignment = TextAlignment.Right // Align time to the right
-            // Text will be bound - will show "--:-- / --:--" if no song loaded
+            MinWidth = 75
         };
         timeDisplayTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentTimeTotalTimeDisplay"));
-        // No need to hide, the text binder handles the "No song" case
+        timeDisplayTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
 
+        var topMainPlaybackControls = new DockPanel
+        {
+            LastChildFill = true,
+            Height = 35,
+            Margin = new Thickness(10, 0)
+        };
+        DockPanel.SetDock(controlsButtonPanel, Dock.Left);
         DockPanel.SetDock(timeDisplayTextBlock, Dock.Right);
-        sliderAndTimePanel.Children.Add(timeDisplayTextBlock);
-        sliderAndTimePanel.Children.Add(mainPlaybackSlider); // Slider fills the rest
-        playbackControlsGrid.Children.Add(sliderAndTimePanel); // Add slider/time panel to the grid
 
+        topMainPlaybackControls.Children.Add(controlsButtonPanel);
+        topMainPlaybackControls.Children.Add(timeDisplayTextBlock);
+        topMainPlaybackControls.Children.Add(mainPlaybackSlider);
 
-        // Add the panels to the main DockPanel
-        outerPanel.Children.Add(songInfoPanel); // This panel is always visible
-        outerPanel.Children.Add(playbackControlsGrid); // This will fill the remaining space (DockPanel's LastChild)
+        var activeLoopDisplayText = new TextBlock { Foreground = theme.B_SecondaryTextColor, FontSize = 10, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(10, 0, 10, 2), MinHeight = 14 };
+        activeLoopDisplayText.Bind(TextBlock.TextProperty, new Binding("LoopEditor.ActiveLoopDisplayText"));
 
+        var outerPanel = new StackPanel { Orientation = Orientation.Vertical, Background = theme.B_BackgroundColor, Margin = new Thickness(0, 5, 0, 5) };
+        outerPanel.Children.Add(topMainPlaybackControls);
+        outerPanel.Children.Add(activeLoopDisplayText);
         return outerPanel;
     }
 }
