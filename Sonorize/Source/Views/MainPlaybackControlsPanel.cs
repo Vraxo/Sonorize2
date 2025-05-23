@@ -37,7 +37,7 @@ public static class MainPlaybackControlsPanel
         mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("Playback.CurrentPositionSeconds", BindingMode.TwoWay));
         mainPlaybackSlider.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
-        var mainPlayPauseButton = new Button { Content = "Play", Background = theme.B_SlightlyLighterBackground, Foreground = theme.B_TextColor, BorderBrush = theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(10, 5), MinWidth = 70 };
+        var mainPlayPauseButton = new Button { Content = "Play", Background = theme.B_SlightlyLighterBackground, Foreground = theme.B_TextColor, BorderBrush = theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(10, 5), MinWidth = 70, HorizontalAlignment = HorizontalAlignment.Center };
         mainPlayPauseButton.Bind(Button.CommandProperty, new Binding("Playback.PlayPauseResumeCommand"));
         var playPauseContentBinding = new Binding("Playback.IsPlaying") { Converter = BooleanToPlayPauseTextConverter.Instance };
         mainPlayPauseButton.Bind(Button.ContentProperty, playPauseContentBinding);
@@ -46,15 +46,15 @@ public static class MainPlaybackControlsPanel
         toggleAdvPanelButton.Bind(Button.CommandProperty, new Binding("ToggleAdvancedPanelCommand"));
         toggleAdvPanelButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
-        var controlsButtonPanel = new StackPanel
+        // This panel will now only contain the toggleAdvPanelButton, docked to the left of the slider
+        var leftControlsPanel = new StackPanel
         {
-            Orientation = Orientation.Horizontal,
+            Orientation = Orientation.Horizontal, // Though it only has one child now
             Spacing = 5,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 5, 0)
         };
-        controlsButtonPanel.Children.Add(mainPlayPauseButton);
-        controlsButtonPanel.Children.Add(toggleAdvPanelButton);
+        leftControlsPanel.Children.Add(toggleAdvPanelButton);
 
         var timeDisplayTextBlock = new TextBlock
         {
@@ -67,22 +67,33 @@ public static class MainPlaybackControlsPanel
         timeDisplayTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentTimeTotalTimeDisplay"));
         timeDisplayTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
 
-        var topMainPlaybackControls = new DockPanel
+        // Panel for the slider and its side elements (toggle button, time display)
+        var sliderDockPanel = new DockPanel
         {
             LastChildFill = true,
-            Height = 35,
-            Margin = new Thickness(10, 0)
+            Height = 30 // Height for this specific row
         };
-        DockPanel.SetDock(controlsButtonPanel, Dock.Left);
+        DockPanel.SetDock(leftControlsPanel, Dock.Left);
         DockPanel.SetDock(timeDisplayTextBlock, Dock.Right);
 
-        topMainPlaybackControls.Children.Add(controlsButtonPanel);
-        topMainPlaybackControls.Children.Add(timeDisplayTextBlock);
-        topMainPlaybackControls.Children.Add(mainPlaybackSlider);
+        sliderDockPanel.Children.Add(leftControlsPanel);
+        sliderDockPanel.Children.Add(timeDisplayTextBlock);
+        sliderDockPanel.Children.Add(mainPlaybackSlider); // Fills the center
+
+        // Main container for the playback controls section, now a StackPanel for vertical arrangement
+        var topMainPlaybackControls = new StackPanel
+        {
+            Orientation = Orientation.Vertical,
+            Height = 65, // Increased height
+            Margin = new Thickness(10, 0),
+            Spacing = 5 // Spacing between play button and slider panel
+        };
+
+        topMainPlaybackControls.Children.Add(mainPlayPauseButton); // Play button on top, centered
+        topMainPlaybackControls.Children.Add(sliderDockPanel);   // Slider and its side controls below
 
         var outerPanel = new StackPanel { Orientation = Orientation.Vertical, Background = theme.B_BackgroundColor, Margin = new Thickness(0, 5, 0, 5) };
         outerPanel.Children.Add(topMainPlaybackControls);
-        // Removed: activeLoopDisplayText related code
         return outerPanel;
     }
 }
