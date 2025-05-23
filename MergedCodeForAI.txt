@@ -1723,21 +1723,19 @@ public class ArtistViewModel
 </file>
 
 <file path="Source\ViewModels\MainViewModel.cs">
-// Path: Source/ViewModels/MainViewModel.cs
-using Avalonia.Controls;
-using Sonorize.Models;
-using Sonorize.Services;
+using System;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
-using System;
-using System.Diagnostics;
-using Avalonia.Threading;
-using System.ComponentModel;
-using System.Collections.Generic;
+using Avalonia.Controls;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
+using Sonorize.Models;
+using Sonorize.Services;
 using Sonorize.Utils; // For AlbumArtistTupleComparer
 
 namespace Sonorize.ViewModels;
@@ -1875,19 +1873,24 @@ public class MainWindowViewModel : ViewModelBase
         {
             if (PlaybackService.HasCurrentSong && PlaybackService.CurrentSongDuration.TotalSeconds > 0)
             {
-                // Check if the new value is significantly different from the current playback position
-                // to avoid seeking for tiny adjustments that might come from the binding itself during updates.
-                // A threshold of 50-100ms might be reasonable.
                 if (Math.Abs(PlaybackService.CurrentPosition.TotalSeconds - value) > 0.1)
                 {
                     Debug.WriteLine($"[MainVM.SliderPositionSeconds.set] User seeking via slider to: {value:F2}s. Current playback pos: {PlaybackService.CurrentPosition.TotalSeconds:F2}s");
                     PlaybackService.Seek(TimeSpan.FromSeconds(value));
                 }
             }
-            // We don't call OnPropertyChanged(nameof(SliderPositionSeconds)) here.
-            // The slider will be updated when PlaybackService.CurrentPosition changes,
-            // which triggers OnPlaybackServicePropertyChanged, which then calls
-            // OnPropertyChanged(nameof(SliderPositionSeconds)). This creates the correct notification loop.
+        }
+    }
+
+    public string CurrentTimeTotalTimeDisplay
+    {
+        get
+        {
+            if (PlaybackService.CurrentSong != null && PlaybackService.CurrentSongDuration.TotalSeconds > 0)
+            {
+                return $"{PlaybackService.CurrentPosition:mm\\:ss} / {PlaybackService.CurrentSongDuration:mm\\:ss}";
+            }
+            return "--:-- / --:--";
         }
     }
 
@@ -1960,6 +1963,7 @@ public class MainWindowViewModel : ViewModelBase
         UpdateLoopEditorForCurrentSong();
         UpdateActiveLoopDisplayText();
         UpdateStatusBarText();
+        OnPropertyChanged(nameof(CurrentTimeTotalTimeDisplay));
         RaiseAllCommandsCanExecuteChanged();
     }
 
@@ -1996,21 +2000,15 @@ public class MainWindowViewModel : ViewModelBase
             {
                 IsCurrentLoopActiveUiBinding = newSong.IsLoopActive;
             }
-
-            if (_selectedSongInternal != null)
-            {
-                _selectedSongInternal.PropertyChanged += OnCurrentSongSavedLoopChanged;
-                _selectedSongInternal.PropertyChanged += OnCurrentSongIsLoopActiveChanged;
-            }
+            newSong.PropertyChanged += OnCurrentSongSavedLoopChanged;
+            newSong.PropertyChanged += OnCurrentSongIsLoopActiveChanged;
         }
         else
         {
-            if (PlaybackService.CurrentSong != null)
-            {
-                PlaybackService.Stop();
-            }
+            Debug.WriteLine($"[MainVM] UI deselected a song (newSong is null). Current playing song '{PlaybackService.CurrentSong?.Title ?? "null"}' will continue if it was playing.");
         }
         (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        UpdateAllUIDependentStates();
     }
 
     private void OnPlaybackServicePropertyChanged(object? sender, PropertyChangedEventArgs args)
@@ -2034,6 +2032,11 @@ public class MainWindowViewModel : ViewModelBase
                         IsCurrentLoopActiveUiBinding = currentServiceSong.IsLoopActive;
                         if (_selectedSongInternal != currentServiceSong)
                         {
+                            if (_selectedSongInternal != null)
+                            {
+                                _selectedSongInternal.PropertyChanged -= OnCurrentSongSavedLoopChanged;
+                                _selectedSongInternal.PropertyChanged -= OnCurrentSongIsLoopActiveChanged;
+                            }
                             currentServiceSong.PropertyChanged += OnCurrentSongSavedLoopChanged;
                             currentServiceSong.PropertyChanged += OnCurrentSongIsLoopActiveChanged;
                         }
@@ -2045,7 +2048,8 @@ public class MainWindowViewModel : ViewModelBase
                         OnPropertyChanged(nameof(WaveformRenderData));
                     }
                     UpdateAllUIDependentStates();
-                    OnPropertyChanged(nameof(SliderPositionSeconds)); // Update slider when song changes
+                    OnPropertyChanged(nameof(SliderPositionSeconds));
+                    OnPropertyChanged(nameof(CurrentTimeTotalTimeDisplay));
                     if (currentServiceSong != null) _ = LoadWaveformForCurrentSong();
                     break;
 
@@ -2056,16 +2060,17 @@ public class MainWindowViewModel : ViewModelBase
                     break;
 
                 case nameof(PlaybackService.CurrentPosition):
-                    OnPropertyChanged(nameof(SliderPositionSeconds)); // Update slider when position changes
+                    OnPropertyChanged(nameof(SliderPositionSeconds));
                     OnPropertyChanged(nameof(CanSaveLoopRegion));
-                    (CaptureLoopStartCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged(); // Position changed
-                    (CaptureLoopEndCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged(); // Position changed
-                    // No need to call RaiseAllCommandsCanExecuteChanged() generally, as slider itself doesn't use CanExecute
+                    (CaptureLoopStartCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                    (CaptureLoopEndCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                    OnPropertyChanged(nameof(CurrentTimeTotalTimeDisplay));
                     break;
 
                 case nameof(PlaybackService.CurrentSongDuration):
-                    OnPropertyChanged(nameof(SliderPositionSeconds)); // Max value might have changed
+                    OnPropertyChanged(nameof(SliderPositionSeconds));
                     OnPropertyChanged(nameof(CanSaveLoopRegion));
+                    OnPropertyChanged(nameof(CurrentTimeTotalTimeDisplay));
                     break;
             }
         });
@@ -2172,7 +2177,7 @@ public class MainWindowViewModel : ViewModelBase
         }
         if (SelectedSong != null && !FilteredSongs.Contains(SelectedSong))
         {
-            SelectedSong = null;
+            Debug.WriteLine($"[MainVM ApplyFilter] Current SelectedSong '{SelectedSong.Title}' is no longer in FilteredSongs. ListBox should update selection.");
         }
         UpdateStatusBarText();
     }
@@ -2189,7 +2194,7 @@ public class MainWindowViewModel : ViewModelBase
         {
             Debug.WriteLine($"[MainVM] Requesting waveform for: {songToLoadWaveformFor.Title}");
             var points = await _waveformService.GetWaveformAsync(songToLoadWaveformFor.FilePath, 1000);
-            if (PlaybackService.CurrentSong == songToLoadWaveformFor) // Check if song is still current
+            if (PlaybackService.CurrentSong == songToLoadWaveformFor)
             {
                 WaveformRenderData.Clear(); foreach (var p in points) WaveformRenderData.Add(p); OnPropertyChanged(nameof(WaveformRenderData));
                 Debug.WriteLine($"[MainVM] Waveform loaded for: {songToLoadWaveformFor.Title}, {points.Count} points.");
@@ -2197,7 +2202,7 @@ public class MainWindowViewModel : ViewModelBase
             else
             {
                 Debug.WriteLine($"[MainVM] Waveform for {songToLoadWaveformFor.Title} loaded, but current song is now {PlaybackService.CurrentSong?.Title ?? "null"}. Discarding.");
-                WaveformRenderData.Clear(); OnPropertyChanged(nameof(WaveformRenderData)); // Clear if stale
+                WaveformRenderData.Clear(); OnPropertyChanged(nameof(WaveformRenderData));
             }
         }
         catch (Exception ex) { Debug.WriteLine($"[MainVM] Failed to load waveform for {songToLoadWaveformFor.Title}: {ex.Message}"); WaveformRenderData.Clear(); OnPropertyChanged(nameof(WaveformRenderData)); }
@@ -2218,7 +2223,6 @@ public class MainWindowViewModel : ViewModelBase
             NewLoopStartCandidate = null; NewLoopEndCandidate = null; IsCurrentLoopActiveUiBinding = false;
         }
         OnPropertyChanged(nameof(CanSaveLoopRegion));
-        // Commands related to loop editing might need CanExecuteChanged raised here
         (CaptureLoopStartCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (CaptureLoopEndCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (SaveLoopCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -2226,7 +2230,7 @@ public class MainWindowViewModel : ViewModelBase
         (ToggleLoopActiveCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
-    private void ClearLoopCandidateInputs() { NewLoopStartCandidate = null; NewLoopEndCandidate = null; /* CanSaveLoopRegion will update, and its command */ }
+    private void ClearLoopCandidateInputs() { NewLoopStartCandidate = null; NewLoopEndCandidate = null; }
     public bool CanSaveLoopRegion => PlaybackService.CurrentSong != null && NewLoopStartCandidate.HasValue && NewLoopEndCandidate.HasValue && NewLoopEndCandidate.Value > NewLoopStartCandidate.Value && NewLoopEndCandidate.Value <= PlaybackService.CurrentSongDuration && NewLoopStartCandidate.Value >= TimeSpan.Zero;
 
     private void SaveLoopAction(object? param)
@@ -2234,12 +2238,12 @@ public class MainWindowViewModel : ViewModelBase
         var currentServiceSong = PlaybackService.CurrentSong;
         if (!CanSaveLoopRegion || currentServiceSong == null || !NewLoopStartCandidate.HasValue || !NewLoopEndCandidate.HasValue) return;
         var newLoop = new LoopRegion(NewLoopStartCandidate.Value, NewLoopEndCandidate.Value, "User Loop");
-        bool shouldBeActive = (currentServiceSong.SavedLoop != null && currentServiceSong.IsLoopActive) || currentServiceSong.SavedLoop == null; // Default to active if new, or preserve current state
+        bool shouldBeActive = (currentServiceSong.SavedLoop != null && currentServiceSong.IsLoopActive) || currentServiceSong.SavedLoop == null;
         currentServiceSong.SavedLoop = newLoop;
-        if (currentServiceSong.IsLoopActive != shouldBeActive) { currentServiceSong.IsLoopActive = shouldBeActive; } // This will trigger persistence via OnCurrentSongIsLoopActiveChanged
-        else { _loopDataService.SetLoop(currentServiceSong.FilePath, newLoop.Start, newLoop.End, currentServiceSong.IsLoopActive); } // Persist if IsLoopActive didn't change but loop did
+        if (currentServiceSong.IsLoopActive != shouldBeActive) { currentServiceSong.IsLoopActive = shouldBeActive; }
+        else { _loopDataService.SetLoop(currentServiceSong.FilePath, newLoop.Start, newLoop.End, currentServiceSong.IsLoopActive); }
         Debug.WriteLine($"[MainVM] Loop saved for {currentServiceSong.Title}. Active: {currentServiceSong.IsLoopActive}");
-        UpdateLoopEditorForCurrentSong(); // Refresh editor state (e.g. CanExecute for Clear)
+        UpdateLoopEditorForCurrentSong();
     }
 
     private void ClearSavedLoopAction(object? param)
@@ -2248,8 +2252,8 @@ public class MainWindowViewModel : ViewModelBase
         if (currentServiceSong != null)
         {
             var filePath = currentServiceSong.FilePath;
-            currentServiceSong.SavedLoop = null; // This will trigger OnCurrentSongSavedLoopChanged, then OnCurrentSongIsLoopActiveChanged if it's set to false by the former's logic
-            currentServiceSong.IsLoopActive = false; // Explicitly set to false and ensure persistence if SavedLoop was already null by some chance
+            currentServiceSong.SavedLoop = null;
+            currentServiceSong.IsLoopActive = false;
             if (!string.IsNullOrEmpty(filePath)) { _loopDataService.ClearLoop(filePath); }
         }
         ClearLoopCandidateInputs();
@@ -2305,13 +2309,12 @@ public class MainWindowViewModel : ViewModelBase
                         .Select(g => new { AlbumTitle = g.First().Album, ArtistName = g.First().Artist, ThumbSong = g.FirstOrDefault(s => s.Thumbnail != null) })
                         .OrderBy(a => a.ArtistName, StringComparer.OrdinalIgnoreCase).ThenBy(a => a.AlbumTitle, StringComparer.OrdinalIgnoreCase).ToList();
                     foreach (var albumData in uniqueAlbums) Albums.Add(new AlbumViewModel { Title = albumData.AlbumTitle, Artist = albumData.ArtistName, Thumbnail = albumData.ThumbSong?.Thumbnail ?? defaultThumb }); OnPropertyChanged(nameof(Albums));
-                    ApplyFilter(); // This populates FilteredSongs
+                    ApplyFilter();
                 });
             }
             catch (Exception ex) { Debug.WriteLine($"[MainVM] Error loading library: {ex}"); await Dispatcher.UIThread.InvokeAsync(() => StatusBarText = "Error loading music library."); }
         }
-        // This should be called after ApplyFilter to accurately reflect count.
-        IsLoadingLibrary = false; UpdateStatusBarText(); // Update status after loading finishes.
+        IsLoadingLibrary = false; UpdateStatusBarText();
     }
 
     private async Task OpenSettingsDialog(object? ownerWindow)
@@ -2319,9 +2322,9 @@ public class MainWindowViewModel : ViewModelBase
         if (ownerWindow is not Window owner || IsLoadingLibrary) return; IsAdvancedPanelVisible = false; var currentSettingsBeforeDialog = _settingsService.LoadSettings();
         var settingsVM = new SettingsViewModel(_settingsService); var settingsDialog = new Sonorize.Views.SettingsWindow(CurrentTheme) { DataContext = settingsVM };
         await settingsDialog.ShowDialog(owner);
-        if (settingsVM.SettingsChanged) // This flag is now more accurately set by SettingsViewModel
+        if (settingsVM.SettingsChanged)
         {
-            var newSettingsAfterDialog = _settingsService.LoadSettings(); // Re-load to get what was actually saved
+            var newSettingsAfterDialog = _settingsService.LoadSettings();
             bool dirsActuallyChanged = !currentSettingsBeforeDialog.MusicDirectories.SequenceEqual(newSettingsAfterDialog.MusicDirectories);
             bool themeActuallyChanged = currentSettingsBeforeDialog.PreferredThemeFileName != newSettingsAfterDialog.PreferredThemeFileName;
 
@@ -2599,25 +2602,21 @@ public static class BrushExtensions
 </file>
 
 <file path="Source\Views\MainView.cs">
-// Path: Source/Views/MainView.cs
-using System;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives; // For Thumb, ToggleButton
+using Avalonia.Controls.Templates;
+using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Sonorize.Models;
-using Sonorize.ViewModels;
-using Avalonia.Data;
-using Sonorize.Controls;
-using System.Diagnostics;
-using Avalonia;
-using Avalonia.Controls.Templates;
-using Avalonia.Controls.Primitives; // For Thumb, ToggleButton
 using Avalonia.Media.Imaging;
-using Avalonia.Data.Converters;
 using Avalonia.Styling;
-using Sonorize.Services;
-using Sonorize.Views.MainWindowControls; // Added for SearchBarPanel and MainMenu
+using Sonorize.Controls;
 using Sonorize.Converters;
+using Sonorize.Models;
+using Sonorize.Services;
+using Sonorize.ViewModels;
+using Sonorize.Views.MainWindowControls; // Added for SearchBarPanel and MainMenu
 
 namespace Sonorize.Views;
 public class MainWindow : Window
@@ -2627,21 +2626,25 @@ public class MainWindow : Window
     public MainWindow(ThemeColors theme)
     {
         _theme = theme;
-        Title = "Sonorize"; Width = 950; Height = 750; MinWidth = 700; MinHeight = 500;
+        Title = "Sonorize"; 
+        Width = 950;
+        Height = 750;
+        MinWidth = 700; 
+        MinHeight = 500;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Background = _theme.B_BackgroundColor;
 
         var mainGrid = new Grid
         {
-            RowDefinitions = new RowDefinitions
-            {
-                new RowDefinition(GridLength.Auto),
-                new RowDefinition(GridLength.Auto),
-                new RowDefinition(GridLength.Star),
-                new RowDefinition(GridLength.Auto),
-                new RowDefinition(GridLength.Auto),
-                new RowDefinition(GridLength.Auto)
-            }
+            RowDefinitions =
+            [
+                new(GridLength.Auto),
+                new(GridLength.Auto),
+                new(GridLength.Star),
+                new(GridLength.Auto),
+                new(GridLength.Auto),
+                new(GridLength.Auto)
+            ]
         };
 
         var menu = MainMenu.Create(_theme, this); // MODIFIED HERE
@@ -3101,19 +3104,15 @@ public class MainWindow : Window
         {
             Name = "MainPlaybackSliderInstance",
             Minimum = 0,
-            Margin = new Thickness(10, 0),
             VerticalAlignment = VerticalAlignment.Center,
             Background = _theme.B_SecondaryTextColor,
             Foreground = _theme.B_AccentColor
+            // Margin removed, will be handled by DockPanel spacing or parent margin
         };
         mainPlaybackSlider.Styles.Add(new Style(s => s.Is<Thumb>()) { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor) } });
-
-        // Bind Maximum to the duration in seconds from PlaybackService (via ViewModel if needed, but direct path is fine if PlaybackService is accessible)
         mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("PlaybackService.CurrentSongDurationSeconds"));
-        // Bind Value TwoWay to the new SliderPositionSeconds property in MainWindowViewModel
         mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("SliderPositionSeconds", BindingMode.TwoWay));
         mainPlaybackSlider.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
-
 
         var mainPlayPauseButton = new Button { Content = "Play", Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(10, 5), MinWidth = 70 };
         mainPlayPauseButton.Click += (s, e) =>
@@ -3126,24 +3125,47 @@ public class MainWindow : Window
                     vm.PlaybackService.Resume();
             }
         };
-
-        var playPauseContentBinding = new Binding("PlaybackService.IsPlaying")
-        {
-            Converter = BooleanToPlayPauseTextConverter.Instance
-        };
+        var playPauseContentBinding = new Binding("PlaybackService.IsPlaying") { Converter = BooleanToPlayPauseTextConverter.Instance };
         mainPlayPauseButton.Bind(Button.ContentProperty, playPauseContentBinding);
         mainPlayPauseButton.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
 
-        var toggleAdvPanelButton = new Button { Content = "+", Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(8, 4), MinWidth = 30, FontWeight = FontWeight.Bold, Margin = new Thickness(5, 0, 0, 0) };
+        var toggleAdvPanelButton = new Button { Content = "+", Background = _theme.B_SlightlyLighterBackground, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(8, 4), MinWidth = 30, FontWeight = FontWeight.Bold };
         toggleAdvPanelButton.Bind(Button.CommandProperty, new Binding("ToggleAdvancedPanelCommand"));
         toggleAdvPanelButton.Bind(IsEnabledProperty, new Binding("PlaybackService.HasCurrentSong"));
 
-        var controlsButtonPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0, 10, 0) };
+        var controlsButtonPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 5,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 5, 0) // 5px right margin to space from slider
+        };
         controlsButtonPanel.Children.Add(mainPlayPauseButton); controlsButtonPanel.Children.Add(toggleAdvPanelButton);
 
-        var topMainPlaybackControls = new DockPanel { LastChildFill = true, Height = 35, Margin = new Thickness(5, 0, 5, 0) };
+        var timeDisplayTextBlock = new TextBlock
+        {
+            Foreground = _theme.B_TextColor,
+            FontSize = 11,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(8, 0, 0, 0), // 8px left margin to space from slider
+            MinWidth = 75 // "00:00 / 00:00"
+        };
+        timeDisplayTextBlock.Bind(TextBlock.TextProperty, new Binding("CurrentTimeTotalTimeDisplay"));
+        timeDisplayTextBlock.Bind(IsVisibleProperty, new Binding("PlaybackService.HasCurrentSong"));
+
+
+        var topMainPlaybackControls = new DockPanel
+        {
+            LastChildFill = true,
+            Height = 35,
+            Margin = new Thickness(10, 0) // Overall horizontal padding for the control group
+        };
         DockPanel.SetDock(controlsButtonPanel, Dock.Left);
-        topMainPlaybackControls.Children.Add(controlsButtonPanel); topMainPlaybackControls.Children.Add(mainPlaybackSlider);
+        DockPanel.SetDock(timeDisplayTextBlock, Dock.Right);
+
+        topMainPlaybackControls.Children.Add(controlsButtonPanel);
+        topMainPlaybackControls.Children.Add(timeDisplayTextBlock);
+        topMainPlaybackControls.Children.Add(mainPlaybackSlider); // Added last to fill remaining space
 
         var activeLoopDisplayText = new TextBlock { Foreground = _theme.B_SecondaryTextColor, FontSize = 10, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(10, 0, 10, 2), MinHeight = 14 };
         activeLoopDisplayText.Bind(TextBlock.TextProperty, new Binding("ActiveLoopDisplayText"));

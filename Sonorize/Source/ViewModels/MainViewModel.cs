@@ -423,7 +423,7 @@ public class MainWindowViewModel : ViewModelBase
         var songsInAlbum = _allSongs.Where(s =>
             s.Album.Equals(album.Title, StringComparison.OrdinalIgnoreCase) &&
             s.Artist.Equals(album.Artist, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(s => s.Title);
+            .OrderBy(s => s.Title); // Always sort by title within an album
 
         foreach (var song in songsInAlbum)
         {
@@ -446,7 +446,11 @@ public class MainWindowViewModel : ViewModelBase
                 (s.Artist?.ToLowerInvariant().Contains(query) ?? false) ||
                 (s.Album?.ToLowerInvariant().Contains(query) ?? false));
         }
-        foreach (var song in songsToFilter.OrderBy(s => s.Artist).ThenBy(s => s.Album).ThenBy(s => s.Title))
+
+        // Sorting for the main song list (Library tab)
+        songsToFilter = songsToFilter.OrderBy(s => s.Title, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var song in songsToFilter)
         {
             FilteredSongs.Add(song);
         }
@@ -582,9 +586,9 @@ public class MainWindowViewModel : ViewModelBase
                     Albums.Clear(); Func<Song, (string Album, string Artist)> keySelector = s => (s.Album?.Trim() ?? string.Empty, s.Artist?.Trim() ?? string.Empty);
                     var uniqueAlbums = _allSongs.Where(s => !string.IsNullOrWhiteSpace(s.Album) && !string.IsNullOrWhiteSpace(s.Artist)).GroupBy(keySelector, AlbumArtistTupleComparer.Instance)
                         .Select(g => new { AlbumTitle = g.First().Album, ArtistName = g.First().Artist, ThumbSong = g.FirstOrDefault(s => s.Thumbnail != null) })
-                        .OrderBy(a => a.ArtistName, StringComparer.OrdinalIgnoreCase).ThenBy(a => a.AlbumTitle, StringComparer.OrdinalIgnoreCase).ToList();
+                        .OrderBy(a => a.ArtistName, StringComparer.OrdinalIgnoreCase).ThenBy(a => a.AlbumTitle, StringComparer.OrdinalIgnoreCase).ToList(); // Keep album sort by artist, then album title
                     foreach (var albumData in uniqueAlbums) Albums.Add(new AlbumViewModel { Title = albumData.AlbumTitle, Artist = albumData.ArtistName, Thumbnail = albumData.ThumbSong?.Thumbnail ?? defaultThumb }); OnPropertyChanged(nameof(Albums));
-                    ApplyFilter();
+                    ApplyFilter(); // Apply filter with the new sorting logic
                 });
             }
             catch (Exception ex) { Debug.WriteLine($"[MainVM] Error loading library: {ex}"); await Dispatcher.UIThread.InvokeAsync(() => StatusBarText = "Error loading music library."); }

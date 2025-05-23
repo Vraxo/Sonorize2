@@ -22,21 +22,25 @@ public class MainWindow : Window
     public MainWindow(ThemeColors theme)
     {
         _theme = theme;
-        Title = "Sonorize"; Width = 950; Height = 750; MinWidth = 700; MinHeight = 500;
+        Title = "Sonorize"; 
+        Width = 950;
+        Height = 750;
+        MinWidth = 700; 
+        MinHeight = 500;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Background = _theme.B_BackgroundColor;
 
         var mainGrid = new Grid
         {
-            RowDefinitions = new RowDefinitions
-            {
-                new RowDefinition(GridLength.Auto),
-                new RowDefinition(GridLength.Auto),
-                new RowDefinition(GridLength.Star),
-                new RowDefinition(GridLength.Auto),
-                new RowDefinition(GridLength.Auto),
-                new RowDefinition(GridLength.Auto)
-            }
+            RowDefinitions =
+            [
+                new(GridLength.Auto),
+                new(GridLength.Auto),
+                new(GridLength.Star),
+                new(GridLength.Auto),
+                new(GridLength.Auto),
+                new(GridLength.Auto)
+            ]
         };
 
         var menu = MainMenu.Create(_theme, this); // MODIFIED HERE
