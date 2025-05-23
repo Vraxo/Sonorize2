@@ -20,8 +20,9 @@ public static class MainPlaybackControlsPanel
         {
             Name = "MainPlaybackSliderInstance",
             Minimum = 0,
-            VerticalAlignment = VerticalAlignment.Center,
-            Height = 24,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Height = 12,
+            Margin = new Thickness(0, 0, 0, 0),
             Background = theme.B_SecondaryTextColor,
             Foreground = theme.B_AccentColor
         };
@@ -35,7 +36,7 @@ public static class MainPlaybackControlsPanel
             Foreground = theme.B_TextColor,
             BorderBrush = theme.B_AccentColor,
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(20),
+            CornerRadius = new CornerRadius(20), // Changed from 5 to 20 for circular shape
             Padding = new Thickness(0),
             Width = 40,
             Height = 40,
@@ -101,17 +102,17 @@ public static class MainPlaybackControlsPanel
             HorizontalAlignment = HorizontalAlignment.Right
         };
         timeDisplayTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentTimeTotalTimeDisplay"));
+        // Removed: timeDisplayTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
 
         var seekerAreaPanel = new Panel
         {
-            Height = 50,
+            Height = 40,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             Background = Brushes.Transparent
         };
-        // Changed order: Add button first, then slider so slider renders on top
-        seekerAreaPanel.Children.Add(mainPlayPauseButton);
         seekerAreaPanel.Children.Add(mainPlaybackSlider);
+        seekerAreaPanel.Children.Add(mainPlayPauseButton);
 
 
         var topControlsGrid = new Grid
@@ -137,6 +138,7 @@ public static class MainPlaybackControlsPanel
             Margin = new Thickness(0, 5, 0, 5)
         };
         outerPanel.Children.Add(topControlsGrid);
+        // Removed: activeLoopDisplayText and its addition to outerPanel
         return outerPanel;
     }
 }
