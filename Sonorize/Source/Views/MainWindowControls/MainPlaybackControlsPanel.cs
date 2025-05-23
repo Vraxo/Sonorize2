@@ -131,17 +131,6 @@ public static class MainPlaybackControlsPanel
         topControlsGrid.Children.Add(seekerAreaPanel);
         topControlsGrid.Children.Add(timeDisplayTextBlock);
 
-
-        var activeLoopDisplayText = new TextBlock
-        {
-            Foreground = theme.B_SecondaryTextColor,
-            FontSize = 10,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(10, 0, 10, 2),
-            MinHeight = 14
-        };
-        activeLoopDisplayText.Bind(TextBlock.TextProperty, new Binding("LoopEditor.ActiveLoopDisplayText"));
-
         var outerPanel = new StackPanel
         {
             Orientation = Orientation.Vertical,
@@ -149,7 +138,7 @@ public static class MainPlaybackControlsPanel
             Margin = new Thickness(0, 5, 0, 5)
         };
         outerPanel.Children.Add(topControlsGrid);
-        outerPanel.Children.Add(activeLoopDisplayText);
+        // Removed: activeLoopDisplayText and its addition to outerPanel
         return outerPanel;
     }
 }
