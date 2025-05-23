@@ -10,12 +10,13 @@ using Avalonia;
 using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.Views.MainWindowControls;
+using Avalonia.Media.Imaging; // Required for BitmapInterpolationMode
 
 namespace Sonorize.Views.MainWindowControls;
 
 public static class MainPlaybackControlsPanel
 {
-    public static StackPanel Create(ThemeColors theme)
+    public static Grid Create(ThemeColors theme) // Root is a Grid
     {
         // Previous Button
         var previousButton = new Button
@@ -33,7 +34,7 @@ public static class MainPlaybackControlsPanel
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center
         };
-        previousButton.Bind(Button.CommandProperty, new Binding("Playback.PreviousTrackCommand"));
+        previousButton.Bind(Button.CommandProperty, new Binding("Playback.PreviousTrackCommand")); // Assuming this command exists or will exist
         previousButton.Bind(Button.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
         var mainPlayPauseButton = new Button
@@ -69,16 +70,16 @@ public static class MainPlaybackControlsPanel
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center
         };
-        nextButton.Bind(Button.CommandProperty, new Binding("Playback.NextTrackCommand"));
+        nextButton.Bind(Button.CommandProperty, new Binding("Playback.NextTrackCommand")); // Assuming this command exists or will exist
         nextButton.Bind(Button.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
         var playbackButtonControlsPanel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             Spacing = 10,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            // Apply a negative left margin to shift the panel left for better alignment with the slider based on visual inspection and typical control widths.
-            Margin = new Thickness(-20, 0, 0, 0)
+            HorizontalAlignment = HorizontalAlignment.Center, // Centered within its parent StackPanel
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0) // No margin needed here
         };
         playbackButtonControlsPanel.Children.Add(previousButton);
         playbackButtonControlsPanel.Children.Add(mainPlayPauseButton);
@@ -93,20 +94,22 @@ public static class MainPlaybackControlsPanel
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(3),
             Padding = new Thickness(8, 4),
-            MinWidth = 30,
+            MinWidth = 30, // Give it a minimum size to occupy space
             FontWeight = FontWeight.Bold
         };
         toggleAdvPanelButton.Bind(Button.CommandProperty, new Binding("ToggleAdvancedPanelCommand"));
         toggleAdvPanelButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
-        var leftControlsPanel = new StackPanel
+        var rightControlsPanel = new StackPanel // Holds toggle button
         {
             Orientation = Orientation.Horizontal,
             Spacing = 5,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 5, 0) // Keep margin to separate from the time/slider panel
+            HorizontalAlignment = HorizontalAlignment.Right, // Align to the right within its grid cell
+            Margin = new Thickness(0, 0, 10, 0) // Margin from the right edge of the grid cell
+            // MinWidth/Width could be added here if needed to reserve space even when invisible
         };
-        leftControlsPanel.Children.Add(toggleAdvPanelButton);
+        rightControlsPanel.Children.Add(toggleAdvPanelButton);
 
         // TextBlock for Current Time
         var currentTimeTextBlock = new TextBlock
@@ -166,7 +169,7 @@ public static class MainPlaybackControlsPanel
             VerticalAlignment = VerticalAlignment.Center,
             Height = 30, // Fixed height
             MinWidth = 500, // Ensure minimum width for layout stability
-            HorizontalAlignment = HorizontalAlignment.Center // Center the entire grid panel
+            HorizontalAlignment = HorizontalAlignment.Stretch // Stretch to fill the center container
         };
 
         // Place controls in the grid columns
@@ -179,27 +182,107 @@ public static class MainPlaybackControlsPanel
         timeSliderGrid.Children.Add(totalTimeTextBlock);
 
 
-        var topMainPlaybackControls = new StackPanel
+        var centerPlaybackControlsStack = new StackPanel // Contains buttons and slider grid
         {
             Orientation = Orientation.Vertical,
-            Margin = new Thickness(10, 5, 10, 0),
+            Margin = new Thickness(0, 5, 0, 0),
             Spacing = 8,
-            HorizontalAlignment = HorizontalAlignment.Stretch // Allow children to fill width for centering context
+            HorizontalAlignment = HorizontalAlignment.Center, // Center this stack panel within the root Grid
+            VerticalAlignment = VerticalAlignment.Center // Center vertically within its grid row
         };
-        // playbackButtonControlsPanel is centered within this StackPanel, but shifted by its negative margin
-        topMainPlaybackControls.Children.Add(playbackButtonControlsPanel);
-        // timeSliderGrid containing time texts and slider is centered
-        topMainPlaybackControls.Children.Add(timeSliderGrid);
+        centerPlaybackControlsStack.Children.Add(playbackButtonControlsPanel);
+        centerPlaybackControlsStack.Children.Add(timeSliderGrid);
 
-        var outerPanel = new StackPanel
+
+        // --- Currently Playing Song Info Panel (Bottom Left) ---
+        var songInfoPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            VerticalAlignment = VerticalAlignment.Center, // Center vertically in its grid cell
+            HorizontalAlignment = HorizontalAlignment.Left, // Align to the left edge of its grid cell
+            Margin = new Thickness(10, 0, 0, 0), // Margin from the left edge of the grid cell
+            Spacing = 8,
+            // Add MaxWidth to prevent text pushing content, trimming is handled by TextBlock MaxWidth/TextTrimming
+            // We rely on the root Grid column definition to prevent pushing the center.
+        };
+        songInfoPanel.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong")); // Only visible when a song is loaded
+
+        var thumbnailImage = new Image
+        {
+            Width = 36, // Slightly larger thumbnail
+            Height = 36,
+            Source = null, // Will be bound
+            Stretch = Stretch.UniformToFill,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        RenderOptions.SetBitmapInterpolationMode(thumbnailImage, BitmapInterpolationMode.HighQuality);
+        thumbnailImage.Bind(Image.SourceProperty, new Binding("Playback.CurrentSong.Thumbnail"));
+
+        var textStack = new StackPanel
         {
             Orientation = Orientation.Vertical,
-            Background = theme.B_BackgroundColor,
-            Margin = new Thickness(0, 5, 0, 5),
-            HorizontalAlignment = HorizontalAlignment.Stretch // Outer panel spans full width
+            VerticalAlignment = VerticalAlignment.Center,
+            Spacing = 1
         };
-        outerPanel.Children.Add(topMainPlaybackControls);
 
-        return outerPanel;
+        var titleTextBlock = new TextBlock
+        {
+            Text = "Unknown Title", // Default, will be bound
+            FontSize = 14,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = theme.B_TextColor,
+            TextTrimming = TextTrimming.CharacterEllipsis, // Crucial for preventing overflow
+            VerticalAlignment = VerticalAlignment.Center,
+            MaxWidth = 200 // Limit width of the text itself
+        };
+        titleTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentSong.Title"));
+
+        var artistTextBlock = new TextBlock
+        {
+            Text = "Unknown Artist", // Default, will be bound
+            FontSize = 11,
+            Foreground = theme.B_SecondaryTextColor,
+            TextTrimming = TextTrimming.CharacterEllipsis, // Crucial for preventing overflow
+            VerticalAlignment = VerticalAlignment.Center,
+            MaxWidth = 200 // Limit width of the text itself
+        };
+        artistTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentSong.Artist"));
+
+        textStack.Children.Add(titleTextBlock);
+        textStack.Children.Add(artistTextBlock);
+
+        songInfoPanel.Children.Add(thumbnailImage);
+        songInfoPanel.Children.Add(textStack);
+
+
+        // --- Main Grid Layout ---
+        // Use a single column Grid. The center element is centered within it.
+        // Left and Right elements are aligned to the sides *within* that same single column.
+        // This prevents the size of the left/right elements from affecting the center's horizontal position.
+        var outerGrid = new Grid // This is the root panel
+        {
+            Background = theme.B_BackgroundColor,
+            Margin = new Thickness(0, 5, 0, 5), // Vertical margin for the whole control
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            RowDefinitions = new RowDefinitions("Auto"), // Single row, height is Auto based on content
+            ColumnDefinitions = new ColumnDefinitions("*") // Single column spanning the width
+        };
+
+        // Place all three main sections in the *same* grid cell (row 0, column 0).
+        // Their HorizontalAlignment properties will dictate their position within that cell.
+        Grid.SetRow(songInfoPanel, 0);
+        Grid.SetColumn(songInfoPanel, 0);
+
+        Grid.SetRow(centerPlaybackControlsStack, 0);
+        Grid.SetColumn(centerPlaybackControlsStack, 0);
+
+        Grid.SetRow(rightControlsPanel, 0);
+        Grid.SetColumn(rightControlsPanel, 0);
+
+        outerGrid.Children.Add(songInfoPanel);
+        outerGrid.Children.Add(centerPlaybackControlsStack);
+        outerGrid.Children.Add(rightControlsPanel);
+
+        return outerGrid;
     }
 }
