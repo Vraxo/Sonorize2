@@ -14,6 +14,13 @@ using System.Windows.Input;
 
 namespace Sonorize.ViewModels;
 
+public enum SongDisplayMode
+{
+    Detailed,
+    Compact,
+    Grid
+}
+
 public class LibraryViewModel : ViewModelBase // Ensure this is public
 {
     private readonly SettingsService _settingsService;
@@ -104,11 +111,15 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
     /// </summary>
     public string LibraryStatusText { get => _libraryStatusText; private set => SetProperty(ref _libraryStatusText, value); }
 
+    private SongDisplayMode _currentSongDisplayMode = SongDisplayMode.Detailed;
+    public SongDisplayMode CurrentSongDisplayMode
+    {
+        get => _currentSongDisplayMode;
+        set => SetProperty(ref _currentSongDisplayMode, value); // This will trigger UI update for ItemTemplate via MainWindow listener
+    }
 
     // Commands owned by LibraryViewModel
-    // AddDirectoryAndRefreshCommand is kept on MainWindowViewModel because it needs Window owner for file picker.
-    // LoadInitialDataCommand is kept on MainWindowViewModel as it's a top-level initialization action.
-    // OpenSettingsCommand is kept on MainWindowViewModel as it opens a modal window.
+    public ICommand SetDisplayModeCommand { get; }
 
 
     public LibraryViewModel(SettingsService settingsService, MusicLibraryService musicLibraryService, LoopDataService loopDataService)
@@ -116,6 +127,11 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
         _loopDataService = loopDataService;
+
+        SetDisplayModeCommand = new RelayCommand(
+            mode => CurrentSongDisplayMode = (SongDisplayMode)mode!,
+            _ => true // Always executable
+        );
 
         // Initial state
         UpdateStatusBarText(); // Initialize status text
@@ -303,7 +319,6 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
     /// </summary>
     public void RaiseLibraryCommandsCanExecuteChanged()
     {
-        // No commands directly on this VM yet that need external triggering besides init state
-        // If we added commands like "Reload Library", they would go here.
+        (SetDisplayModeCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 }

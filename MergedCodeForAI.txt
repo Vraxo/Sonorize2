@@ -2376,18 +2376,9 @@ public class MainWindowViewModel : ViewModelBase
     public LoopEditorViewModel LoopEditor { get; }
     public PlaybackViewModel Playback { get; } // New Playback ViewModel
 
-    // HasCurrentSong property moved to PlaybackViewModel
-    // public bool HasCurrentSong => PlaybackService.CurrentSong != null; // REMOVED
-
-    // Playback state presentation properties are now in PlaybackViewModel
-    // public double SliderPositionSeconds { get; set; } // Logic moved to PlaybackViewModel
-    // public string CurrentTimeTotalTimeDisplay { get; } // Moved to PlaybackViewModel
-    // public double PlaybackSpeed { get; set; } // Moved to PlaybackViewModel
-    // public double PlaybackPitch { get; set; } // Moved to PlaybackViewModel
-    // public string PlaybackSpeedDisplay { get; } // Moved to PlaybackViewModel
-    // public string PlaybackPitchDisplay { get; } // Moved to PlaybackViewModel
-    // public ObservableCollection<WaveformPoint> WaveformRenderData { get; } // Moved to PlaybackViewModel
-    // private bool _isWaveformLoading; // Moved to PlaybackViewModel
+    // HasCurrentSong property moved to PlaybackViewModel - Access via Playback.HasCurrentSong
+    // IsWaveformLoading moved to PlaybackViewModel - Access via Playback.IsWaveformLoading
+    // WaveformRenderData moved to PlaybackViewModel - Access via Playback.WaveformRenderData
 
     private string _statusBarText = "Welcome to Sonorize!";
     public string StatusBarText { get => _statusBarText; set => SetProperty(ref _statusBarText, value); }
@@ -2493,8 +2484,8 @@ public class MainWindowViewModel : ViewModelBase
             switch (e.PropertyName)
             {
                 case nameof(PlaybackViewModel.HasCurrentSong):
-                    // Propagate HasCurrentSong from PlaybackVM
-                    OnPropertyChanged(nameof(HasCurrentSong));
+                    // Propagate HasCurrentSong from PlaybackVM (MainWindowViewModel doesn't have its own)
+                    // OnPropertyChanged(nameof(HasCurrentSong)); // Removed - MainVM doesn't have this property
                     // Update commands that might depend on a song being playing
                     RaiseAllCommandsCanExecuteChanged();
 
@@ -2534,13 +2525,15 @@ public class MainWindowViewModel : ViewModelBase
                     RaiseAllCommandsCanExecuteChanged();
                     break;
                 case nameof(PlaybackViewModel.IsWaveformLoading):
-                    // Propagate IsWaveformLoading from PlaybackVM
-                    OnPropertyChanged(nameof(IsWaveformLoading)); // Notify UI about waveform loading state
+                    // Propagate IsWaveformLoading from PlaybackVM (MainWindowViewModel doesn't have its own)
+                    // OnPropertyChanged(nameof(IsWaveformLoading)); // Removed - MainVM doesn't have this property
                     // Commands in PlaybackVM already listen to this.
+                    RaiseAllCommandsCanExecuteChanged(); // PlaybackVM commands affected
                     break;
                 case nameof(PlaybackViewModel.WaveformRenderData):
-                    // Propagate WaveformRenderData from PlaybackVM
-                    OnPropertyChanged(nameof(WaveformRenderData)); // Notify UI about new waveform data
+                    // Propagate WaveformRenderData from PlaybackVM (MainWindowViewModel doesn't have its own)
+                    // OnPropertyChanged(nameof(WaveformRenderData)); // Removed - MainVM doesn't have this property
+                    // Waveform display control is bound directly to Playback.WaveformRenderData
                     break;
 
                     // PlaybackSpeed, PlaybackPitch, derived display properties are handled within PlaybackVM.
@@ -2552,6 +2545,7 @@ public class MainWindowViewModel : ViewModelBase
     {
         (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
         // If Advanced Panel becomes visible, and a song is playing, load its waveform.
+        // Access PlaybackVM properties directly
         if (IsAdvancedPanelVisible && Playback.HasCurrentSong && !Playback.WaveformRenderData.Any() && !Playback.IsWaveformLoading)
         {
             Debug.WriteLine("[MainVM] Advanced Panel visible, song is playing, waveform not loaded/loading. Requesting waveform load.");
@@ -2564,7 +2558,7 @@ public class MainWindowViewModel : ViewModelBase
     private void UpdateAllUIDependentStates()
     {
         // Update main VM properties that depend on child VM states
-        OnPropertyChanged(nameof(HasCurrentSong)); // Depends on Playback.HasCurrentSong
+        // OnPropertyChanged(nameof(HasCurrentSong)); // Removed
         OnPropertyChanged(nameof(IsLoadingLibrary)); // Depends on Library.IsLoadingLibrary
         UpdateStatusBarText(); // Depends on Playback and Library status
 
@@ -2572,6 +2566,11 @@ public class MainWindowViewModel : ViewModelBase
         // OnPropertyChanged for the child VM properties used in the View might help
         // ensure bindings are refreshed during initial setup or after significant state changes.
         // This is particularly important for derived properties or complex bindings.
+        // HOWEVER, binding directly to the child VM's property is the correct approach,
+        // and the child VM is responsible for raising OnPropertyChanged for its own properties.
+        // So, these explicit OnPropertyChanged calls for child properties are generally not needed
+        // and can be removed to simplify the parent VM.
+        /*
         OnPropertyChanged(nameof(Playback.CurrentPositionSeconds)); // for Slider.Value binding
         OnPropertyChanged(nameof(Playback.CurrentSongDurationSeconds)); // for Slider.Maximum binding
         OnPropertyChanged(nameof(Playback.CurrentTimeTotalTimeDisplay)); // for time TextBlock
@@ -2589,9 +2588,28 @@ public class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(LoopEditor.ActiveLoopDisplayText));       // for loop TextBlock
         OnPropertyChanged(nameof(LoopEditor.CanSaveLoopRegion));           // for Save button IsEnabled
         OnPropertyChanged(nameof(LoopEditor.IsCurrentLoopActiveUiBinding)); // for loop CheckBox
+        */
 
         // Trigger commands CanExecute updates for all VMs
         RaiseAllCommandsCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// Raises CanExecuteChanged for commands owned by this ViewModel and tells child VMs to do the same.
+    /// </summary>
+    public void RaiseAllCommandsCanExecuteChanged()
+    {
+        // Raise CanExecuteChanged for commands owned by MainWindowViewModel
+        (LoadInitialDataCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (OpenSettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (ExitCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
+
+        // Tell child VMs to raise their commands' CanExecuteChanged
+        Library.RaiseLibraryCommandsCanExecuteChanged();
+        Playback.RaisePlaybackCommandCanExecuteChanged();
+        LoopEditor.RaiseLoopCommandCanExecuteChanged();
     }
 
 
@@ -2602,9 +2620,11 @@ public class MainWindowViewModel : ViewModelBase
         if (Playback.HasCurrentSong)
         {
             string stateStr = Playback.CurrentPlaybackStatus switch { PlaybackStateStatus.Playing => "Playing", PlaybackStateStatus.Paused => "Paused", PlaybackStateStatus.Stopped => "Stopped", _ => "Idle" };
-            status = $"{stateStr}: {Playback.CurrentSong?.Title ?? "Unknown Song"}"; // Use Playback.CurrentSong
+            // Access CurrentSong via Playback property
+            status = $"{stateStr}: {Playback.CurrentSong?.Title ?? "Unknown Song"}";
             // Use LoopEditor's property for loop active state displayed in status bar
-            if (LoopEditor.IsCurrentLoopActiveUiBinding && Playback.CurrentSong?.SavedLoop != null) // Use Playback.CurrentSong
+            // Access CurrentSong via Playback property
+            if (LoopEditor.IsCurrentLoopActiveUiBinding && Playback.CurrentSong?.SavedLoop != null)
             {
                 status += $" (Loop Active)";
             }
@@ -2677,6 +2697,7 @@ public class MainWindowViewModel : ViewModelBase
             string? folderPath = null;
             try
             {
+                // Using Path.GetFullPath is crucial for consistent path representation
                 folderPath = Path.GetFullPath(result[0].Path.LocalPath);
             }
             catch (Exception ex)
@@ -2689,7 +2710,8 @@ public class MainWindowViewModel : ViewModelBase
             if (!string.IsNullOrEmpty(folderPath) && Directory.Exists(folderPath))
             {
                 var settings = _settingsService.LoadSettings();
-                if (!settings.MusicDirectories.Contains(folderPath))
+                // Use a case-insensitive comparison for existing directories
+                if (!settings.MusicDirectories.Any(d => string.Equals(d, folderPath, StringComparison.OrdinalIgnoreCase)))
                 {
                     settings.MusicDirectories.Add(folderPath);
                     _settingsService.SaveSettings(settings);
