@@ -5,6 +5,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia;
+
 using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.Views.MainWindowControls;
@@ -15,42 +16,19 @@ public static class MainPlaybackControlsPanel
 {
     public static StackPanel Create(ThemeColors theme)
     {
-        var mainPlaybackSlider = new Slider
-        {
-            Name = "MainPlaybackSliderInstance",
-            Minimum = 0,
-            VerticalAlignment = VerticalAlignment.Center,
-            Background = theme.B_SecondaryTextColor,
-            Foreground = theme.B_AccentColor
-        };
-        // Style to make the Thumb invisible
-        mainPlaybackSlider.Styles.Add(new Style(s => s.Is<Thumb>())
-        {
-            Setters =
-            {
-                new Setter(Thumb.WidthProperty, 0.0),
-                new Setter(Thumb.HeightProperty, 0.0),
-                new Setter(Thumb.OpacityProperty, 0.0)
-            }
-        });
-        mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("Playback.CurrentSongDurationSeconds"));
-        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("Playback.CurrentPositionSeconds", BindingMode.TwoWay));
-        mainPlaybackSlider.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
-
         // Previous Button
         var previousButton = new Button
         {
-            Content = "<", // Previous Track Symbol
+            Content = "<",
             Background = theme.B_SlightlyLighterBackground,
             Foreground = theme.B_TextColor,
-            BorderBrush = theme.B_ControlBackgroundColor, // Slightly less prominent border
+            BorderBrush = theme.B_ControlBackgroundColor,
             BorderThickness = new Thickness(1),
             Width = 32,
             Height = 32,
             CornerRadius = new CornerRadius(16),
             Padding = new Thickness(0),
             FontSize = 16,
-            FontWeight = FontWeight.Normal,
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center
         };
@@ -68,49 +46,53 @@ public static class MainPlaybackControlsPanel
             CornerRadius = new CornerRadius(19),
             Padding = new Thickness(0),
             FontSize = 18,
-            FontWeight = FontWeight.Normal,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,
             HorizontalContentAlignment = HorizontalAlignment.Center
         };
         mainPlayPauseButton.Bind(Button.CommandProperty, new Binding("Playback.PlayPauseResumeCommand"));
-        var playPauseIconBinding = new Binding("Playback.IsPlaying") { Converter = BooleanToPlayPauseIconConverter.Instance };
-        mainPlayPauseButton.Bind(Button.ContentProperty, playPauseIconBinding);
+        mainPlayPauseButton.Bind(Button.ContentProperty, new Binding("Playback.IsPlaying") { Converter = BooleanToPlayPauseIconConverter.Instance });
 
-        // Next Button
         var nextButton = new Button
         {
-            Content = ">", // Next Track Symbol
+            Content = ">",
             Background = theme.B_SlightlyLighterBackground,
             Foreground = theme.B_TextColor,
-            BorderBrush = theme.B_ControlBackgroundColor, // Slightly less prominent border
+            BorderBrush = theme.B_ControlBackgroundColor,
             BorderThickness = new Thickness(1),
             Width = 32,
             Height = 32,
             CornerRadius = new CornerRadius(16),
             Padding = new Thickness(0),
             FontSize = 16,
-            FontWeight = FontWeight.Normal,
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center
         };
         nextButton.Bind(Button.CommandProperty, new Binding("Playback.NextTrackCommand"));
         nextButton.Bind(Button.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
-        // Group for playback control buttons (Prev, Play/Pause, Next)
         var playbackButtonControlsPanel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             Spacing = 10,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center
+            HorizontalAlignment = HorizontalAlignment.Center
         };
         playbackButtonControlsPanel.Children.Add(previousButton);
         playbackButtonControlsPanel.Children.Add(mainPlayPauseButton);
         playbackButtonControlsPanel.Children.Add(nextButton);
 
-
-        var toggleAdvPanelButton = new Button { Content = "+", Background = theme.B_SlightlyLighterBackground, Foreground = theme.B_TextColor, BorderBrush = theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(8, 4), MinWidth = 30, FontWeight = FontWeight.Bold };
+        var toggleAdvPanelButton = new Button
+        {
+            Content = "+",
+            Background = theme.B_SlightlyLighterBackground,
+            Foreground = theme.B_TextColor,
+            BorderBrush = theme.B_AccentColor,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(3),
+            Padding = new Thickness(8, 4),
+            MinWidth = 30,
+            FontWeight = FontWeight.Bold
+        };
         toggleAdvPanelButton.Bind(Button.CommandProperty, new Binding("ToggleAdvancedPanelCommand"));
         toggleAdvPanelButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
@@ -134,6 +116,37 @@ public static class MainPlaybackControlsPanel
         timeDisplayTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentTimeTotalTimeDisplay"));
         timeDisplayTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
 
+        var mainPlaybackSlider = new Slider
+        {
+            Name = "MainPlaybackSliderInstance",
+            Minimum = 0,
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = theme.B_SecondaryTextColor,
+            Foreground = theme.B_AccentColor,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Width = 0.5 * 800 // 50% of an assumed max width, replace with a binding or measurement logic if dynamic
+        };
+        mainPlaybackSlider.Styles.Add(new Style(s => s.Is<Thumb>())
+        {
+            Setters =
+            {
+                new Setter(Thumb.WidthProperty, 0.0),
+                new Setter(Thumb.HeightProperty, 0.0),
+                new Setter(Thumb.OpacityProperty, 0.0)
+            }
+        });
+        mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("Playback.CurrentSongDurationSeconds"));
+        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("Playback.CurrentPositionSeconds", BindingMode.TwoWay));
+        mainPlaybackSlider.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
+
+        // Container to center and limit slider width
+        var sliderContainer = new Grid
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Width = 400 // 50% of 800px, or adjust as needed
+        };
+        sliderContainer.Children.Add(mainPlaybackSlider);
+
         var sliderDockPanel = new DockPanel
         {
             LastChildFill = true,
@@ -144,7 +157,7 @@ public static class MainPlaybackControlsPanel
 
         sliderDockPanel.Children.Add(leftControlsPanel);
         sliderDockPanel.Children.Add(timeDisplayTextBlock);
-        sliderDockPanel.Children.Add(mainPlaybackSlider);
+        sliderDockPanel.Children.Add(sliderContainer);
 
         var topMainPlaybackControls = new StackPanel
         {
@@ -152,12 +165,17 @@ public static class MainPlaybackControlsPanel
             Margin = new Thickness(10, 5, 10, 0),
             Spacing = 8
         };
-
-        topMainPlaybackControls.Children.Add(playbackButtonControlsPanel); // Add the group of buttons
+        topMainPlaybackControls.Children.Add(playbackButtonControlsPanel);
         topMainPlaybackControls.Children.Add(sliderDockPanel);
 
-        var outerPanel = new StackPanel { Orientation = Orientation.Vertical, Background = theme.B_BackgroundColor, Margin = new Thickness(0, 5, 0, 5) };
+        var outerPanel = new StackPanel
+        {
+            Orientation = Orientation.Vertical,
+            Background = theme.B_BackgroundColor,
+            Margin = new Thickness(0, 5, 0, 5)
+        };
         outerPanel.Children.Add(topMainPlaybackControls);
+
         return outerPanel;
     }
 }
