@@ -104,17 +104,6 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
     /// </summary>
     public string LibraryStatusText { get => _libraryStatusText; private set => SetProperty(ref _libraryStatusText, value); }
 
-    // --- Library View Mode Properties ---
-    private LibraryViewMode _currentViewMode = LibraryViewMode.Detailed; // Default view mode
-    public LibraryViewMode CurrentViewMode
-    {
-        get => _currentViewMode;
-        set => SetProperty(ref _currentViewMode, value);
-    }
-
-    // Collection for the ComboBox binding
-    public List<LibraryViewMode> AvailableViewModes { get; } = Enum.GetValues(typeof(LibraryViewMode)).Cast<LibraryViewMode>().ToList();
-
 
     // Commands owned by LibraryViewModel
     // AddDirectoryAndRefreshCommand is kept on MainWindowViewModel because it needs Window owner for file picker.
@@ -141,8 +130,6 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
 
         IsLoadingLibrary = true;
         SearchQuery = string.Empty; // Clear search when reloading library
-        SelectedArtist = null; // Clear artist selection
-        SelectedAlbum = null; // Clear album selection
 
         await Dispatcher.UIThread.InvokeAsync(() => {
             SelectedSong = null;
@@ -224,8 +211,6 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
     {
         if (artist?.Name == null) return;
         Debug.WriteLine($"[LibraryVM] Artist selected: {artist.Name}");
-        // Clear album selection when artist is selected
-        SelectedAlbum = null;
         SearchQuery = artist.Name; // Set search query to filter songs
         // MainWindowViewModel will handle switching tabs if needed
     }
@@ -234,8 +219,6 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
     {
         if (album?.Title == null || album.Artist == null) return;
         Debug.WriteLine($"[LibraryVM] Album selected: {album.Title} by {album.Artist}");
-        // Clear artist selection when album is selected
-        SelectedArtist = null;
         // When an album is selected, clear general search and filter specifically by album/artist
         SearchQuery = string.Empty; // Clear general search
 
@@ -258,42 +241,22 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
         FilteredSongs.Clear();
         var songsToFilter = _allSongs.AsEnumerable();
 
-        // Check if an Artist or Album filter is active
-        if (SelectedArtist != null && !string.IsNullOrWhiteSpace(SelectedArtist.Name))
+        if (!string.IsNullOrWhiteSpace(SearchQuery))
         {
-            // Filter by selected artist (already handled by OnArtistSelected setting SearchQuery)
-            // Nothing needed here if OnArtistSelected correctly sets SearchQuery and calls ApplyFilter
-        }
-        else if (SelectedAlbum != null && !string.IsNullOrWhiteSpace(SelectedAlbum.Title) && !string.IsNullOrWhiteSpace(SelectedAlbum.Artist))
-        {
-            // Filter by selected album (already handled by OnAlbumSelected calling ApplyFilter with specific logic)
-            // Nothing needed here if OnAlbumSelected correctly filters and calls ApplyFilter
-        }
-        else if (!string.IsNullOrWhiteSpace(SearchQuery))
-        {
-            // Apply general search filter only if no specific artist/album is selected
             var query = SearchQuery.ToLowerInvariant().Trim();
             songsToFilter = songsToFilter.Where(s =>
                 (s.Title?.ToLowerInvariant().Contains(query) ?? false) ||
                 (s.Artist?.ToLowerInvariant().Contains(query) ?? false) ||
                 (s.Album?.ToLowerInvariant().Contains(query) ?? false));
         }
-        // Else: No filter applied, all songs are candidates
 
-        // Sorting for the main song list (Library tab) - Sort by Title unless album view is active
-        // When an album is selected, sorting by title is done in OnAlbumSelected before adding to FilteredSongs.
-        if (SelectedAlbum == null)
-        {
-            songsToFilter = songsToFilter.OrderBy(s => s.Title, StringComparer.OrdinalIgnoreCase);
-        }
-        // If album is selected, songs are already sorted in OnAlbumSelected
+        // Sorting for the main song list (Library tab) - Sort by Title
+        songsToFilter = songsToFilter.OrderBy(s => s.Title, StringComparer.OrdinalIgnoreCase);
 
-        // Add filtered/sorted songs to the ObservableCollection
         foreach (var song in songsToFilter)
         {
             FilteredSongs.Add(song);
         }
-
         // If the previously selected song is no longer in the filtered list, clear the selection
         if (SelectedSong != null && !FilteredSongs.Contains(SelectedSong))
         {
@@ -324,13 +287,7 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
         }
         else if (!string.IsNullOrWhiteSpace(SearchQuery) || SelectedAlbum != null || SelectedArtist != null)
         {
-            // Refine this to be more specific based on the active filter type
-            string filterType = "filtered";
-            if (!string.IsNullOrWhiteSpace(SearchQuery) && SelectedArtist == null && SelectedAlbum == null) filterType = "matching search";
-            else if (SelectedArtist != null) filterType = $"by {SelectedArtist.Name}";
-            else if (SelectedAlbum != null) filterType = $"in {SelectedAlbum.Title} by {SelectedAlbum.Artist}";
-
-            status = $"{FilteredSongs.Count} of {_allSongs.Count} songs {filterType} displayed.";
+            status = $"{FilteredSongs.Count} of {_allSongs.Count} songs displayed.";
         }
         else
         {
