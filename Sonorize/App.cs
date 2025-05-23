@@ -9,6 +9,8 @@ using Sonorize.Models;
 using Avalonia.Themes.Fluent;
 using Avalonia.Media;
 using System.Diagnostics;
+using Avalonia.Media.Imaging; // Required for Bitmap
+using System; // Required for Exception
 
 namespace Sonorize;
 
@@ -21,69 +23,86 @@ public class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
-        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        try
         {
-            var settingsService = new SettingsService();
-            var appSettings = settingsService.LoadSettings();
-
-            var themeService = new ThemeService(appSettings.PreferredThemeFileName);
-            ThemeColors currentCustomTheme = themeService.CurrentTheme;
-
-            var fluentTheme = new FluentTheme();
-            Styles.Add(fluentTheme);
-            RequestedThemeVariant = ThemeVariant.Dark;
-            Debug.WriteLine($"[App] RequestedThemeVariant set to: {RequestedThemeVariant}");
-
-            if (currentCustomTheme.B_AccentColor is ISolidColorBrush accentSolidBrush &&
-                currentCustomTheme.B_AccentForeground is ISolidColorBrush accentForegroundSolidBrush)
+            if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
-                Color accentColor = accentSolidBrush.Color;
-                Color accentForegroundColor = accentForegroundSolidBrush.Color;
-                Debug.WriteLine($"[App] Overriding FluentTheme accent resources. Accent: {accentColor}, AccentFG: {accentForegroundColor}");
-                Resources["SystemAccentColor"] = accentColor;
-                Resources["SystemAccentColorLight1"] = accentColor.ChangeLightness(0.15);
-                Resources["SystemAccentColorLight2"] = accentColor.ChangeLightness(0.30);
-                Resources["SystemAccentColorLight3"] = accentColor.ChangeLightness(0.45);
-                Resources["SystemAccentColorDark1"] = accentColor.ChangeLightness(-0.15);
-                Resources["SystemAccentColorDark2"] = accentColor.ChangeLightness(-0.30);
-                Resources["SystemAccentColorDark3"] = accentColor.ChangeLightness(-0.45);
-                Resources["AccentFillColorDefaultBrush"] = new SolidColorBrush(accentColor);
-                Resources["AccentFillColorSecondaryBrush"] = new SolidColorBrush(accentColor.ChangeLightness(0.15).WithAlpha(204));
-                Resources["AccentFillColorTertiaryBrush"] = new SolidColorBrush(accentColor.ChangeLightness(0.30).WithAlpha(153));
-                Resources["AccentFillColorDisabledBrush"] = new SolidColorBrush(accentColor.WithAlpha(51));
-                Resources["AccentFillColorSelectedTextBackgroundBrush"] = new SolidColorBrush(accentColor);
-                Resources["TextOnAccentFillColorPrimaryBrush"] = new SolidColorBrush(accentForegroundColor);
-                Resources["TextOnAccentFillColorSecondaryBrush"] = new SolidColorBrush(accentForegroundColor.WithAlpha(178));
-                Resources["TextOnAccentFillColorDisabledBrush"] = new SolidColorBrush(accentForegroundColor.WithAlpha(127));
-                Resources["AccentControlBackgroundBrush"] = new SolidColorBrush(accentColor);
+                var settingsService = new SettingsService();
+                var appSettings = settingsService.LoadSettings();
+
+                var themeService = new ThemeService(appSettings.PreferredThemeFileName);
+                ThemeColors currentCustomTheme = themeService.CurrentTheme;
+
+                var fluentTheme = new FluentTheme();
+                Styles.Add(fluentTheme);
+                RequestedThemeVariant = ThemeVariant.Dark;
+                Debug.WriteLine($"[App] RequestedThemeVariant set to: {RequestedThemeVariant}");
+
+                if (currentCustomTheme.B_AccentColor is ISolidColorBrush accentSolidBrush &&
+                    currentCustomTheme.B_AccentForeground is ISolidColorBrush accentForegroundSolidBrush)
+                {
+                    Color accentColor = accentSolidBrush.Color;
+                    Color accentForegroundColor = accentForegroundSolidBrush.Color;
+                    Debug.WriteLine($"[App] Overriding FluentTheme accent resources. Accent: {accentColor}, AccentFG: {accentForegroundColor}");
+                    Resources["SystemAccentColor"] = accentColor;
+                    Resources["SystemAccentColorLight1"] = accentColor.ChangeLightness(0.15);
+                    Resources["SystemAccentColorLight2"] = accentColor.ChangeLightness(0.30);
+                    Resources["SystemAccentColorLight3"] = accentColor.ChangeLightness(0.45);
+                    Resources["SystemAccentColorDark1"] = accentColor.ChangeLightness(-0.15);
+                    Resources["SystemAccentColorDark2"] = accentColor.ChangeLightness(-0.30);
+                    Resources["SystemAccentColorDark3"] = accentColor.ChangeLightness(-0.45);
+                    Resources["AccentFillColorDefaultBrush"] = new SolidColorBrush(accentColor);
+                    Resources["AccentFillColorSecondaryBrush"] = new SolidColorBrush(accentColor.ChangeLightness(0.15).WithAlpha(204));
+                    Resources["AccentFillColorTertiaryBrush"] = new SolidColorBrush(accentColor.ChangeLightness(0.30).WithAlpha(153));
+                    Resources["AccentFillColorDisabledBrush"] = new SolidColorBrush(accentColor.WithAlpha(51));
+                    Resources["AccentFillColorSelectedTextBackgroundBrush"] = new SolidColorBrush(accentColor);
+                    Resources["TextOnAccentFillColorPrimaryBrush"] = new SolidColorBrush(accentForegroundColor);
+                    Resources["TextOnAccentFillColorSecondaryBrush"] = new SolidColorBrush(accentForegroundColor.WithAlpha(178));
+                    Resources["TextOnAccentFillColorDisabledBrush"] = new SolidColorBrush(accentForegroundColor.WithAlpha(127));
+                    Resources["AccentControlBackgroundBrush"] = new SolidColorBrush(accentColor);
+                }
+                else
+                {
+                    Debug.WriteLine("[App] Warning: Custom theme AccentColor or AccentForeground is not a SolidColorBrush. Cannot fully override Fluent accent system.");
+                }
+
+                var playbackService = new PlaybackService();
+                var loopDataService = new LoopDataService();
+                var musicLibraryService = new MusicLibraryService(loopDataService); // MusicLibraryService creates default thumbnail
+                var waveformService = new WaveformService();
+
+                // Get the default thumbnail after the MusicLibraryService is initialized
+                Bitmap? defaultThumbnail = musicLibraryService.GetDefaultThumbnail();
+
+                var mainWindowViewModel = new MainWindowViewModel(
+                    settingsService,
+                    musicLibraryService,
+                    playbackService,
+                    currentCustomTheme,
+                    waveformService,
+                    loopDataService);
+
+                desktop.MainWindow = new MainWindow(currentCustomTheme, defaultThumbnail) // Pass default thumbnail to MainWindow
+                {
+                    DataContext = mainWindowViewModel
+                };
+
+                mainWindowViewModel.LoadInitialDataCommand.Execute(null);
             }
-            else
-            {
-                Debug.WriteLine("[App] Warning: Custom theme AccentColor or AccentForeground is not a SolidColorBrush. Cannot fully override Fluent accent system.");
-            }
-
-            var playbackService = new PlaybackService();
-            var loopDataService = new LoopDataService();
-            var musicLibraryService = new MusicLibraryService(loopDataService);
-            var waveformService = new WaveformService();
-
-            var mainWindowViewModel = new MainWindowViewModel(
-                settingsService,
-                musicLibraryService,
-                playbackService,
-                currentCustomTheme,
-                waveformService,
-                loopDataService);
-
-            desktop.MainWindow = new MainWindow(currentCustomTheme)
-            {
-                DataContext = mainWindowViewModel
-            };
-
-            mainWindowViewModel.LoadInitialDataCommand.Execute(null);
         }
-
-        base.OnFrameworkInitializationCompleted();
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[App.OnFrameworkInitializationCompleted] CRITICAL STARTUP EXCEPTION: {ex.ToString()}");
+            Console.WriteLine($"[App.OnFrameworkInitializationCompleted] CRITICAL STARTUP EXCEPTION: {ex.ToString()}");
+            // Rethrow the exception so it's still visible as an unhandled exception if not debugged,
+            // or allow global error handlers in Program.cs to catch it.
+            throw;
+        }
+        finally
+        {
+            // Ensure base method is called even if an exception occurs in the derived class's logic
+            base.OnFrameworkInitializationCompleted();
+        }
     }
 }
 

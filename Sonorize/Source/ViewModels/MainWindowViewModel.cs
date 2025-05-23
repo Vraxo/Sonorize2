@@ -213,40 +213,8 @@ public class MainWindowViewModel : ViewModelBase
 
     private void UpdateAllUIDependentStates()
     {
-        // Update main VM properties that depend on child VM states
-        // OnPropertyChanged(nameof(HasCurrentSong)); // Removed
         OnPropertyChanged(nameof(IsLoadingLibrary)); // Depends on Library.IsLoadingLibrary
         UpdateStatusBarText(); // Depends on Playback and Library status
-
-        // Although the View binds directly to child VM properties, explicitly raising
-        // OnPropertyChanged for the child VM properties used in the View might help
-        // ensure bindings are refreshed during initial setup or after significant state changes.
-        // This is particularly important for derived properties or complex bindings.
-        // HOWEVER, binding directly to the child VM's property is the correct approach,
-        // and the child VM is responsible for raising OnPropertyChanged for its own properties.
-        // So, these explicit OnPropertyChanged calls for child properties are generally not needed
-        // and can be removed to simplify the parent VM.
-        /*
-        OnPropertyChanged(nameof(Playback.CurrentPositionSeconds)); // for Slider.Value binding
-        OnPropertyChanged(nameof(Playback.CurrentSongDurationSeconds)); // for Slider.Maximum binding
-        OnPropertyChanged(nameof(Playback.CurrentTimeTotalTimeDisplay)); // for time TextBlock
-        OnPropertyChanged(nameof(Playback.IsPlaying)); // for Play/Pause button text
-        OnPropertyChanged(nameof(Playback.CurrentPlaybackStatus)); // for command CanExecute
-        OnPropertyChanged(nameof(Playback.PlaybackSpeed)); // for Speed Slider.Value
-        OnPropertyChanged(nameof(Playback.PlaybackPitch)); // for Pitch Slider.Value
-        OnPropertyChanged(nameof(Playback.PlaybackSpeedDisplay)); // for speed TextBlock
-        OnPropertyChanged(nameof(Playback.PlaybackPitchDisplay)); // for pitch TextBlock
-        OnPropertyChanged(nameof(Playback.IsWaveformLoading)); // for waveform ProgressBar
-        OnPropertyChanged(nameof(Playback.WaveformRenderData)); // for WaveformDisplayControl
-
-        OnPropertyChanged(nameof(LoopEditor.NewLoopStartCandidateDisplay)); // for loop TextBlocks
-        OnPropertyChanged(nameof(LoopEditor.NewLoopEndCandidateDisplay));   // for loop TextBlocks
-        OnPropertyChanged(nameof(LoopEditor.ActiveLoopDisplayText));       // for loop TextBlock
-        OnPropertyChanged(nameof(LoopEditor.CanSaveLoopRegion));           // for Save button IsEnabled
-        OnPropertyChanged(nameof(LoopEditor.IsCurrentLoopActiveUiBinding)); // for loop CheckBox
-        */
-
-        // Trigger commands CanExecute updates for all VMs
         RaiseAllCommandsCanExecuteChanged();
     }
 
@@ -291,13 +259,6 @@ public class MainWindowViewModel : ViewModelBase
             status = Library.LibraryStatusText;
         }
         StatusBarText = status;
-    }
-
-    private async Task LoadMusicLibrary()
-    {
-        // Delegate the core loading logic to the LibraryViewModel
-        await Library.LoadLibraryAsync();
-        // The Library_PropertyChanged handler for IsLoadingLibrary will trigger status updates.
     }
 
     private async Task OpenSettingsDialog(object? ownerWindow)

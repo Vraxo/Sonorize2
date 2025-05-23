@@ -13,15 +13,34 @@ using Sonorize.Models;
 using Sonorize.Services;
 using Sonorize.ViewModels;
 using Sonorize.Views.MainWindowControls;
+using System; // Required for FuncDataTemplate
+using System.Linq; // Required for Linq extensions
+using System.ComponentModel;
+using Avalonia.Interactivity; // Required for PropertyChangedEventArgs
+using System.Diagnostics; // Required for Debug.WriteLine
 
 namespace Sonorize.Views;
 public class MainWindow : Window
 {
     private readonly ThemeColors _theme;
+    private readonly Bitmap? _defaultThumbnail; // Needed for grid template converter
+    private ListBox? _songListBox; // Field to store the ListBox instance
 
-    public MainWindow(ThemeColors theme)
+    // Converters instances
+    private readonly ViewModeToItemTemplateConverter _itemTemplateConverter;
+    private readonly ViewModeToItemsPanelTemplateConverter _itemsPanelTemplateConverter;
+    // Removed ViewModeToClassConverter instance as we're managing classes in code-behind
+
+
+    public MainWindow(ThemeColors theme, Bitmap? defaultThumbnail = null)
     {
         _theme = theme;
+        _defaultThumbnail = defaultThumbnail; // Pass default thumbnail from App if available
+
+        // Initialize converters, passing theme and default thumbnail if necessary
+        _itemTemplateConverter = new ViewModeToItemTemplateConverter(_theme, _defaultThumbnail);
+        _itemsPanelTemplateConverter = ViewModeToItemsPanelTemplateConverter.Instance; // Singleton instance
+
         Title = "Sonorize";
         Width = 950;
         Height = 750;
@@ -34,12 +53,13 @@ public class MainWindow : Window
         {
             RowDefinitions =
             [
-                new(GridLength.Auto),
-                new(GridLength.Auto),
-                new(GridLength.Star),
-                new(GridLength.Auto),
-                new(GridLength.Auto),
-                new(GridLength.Auto)
+                new(GridLength.Auto), // Menu
+                new(GridLength.Auto), // Search Bar
+                new(GridLength.Auto), // View Selector
+                new(GridLength.Star), // Tab Control
+                new(GridLength.Auto), // Advanced Playback Panel
+                new(GridLength.Auto), // Main Playback Controls
+                new(GridLength.Auto)  // Status Bar
             ]
         };
 
@@ -51,25 +71,143 @@ public class MainWindow : Window
         Grid.SetRow(searchBarPanel, 1);
         mainGrid.Children.Add(searchBarPanel);
 
-        var tabControl = CreateMainTabView();
-        Grid.SetRow(tabControl, 2);
+        var viewSelectorPanel = CreateViewSelectorPanel();
+        Grid.SetRow(viewSelectorPanel, 2);
+        mainGrid.Children.Add(viewSelectorPanel);
+
+
+        var tabControl = CreateMainTabView(); // This will populate _songListBox
+        Grid.SetRow(tabControl, 3);
         mainGrid.Children.Add(tabControl);
 
         var advancedPlaybackPanel = CreateAdvancedPlaybackPanel();
         advancedPlaybackPanel.Bind(Visual.IsVisibleProperty, new Binding("IsAdvancedPanelVisible"));
-        Grid.SetRow(advancedPlaybackPanel, 3);
+        Grid.SetRow(advancedPlaybackPanel, 4);
         mainGrid.Children.Add(advancedPlaybackPanel);
 
         var mainPlaybackControls = CreateMainPlaybackControls();
-        Grid.SetRow(mainPlaybackControls, 4);
+        Grid.SetRow(mainPlaybackControls, 5);
         mainGrid.Children.Add(mainPlaybackControls);
 
         var statusBar = CreateStatusBar();
-        Grid.SetRow(statusBar, 5);
+        Grid.SetRow(statusBar, 6);
         mainGrid.Children.Add(statusBar);
 
         Content = mainGrid;
     }
+
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        base.OnDataContextChanged(e);
+
+        // When DataContext is set (likely to MainWindowViewModel)
+        if (DataContext is MainWindowViewModel vm)
+        {
+            // Initial sync of ListBox classes based on current view mode
+            UpdateListBoxClasses(vm.Library.CurrentViewMode);
+
+            // Subscribe to Library.CurrentViewMode changes
+            vm.Library.PropertyChanged += Library_PropertyChanged;
+        }
+    }
+
+    protected override void OnUnloaded(RoutedEventArgs e)
+    {
+        base.OnUnloaded(e);
+
+        // Unsubscribe from event when the window is unloaded
+        if (DataContext is MainWindowViewModel vm)
+        {
+            vm.Library.PropertyChanged -= Library_PropertyChanged;
+        }
+    }
+
+    private void Library_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        // React to changes in the LibraryViewModel that affect the UI structure/styles
+        if (e.PropertyName == nameof(LibraryViewModel.CurrentViewMode))
+        {
+            if (DataContext is MainWindowViewModel vm)
+            {
+                // Update ListBox classes on the UI thread
+                Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    UpdateListBoxClasses(vm.Library.CurrentViewMode);
+                });
+            }
+        }
+        // Other Library_PropertyChanged handling (e.g., SelectedSong) remains in MainVM
+    }
+
+    private void UpdateListBoxClasses(LibraryViewMode viewMode)
+    {
+        // Use the _songListBox field directly
+        if (_songListBox != null)
+        {
+            // Clear existing view mode classes
+            _songListBox.Classes.Remove("detailed-view");
+            _songListBox.Classes.Remove("compact-view");
+            _songListBox.Classes.Remove("grid-view");
+
+            // Add class based on current mode
+            switch (viewMode)
+            {
+                case LibraryViewMode.Detailed:
+                    _songListBox.Classes.Add("detailed-view");
+                    break;
+                case LibraryViewMode.Compact:
+                    _songListBox.Classes.Add("compact-view");
+                    break;
+                case LibraryViewMode.Grid:
+                    _songListBox.Classes.Add("grid-view");
+                    break;
+            }
+        }
+        else
+        {
+            Debug.WriteLine("[MainWindow] UpdateListBoxClasses: _songListBox is null. Cannot update classes.");
+        }
+    }
+
+
+    private Panel CreateViewSelectorPanel()
+    {
+        var panel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(10, 0, 10, 0), // Align with TabControl/Search bar
+            Spacing = 5 // Space between label and combo box
+        };
+
+        var label = new TextBlock
+        {
+            Text = "View:",
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = _theme.B_TextColor,
+            FontSize = 12
+        };
+
+        var comboBox = new ComboBox
+        {
+            Width = 100,
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = _theme.B_ControlBackgroundColor,
+            Foreground = _theme.B_TextColor,
+            BorderBrush = _theme.B_SecondaryTextColor
+        };
+
+        // Bind to Library.AvailableViewModes and Library.CurrentViewMode
+        comboBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.AvailableViewModes"));
+        comboBox.Bind(ComboBox.SelectedItemProperty, new Binding("Library.CurrentViewMode", BindingMode.TwoWay));
+
+        panel.Children.Add(label);
+        panel.Children.Add(comboBox);
+
+        return panel;
+    }
+
 
     private TabControl CreateMainTabView()
     {
@@ -80,7 +218,9 @@ public class MainWindow : Window
             BorderThickness = new Thickness(0),
             Padding = new Thickness(0)
         };
-        tabControl.Bind(TabControl.SelectedIndexProperty, new Binding("ActiveTabIndex", BindingMode.TwoWay));
+        // This binding seems incorrect based on MainVM having ActiveTabIndex property. Let's remove or correct it.
+        // Assuming we want to track selected tab in MainVM, we'd need a property there. Let's leave it unbound for now.
+        // tabControl.Bind(TabControl.SelectedIndexProperty, new Binding("ActiveTabIndex", BindingMode.TwoWay));
 
 
         var tabItemStyle = new Style(s => s.Is<TabItem>());
@@ -108,7 +248,7 @@ public class MainWindow : Window
         var libraryTab = new TabItem
         {
             Header = "LIBRARY",
-            Content = CreateSongListScrollViewer()
+            Content = CreateSongListScrollViewer() // This call will assign to _songListBox
         };
 
         var artistsTab = new TabItem
@@ -132,55 +272,80 @@ public class MainWindow : Window
 
     private ScrollViewer CreateSongListScrollViewer()
     {
-        var songListBox = new ListBox
+        // Assign to the field here
+        _songListBox = new ListBox
         {
             Background = _theme.B_ListBoxBackground,
             BorderThickness = new Thickness(0),
-            Margin = new Thickness(10),
-            Name = "SongListBox"
+            Margin = new Thickness(10), // Consistent margin
+            Name = "SongListBox" // Name is still good for debugging or other purposes
         };
 
-        songListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>())
+        // --- ListBoxItem Styles ---
+        // Base style for any ListBoxItem
+        _songListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>())
         {
-            Setters = {
-            new Setter(TemplatedControl.BackgroundProperty, _theme.B_ListBoxBackground),
-            new Setter(TextBlock.ForegroundProperty, _theme.B_TextColor)
-        }
+            Setters =
+            {
+                new Setter(TemplatedControl.BackgroundProperty, _theme.B_ListBoxBackground),
+                new Setter(TextBlock.ForegroundProperty, _theme.B_TextColor),
+                new Setter(ListBoxItem.PaddingProperty, new Thickness(0)), // Padding handled by item template/border
+                new Setter(ListBoxItem.MinHeightProperty, 30.0), // Default minimum height for list items
+                new Setter(ListBoxItem.HorizontalAlignmentProperty, HorizontalAlignment.Stretch),
+                new Setter(ListBoxItem.VerticalAlignmentProperty, VerticalAlignment.Stretch)
+            }
         });
-        songListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":pointerover").Not(xx => xx.Class(":selected")))
+        // PointerOver style (not selected)
+        _songListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":pointerover").Not(xx => xx.Class(":selected")))
         { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_ControlBackgroundColor) } });
-        songListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected"))
+        // Selected style
+        _songListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected"))
         {
-            Setters = {
-            new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
-            new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
-        }
+            Setters =
+            {
+                new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
+                new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
+            }
         });
-        songListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected").Class(":pointerover"))
+        // Selected + PointerOver style
+        _songListBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected").Class(":pointerover"))
         {
-            Setters = {
-            new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
-            new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
-        }
+            Setters =
+            {
+                new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
+                new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
+            }
         });
 
+        // --- Styles specific to Grid View (applied when the ListBox has the 'grid-view' class) ---
+        // Target ListBoxItems whose ListBox container has the class "grid-view"
+        _songListBox.Styles.Add(new Style(s => s.OfType<ListBox>().Class("grid-view").Descendant().Is<ListBoxItem>())
+        {
+            Setters =
+             {
+                new Setter(ListBoxItem.WidthProperty, 140.0), // Fixed width for grid items
+                new Setter(ListBoxItem.HeightProperty, 180.0), // Fixed height for grid items
+                new Setter(ListBoxItem.MarginProperty, new Thickness(8)), // Margin around grid items
+                new Setter(ListBoxItem.MinHeightProperty, 180.0) // Ensure min height matches height
+             }
+        });
+
+
+        // --- ItemSource and Selection Binding ---
         // Bind to Library.FilteredSongs and Library.SelectedSong
-        songListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.FilteredSongs"));
-        songListBox.Bind(ListBox.SelectedItemProperty, new Binding("Library.SelectedSong", BindingMode.TwoWay));
+        _songListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.FilteredSongs"));
+        _songListBox.Bind(ListBox.SelectedItemProperty, new Binding("Library.SelectedSong", BindingMode.TwoWay));
 
-        songListBox.ItemTemplate = new FuncDataTemplate<Song>((song, nameScope) => {
-            var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 5, 0), Source = song.Thumbnail, Stretch = Stretch.UniformToFill };
-            RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
-            var titleBlock = new TextBlock { Text = song.Title, FontSize = 14, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 1) };
-            var artistBlock = new TextBlock { Text = song.Artist, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
-            var durationBlock = new TextBlock { Text = song.DurationString, FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
-            var textStack = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Children = { titleBlock, artistBlock } };
-            var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), VerticalAlignment = VerticalAlignment.Center, Children = { image, textStack, durationBlock } };
-            Grid.SetColumn(image, 0); Grid.SetColumn(textStack, 1); Grid.SetColumn(durationBlock, 2);
-            return new Border { Padding = new Thickness(10, 6, 10, 6), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
-        }, supportsRecycling: true);
+        // --- Dynamic ItemTemplate and ItemsPanelTemplate Binding ---
+        // Use converters to switch templates based on Library.CurrentViewMode
+        _songListBox.Bind(ItemsControl.ItemTemplateProperty, new Binding("Library.CurrentViewMode") { Converter = _itemTemplateConverter });
+        _songListBox.Bind(ItemsControl.ItemsPanelProperty, new Binding("Library.CurrentViewMode") { Converter = _itemsPanelTemplateConverter });
 
-        return new ScrollViewer { Content = songListBox, Padding = new Thickness(0, 0, 0, 5) };
+        // --- Class update handled in code-behind based on DataContext property change ---
+        // Removed: _songListBox.Classes.Bind(...)
+
+
+        return new ScrollViewer { Content = _songListBox, Padding = new Thickness(0, 0, 0, 5) };
     }
 
     private ScrollViewer CreateArtistsListScrollViewer()
@@ -409,7 +574,7 @@ public class MainWindow : Window
         // Bind to PlaybackService properties via Playback property
         waveformDisplay.Bind(WaveformDisplayControl.CurrentPositionProperty, new Binding("Playback.CurrentPosition"));
         waveformDisplay.Bind(WaveformDisplayControl.DurationProperty, new Binding("Playback.CurrentSongDuration"));
-        waveformDisplay.Bind(WaveformDisplayControl.ActiveLoopProperty, new Binding("Playback.PlaybackService.CurrentSong.SavedLoop")); // Active loop is on the Song model itself
+        waveformDisplay.Bind(WaveformDisplayControl.ActiveLoopProperty, new Binding("PlaybackService.CurrentSong.SavedLoop")); // Active loop is on the Song model itself
         // Bind WaveformSeekCommand to the one in LoopEditorViewModel
         waveformDisplay.SeekRequested += (s, time) => { if (DataContext is MainWindowViewModel vm) vm.LoopEditor.WaveformSeekCommand.Execute(time); };
 
