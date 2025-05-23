@@ -43,7 +43,7 @@ public class MusicLibraryService
         Debug.WriteLine("[ThumbGen] CreateDefaultMusicalNoteIcon called.");
         try
         {
-            var pixelSize = new Avalonia.PixelSize(64, 64);
+            var pixelSize = new Avalonia.PixelSize(96, 96); // Increased size
             var dpi = new Avalonia.Vector(96, 96);
 
             using var renderTarget = new RenderTargetBitmap(pixelSize, dpi);
@@ -59,8 +59,8 @@ public class MusicLibraryService
                     "♫",
                     CultureInfo.CurrentCulture,
                     FlowDirection.LeftToRight,
-                    Typeface.Default, // Consider a more specific font if default doesn't have the note
-                    32, // Font size
+                    Typeface.Default,
+                    pixelSize.Width / 2, // Font size scaled with icon size
                     foregroundBrush);
 
                 // Center the text
@@ -105,12 +105,10 @@ public class MusicLibraryService
                     {
                         if (ms.Length > 0)
                         {
-                            // It's good practice to check if the bitmap can be created
-                            // and handle potential exceptions here too.
                             using (var originalBitmap = new Bitmap(ms))
                             {
-                                // Resize to a smaller thumbnail
-                                var targetSize = new PixelSize(64, 64); // Example size
+                                // Resize to a larger thumbnail for better quality in grid views
+                                var targetSize = new PixelSize(96, 96); // Increased from 64x64
                                 var scaledBitmap = originalBitmap.CreateScaledBitmap(targetSize, BitmapInterpolationMode.HighQuality);
                                 return scaledBitmap;
                             }
