@@ -1,4 +1,5 @@
-﻿using Avalonia.Controls.Primitives;
+﻿using Avalonia;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Layout;
@@ -75,7 +76,9 @@ public static class MainPlaybackControlsPanel
         {
             Orientation = Orientation.Horizontal,
             Spacing = 10,
-            HorizontalAlignment = HorizontalAlignment.Center
+            HorizontalAlignment = HorizontalAlignment.Center,
+            // Apply a negative left margin to shift the panel left for better alignment with the slider based on visual inspection and typical control widths.
+            Margin = new Thickness(-20, 0, 0, 0)
         };
         playbackButtonControlsPanel.Children.Add(previousButton);
         playbackButtonControlsPanel.Children.Add(mainPlayPauseButton);
@@ -101,20 +104,36 @@ public static class MainPlaybackControlsPanel
             Orientation = Orientation.Horizontal,
             Spacing = 5,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 5, 0)
+            Margin = new Thickness(0, 0, 5, 0) // Keep margin to separate from the time/slider panel
         };
         leftControlsPanel.Children.Add(toggleAdvPanelButton);
 
-        var timeDisplayTextBlock = new TextBlock
+        // TextBlock for Current Time
+        var currentTimeTextBlock = new TextBlock
         {
-            Foreground = theme.B_TextColor,
+            Foreground = theme.B_SecondaryTextColor, // Use secondary color
             FontSize = 11,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(8, 0, 0, 0),
-            MinWidth = 75
+            Margin = new Thickness(0, 0, 5, 0), // Margin to the right of the text
+            MinWidth = 40, // Ensure enough space for MM:SS
+            HorizontalAlignment = HorizontalAlignment.Left // Explicitly left align within its grid cell
         };
-        timeDisplayTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentTimeTotalTimeDisplay"));
-        timeDisplayTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
+        currentTimeTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentTimeDisplay"));
+        currentTimeTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
+
+        // TextBlock for Total Time
+        var totalTimeTextBlock = new TextBlock
+        {
+            Foreground = theme.B_SecondaryTextColor, // Use secondary color
+            FontSize = 11,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(5, 0, 0, 0), // Margin to the left of the text
+            MinWidth = 40, // Ensure enough space for MM:SS
+            HorizontalAlignment = HorizontalAlignment.Right // Explicitly right align within its grid cell
+        };
+        totalTimeTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.TotalTimeDisplay"));
+        totalTimeTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
+
 
         var mainPlaybackSlider = new Slider
         {
@@ -123,8 +142,7 @@ public static class MainPlaybackControlsPanel
             VerticalAlignment = VerticalAlignment.Center,
             Background = theme.B_SecondaryTextColor,
             Foreground = theme.B_AccentColor,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Width = 0.5 * 800 // 50% of an assumed max width, replace with a binding or measurement logic if dynamic
+            HorizontalAlignment = HorizontalAlignment.Stretch // Allow slider to fill the available space in its column
         };
         mainPlaybackSlider.Styles.Add(new Style(s => s.Is<Thumb>())
         {
@@ -132,47 +150,53 @@ public static class MainPlaybackControlsPanel
             {
                 new Setter(Thumb.WidthProperty, 0.0),
                 new Setter(Thumb.HeightProperty, 0.0),
-                new Setter(Thumb.OpacityProperty, 0.0)
+                new Setter(Thumb.OpacityProperty, 0.0) // Hide the thumb visually
             }
         });
         mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("Playback.CurrentSongDurationSeconds"));
         mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("Playback.CurrentPositionSeconds", BindingMode.TwoWay));
         mainPlaybackSlider.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
-        // Container to center and limit slider width
-        var sliderContainer = new Grid
-        {
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Width = 400 // 50% of 800px, or adjust as needed
-        };
-        sliderContainer.Children.Add(mainPlaybackSlider);
 
-        var sliderDockPanel = new DockPanel
+        // Use a Grid to place time text blocks next to the slider
+        var timeSliderGrid = new Grid
         {
-            LastChildFill = true,
-            Height = 30
+            // Three columns: Auto (CurrentTime), * (Slider), Auto (TotalTime)
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+            VerticalAlignment = VerticalAlignment.Center,
+            Height = 30, // Fixed height
+            MinWidth = 500, // Ensure minimum width for layout stability
+            HorizontalAlignment = HorizontalAlignment.Center // Center the entire grid panel
         };
-        DockPanel.SetDock(leftControlsPanel, Dock.Left);
-        DockPanel.SetDock(timeDisplayTextBlock, Dock.Right);
 
-        sliderDockPanel.Children.Add(leftControlsPanel);
-        sliderDockPanel.Children.Add(timeDisplayTextBlock);
-        sliderDockPanel.Children.Add(sliderContainer);
+        // Place controls in the grid columns
+        Grid.SetColumn(currentTimeTextBlock, 0);
+        Grid.SetColumn(mainPlaybackSlider, 1);
+        Grid.SetColumn(totalTimeTextBlock, 2);
+
+        timeSliderGrid.Children.Add(currentTimeTextBlock);
+        timeSliderGrid.Children.Add(mainPlaybackSlider);
+        timeSliderGrid.Children.Add(totalTimeTextBlock);
+
 
         var topMainPlaybackControls = new StackPanel
         {
             Orientation = Orientation.Vertical,
             Margin = new Thickness(10, 5, 10, 0),
-            Spacing = 8
+            Spacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Stretch // Allow children to fill width for centering context
         };
+        // playbackButtonControlsPanel is centered within this StackPanel, but shifted by its negative margin
         topMainPlaybackControls.Children.Add(playbackButtonControlsPanel);
-        topMainPlaybackControls.Children.Add(sliderDockPanel);
+        // timeSliderGrid containing time texts and slider is centered
+        topMainPlaybackControls.Children.Add(timeSliderGrid);
 
         var outerPanel = new StackPanel
         {
             Orientation = Orientation.Vertical,
             Background = theme.B_BackgroundColor,
-            Margin = new Thickness(0, 5, 0, 5)
+            Margin = new Thickness(0, 5, 0, 5),
+            HorizontalAlignment = HorizontalAlignment.Stretch // Outer panel spans full width
         };
         outerPanel.Children.Add(topMainPlaybackControls);
 

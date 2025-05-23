@@ -64,18 +64,31 @@ public class PlaybackViewModel : ViewModelBase
     // Changed setter to private to enforce internal state management
     public bool IsWaveformLoading { get => _isWaveformLoading; private set => SetProperty(ref _isWaveformLoading, value); }
 
-    // Derived properties for UI display
-    public string CurrentTimeTotalTimeDisplay
+    // Derived properties for UI display (Split time display)
+    public string CurrentTimeDisplay
+    {
+        get
+        {
+            if (PlaybackService.CurrentSong != null)
+            {
+                return $"{PlaybackService.CurrentPosition:mm\\:ss}";
+            }
+            return "--:--";
+        }
+    }
+
+    public string TotalTimeDisplay
     {
         get
         {
             if (PlaybackService.CurrentSong != null && PlaybackService.CurrentSongDuration.TotalSeconds > 0)
             {
-                return $"{PlaybackService.CurrentPosition:mm\\:ss} / {PlaybackService.CurrentSongDuration:mm\\:ss}";
+                return $"{PlaybackService.CurrentSongDuration:mm\\:ss}";
             }
-            return "--:-- / --:--";
+            return "--:--";
         }
     }
+
 
     // Commands owned by PlaybackViewModel
     public ICommand PlayPauseResumeCommand { get; } // Renamed from simple Click handler
@@ -159,23 +172,26 @@ public class PlaybackViewModel : ViewModelBase
                     if (PlaybackService.CurrentSong == null)
                     {
                         Debug.WriteLine("[PlaybackVM] PlaybackService.CurrentSong is null. Clearing waveform data.");
-                        WaveformRenderData.Clear();
-                        OnPropertyChanged(nameof(WaveformRenderData));
+                        WaveformRenderData.Clear(); OnPropertyChanged(nameof(WaveformRenderData));
                         IsWaveformLoading = false; // Internal setter is fine
                     }
+
+                    // Update time displays when song changes
+                    OnPropertyChanged(nameof(CurrentTimeDisplay));
+                    OnPropertyChanged(nameof(TotalTimeDisplay));
 
                     RaisePlaybackCommandCanExecuteChanged();
                     break;
                 case nameof(PlaybackService.CurrentPosition):
                     OnPropertyChanged(nameof(CurrentPosition));
                     OnPropertyChanged(nameof(CurrentPositionSeconds)); // This will reflect the change from PlaybackService
-                    OnPropertyChanged(nameof(CurrentTimeTotalTimeDisplay)); // Derived property
+                    OnPropertyChanged(nameof(CurrentTimeDisplay)); // Update current time display
                     RaisePlaybackCommandCanExecuteChanged(); // Seek command might be affected
                     break;
                 case nameof(PlaybackService.CurrentSongDuration):
                     OnPropertyChanged(nameof(CurrentSongDuration));
                     OnPropertyChanged(nameof(CurrentSongDurationSeconds));
-                    OnPropertyChanged(nameof(CurrentTimeTotalTimeDisplay)); // Derived property
+                    OnPropertyChanged(nameof(TotalTimeDisplay)); // Update total time display
                     RaisePlaybackCommandCanExecuteChanged(); // Seek command might be affected
                     break;
                 case nameof(PlaybackService.CurrentPlaybackStatus):
