@@ -9,7 +9,7 @@ using Sonorize.ViewModels; // For SongDisplayMode (though not directly used here
 
 namespace Sonorize.Views.MainWindowControls
 {
-    public class SharedViewTemplates // Renamed from SongListTemplates
+    public class SharedViewTemplates
     {
         private readonly ThemeColors _theme;
 
@@ -113,15 +113,52 @@ namespace Sonorize.Views.MainWindowControls
         {
             DetailedAlbumTemplate = new FuncDataTemplate<AlbumViewModel>((albumVM, nameScope) =>
             {
-                var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 10, 0), Source = albumVM.Thumbnail, Stretch = Stretch.UniformToFill };
-                RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
+                var itemGrid = new Grid
+                {
+                    ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                var imageGrid = new Grid
+                {
+                    Width = 58,
+                    Height = 58,
+                    Margin = new Thickness(5, 0, 10, 0),
+                    ColumnDefinitions = new ColumnDefinitions("*,*"),
+                    RowDefinitions = new RowDefinitions("*,*")
+                };
+
+                for (int i = 0; i < 4; i++)
+                {
+                    var img = new Image
+                    {
+                        Width = 28,
+                        Height = 28,
+                        Stretch = Stretch.UniformToFill
+                    };
+
+                    if (albumVM.SongThumbnailsForGrid != null && i < albumVM.SongThumbnailsForGrid.Count)
+                    {
+                        img.Source = albumVM.SongThumbnailsForGrid[i];
+                    }
+
+                    RenderOptions.SetBitmapInterpolationMode(img, BitmapInterpolationMode.HighQuality);
+                    Grid.SetRow(img, i / 2);
+                    Grid.SetColumn(img, i % 2);
+                    imageGrid.Children.Add(img);
+                }
+
+                Grid.SetColumn(imageGrid, 0);
+                itemGrid.Children.Add(imageGrid);
+
                 var albumTitleBlock = new TextBlock { Text = albumVM.Title, FontSize = 14, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center };
                 var albumArtistBlock = new TextBlock { Text = albumVM.Artist, FontSize = 11, Foreground = _theme.B_SecondaryTextColor, VerticalAlignment = VerticalAlignment.Center };
                 var textStack = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center, Children = { albumTitleBlock, albumArtistBlock } };
-                var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), VerticalAlignment = VerticalAlignment.Center };
-                itemGrid.Children.Add(image); itemGrid.Children.Add(textStack);
-                Grid.SetColumn(image, 0); Grid.SetColumn(textStack, 1);
-                return new Border { Padding = new Thickness(10, 6), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
+
+                Grid.SetColumn(textStack, 1);
+                itemGrid.Children.Add(textStack);
+
+                return new Border { Padding = new Thickness(10, 6), MinHeight = 68, Background = Brushes.Transparent, Child = itemGrid };
             }, supportsRecycling: true);
 
             CompactAlbumTemplate = new FuncDataTemplate<AlbumViewModel>((albumVM, nameScope) =>
@@ -134,12 +171,97 @@ namespace Sonorize.Views.MainWindowControls
 
             GridAlbumTemplate = new FuncDataTemplate<AlbumViewModel>((albumVM, nameScope) =>
             {
-                var image = new Image { Width = 80, Height = 80, Source = albumVM.Thumbnail, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center };
-                RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
-                var albumTitleBlock = new TextBlock { Text = albumVM.Title, FontSize = 12, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, MaxHeight = 30, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 3, 0, 0) };
-                var albumArtistBlock = new TextBlock { Text = albumVM.Artist, FontSize = 10, Foreground = _theme.B_SecondaryTextColor, TextWrapping = TextWrapping.Wrap, MaxHeight = 15, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 1, 0, 0) };
-                var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { image, albumTitleBlock, albumArtistBlock } };
-                return new Border { Width = 120, Height = 150, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+                var contentStack = new StackPanel
+                {
+                    Orientation = Orientation.Vertical,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Spacing = 3
+                };
+
+                // Decide whether to show 2x2 grid or single large image
+                bool show2x2Grid = albumVM.SongThumbnailsForGrid != null &&
+                                   albumVM.SongThumbnailsForGrid.Count > 1 &&
+                                   albumVM.SongThumbnailsForGrid[1] != null;
+
+                if (show2x2Grid)
+                {
+                    var imageGrid = new Grid
+                    {
+                        Width = 84,
+                        Height = 84,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        ColumnDefinitions = new ColumnDefinitions("*,*"),
+                        RowDefinitions = new RowDefinitions("*,*")
+                    };
+
+                    for (int i = 0; i < 4; i++)
+                    {
+                        var img = new Image
+                        {
+                            Width = 40,
+                            Height = 40,
+                            Stretch = Stretch.UniformToFill
+                        };
+                        if (i < albumVM.SongThumbnailsForGrid!.Count) // Null check for SongThumbnailsForGrid done above
+                        {
+                            img.Source = albumVM.SongThumbnailsForGrid[i];
+                        }
+                        RenderOptions.SetBitmapInterpolationMode(img, BitmapInterpolationMode.HighQuality);
+                        Grid.SetRow(img, i / 2);
+                        Grid.SetColumn(img, i % 2);
+                        imageGrid.Children.Add(img);
+                    }
+                    contentStack.Children.Add(imageGrid);
+                }
+                else // Show single representative thumbnail
+                {
+                    var singleImage = new Image
+                    {
+                        Width = 80,
+                        Height = 80, // Size for single large image
+                        Source = albumVM.RepresentativeThumbnail,
+                        Stretch = Stretch.UniformToFill,
+                        HorizontalAlignment = HorizontalAlignment.Center
+                    };
+                    RenderOptions.SetBitmapInterpolationMode(singleImage, BitmapInterpolationMode.HighQuality);
+                    contentStack.Children.Add(singleImage);
+                }
+
+                var albumTitleBlock = new TextBlock
+                {
+                    Text = albumVM.Title,
+                    FontSize = 12,
+                    FontWeight = FontWeight.SemiBold,
+                    TextWrapping = TextWrapping.Wrap,
+                    MaxHeight = 30,
+                    TextAlignment = TextAlignment.Center,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 2, 0, 0)
+                };
+                contentStack.Children.Add(albumTitleBlock);
+
+                var albumArtistBlock = new TextBlock
+                {
+                    Text = albumVM.Artist,
+                    FontSize = 10,
+                    Foreground = _theme.B_SecondaryTextColor,
+                    TextWrapping = TextWrapping.Wrap,
+                    MaxHeight = 15,
+                    TextAlignment = TextAlignment.Center,
+                    HorizontalAlignment = HorizontalAlignment.Center
+                };
+                contentStack.Children.Add(albumArtistBlock);
+
+                return new Border
+                {
+                    Width = 120,
+                    Height = 150,
+                    Background = Brushes.Transparent,
+                    Padding = new Thickness(5),
+                    Child = contentStack,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
             }, supportsRecycling: true);
         }
 

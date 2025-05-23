@@ -184,10 +184,10 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
                         .Distinct(StringComparer.OrdinalIgnoreCase)
                         .OrderBy(a => a, StringComparer.OrdinalIgnoreCase)
                         .ToList();
-                    Bitmap? defaultThumb = _musicLibraryService.GetDefaultThumbnail();
+                    Bitmap? defaultSongThumbnail = _musicLibraryService.GetDefaultThumbnail();
                     foreach (var artistName in uniqueArtistNames)
                     {
-                        Bitmap? repThumb = _allSongs.FirstOrDefault(s => (s.Artist?.Equals(artistName, StringComparison.OrdinalIgnoreCase) ?? false) && s.Thumbnail != null)?.Thumbnail ?? defaultThumb;
+                        Bitmap? repThumb = _allSongs.FirstOrDefault(s => (s.Artist?.Equals(artistName, StringComparison.OrdinalIgnoreCase) ?? false) && s.Thumbnail != null)?.Thumbnail ?? defaultSongThumbnail;
                         Artists.Add(new ArtistViewModel { Name = artistName, Thumbnail = repThumb });
                     }
                     OnPropertyChanged(nameof(Artists)); // Notify UI Artist list changed
@@ -195,21 +195,48 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
                     // Populate Albums
                     Albums.Clear();
                     Func<Song, (string Album, string Artist)> keySelector = s => (s.Album?.Trim() ?? string.Empty, s.Artist?.Trim() ?? string.Empty);
-                    var uniqueAlbums = _allSongs
+                    var uniqueAlbumsData = _allSongs
                         .Where(s => !string.IsNullOrWhiteSpace(s.Album) && !string.IsNullOrWhiteSpace(s.Artist))
                         .GroupBy(keySelector, AlbumArtistTupleComparer.Instance)
-                        .Select(g => new { AlbumTitle = g.Key.Item1, ArtistName = g.Key.Item2, ThumbSong = g.FirstOrDefault(s => s.Thumbnail != null) })
+                        .Select(g => new
+                        {
+                            AlbumTitle = g.Key.Item1,
+                            ArtistName = g.Key.Item2,
+                            SongsInAlbum = g.ToList() // Get all songs for this album grouping
+                        })
                         .OrderBy(a => a.ArtistName, StringComparer.OrdinalIgnoreCase).ThenBy(a => a.AlbumTitle, StringComparer.OrdinalIgnoreCase)
                         .ToList();
-                    foreach (var albumData in uniqueAlbums)
+
+                    foreach (var albumData in uniqueAlbumsData)
                     {
-                        Albums.Add(new AlbumViewModel { Title = albumData.AlbumTitle, Artist = albumData.ArtistName, Thumbnail = albumData.ThumbSong?.Thumbnail ?? defaultThumb });
+                        var albumVM = new AlbumViewModel
+                        {
+                            Title = albumData.AlbumTitle,
+                            Artist = albumData.ArtistName
+                        };
+
+                        var songThumbnailsForGrid = new List<Bitmap?>(new Bitmap?[4]); // Initialize with 4 nulls
+                        var distinctSongThumbs = albumData.SongsInAlbum
+                                                     .Select(s => s.Thumbnail ?? defaultSongThumbnail)
+                                                     // .Where(t => t != null) // defaultSongThumbnail should ensure non-null
+                                                     .Distinct() // Ensure distinct thumbnails if multiple songs share same art
+                                                     .Take(4)
+                                                     .ToList();
+
+                        for (int i = 0; i < distinctSongThumbs.Count; i++)
+                        {
+                            songThumbnailsForGrid[i] = distinctSongThumbs[i];
+                        }
+                        albumVM.SongThumbnailsForGrid = songThumbnailsForGrid;
+
+                        albumVM.RepresentativeThumbnail = songThumbnailsForGrid[0] ?? defaultSongThumbnail;
+
+                        Albums.Add(albumVM);
                     }
-                    OnPropertyChanged(nameof(Albums)); // Notify UI Album list changed
+                    OnPropertyChanged(nameof(Albums));
 
-                    ApplyFilter(); // Apply initial filter (empty search)
+                    ApplyFilter();
 
-                    // Final status update
                     UpdateStatusBarText();
                 });
             }
@@ -220,36 +247,32 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
             }
         }
         IsLoadingLibrary = false;
-        // MainWindowViewModel will update its overall status text
     }
 
     private void OnArtistSelected(ArtistViewModel artist)
     {
         if (artist?.Name == null) return;
         Debug.WriteLine($"[LibraryVM] Artist selected: {artist.Name}");
-        SearchQuery = artist.Name; // Set search query to filter songs
-        // MainWindowViewModel will handle switching tabs if needed
+        SearchQuery = artist.Name;
     }
 
     private void OnAlbumSelected(AlbumViewModel album)
     {
         if (album?.Title == null || album.Artist == null) return;
         Debug.WriteLine($"[LibraryVM] Album selected: {album.Title} by {album.Artist}");
-        // When an album is selected, clear general search and filter specifically by album/artist
-        SearchQuery = string.Empty; // Clear general search
+        SearchQuery = string.Empty;
 
         FilteredSongs.Clear();
         var songsInAlbum = _allSongs.Where(s =>
             s.Album.Equals(album.Title, StringComparison.OrdinalIgnoreCase) &&
             s.Artist.Equals(album.Artist, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(s => s.Title, StringComparer.OrdinalIgnoreCase); // Always sort by title within an album
+            .OrderBy(s => s.Title, StringComparer.OrdinalIgnoreCase);
 
         foreach (var song in songsInAlbum)
         {
             FilteredSongs.Add(song);
         }
-        UpdateStatusBarText(); // Update status with filtered count
-        // MainWindowViewModel will handle switching tabs if needed
+        UpdateStatusBarText();
     }
 
     private void ApplyFilter()
@@ -266,32 +289,27 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
                 (s.Album?.ToLowerInvariant().Contains(query) ?? false));
         }
 
-        // Sorting for the main song list (Library tab) - Sort by Title
         songsToFilter = songsToFilter.OrderBy(s => s.Title, StringComparer.OrdinalIgnoreCase);
 
         foreach (var song in songsToFilter)
         {
             FilteredSongs.Add(song);
         }
-        // If the previously selected song is no longer in the filtered list, clear the selection
         if (SelectedSong != null && !FilteredSongs.Contains(SelectedSong))
         {
             SelectedSong = null;
         }
-        UpdateStatusBarText(); // Update status with filtered count
+        UpdateStatusBarText();
     }
 
-    /// <summary>
-    /// Updates the status text displayed, primarily showing song counts.
-    /// </summary>
     public void UpdateStatusBarText()
     {
-        if (IsLoadingLibrary) return; // Status text set by loading process
+        if (IsLoadingLibrary) return;
 
         string status;
         if (_allSongs.Count == 0)
         {
-            var settings = _settingsService.LoadSettings(); // Need settings to check for configured dirs
+            var settings = _settingsService.LoadSettings();
             if (!settings.MusicDirectories.Any())
             {
                 status = "Library empty. Add directories via File menu.";
@@ -313,10 +331,6 @@ public class LibraryViewModel : ViewModelBase // Ensure this is public
     }
 
 
-    /// <summary>
-    /// Raises CanExecuteChanged for commands owned by this ViewModel.
-    /// Designed to be called by the MainWindowViewModel if needed.
-    /// </summary>
     public void RaiseLibraryCommandsCanExecuteChanged()
     {
         (SetDisplayModeCommand as RelayCommand)?.RaiseCanExecuteChanged();
