@@ -37,10 +37,28 @@ public static class MainPlaybackControlsPanel
         mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("Playback.CurrentPositionSeconds", BindingMode.TwoWay));
         mainPlaybackSlider.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
-        var mainPlayPauseButton = new Button { Content = "Play", Background = theme.B_SlightlyLighterBackground, Foreground = theme.B_TextColor, BorderBrush = theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(10, 5), MinWidth = 70, HorizontalAlignment = HorizontalAlignment.Center };
+        var mainPlayPauseButton = new Button
+        {
+            // Content bound to icon converter
+            Background = theme.B_SlightlyLighterBackground,
+            Foreground = theme.B_TextColor,
+            BorderBrush = theme.B_AccentColor,
+            BorderThickness = new Thickness(1),
+            Width = 38, // Circular button size
+            Height = 38, // Circular button size
+            CornerRadius = new CornerRadius(19), // Half of Width/Height for circular shape
+            Padding = new Thickness(0), // Adjusted for icon centering
+            FontSize = 18, // Adjusted for icon size, might need tweaking based on icon
+            FontWeight = FontWeight.Normal, // Icons typically don't need bold
+            HorizontalAlignment = HorizontalAlignment.Center, // Alignment of the button itself in its parent
+            VerticalContentAlignment = VerticalAlignment.Center, // Ensure icon is centered vertically
+            HorizontalContentAlignment = HorizontalAlignment.Center // Ensure icon is centered horizontally
+        };
         mainPlayPauseButton.Bind(Button.CommandProperty, new Binding("Playback.PlayPauseResumeCommand"));
-        var playPauseContentBinding = new Binding("Playback.IsPlaying") { Converter = BooleanToPlayPauseTextConverter.Instance };
-        mainPlayPauseButton.Bind(Button.ContentProperty, playPauseContentBinding);
+        // Use the new BooleanToPlayPauseIconConverter
+        var playPauseIconBinding = new Binding("Playback.IsPlaying") { Converter = BooleanToPlayPauseIconConverter.Instance };
+        mainPlayPauseButton.Bind(Button.ContentProperty, playPauseIconBinding);
+
 
         var toggleAdvPanelButton = new Button { Content = "+", Background = theme.B_SlightlyLighterBackground, Foreground = theme.B_TextColor, BorderBrush = theme.B_AccentColor, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(8, 4), MinWidth = 30, FontWeight = FontWeight.Bold };
         toggleAdvPanelButton.Bind(Button.CommandProperty, new Binding("ToggleAdvancedPanelCommand"));
@@ -84,9 +102,9 @@ public static class MainPlaybackControlsPanel
         var topMainPlaybackControls = new StackPanel
         {
             Orientation = Orientation.Vertical,
-            Height = 65, // Increased height
-            Margin = new Thickness(10, 0),
-            Spacing = 5 // Spacing between play button and slider panel
+            // Removed fixed Height = 65, allowing panel to size to content
+            Margin = new Thickness(10, 5, 10, 0), // Adjusted top margin slightly
+            Spacing = 8 // Spacing between play button and slider panel, increased slightly
         };
 
         topMainPlaybackControls.Children.Add(mainPlayPauseButton); // Play button on top, centered
