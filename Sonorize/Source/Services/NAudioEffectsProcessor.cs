@@ -3,7 +3,6 @@ using NAudio.Wave;
 using SoundTouch.Net.NAudioSupport;
 using System.Diagnostics;
 using System;
-
 namespace Sonorize.Services;
 
 public class NAudioEffectsProcessor : IDisposable
