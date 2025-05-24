@@ -1,14 +1,11 @@
-﻿using Avalonia.Threading;
-using NAudio.Wave;
-using NAudio.Wave.SampleProviders;
-using Sonorize.Models;
-using Sonorize.ViewModels; // Required for PlaybackStateStatus enum
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
-using SoundTouch.Net.NAudioSupport;
-using Avalonia.Animation;
+using Avalonia.Threading;
+using NAudio.Wave;
+using Sonorize.Models;
+using Sonorize.ViewModels; // Required for PlaybackStateStatus enum
 
 namespace Sonorize.Services;
 
@@ -81,30 +78,30 @@ public class PlaybackService : ViewModelBase, IDisposable
     }
     public double CurrentSongDurationSeconds => CurrentSongDuration.TotalSeconds > 0 ? CurrentSongDuration.TotalSeconds : 1.0;
 
+    // Keep WaveOutEvent and AudioFileReader here as they are core to audio I/O
     private IWavePlayer? _waveOutDevice;
     private AudioFileReader? audioFileReader;
-    private SmbPitchShiftingSampleProvider? pitchShifter;
+    // Reference to the extracted effects processor
+    private NAudioEffectsProcessor? _effectsProcessor;
+
     private Timer? uiUpdateTimer;
-    private SoundTouchWaveProvider? soundTouch;
     private IWavePlayer? _waveOutDeviceInstanceForStopEventCheck; // Keep track of the instance to avoid handling events from old devices
 
     // Flag to signal if the stop was initiated by the public Stop() method.
     // This flag is ONLY set to true by public Stop() and reset to false in OnPlaybackStopped when the explicit stop is handled.
     private volatile bool _explicitStopRequested = false;
 
-
+    // PlaybackRate and PitchSemitones properties now delegate to the effects processor
     private float _playbackRate = 1.0f;
     public float PlaybackRate
     {
         get => _playbackRate;
         set
         {
-            if (Math.Abs(_playbackRate - value) > float.Epsilon)
+            if (SetProperty(ref _playbackRate, value))
             {
-                _playbackRate = value;
-                // Update the rate on the SoundTouch provider if it exists
-                if (soundTouch != null) soundTouch.Tempo = _playbackRate;
-                OnPropertyChanged();
+                // Update the rate on the effects processor if it exists
+                if (_effectsProcessor != null) _effectsProcessor.Tempo = value;
             }
         }
     }
@@ -115,12 +112,10 @@ public class PlaybackService : ViewModelBase, IDisposable
         get => _pitchSemitones;
         set
         {
-            if (Math.Abs(_pitchSemitones - value) > float.Epsilon)
+            if (SetProperty(ref _pitchSemitones, value))
             {
-                _pitchSemitones = value;
-                // Update the pitch factor on the pitch shifter provider if it exists
-                if (pitchShifter != null) pitchShifter.PitchFactor = (float)Math.Pow(2, _pitchSemitones / 12.0);
-                OnPropertyChanged();
+                // Update the pitch factor on the effects processor if it exists
+                if (_effectsProcessor != null) _effectsProcessor.PitchSemitones = value;
             }
         }
     }
@@ -146,7 +141,9 @@ public class PlaybackService : ViewModelBase, IDisposable
         // if the device is stopped/disposed or the stream is finished.
         // Accessing _waveOutDevice?.PlaybackState is generally safer.
         // Also, check if audioFileReader and CurrentSong are still valid.
-        if (_waveOutDevice?.PlaybackState == PlaybackState.Playing && audioFileReader != null && CurrentSong != null)
+        // Also check if the device instance is the one we expect to be playing.
+        if (_waveOutDevice != null && _waveOutDevice == _waveOutDeviceInstanceForStopEventCheck &&
+            _waveOutDevice.PlaybackState == PlaybackState.Playing && audioFileReader != null && CurrentSong != null)
         {
             // Marshal to the UI thread
             Dispatcher.UIThread.InvokeAsync(() =>
@@ -184,9 +181,9 @@ public class PlaybackService : ViewModelBase, IDisposable
                         // Using a small tolerance (e.g., 50ms) to trigger seek slightly before the exact end,
                         // but ensure it's not extremely close to the *total* song duration.
                         TimeSpan seekThreshold = loop.End - TimeSpan.FromMilliseconds(50);
-                        if (currentAudioTime >= seekThreshold && currentAudioTime < audioFileReader.TotalTime - TimeSpan.FromMilliseconds(200))
+                        if (audioFileReader.CurrentTime >= seekThreshold && audioFileReader.CurrentTime < audioFileReader.TotalTime - TimeSpan.FromMilliseconds(200))
                         {
-                            Debug.WriteLine($"[PlaybackService] Loop active & end reached ({currentAudioTime:mm\\:ss\\.ff} >= {seekThreshold:mm\\:ss\\.ff}) within file ({audioFileReader.TotalTime:mm\\:ss\\.ff}). Seeking to loop start: {loop.Start:mm\\:ss\\.ff}");
+                            Debug.WriteLine($"[PlaybackService] Loop active & end reached ({audioFileReader.CurrentTime:mm\\:ss\\.ff} >= {seekThreshold:mm\\:ss\\.ff}) within file ({audioFileReader.TotalTime:mm\\:ss\\.ff}). Seeking to loop start: {loop.Start:mm\\:ss\\.ff}");
                             Seek(loop.Start); // Perform the seek. Seek() handles its own logging and position update.
                             // After seeking, the timer will continue, reading the new position.
                         }
@@ -202,12 +199,16 @@ public class PlaybackService : ViewModelBase, IDisposable
         }
         else
         {
-            // If playback state is no longer Playing, the timer should be stopped.
-            // This check helps ensure the timer stops even if the PlaybackStopped event isn't handled for some reason,
-            // or if the state was manually changed on the UI thread without a PlaybackStopped event (less likely).
-            if (_waveOutDevice?.PlaybackState != PlaybackState.Playing)
+            // If playback state is no longer Playing or device instance is not the current one, the timer should be stopped.
+            if (_waveOutDevice?.PlaybackState != PlaybackState.Playing || _waveOutDevice != _waveOutDeviceInstanceForStopEventCheck)
             {
-                Debug.WriteLine($"[PlaybackService] Timer callback found state is not Playing ({_waveOutDevice?.PlaybackState}). Stopping timer.");
+                Debug.WriteLine($"[PlaybackService] Timer callback found state is not Playing ({_waveOutDevice?.PlaybackState}) or device mismatch. Stopping timer.");
+                StopUiUpdateTimer();
+            }
+            else
+            {
+                // This case handles scenarios where audioFileReader or CurrentSong becomes null unexpectedly
+                Debug.WriteLine($"[PlaybackService] Timer callback found AFR or CurrentSong is null ({audioFileReader == null}, {CurrentSong == null}). Stopping timer.");
                 StopUiUpdateTimer();
             }
         }
@@ -263,7 +264,7 @@ public class PlaybackService : ViewModelBase, IDisposable
         // Attempt to initialize the NAudio pipeline for the new song.
         bool pipelineInitialized = InitializeNAudioPipeline(song.FilePath);
 
-        if (pipelineInitialized && _waveOutDevice != null && audioFileReader != null)
+        if (pipelineInitialized && _waveOutDevice != null && audioFileReader != null && _effectsProcessor != null)
         {
             // If a loop is active for the new song, seek to the start of the loop before playing
             // Ensure loop start is valid and within total time
@@ -315,7 +316,7 @@ public class PlaybackService : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Initializes the NAudio pipeline (AudioFileReader, SoundTouch, PitchShifter, WaveOutEvent).
+    /// Initializes the NAudio pipeline (AudioFileReader, NAudioEffectsProcessor, WaveOutEvent).
     /// Cleans up existing resources first.
     /// </summary>
     /// <param name="filePath">Path to the audio file.</param>
@@ -334,48 +335,25 @@ public class PlaybackService : ViewModelBase, IDisposable
             audioFileReader = new AudioFileReader(filePath);
             Debug.WriteLine($"[PlaybackService] Loaded AudioFileReader for {Path.GetFileName(filePath)}. Channels: {audioFileReader.WaveFormat.Channels}, SampleRate: {audioFileReader.WaveFormat.SampleRate}, Duration: {audioFileReader.TotalTime}");
 
-            // 2. Convert to SampleProvider and Mono (SoundTouch works best with Mono float samples)
-            ISampleProvider sourceSampleProvider = audioFileReader.ToSampleProvider();
-            // Ensure conversion to mono if needed. NAudio's ToMono() handles this.
-            ISampleProvider monoSampleProvider = sourceSampleProvider.ToMono();
-            // Convert back to IWaveProvider for SoundTouch
-            IWaveProvider monoWaveProviderForSoundTouch = new SampleToWaveProvider(monoSampleProvider);
-
-            // 3. Add SoundTouch for tempo/rate control
-            soundTouch = new SoundTouchWaveProvider(monoWaveProviderForSoundTouch)
-            {
-                Tempo = PlaybackRate, // Apply current tempo setting
-                Rate = 1.0f, // Rate == 1.0 doesn't change playback speed, Tempo does
-                Pitch = 1.0f // Pitch == 1.0 doesn't change pitch
-            };
-            Debug.WriteLine($"[PlaybackService] Added SoundTouch. Output format: {soundTouch.WaveFormat}");
-
-            // 4. Convert SoundTouch output back to ISampleProvider for Pitch Shifting
-            ISampleProvider soundTouchAsSampleProvider = soundTouch.ToSampleProvider();
-
-            // 5. Add Pitch Shifting (SMB)
-            pitchShifter = new SmbPitchShiftingSampleProvider(soundTouchAsSampleProvider)
-            {
-                // PitchFactor is calculated from PitchSemitones. Apply current setting.
-                PitchFactor = (float)Math.Pow(2, PitchSemitones / 12.0)
-            };
-            Debug.WriteLine($"[PlaybackService] Added PitchShifter. Output format: {pitchShifter.WaveFormat}");
+            // 2. Initialize the Effects Processor
+            _effectsProcessor = new NAudioEffectsProcessor();
+            // Pass the source sample provider (mono conversion happens inside processor)
+            _effectsProcessor.Initialize(audioFileReader.ToSampleProvider());
+            // Apply current tempo/pitch settings from PlaybackService properties (which are set by ViewModel)
+            _effectsProcessor.Tempo = PlaybackRate;
+            _effectsProcessor.PitchSemitones = PitchSemitones;
+            Debug.WriteLine($"[PlaybackService] Effects Processor initialized. Tempo: {_effectsProcessor.Tempo}, Pitch: {_effectsProcessor.PitchSemitones}");
 
 
-            // 6. Convert final ISampleProvider output to IWaveProvider for the output device
-            IWaveProvider finalWaveProviderForDevice = pitchShifter.ToWaveProvider();
-            Debug.WriteLine($"[PlaybackService] Final output format for device: {finalWaveProviderForDevice.WaveFormat}");
-
-
-            // 7. Initialize the output device (WaveOutEvent is suitable for desktop)
+            // 3. Initialize the output device (WaveOutEvent is suitable for desktop)
             _waveOutDevice = new WaveOutEvent();
             // Store the instance reference BEFORE attaching the handler and BEFORE Init
             _waveOutDeviceInstanceForStopEventCheck = _waveOutDevice;
             // Attach the PlaybackStopped event handler
             _waveOutDevice.PlaybackStopped += OnPlaybackStopped;
 
-            // Initialize the device with the final wave provider
-            _waveOutDevice.Init(finalWaveProviderForDevice);
+            // Initialize the device with the output from the effects processor
+            _waveOutDevice.Init(_effectsProcessor.OutputProvider.ToWaveProvider());
 
             // Set song duration and initial position. Update ViewModel properties.
             CurrentSongDuration = audioFileReader.TotalTime;
@@ -450,7 +428,19 @@ public class PlaybackService : ViewModelBase, IDisposable
             _waveOutDevice = null; // Nullify the service reference
         }
 
-        // Dispose the audio file reader if it exists
+        // Dispose the effects processor. It will dispose its internal disposable resources.
+        if (_effectsProcessor != null)
+        {
+            Debug.WriteLine("[PlaybackService] Disposing Effects Processor.");
+            try { _effectsProcessor.Dispose(); }
+            catch (Exception ex) { Debug.WriteLine($"[PlaybackService] Error during _effectsProcessor.Dispose() in cleanup: {ex.Message}"); }
+            _effectsProcessor = null; // Nullify the service reference
+        }
+
+        // Dispose the audio file reader if it exists. This must happen after the effects processor is disposed
+        // if the processor was initialized using the audioFileReader's sample provider directly.
+        // Or it can happen before if the processor copied the data or had a separate disposable source.
+        // In NAudio, the reader needs disposing to release the file handle. The processor just pulls from it.
         if (audioFileReader != null)
         {
             Debug.WriteLine("[PlaybackService] Disposing AudioFileReader.");
@@ -458,10 +448,6 @@ public class PlaybackService : ViewModelBase, IDisposable
             catch (Exception ex) { Debug.WriteLine($"[PlaybackService] Error during audioFileReader.Dispose() in cleanup: {ex.Message}"); }
             audioFileReader = null; // Nullify the service reference
         }
-
-        // Nullify references to provider chain (they don't usually need explicit Dispose unless they hold significant unmanaged resources, which SoundTouchWaveProvider and SmbPitchShiftingSampleProvider don't typically)
-        pitchShifter = null;
-        soundTouch = null;
 
         Debug.WriteLine("[PlaybackService] NAudio resources cleaned up.");
     }
@@ -874,7 +860,7 @@ public class PlaybackService : ViewModelBase, IDisposable
         uiUpdateTimer?.Dispose();
         uiUpdateTimer = null;
 
-        // Clean up NAudio resources. This includes stopping the device and disposing the reader/device.
+        // Clean up NAudio resources. This includes stopping the device and disposing the reader/device/processor.
         // This also detaches the PlaybackStopped event handler *from the instance being disposed*.
         CleanUpNAudioResources();
 
