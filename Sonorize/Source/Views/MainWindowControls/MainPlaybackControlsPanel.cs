@@ -305,17 +305,15 @@ public static class MainPlaybackControlsPanel
         mainPlaybackSlider.Styles.Add(new Style(s => s.Is<Thumb>())
         {
             Setters =
-    {
-        new Setter(Thumb.WidthProperty, 10.0),
-        new Setter(Thumb.HeightProperty, 10.0),
-        new Setter(Thumb.MinWidthProperty, 10.0),
-        new Setter(Thumb.MinHeightProperty, 10.0),
-        new Setter(Thumb.MaxWidthProperty, 10.0),
-        new Setter(Thumb.MaxHeightProperty, 10.0),
-        new Setter(Thumb.MarginProperty, new Thickness(0)), // optional: remove any margin
-        new Setter(Thumb.PaddingProperty, new Thickness(0)) // optional: remove padding
-    }
+            {
+                new Setter(Thumb.WidthProperty, 0.0),
+                new Setter(Thumb.HeightProperty, 0.0),
+                new Setter(Thumb.OpacityProperty, 0.0) // Hide the thumb visually
+            }
         });
+        mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("Playback.CurrentSongDurationSeconds"));
+        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("Playback.CurrentPositionSeconds", BindingMode.TwoWay));
+        mainPlaybackSlider.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
 
         // Use a Grid to place time text blocks next to the slider
