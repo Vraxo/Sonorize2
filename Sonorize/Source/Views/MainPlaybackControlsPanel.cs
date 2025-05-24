@@ -207,10 +207,11 @@ public static class MainPlaybackControlsPanel
         };
         songInfoPanel.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong")); // Only visible when a song is loaded
 
+        // MODIFIED: Increased thumbnail size from 48x48 to 64x64
         var thumbnailImage = new Image
         {
-            Width = 36, // Slightly larger thumbnail
-            Height = 36,
+            Width = 64, // Increased size
+            Height = 64, // Increased size
             Source = null, // Will be bound
             Stretch = Stretch.UniformToFill,
             VerticalAlignment = VerticalAlignment.Center

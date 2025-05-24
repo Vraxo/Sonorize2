@@ -107,9 +107,10 @@ public class MusicLibraryService
                         {
                             using (var originalBitmap = new Bitmap(ms))
                             {
-                                // Resize to a larger thumbnail for better quality in grid views
-                                var targetSize = new PixelSize(96, 96); // Increased from 64x64
+                                // Modified: Resize to a larger thumbnail for better quality when scaled down
+                                var targetSize = new PixelSize(128, 128); // Increased from 96x96
                                 var scaledBitmap = originalBitmap.CreateScaledBitmap(targetSize, BitmapInterpolationMode.HighQuality);
+                                Debug.WriteLine($"[AlbumArt] Loaded and scaled album art for {Path.GetFileName(filePath)} to {targetSize.Width}x{targetSize.Height}.");
                                 return scaledBitmap;
                             }
                         }
@@ -117,8 +118,8 @@ public class MusicLibraryService
                 }
             }
         }
-        catch (CorruptFileException) { /* Optional: Debug.WriteLine for tracking */ }
-        catch (UnsupportedFormatException) { /* Optional: Debug.WriteLine */ }
+        catch (CorruptFileException) { Debug.WriteLine($"[AlbumArt] Corrupt file exception for {Path.GetFileName(filePath)}"); }
+        catch (UnsupportedFormatException) { Debug.WriteLine($"[AlbumArt] Unsupported format exception for {Path.GetFileName(filePath)}"); }
         catch (Exception ex) { Debug.WriteLine($"[AlbumArt] Error loading album art for {Path.GetFileName(filePath)}: {ex.Message}"); }
         return null;
     }
