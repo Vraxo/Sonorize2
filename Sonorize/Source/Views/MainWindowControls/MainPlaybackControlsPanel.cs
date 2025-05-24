@@ -8,12 +8,14 @@ using Avalonia.Styling;
 using Avalonia;
 using Avalonia.Data.Converters; // Added required using directive for FuncValueConverter
 using Avalonia.Controls.Templates; // Required for FuncDataTemplate
-using Avalonia.Media.Imaging; // Required for BitmapInterpolationMode
+
+using Sonorize.Converters;
 using Sonorize.Models;
+using Sonorize.Views.MainWindowControls;
+using Avalonia.Media.Imaging; // Required for BitmapInterpolationMode
 using Sonorize.ViewModels; // Required for RepeatMode enum
 using System; // Required for Func
 using System.Diagnostics; // Added for Debug
-using Sonorize.Converters; // Added using for the new converter
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -44,35 +46,20 @@ public static class MainPlaybackControlsPanel
         var mainPlayPauseButton = new Button
         {
             Background = theme.B_SlightlyLighterBackground,
-            Foreground = theme.B_TextColor, // Button foreground controls icon color
+            Foreground = theme.B_TextColor,
             BorderBrush = theme.B_AccentColor,
             BorderThickness = new Thickness(1),
             Width = 38,
             Height = 38,
             CornerRadius = new CornerRadius(19),
             Padding = new Thickness(0),
+            FontSize = 18,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            Content = new PathIcon // Use PathIcon for SVG
-            {
-                Width = 24, // Set size for the icon
-                Height = 24,
-                VerticalAlignment = VerticalAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                // Data will be bound by the converter
-            }
+            HorizontalContentAlignment = HorizontalAlignment.Center
         };
-
-        // Bind the PathIcon's Data property using the new converter
-        var pathIcon = (PathIcon)mainPlayPauseButton.Content!;
-        pathIcon.Bind(PathIcon.DataProperty, new Binding("Playback.IsPlaying") { Converter = BooleanToPlayPauseGeometryConverter.Instance });
-
-        // Old binding using text converter removed:
-        // mainPlayPauseButton.Bind(Button.ContentProperty, new Binding("Playback.IsPlaying") { Converter = BooleanToPlayPauseIconConverter.Instance });
-
         mainPlayPauseButton.Bind(Button.CommandProperty, new Binding("Playback.PlayPauseResumeCommand"));
-
+        mainPlayPauseButton.Bind(Button.ContentProperty, new Binding("Playback.IsPlaying") { Converter = BooleanToPlayPauseIconConverter.Instance });
 
         var nextButton = new Button
         {
