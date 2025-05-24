@@ -230,31 +230,18 @@ public static class MainPlaybackControlsPanel
 
         var toggleAdvPanelButton = new Button
         {
-            // Content set as TextBlock for better centering
+            Content = "+",
             Background = theme.B_SlightlyLighterBackground,
             Foreground = theme.B_TextColor, // Default color
             BorderBrush = theme.B_ControlBackgroundColor, // Default border color
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(3),
-            Padding = new Thickness(0), // Remove padding on the button itself
+            Padding = new Thickness(8, 4),
             MinWidth = 30, // Give it a minimum size to occupy space
-            FontWeight = FontWeight.Bold, // Applied to TextBlock instead
+            FontWeight = FontWeight.Bold,
             Width = 32, // Fixed width for consistency
-            Height = 32, // Fixed height for consistency
-            HorizontalContentAlignment = HorizontalAlignment.Center, // Keep for centering the TextBlock
-            VerticalContentAlignment = VerticalAlignment.Center // Keep for centering the TextBlock
+            Height = 32 // Fixed height for consistency
         };
-        // Set Content as a TextBlock for better centering of the "+" character
-        toggleAdvPanelButton.Content = new TextBlock
-        {
-            Text = "+",
-            TextAlignment = TextAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            FontSize = 16, // Adjusted font size slightly for fit/look
-            FontWeight = FontWeight.Bold // Apply bold to the TextBlock
-        };
-
         // Change BorderBrush color based on IsAdvancedPanelVisible
         toggleAdvPanelButton[!Button.BorderBrushProperty] = new Binding("IsAdvancedPanelVisible")
         {
@@ -365,66 +352,8 @@ public static class MainPlaybackControlsPanel
         centerPlaybackControlsStack.Children.Add(timeSliderGrid);
 
 
-        // --- Currently Playing Song Info Panel (Bottom Left) ---
-        var songInfoPanel = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            VerticalAlignment = VerticalAlignment.Center, // Center vertically in its grid cell
-            HorizontalAlignment = HorizontalAlignment.Left, // Align to the left edge of its grid cell
-            Margin = new Thickness(10, 0, 0, 0), // Margin from the left edge of the grid cell
-            Spacing = 8,
-            // Add MaxWidth to prevent text pushing content, trimming is handled by TextBlock MaxWidth/TextTrimming
-            // We rely on the root Grid column definition to prevent pushing the center.
-        };
-        songInfoPanel.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong")); // Only visible when a song is loaded
-
-        // MODIFIED: Increased thumbnail size from 48x48 to 64x64
-        var thumbnailImage = new Image
-        {
-            Width = 64, // Increased size
-            Height = 64, // Increased size
-            Source = null, // Will be bound
-            Stretch = Stretch.UniformToFill,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        RenderOptions.SetBitmapInterpolationMode(thumbnailImage, BitmapInterpolationMode.HighQuality);
-        thumbnailImage.Bind(Image.SourceProperty, new Binding("Playback.CurrentSong.Thumbnail"));
-
-        var textStack = new StackPanel
-        {
-            Orientation = Orientation.Vertical,
-            VerticalAlignment = VerticalAlignment.Center,
-            Spacing = 1
-        };
-
-        var titleTextBlock = new TextBlock
-        {
-            Text = "Unknown Title", // Default, will be bound
-            FontSize = 14,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = theme.B_TextColor,
-            TextTrimming = TextTrimming.CharacterEllipsis, // Crucial for preventing overflow
-            VerticalAlignment = VerticalAlignment.Center,
-            MaxWidth = 200 // Limit width of the text itself
-        };
-        titleTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentSong.Title"));
-
-        var artistTextBlock = new TextBlock
-        {
-            Text = "Unknown Artist", // Default, will be bound
-            FontSize = 11,
-            Foreground = theme.B_SecondaryTextColor,
-            TextTrimming = TextTrimming.CharacterEllipsis, // Crucial for preventing overflow
-            VerticalAlignment = VerticalAlignment.Center,
-            MaxWidth = 200 // Limit width of the text itself
-        };
-        artistTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentSong.Artist"));
-
-        textStack.Children.Add(titleTextBlock);
-        textStack.Children.Add(artistTextBlock);
-
-        songInfoPanel.Children.Add(thumbnailImage);
-        songInfoPanel.Children.Add(textStack);
+        // --- Currently Playing Song Info Panel (Extracted) ---
+        var songInfoPanel = SongInfoDisplayPanel.Create(theme);
 
 
         // --- Main Grid Layout (Restored Single Column Centering) ---
