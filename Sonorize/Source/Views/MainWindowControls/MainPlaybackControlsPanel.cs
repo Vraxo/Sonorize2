@@ -181,7 +181,7 @@ public static class MainPlaybackControlsPanel
                 {
                     return mode switch
                     {
-                        RepeatMode.PlayOnce => new TranslateTransform(0, -2), // Adjust "₁"
+                        RepeatMode.PlayOnce => new TranslateTransform(0, -3), // Adjusted Y offset for "₁"
                         RepeatMode.None => new TranslateTransform(0, -1),     // Adjust "―"
                         _ => null // No transform needed for 🔂/🔁
                     };
