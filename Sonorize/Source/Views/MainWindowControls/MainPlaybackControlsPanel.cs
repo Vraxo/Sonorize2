@@ -266,75 +266,8 @@ public static class MainPlaybackControlsPanel
         };
         rightControlsPanel.Children.Add(toggleAdvPanelButton);
 
-        // TextBlock for Current Time
-        var currentTimeTextBlock = new TextBlock
-        {
-            Foreground = theme.B_SecondaryTextColor, // Use secondary color
-            FontSize = 11,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 5, 0), // Margin to the right of the text
-            MinWidth = 40, // Ensure enough space for MM:SS
-            HorizontalAlignment = HorizontalAlignment.Left // Explicitly left align within its grid cell
-        };
-        currentTimeTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentTimeDisplay"));
-        currentTimeTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
-
-        // TextBlock for Total Time
-        var totalTimeTextBlock = new TextBlock
-        {
-            Foreground = theme.B_SecondaryTextColor, // Use secondary color
-            FontSize = 11,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(5, 0, 0, 0), // Margin to the left of the text
-            MinWidth = 40, // Ensure enough space for MM:SS
-            HorizontalAlignment = HorizontalAlignment.Right // Explicitly right align within its grid cell
-        };
-        totalTimeTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.TotalTimeDisplay"));
-        totalTimeTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
-
-
-        var mainPlaybackSlider = new Slider
-        {
-            Name = "MainPlaybackSliderInstance",
-            Minimum = 0,
-            VerticalAlignment = VerticalAlignment.Center,
-            Background = theme.B_SecondaryTextColor,
-            Foreground = theme.B_AccentColor,
-            HorizontalAlignment = HorizontalAlignment.Stretch // Allow slider to fill the available space in its column
-        };
-        mainPlaybackSlider.Styles.Add(new Style(s => s.Is<Thumb>())
-        {
-            Setters =
-            {
-                new Setter(Thumb.WidthProperty, 0.0),
-                new Setter(Thumb.HeightProperty, 0.0),
-                new Setter(Thumb.OpacityProperty, 0.0) // Hide the thumb visually
-            }
-        });
-        mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("Playback.CurrentSongDurationSeconds"));
-        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("Playback.CurrentPositionSeconds", BindingMode.TwoWay));
-        mainPlaybackSlider.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
-
-
-        // Use a Grid to place time text blocks next to the slider
-        var timeSliderGrid = new Grid
-        {
-            // Three columns: Auto (CurrentTime), * (Slider), Auto (TotalTime)
-            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
-            VerticalAlignment = VerticalAlignment.Center,
-            Height = 30, // Fixed height
-            MinWidth = 500, // Ensure minimum width for layout stability
-            HorizontalAlignment = HorizontalAlignment.Stretch // Stretch to fill the center container
-        };
-
-        // Place controls in the grid columns
-        Grid.SetColumn(currentTimeTextBlock, 0);
-        Grid.SetColumn(mainPlaybackSlider, 1);
-        Grid.SetColumn(totalTimeTextBlock, 2);
-
-        timeSliderGrid.Children.Add(currentTimeTextBlock);
-        timeSliderGrid.Children.Add(mainPlaybackSlider);
-        timeSliderGrid.Children.Add(totalTimeTextBlock);
+        // --- Playback Time Slider Panel (Extracted) ---
+        var timeSliderGrid = PlaybackTimeSliderPanel.Create(theme);
 
 
         // --- Center Playback Controls Stack (Combined Buttons Panel + Slider) ---
