@@ -1,25 +1,27 @@
-﻿using System.Diagnostics; // Added for Debug
+﻿using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Data;
-using Avalonia.Data.Converters; // Added required using directive for FuncValueConverter
+using Avalonia.Data.Converters;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Media.Imaging; // Required for BitmapInterpolationMode
+using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.ViewModels;
-using TagLib.IFD.Tags; // Required for RepeatMode enum
+using Avalonia.Controls.Templates;
+using Avalonia.Markup.Xaml.Templates;
+using Avalonia.Controls.Templates;
+using Avalonia.Controls.Primitives;
 
 namespace Sonorize.Views.MainWindowControls;
 
 public static class MainPlaybackControlsPanel
 {
-    public static Grid Create(ThemeColors theme) // Root is a Grid
+    public static Grid Create(ThemeColors theme)
     {
-        // Previous Button
         var previousButton = new Button
         {
             Content = "<",
@@ -35,9 +37,7 @@ public static class MainPlaybackControlsPanel
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center
         };
-        // Bind to Library.PreviousTrackCommand
         previousButton.Bind(Button.CommandProperty, new Binding("Library.PreviousTrackCommand"));
-        // IsEnabled is controlled by the command's CanExecute
 
         var mainPlayPauseButton = new Button
         {
@@ -72,91 +72,66 @@ public static class MainPlaybackControlsPanel
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center
         };
-        // Bind to Library.NextTrackCommand
         nextButton.Bind(Button.CommandProperty, new Binding("Library.NextTrackCommand"));
-        // IsEnabled is controlled by the command's CanExecute
-
-
-        // --- Shuffle and Loop/Repeat Buttons ---
 
         var shuffleButton = new ToggleButton
         {
-            // Content is bound via converter directly
-            Foreground = theme.B_SecondaryTextColor, // Default color (off) - This will be overridden by the style
+            Foreground = theme.B_SecondaryTextColor,
             Background = Brushes.Transparent,
-            BorderBrush = theme.B_ControlBackgroundColor, // Default border color (off) - This will be overridden by the style
+            BorderBrush = theme.B_ControlBackgroundColor,
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4), // Add some rounded corners
+            CornerRadius = new CornerRadius(4),
             Padding = new Thickness(5),
             VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center, // Center the button horizontally
-            VerticalContentAlignment = VerticalAlignment.Center, // Center content vertically
-            HorizontalContentAlignment = HorizontalAlignment.Center, // Center content horizontally
-            FontSize = 18, // Set font size directly on button - Handled by TextBlock now
-            FontFamily = "Segoe UI Symbol, Arial", // Set font family directly on button - Handled by TextBlock now
-            ContentTemplate = null, // No explicit template needed, using direct Content
-            Width = 32, // Fixed width for icon
-            Height = 32 // Fixed height for icon
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            FontSize = 18,
+            FontFamily = "Segoe UI Symbol, Arial",
+            ContentTemplate = null,
+            Width = 32,
+            Height = 32
         };
-
-        // Set Content as a TextBlock for better centering of the icon
         shuffleButton.Content = new TextBlock
         {
             TextAlignment = TextAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
-            FontSize = 18, // Font size for the icon
-            FontFamily = new FontFamily("Segoe UI Symbol, Arial"), // Font family for symbols
-            // Bind the TextBlock's Text property to the ShuffleEnabled state via converter
+            FontSize = 18,
+            FontFamily = new FontFamily("Segoe UI Symbol, Arial"),
             [!TextBlock.TextProperty] = new Binding("Playback.ShuffleEnabled") { Converter = BooleanToShuffleIconConverter.Instance }
         };
-
-        // Bind IsChecked to Playback.ShuffleEnabled (TwoWay) - This is essential for the toggle state
-        // This binding, when checked/unchecked by user click, will trigger the ShuffleEnabled setter in the VM.
         shuffleButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.ShuffleEnabled", BindingMode.TwoWay));
-
-        // REMOVED: Direct ContentControl.ContentProperty binding on the ToggleButton. Content is now a TextBlock.
-        // shuffleButton.Bind(ContentControl.ContentProperty, new Binding("Playback.ShuffleEnabled") { Converter = BooleanToShuffleIconConverter.Instance });
-
-        Debug.WriteLine($"[View] Shuffle Button TextBlock Content Bound Directly to Playback.ShuffleEnabled with BooleanToShuffleIconConverter. Command binding removed.");
-
-
-        // Change Foreground color based on IsChecked state (using the FuncValueConverter)
         shuffleButton[!ToggleButton.ForegroundProperty] = new Binding("IsChecked")
         {
             Source = shuffleButton,
             Converter = new FuncValueConverter<bool, IBrush>(isChecked => isChecked ? theme.B_AccentColor : theme.B_SecondaryTextColor)
         };
-        // Change BorderBrush color based on IsChecked state for a stronger visual cue (using the FuncValueConverter)
         shuffleButton[!ToggleButton.BorderBrushProperty] = new Binding("IsChecked")
         {
             Source = shuffleButton,
             Converter = new FuncValueConverter<bool, IBrush>(isChecked => isChecked ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
         };
-        // Ensure button is enabled only when a song is loaded
         shuffleButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
-
-        var repeatModeButton = new ToggleButton // Renamed from loopButton
+        var repeatModeButton = new ToggleButton
         {
-            // Content is bound via converter directly
-            Foreground = theme.B_SecondaryTextColor, // Default color (off) - Will be overridden by style
+            Foreground = theme.B_SecondaryTextColor,
             Background = Brushes.Transparent,
-            BorderBrush = theme.B_ControlBackgroundColor, // Default border color (off) - Will be overridden by style
+            BorderBrush = theme.B_ControlBackgroundColor,
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4), // Add some rounded corners
+            CornerRadius = new CornerRadius(4),
             Padding = new Thickness(5),
             VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center, // Center the button horizontally
-            VerticalContentAlignment = VerticalAlignment.Center, // Center content vertically
-            HorizontalContentAlignment = HorizontalAlignment.Center, // Center content horizontally
-            FontSize = 18, // Use larger font size for icons - Handled by TextBlock now
-            FontFamily = "Segoe UI Symbol, Arial", // Explicitly set font family for symbols - Handled by TextBlock now
-            ContentTemplate = null, // No explicit template needed for simple string content
-            Width = 32, // Fixed width for icon
-            Height = 32 // Fixed height for icon
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            FontSize = 18,
+            FontFamily = "Segoe UI Symbol, Arial",
+            ContentTemplate = null,
+            Width = 32,
+            Height = 32
         };
-        // Bind Content to Playback.RepeatMode (using a converter to show state) - Renamed
         repeatModeButton.Content = new TextBlock
         {
             TextAlignment = TextAlignment.Center,
@@ -178,72 +153,54 @@ public static class MainPlaybackControlsPanel
             },
             [!TextBlock.RenderTransformProperty] = new Binding("Playback.RepeatMode")
             {
-                Converter = new FuncValueConverter<RepeatMode, ITransform?>(mode =>
+                Converter = new FuncValueConverter<RepeatMode, ITransform?>(mode => mode switch
                 {
-                    return mode switch
-                    {
-                        RepeatMode.PlayOnce => new TranslateTransform(0, -3), // Adjusted Y offset for "₁"
-                        RepeatMode.None => new TranslateTransform(0, -1),     // Adjust "―"
-                        _ => null // No transform needed for 🔂/🔁
-                    };
+                    RepeatMode.PlayOnce => new TranslateTransform(0, -3),
+                    RepeatMode.None => new TranslateTransform(0, -1),
+                    _ => null
                 })
             }
         };
-
-        // Change foreground color based on RepeatMode state (if not None - i.e. any repeat/cycle is active)
         repeatModeButton[!ToggleButton.ForegroundProperty] = new Binding("Playback.RepeatMode")
         {
-            // Accent color for PlayOnce, RepeatOne, RepeatAll. Secondary for None.
             Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.None ? theme.B_AccentColor : theme.B_SecondaryTextColor)
         };
-        // Change BorderBrush color based on RepeatMode state (if not None - i.e. any repeat/cycle is active)
         repeatModeButton[!ToggleButton.BorderBrushProperty] = new Binding("Playback.RepeatMode")
         {
-            // Accent color for PlayOnce, RepeatOne, RepeatAll. ControlBackground for None.
             Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.None ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
         };
-        // Bind IsChecked to Playback.IsRepeatActive (ViewModel calculates this based on RepeatMode != None)
         repeatModeButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.IsRepeatActive"));
-        // Bind Command to Playback.CycleRepeatModeCommand
         repeatModeButton.Bind(Button.CommandProperty, new Binding("Playback.CycleRepeatModeCommand"));
-        // Ensure button is enabled only when a song is loaded
         repeatModeButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
-
-        // --- Combined Playback Controls Panel (Shuffle + Nav Buttons + Loop) ---
-        // This stack panel holds the core playback buttons including the mode toggles
         var combinedPlaybackButtonControlsPanel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 10, // Space between buttons
-            HorizontalAlignment = HorizontalAlignment.Center, // Center buttons within this stack panel
+            Spacing = 10,
+            HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0)
         };
-
-        // Add the buttons in the desired order (Shuffle - Previous - Play/Pause - Next - Repeat Mode)
         combinedPlaybackButtonControlsPanel.Children.Add(shuffleButton);
         combinedPlaybackButtonControlsPanel.Children.Add(previousButton);
         combinedPlaybackButtonControlsPanel.Children.Add(mainPlayPauseButton);
         combinedPlaybackButtonControlsPanel.Children.Add(nextButton);
-        combinedPlaybackButtonControlsPanel.Children.Add(repeatModeButton); // Added the renamed repeat button
-
+        combinedPlaybackButtonControlsPanel.Children.Add(repeatModeButton);
 
         var toggleAdvPanelButton = new Button
         {
             Content = "+",
             Background = theme.B_SlightlyLighterBackground,
-            Foreground = theme.B_TextColor, // Default color
-            BorderBrush = theme.B_ControlBackgroundColor, // Default border color
+            Foreground = theme.B_TextColor,
+            BorderBrush = theme.B_ControlBackgroundColor,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(3),
             Padding = new Thickness(8, 4),
-            MinWidth = 30, // Give it a minimum size to occupy space
+            MinWidth = 30,
             FontWeight = FontWeight.Bold,
-            Width = 32, // Fixed width for consistency
-            Height = 32 // Fixed height for consistency
+            Width = 32,
+            Height = 32
         };
-        // Change BorderBrush color based on IsAdvancedPanelVisible
         toggleAdvPanelButton[!Button.BorderBrushProperty] = new Binding("IsAdvancedPanelVisible")
         {
             Converter = new FuncValueConverter<bool, IBrush>(isVisible => isVisible ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
@@ -255,129 +212,147 @@ public static class MainPlaybackControlsPanel
         toggleAdvPanelButton.Bind(Button.CommandProperty, new Binding("ToggleAdvancedPanelCommand"));
         toggleAdvPanelButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
-
-        var rightControlsPanel = new StackPanel // Holds toggle button
+        var rightControlsPanel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             Spacing = 5,
             VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Right, // Align to the right within its grid cell
-            Margin = new Thickness(0, 0, 10, 0) // Margin from the right edge of the grid cell
-            // MinWidth/Width could be added here if needed to reserve space even when invisible
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 0, 10, 0)
         };
         rightControlsPanel.Children.Add(toggleAdvPanelButton);
 
-        // TextBlock for Current Time
         var currentTimeTextBlock = new TextBlock
         {
-            Foreground = theme.B_SecondaryTextColor, // Use secondary color
+            Foreground = theme.B_SecondaryTextColor,
             FontSize = 11,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 5, 0), // Margin to the right of the text
-            MinWidth = 40, // Ensure enough space for MM:SS
-            HorizontalAlignment = HorizontalAlignment.Left // Explicitly left align within its grid cell
+            Margin = new Thickness(0, 0, 5, 0),
+            MinWidth = 40,
+            HorizontalAlignment = HorizontalAlignment.Left
         };
         currentTimeTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentTimeDisplay"));
         currentTimeTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
 
-        // TextBlock for Total Time
         var totalTimeTextBlock = new TextBlock
         {
-            Foreground = theme.B_SecondaryTextColor, // Use secondary color
+            Foreground = theme.B_SecondaryTextColor,
             FontSize = 11,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(5, 0, 0, 0), // Margin to the left of the text
-            MinWidth = 40, // Ensure enough space for MM:SS
-            HorizontalAlignment = HorizontalAlignment.Right // Explicitly right align within its grid cell
+            Margin = new Thickness(5, 0, 0, 0),
+            MinWidth = 40,
+            HorizontalAlignment = HorizontalAlignment.Right
         };
         totalTimeTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.TotalTimeDisplay"));
         totalTimeTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
-
 
         var mainPlaybackSlider = new Slider
         {
             Name = "MainPlaybackSliderInstance",
             Minimum = 0,
+            Height = 24,
             VerticalAlignment = VerticalAlignment.Center,
-            Background = theme.B_SecondaryTextColor,
+            Background = Brushes.Transparent,
             Foreground = theme.B_AccentColor,
-            Height = 100,
-            HorizontalAlignment = HorizontalAlignment.Stretch, // Allow slider to fill the available space in its column
-            // Add bindings for slider functionality
-            [!Slider.MaximumProperty] = new Binding("Playback.CurrentSongDurationSeconds"), // Bind max to song duration in seconds
-            [!Slider.ValueProperty] = new Binding("Playback.CurrentPositionSeconds", BindingMode.TwoWay), // Bind value to current position in seconds (TwoWay for scrubbing)
-            [!Control.IsHitTestVisibleProperty] = new Binding("Playback.HasCurrentSong") // Disable slider interaction when no song is loaded
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            [!Slider.MaximumProperty] = new Binding("Playback.CurrentSongDurationSeconds"),
+            [!Slider.ValueProperty] = new Binding("Playback.CurrentPositionSeconds", BindingMode.TwoWay),
+            [!Control.IsHitTestVisibleProperty] = new Binding("Playback.HasCurrentSong")
         };
-        mainPlaybackSlider.Styles.Add(new Style(s => s.Is<Thumb>())
-        {
-            Setters =
-            {
-                new Setter(Thumb.WidthProperty, 4.0),
-                new Setter(Thumb.HeightProperty, 4.0),
-                new Setter(Thumb.MinWidthProperty, 4.0),
-                new Setter(Thumb.MinHeightProperty, 4.0),
-                new Setter(Thumb.MaxWidthProperty, 4.0),
-                new Setter(Thumb.MaxHeightProperty, 4.0),
-                new Setter(Thumb.MarginProperty, new Thickness(0)), // optional: remove any margin
-                new Setter(Thumb.PaddingProperty, new Thickness(0)) // optional: remove padding
-            }
-        });
 
-        // Use a Grid to place time text blocks next to the slider
+        mainPlaybackSlider.Styles.Add(new Style(x => x.OfType<Slider>()))
+{
+            Setters =
+    {
+                new Setter(Slider.TemplateProperty, new FuncControlTemplate((control, scope) =>
+                {
+                    var slider = (Slider)control;
+
+                    var track = new Track
+                    {
+                        Name = "PART_Track",
+                        Minimum = slider.Minimum,
+                        Maximum = slider.Maximum,
+                        Value = slider.Value,
+                        Orientation = Orientation.Horizontal,
+                        Thumb = new Thumb
+                        {
+                            Width = 12,
+                            Height = 12,
+                            Background = slider.Foreground,
+                            BorderBrush = slider.Foreground,
+                            BorderThickness = new Thickness(1),
+                            CornerRadius = new CornerRadius(6)
+                        },
+                        DecreaseRepeatButton = new RepeatButton
+                        {
+                            Background = theme.B_AccentColor,
+                            Height = 8,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            IsEnabled = false
+                        },
+                        IncreaseRepeatButton = new RepeatButton
+                        {
+                            Background = theme.B_ControlBackgroundColor,
+                            Height = 8,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            IsEnabled = false
+                        }
+                    };
+
+                    track.Bind(Track.MinimumProperty, new Binding("Minimum") { Source = slider });
+                    track.Bind(Track.MaximumProperty, new Binding("Maximum") { Source = slider });
+                    track.Bind(Track.ValueProperty, new Binding("Value") { Source = slider, Mode = BindingMode.TwoWay });
+
+                    return new Grid
+                    {
+                        Height = 24,
+                        Children = { track }
+                    };
+                }))
+    }
+        };
+
         var timeSliderGrid = new Grid
         {
-            // Three columns: Auto (CurrentTime), * (Slider), Auto (TotalTime)
             ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
             VerticalAlignment = VerticalAlignment.Center,
-            Height = 30, // Fixed height
-            MinWidth = 500, // Ensure minimum width for layout stability
-            HorizontalAlignment = HorizontalAlignment.Stretch // Stretch to fill the center container
+            Height = 36,
+            MinWidth = 500,
+            HorizontalAlignment = HorizontalAlignment.Stretch
         };
-
-        // Place controls in the grid columns
         Grid.SetColumn(currentTimeTextBlock, 0);
         Grid.SetColumn(mainPlaybackSlider, 1);
         Grid.SetColumn(totalTimeTextBlock, 2);
-
         timeSliderGrid.Children.Add(currentTimeTextBlock);
         timeSliderGrid.Children.Add(mainPlaybackSlider);
         timeSliderGrid.Children.Add(totalTimeTextBlock);
 
-
-        // --- Center Playback Controls Stack (Combined Buttons Panel + Slider) ---
-        // This stack panel contains the combined button panel (including mode toggles) and the time/slider grid.
         var centerPlaybackControlsStack = new StackPanel
         {
             Orientation = Orientation.Vertical,
             Margin = new Thickness(0, 5, 0, 0),
-            Spacing = 8, // Space between the button row and the slider row
-            HorizontalAlignment = HorizontalAlignment.Center, // Center this stack panel within its parent grid cell
+            Spacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
-        // Add the combined button panel (now includes shuffle/loop, prev/play/next)
         centerPlaybackControlsStack.Children.Add(combinedPlaybackButtonControlsPanel);
         centerPlaybackControlsStack.Children.Add(timeSliderGrid);
 
-
-        // --- Currently Playing Song Info Panel (Bottom Left) ---
         var songInfoPanel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            VerticalAlignment = VerticalAlignment.Center, // Center vertically in its grid cell
-            HorizontalAlignment = HorizontalAlignment.Left, // Align to the left edge of its grid cell
-            Margin = new Thickness(10, 0, 0, 0), // Margin from the left edge of the grid cell
-            Spacing = 8,
-            // Add MaxWidth to prevent text pushing content, trimming is handled by TextBlock MaxWidth/TextTrimming
-            // We rely on the root Grid column definition to prevent pushing the center.
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(10, 0, 0, 0),
+            Spacing = 8
         };
-        songInfoPanel.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong")); // Only visible when a song is loaded
+        songInfoPanel.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
 
-        // MODIFIED: Increased thumbnail size from 48x48 to 64x64
         var thumbnailImage = new Image
         {
-            Width = 64, // Increased size
-            Height = 64, // Increased size
-            Source = null, // Will be bound
+            Width = 64,
+            Height = 64,
             Stretch = Stretch.UniformToFill,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -393,55 +368,41 @@ public static class MainPlaybackControlsPanel
 
         var titleTextBlock = new TextBlock
         {
-            Text = "Unknown Title", // Default, will be bound
             FontSize = 14,
             FontWeight = FontWeight.SemiBold,
             Foreground = theme.B_TextColor,
-            TextTrimming = TextTrimming.CharacterEllipsis, // Crucial for preventing overflow
+            TextTrimming = TextTrimming.CharacterEllipsis,
             VerticalAlignment = VerticalAlignment.Center,
-            MaxWidth = 200 // Limit width of the text itself
+            MaxWidth = 200
         };
         titleTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentSong.Title"));
 
         var artistTextBlock = new TextBlock
         {
-            Text = "Unknown Artist", // Default, will be bound
             FontSize = 11,
             Foreground = theme.B_SecondaryTextColor,
-            TextTrimming = TextTrimming.CharacterEllipsis, // Crucial for preventing overflow
+            TextTrimming = TextTrimming.CharacterEllipsis,
             VerticalAlignment = VerticalAlignment.Center,
-            MaxWidth = 200 // Limit width of the text itself
+            MaxWidth = 200
         };
         artistTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentSong.Artist"));
 
         textStack.Children.Add(titleTextBlock);
         textStack.Children.Add(artistTextBlock);
-
         songInfoPanel.Children.Add(thumbnailImage);
         songInfoPanel.Children.Add(textStack);
 
-
-        // --- Main Grid Layout (Restored Single Column Centering) ---
-        // Use a single star (*) column. All children are placed in this column.
-        // Their HorizontalAlignment determines their position within the column.
-        // The centerPlaybackControlsStack has HorizontalAlignment.Center, ensuring it's centered
-        // regardless of the width of the left (songInfoPanel) or right (rightControlsPanel) elements.
-        var outerGrid = new Grid // This is the root panel
+        var outerGrid = new Grid
         {
             Background = theme.B_BackgroundColor,
-            Margin = new Thickness(0, 5, 0, 5), // Vertical margin for the whole control
+            Margin = new Thickness(0, 5, 0, 5),
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            RowDefinitions = new RowDefinitions("Auto"), // Single row, height is Auto based on content
-            ColumnDefinitions = new ColumnDefinitions("*") // Single column spanning the width
+            RowDefinitions = new RowDefinitions("Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*")
         };
-
-        // Place all panels in the single column (column 0).
-        // Their HorizontalAlignment will handle horizontal positioning.
         Grid.SetColumn(songInfoPanel, 0);
         Grid.SetColumn(centerPlaybackControlsStack, 0);
         Grid.SetColumn(rightControlsPanel, 0);
-
-        // Add children in any order; their position is determined by grid layout and alignment.
         outerGrid.Children.Add(songInfoPanel);
         outerGrid.Children.Add(centerPlaybackControlsStack);
         outerGrid.Children.Add(rightControlsPanel);
