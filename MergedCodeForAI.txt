@@ -389,6 +389,42 @@ public class BooleanToPlayPauseTextConverter : IValueConverter
 }
 </file>
 
+<file path="Source\Converters\BooleanToShuffleIconConverter.cs">
+using System;
+using Avalonia.Data.Converters;
+using System.Globalization;
+using System.Diagnostics; // Added for Debug
+
+namespace Sonorize.Converters
+{
+    public class BooleanToShuffleIconConverter : IValueConverter
+    {
+        public static readonly BooleanToShuffleIconConverter Instance = new();
+
+        private const string ShuffleActiveIcon = "🔀"; // U+1F500 Twisted Arrows Right and Left
+        private const string ShuffleInactiveIcon = "↔"; // U+2194 Left Right Arrow
+
+        public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            // Add debug logging here
+            Debug.WriteLine($"[Converter] BooleanToShuffleIconConverter Convert called. Value: {value}, TargetType: {targetType}");
+            if (value is bool isShuffleEnabled)
+            {
+                Debug.WriteLine($"[Converter] isShuffleEnabled: {isShuffleEnabled}. Returning: {(isShuffleEnabled ? ShuffleActiveIcon : ShuffleInactiveIcon)}");
+                return isShuffleEnabled ? ShuffleActiveIcon : ShuffleInactiveIcon;
+            }
+            Debug.WriteLine($"[Converter] Value is not bool ({value?.GetType().Name ?? "null"}). Returning: {ShuffleInactiveIcon}");
+            return ShuffleInactiveIcon; // Default
+        }
+
+        public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            throw new NotSupportedException();
+        }
+    }
+}
+</file>
+
 <file path="Source\Converters\NotNullToBooleanConverter.cs">
 // Path: Source/Views/MainView.cs
 using System;
@@ -971,7 +1007,7 @@ using Avalonia.Threading;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 using Sonorize.Models;
-using Sonorize.ViewModels;
+using Sonorize.ViewModels; // Required for PlaybackStateStatus enum
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -980,6 +1016,7 @@ using SoundTouch.Net.NAudioSupport;
 
 namespace Sonorize.Services;
 
+// Keep enum here for completeness/clarity within the service context
 public enum PlaybackStateStatus { Stopped, Playing, Paused }
 
 public class PlaybackService : ViewModelBase, IDisposable
@@ -994,6 +1031,12 @@ public class PlaybackService : ViewModelBase, IDisposable
             {
                 Debug.WriteLine($"[PlaybackService] CurrentSong property set to: {value?.Title ?? "null"}");
                 OnPropertyChanged(nameof(HasCurrentSong));
+                // When song changes, ensure state is stopped initially until Play() is called
+                // CurrentPlaybackStatus = PlaybackStateStatus.Stopped; // Play() sets this correctly
+                // IsPlaying = false; // Play() sets this correctly
+                // CurrentPosition = TimeSpan.Zero; // InitializeNAudioPipeline sets this
+                // CurrentSongDuration = TimeSpan.Zero; // InitializeNAudioPipeline sets this
+                // The Play() method should handle the state transitions.
             }
         }
     }
@@ -1047,7 +1090,10 @@ public class PlaybackService : ViewModelBase, IDisposable
     private SmbPitchShiftingSampleProvider? pitchShifter;
     private Timer? uiUpdateTimer;
     private SoundTouchWaveProvider? soundTouch;
-    private IWavePlayer? _waveOutDeviceInstanceForStopEventCheck;
+    private IWavePlayer? _waveOutDeviceInstanceForStopEventCheck; // Keep track of the instance to avoid handling events from old devices
+
+    // Flag to distinguish manual stops from natural ends (end of file)
+    private bool _explicitStopRequested = false;
 
     private float _playbackRate = 1.0f;
     public float PlaybackRate
@@ -1058,6 +1104,7 @@ public class PlaybackService : ViewModelBase, IDisposable
             if (Math.Abs(_playbackRate - value) > float.Epsilon)
             {
                 _playbackRate = value;
+                // Update the rate on the SoundTouch provider if it exists
                 if (soundTouch != null) soundTouch.Tempo = _playbackRate;
                 OnPropertyChanged();
             }
@@ -1073,160 +1120,284 @@ public class PlaybackService : ViewModelBase, IDisposable
             if (Math.Abs(_pitchSemitones - value) > float.Epsilon)
             {
                 _pitchSemitones = value;
+                // Update the pitch factor on the pitch shifter provider if it exists
                 if (pitchShifter != null) pitchShifter.PitchFactor = (float)Math.Pow(2, _pitchSemitones / 12.0);
                 OnPropertyChanged();
             }
         }
     }
 
+    // Event fired when playback reaches the end of the file naturally (not stopped or paused manually)
+    public event EventHandler? PlaybackEndedNaturally;
+
+
     public PlaybackService()
     {
         Debug.WriteLine("[PlaybackService] Constructor called.");
+        // Initialize timer but keep it stopped
         uiUpdateTimer = new Timer(UpdateUiCallback, null, Timeout.Infinite, Timeout.Infinite);
     }
 
     private void UpdateUiCallback(object? state)
     {
-        if (IsPlaying && audioFileReader != null && _waveOutDevice?.PlaybackState == PlaybackState.Playing)
+        // This callback runs on a ThreadPool thread, not the UI thread.
+        // Marshal updates to the UI thread.
+
+        // Check playback state *before* accessing audioFileReader position,
+        // as accessing Position/CurrentTime might throw exceptions on some readers
+        // if the device is stopped/disposed or the stream is finished.
+        // Accessing _waveOutDevice?.PlaybackState is generally safer.
+        if (_waveOutDevice?.PlaybackState == PlaybackState.Playing && audioFileReader != null)
         {
+            // Marshal to the UI thread
             Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (audioFileReader == null || _waveOutDevice == null || CurrentSong == null) return;
+                // Double-check state after Dispatcher.UIThread.InvokeAsync due to potential delays
+                // Ensure the audioFileReader is still valid before accessing CurrentTime
+                if (_waveOutDevice?.PlaybackState != PlaybackState.Playing || audioFileReader == null || CurrentSong == null) return;
 
-                this.CurrentPosition = audioFileReader.CurrentTime; // Update CurrentPosition via its private setter
+                TimeSpan currentAudioTime;
+                try
+                {
+                    // Safely get position on the UI thread after marshaling
+                    currentAudioTime = audioFileReader.CurrentTime;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[PlaybackService] Error getting CurrentTime in timer callback: {ex.Message}. Stopping timer.");
+                    StopUiUpdateTimer(); // Stop the timer to prevent repeated errors
+                    // Let PlaybackStopped handle final cleanup and state if it fires due to this error
+                    return;
+                }
 
+                // Update the ViewModel property, which will notify UI bindings
+                this.CurrentPosition = currentAudioTime; // Update CurrentPosition via its private setter
+
+                // Note: Loop region handling is within the PlaybackService itself,
+                // as it directly affects seeking logic during playback.
                 if (CurrentSong.IsLoopActive && CurrentSong.SavedLoop != null)
                 {
                     var loop = CurrentSong.SavedLoop;
-                    if (loop.End > loop.Start && this.CurrentPosition >= loop.End)
+                    // Ensure loop end is valid and current position is at or past it
+                    if (loop.End > loop.Start && currentAudioTime >= loop.End)
                     {
-                        Debug.WriteLine($"[PlaybackService] Loop active & end reached ({this.CurrentPosition} >= {loop.End}). Seeking to loop start: {loop.Start}");
+                        Debug.WriteLine($"[PlaybackService] Loop active & end reached ({currentAudioTime} >= {loop.End}). Seeking to loop start: {loop.Start}");
+                        // Perform the seek. Seek() handles its own logging and position update.
                         Seek(loop.Start);
+                        // After Seek(), audioFileReader.CurrentTime and this.CurrentPosition will be updated.
                     }
+                    // Do NOT check for natural end of song here if looping is active.
+                    // The loop logic *replaces* the natural end-of-file behavior.
                 }
             });
         }
+        else
+        {
+            // If playback state is no longer Playing, the timer should be stopped.
+            // This check helps ensure the timer stops even if the PlaybackStopped event isn't handled for some reason,
+            // or if the state was manually changed on the UI thread without a PlaybackStopped event (less likely).
+            if (_waveOutDevice?.PlaybackState != PlaybackState.Playing)
+            {
+                Debug.WriteLine($"[PlaybackService] Timer callback found state is not Playing ({_waveOutDevice?.PlaybackState}). Stopping timer.");
+                StopUiUpdateTimer();
+            }
+        }
     }
 
+    /// <summary>
+    /// Starts playback of the given song. Stops any currently playing song first.
+    /// </summary>
+    /// <param name="song">The song to play.</param>
     public void Play(Song song)
     {
         Debug.WriteLine($"[PlaybackService] Play requested for: {(song?.Title ?? "null song")}");
+        _explicitStopRequested = false; // New playback is not a manual stop for the *previous* song ending logic
+
+        // Stop current playback cleanly before starting a new one.
+        // Pass false because we are immediately replacing the song/state.
         StopPlaybackInternal(resetCurrentSongAndRelatedState: false);
 
-        if (song == null || string.IsNullOrEmpty(song.FilePath))
+        if (song == null || string.IsNullOrEmpty(song.FilePath) || !File.Exists(song.FilePath))
         {
-            CurrentSong = null;
-            CurrentSongDuration = TimeSpan.Zero;
-            this.CurrentPosition = TimeSpan.Zero;
-            Debug.WriteLine("[PlaybackService] Play called with null/invalid song. State is stopped, CurrentSong nulled.");
+            Debug.WriteLine("[PlaybackService] Play called with null/invalid/missing file song. Cleaning up and stopping.");
+            // If the song is invalid, perform a full stop and reset state.
+            Stop(); // Use the public Stop() for a full reset
             return;
         }
 
+        // Set the new current song. This will notify UI and other VMs.
         CurrentSong = song;
-        bool pipelineInitialized = InitializeNAudioPipeline(song.FilePath); // This sets CurrentPosition to Zero initially
+        // Other state properties (IsPlaying, Status, Position, Duration) will be set by InitializeNAudioPipeline or Play().
+
+        // Attempt to initialize the NAudio pipeline for the new song.
+        bool pipelineInitialized = InitializeNAudioPipeline(song.FilePath);
 
         if (pipelineInitialized && _waveOutDevice != null && audioFileReader != null)
         {
+            // If a loop is active for the new song, seek to the start of the loop before playing
             if (CurrentSong.IsLoopActive && CurrentSong.SavedLoop != null)
             {
-                Debug.WriteLine($"[PlaybackService] Song has active loop. Seeking to loop start: {CurrentSong.SavedLoop.Start} before playing.");
+                Debug.WriteLine($"[PlaybackService] New song has active loop. Seeking to loop start: {CurrentSong.SavedLoop.Start} before playing.");
                 Seek(CurrentSong.SavedLoop.Start); // Seek will update CurrentPosition
+                                                   // Note: This seek is best-effort. Playback might start slightly before or after the exact time.
             }
-            // If not looping, CurrentPosition is already Zero from InitializeNAudioPipeline
+            // If not looping, playback starts from TimeSpan.Zero, which is already set by InitializeNAudioPipeline.
 
+            // Start the playback device
             _waveOutDevice.Play();
+            // Update state properties to reflect playing status
             IsPlaying = true;
             CurrentPlaybackStatus = PlaybackStateStatus.Playing;
+            // Start the timer to update UI position
             StartUiUpdateTimer();
             Debug.WriteLine($"[PlaybackService] Playback started for: {CurrentSong.Title}");
         }
         else
         {
             Debug.WriteLine($"[PlaybackService] Pipeline init failed for {Path.GetFileName(song.FilePath)}. Cleaning up and stopping.");
-            IsPlaying = false;
-            CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-            StopUiUpdateTimer();
-            CurrentSong = null;
-            CurrentSongDuration = TimeSpan.Zero;
-            this.CurrentPosition = TimeSpan.Zero;
+            // If initialization failed, perform a full stop to reset all related state cleanly.
+            Stop(); // Use the public Stop() for a full reset
         }
     }
 
-
+    /// <summary>
+    /// Initializes the NAudio pipeline (AudioFileReader, SoundTouch, PitchShifter, WaveOutEvent).
+    /// Cleans up existing resources first.
+    /// </summary>
+    /// <param name="filePath">Path to the audio file.</param>
+    /// <returns>True if initialization was successful, false otherwise.</returns>
     private bool InitializeNAudioPipeline(string filePath)
     {
         Debug.WriteLine($"[PlaybackService] InitializeNAudioPipeline for: {Path.GetFileName(filePath)}");
+        // Ensure any existing resources are cleaned up before creating new ones.
+        // Note: StopPlaybackInternal() should have already done this when called from Play(),
+        // but calling CleanUpNAudioResources() here as a safeguard ensures a clean state before Init().
+        // This should happen on the UI thread if this method is called from Play() which is on the UI thread.
+        CleanUpNAudioResources(); // Explicit cleanup before new initialization
+
         try
         {
+            // 1. Create AudioFileReader
             audioFileReader = new AudioFileReader(filePath);
+            Debug.WriteLine($"[PlaybackService] Loaded AudioFileReader for {Path.GetFileName(filePath)}. Channels: {audioFileReader.WaveFormat.Channels}, SampleRate: {audioFileReader.WaveFormat.SampleRate}, Duration: {audioFileReader.TotalTime}");
+
+            // 2. Convert to SampleProvider and Mono (SoundTouch works best with Mono float samples)
             ISampleProvider sourceSampleProvider = audioFileReader.ToSampleProvider();
+            // Ensure conversion to mono if needed. NAudio's ToMono() handles this.
             ISampleProvider monoSampleProvider = sourceSampleProvider.ToMono();
+            // Convert back to IWaveProvider for SoundTouch
             IWaveProvider monoWaveProviderForSoundTouch = new SampleToWaveProvider(monoSampleProvider);
 
+            // 3. Add SoundTouch for tempo/rate control
             soundTouch = new SoundTouchWaveProvider(monoWaveProviderForSoundTouch)
             {
-                Tempo = PlaybackRate,
-                Rate = 1.0f,
+                Tempo = PlaybackRate, // Apply current tempo setting
+                Rate = 1.0f, // Rate == 1.0 doesn't change playback speed, Tempo does
+                Pitch = 1.0f // Pitch == 1.0 doesn't change pitch
             };
+            Debug.WriteLine($"[PlaybackService] Added SoundTouch. Output format: {soundTouch.WaveFormat}");
 
+            // 4. Convert SoundTouch output back to ISampleProvider for Pitch Shifting
             ISampleProvider soundTouchAsSampleProvider = soundTouch.ToSampleProvider();
 
+            // 5. Add Pitch Shifting (SMB)
             pitchShifter = new SmbPitchShiftingSampleProvider(soundTouchAsSampleProvider)
             {
+                // PitchFactor is calculated from PitchSemitones. Apply current setting.
                 PitchFactor = (float)Math.Pow(2, PitchSemitones / 12.0)
             };
+            Debug.WriteLine($"[PlaybackService] Added PitchShifter. Output format: {pitchShifter.WaveFormat}");
 
+
+            // 6. Convert final ISampleProvider output to IWaveProvider for the output device
             IWaveProvider finalWaveProviderForDevice = pitchShifter.ToWaveProvider();
+            Debug.WriteLine($"[PlaybackService] Final output format for device: {finalWaveProviderForDevice.WaveFormat}");
 
+
+            // 7. Initialize the output device (WaveOutEvent is suitable for desktop)
             _waveOutDevice = new WaveOutEvent();
+            // Store the instance reference BEFORE attaching the handler
             _waveOutDeviceInstanceForStopEventCheck = _waveOutDevice;
+            // Attach the PlaybackStopped event handler
             _waveOutDevice.PlaybackStopped += OnPlaybackStopped;
+
+            // Initialize the device with the final wave provider
             _waveOutDevice.Init(finalWaveProviderForDevice);
 
+            // Set song duration and initial position. Update ViewModel properties.
             CurrentSongDuration = audioFileReader.TotalTime;
-            this.CurrentPosition = TimeSpan.Zero; // Set position to zero for new song
-            Debug.WriteLine($"[PlaybackService] NAudio pipeline initialization COMPLETE for: {Path.GetFileName(filePath)}. Duration: {CurrentSongDuration}");
+            this.CurrentPosition = TimeSpan.Zero; // Position starts at the beginning for a new song
+
+            Debug.WriteLine($"[PlaybackService] NAudio pipeline initialization COMPLETE for: {Path.GetFileName(filePath)}.");
             return true;
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"[PlaybackService] CRITICAL ERROR during NAudio pipeline init for {Path.GetFileName(filePath)}: {ex.ToString()}");
+            // Ensure resources are cleaned up if initialization failed at any step
             CleanUpNAudioResources();
+            // Reset duration and position if init failed
             CurrentSongDuration = TimeSpan.Zero;
             this.CurrentPosition = TimeSpan.Zero;
+            // The caller (Play method) will handle setting the global state to Stopped if Init fails.
             return false;
         }
     }
 
+    /// <summary>
+    /// Starts the timer used for periodically updating the UI position.
+    /// </summary>
     private void StartUiUpdateTimer()
     {
+        // Start or reset the timer to fire immediately and then every 100ms
         uiUpdateTimer?.Change(TimeSpan.Zero, TimeSpan.FromMilliseconds(100));
-        Debug.WriteLine("[PlaybackService] UI Update Timer Started.");
+        // Debug.WriteLine("[PlaybackService] UI Update Timer Started.");
     }
 
+    /// <summary>
+    /// Stops the timer used for periodically updating the UI position.
+    /// </summary>
     private void StopUiUpdateTimer()
     {
+        // Stop the timer by setting interval to Infinite
         uiUpdateTimer?.Change(Timeout.Infinite, Timeout.Infinite);
-        Debug.WriteLine("[PlaybackService] UI Update Timer Stopped.");
+        // Debug.WriteLine("[PlaybackService] UI Update Timer Stopped.");
     }
 
+    /// <summary>
+    /// Cleans up and disposes of NAudio playback resources.
+    /// This should be called whenever playback stops or before initializing a new pipeline.
+    /// Assumed to be called on the UI thread or a thread safe context.
+    /// </summary>
     private void CleanUpNAudioResources()
     {
+        // Ensure we only detach the event from the *currently active* instance that we tracked
+        if (_waveOutDevice != null && _waveOutDeviceInstanceForStopEventCheck == _waveOutDevice)
+        {
+            _waveOutDevice.PlaybackStopped -= OnPlaybackStopped; // Detach handler
+            _waveOutDeviceInstanceForStopEventCheck = null; // Clear the tracked instance reference
+        }
+
+        // Dispose the wave output device if it exists and is not already disposed
         if (_waveOutDevice != null)
         {
-            if (_waveOutDeviceInstanceForStopEventCheck == _waveOutDevice)
+            // Check state before stopping/disposing to avoid exceptions on already stopped/disposed devices
+            // This check is a safeguard, as Dispose() is generally safe even if called multiple times or on a stopped device.
+            if (_waveOutDevice.PlaybackState != PlaybackState.Stopped)
             {
-                _waveOutDevice.PlaybackStopped -= OnPlaybackStopped;
+                try { _waveOutDevice.Stop(); } // Attempt to stop if playing/paused
+                catch (Exception ex) { Debug.WriteLine($"[PlaybackService] Error during _waveOutDevice.Stop() in cleanup: {ex.Message}"); }
             }
-            _waveOutDevice.Stop();
-            _waveOutDevice.Dispose();
-            _waveOutDevice = null;
+            try { _waveOutDevice.Dispose(); } // Dispose the device
+            catch (Exception ex) { Debug.WriteLine($"[PlaybackService] Error during _waveOutDevice.Dispose() in cleanup: {ex.Message}"); }
+            _waveOutDevice = null; // Clear the reference
         }
-        _waveOutDeviceInstanceForStopEventCheck = null;
 
+        // Dispose the audio file reader if it exists
         audioFileReader?.Dispose();
-        audioFileReader = null;
+        audioFileReader = null; // Clear the reference
 
+        // Nullify references to provider chain (they don't usually need explicit Dispose unless they hold significant unmanaged resources, which SoundTouchWaveProvider and SmbPitchShiftingSampleProvider don't typically)
         pitchShifter = null;
         soundTouch = null;
 
@@ -1234,152 +1405,380 @@ public class PlaybackService : ViewModelBase, IDisposable
     }
 
 
+    /// <summary>
+    /// Event handler for the PlaybackStopped event of the WaveOutEvent device.
+    /// This method is responsible for determining why playback stopped (natural end, manual stop, error)
+    /// and updating the service state accordingly, potentially raising the PlaybackEndedNaturally event.
+    /// This handler is invoked on the UI thread due to Dispatcher.UIThread.InvokeAsync in the subscriber logic (if applicable, or explicitly marshaled).
+    /// My PlaybackService.OnPlaybackStopped *is* marshaled via InvokeAsync in its implementation.
+    /// </summary>
+    /// <param name="sender">The source of the event (the WaveOutEvent instance).</param>
+    /// <param name="e">The event arguments, including any exception if an error occurred.</param>
     private void OnPlaybackStopped(object? sender, StoppedEventArgs e)
     {
+        // This code runs on the UI thread because it's wrapped in Dispatcher.UIThread.InvokeAsync.
+
+        // Check if the sender is the expected device instance to avoid handling events from old/disposed devices.
         if (sender != _waveOutDeviceInstanceForStopEventCheck)
         {
             Debug.WriteLine("[PlaybackService] OnPlaybackStopped received for a stale WaveOutDevice instance. Ignoring.");
             return;
         }
 
-        Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            Debug.WriteLine($"[PlaybackService] OnPlaybackStopped: Exception: {e.Exception?.Message ?? "None"}");
-            if (e.Exception != null)
-            {
-                Debug.WriteLine($"[PlaybackService] Playback stopped due to error: {e.Exception.Message}");
-            }
+        Debug.WriteLine($"[PlaybackService] OnPlaybackStopped (UI Thread): Exception: {e.Exception?.Message ?? "None"}");
 
+        // Clean up resources immediately. This also detaches the event handler from the instance.
+        CleanUpNAudioResources(); // Dispose the specific instance that fired the event
+
+        // Stop UI timer now that playback has definitively stopped for this device instance
+        StopUiUpdateTimer();
+
+        // Check if playback stopped due to an error.
+        if (e.Exception != null)
+        {
+            Debug.WriteLine($"[PlaybackService] Playback stopped due to error: {e.Exception.Message}");
+            // Set state to stopped and reset position
             IsPlaying = false;
             CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-            StopUiUpdateTimer();
+            this.CurrentPosition = TimeSpan.Zero;
+            // Optionally, log the error or notify the user via a higher-level VM/UI element.
+        }
+        // If no exception, it was a clean stop. Now distinguish between manual stop and natural end.
+        // Use the _explicitStopRequested flag to differentiate.
+        else // e.Exception == null (Clean stop)
+        {
+            // If _explicitStopRequested is false, it means the stop was *not* explicitly requested by a user action (like clicking Stop).
+            // Combined with e.Exception == null, this implies playback reached the end of the file naturally.
+            // We also need to check if there *was* a CurrentSong, just in case.
+            bool wasNaturalEndOfFile = !_explicitStopRequested && CurrentSong != null;
 
-            bool naturalEndOfSong = CurrentSong != null && audioFileReader != null &&
-                                    audioFileReader.CurrentTime >= audioFileReader.TotalTime - TimeSpan.FromMilliseconds(500);
+            // Reset the flag AFTER determining the stop reason for this event.
+            // It should be reset regardless of the stop reason.
+            _explicitStopRequested = false;
 
-            if (naturalEndOfSong && (CurrentSong?.IsLoopActive == false || CurrentSong?.SavedLoop == null))
+
+            if (wasNaturalEndOfFile)
             {
-                Debug.WriteLine($"[PlaybackService] Natural end of song: {CurrentSong?.Title}. Resetting position.");
-                this.CurrentPosition = TimeSpan.Zero;
+                Debug.WriteLine("[PlaybackService] Playback ended naturally (event). Raising PlaybackEndedNaturally event.");
+                // Reset position to the end (or duration) before raising the event,
+                // or let the next song start from 0. Resetting to 0 is cleaner.
+                this.CurrentPosition = TimeSpan.Zero; // Position is reset at the end of the file or on stop.
+                // Fire the event. The subscriber (MainWindowViewModel) will handle logic for playing the next song or stopping.
+                // The subscriber must either Play a new song or call Stop() to finalize the state.
+                PlaybackEndedNaturally?.Invoke(this, EventArgs.Empty);
+
+                // Do NOT set final state (IsPlaying/Status) here if raising the event.
+                // The event handler is responsible for the subsequent state change (either Play() or Stop()).
             }
-        });
+            else // It was a clean stop, but explicitly requested (e.g., user clicked Stop, or Play was called before the old song finished)
+            {
+                Debug.WriteLine("[PlaybackService] Playback stopped manually (event) or new song requested. Finalizing state.");
+                // Set state to stopped and reset position.
+                // Note: If Play() called StopPlaybackInternal(false), CurrentSong/Duration are preserved.
+                // If public Stop() called StopPlaybackInternal(true), CurrentSong/Duration are nulled/zeroed.
+                // The state properties (IsPlaying, Status) should consistently reflect "Stopped".
+                IsPlaying = false;
+                CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
+                this.CurrentPosition = TimeSpan.Zero; // Reset position on manual stop
+                                                      // CurrentSong/Duration are managed by the caller of StopPlaybackInternal.
+            }
+        }
+        Debug.WriteLine("[PlaybackService] OnPlaybackStopped handler finishes.");
     }
 
+    /// <summary>
+    /// Pauses playback.
+    /// </summary>
     public void Pause()
     {
+        // Do NOT set _explicitStopRequested to true for a pause.
         if (IsPlaying && _waveOutDevice != null && _waveOutDevice.PlaybackState == PlaybackState.Playing)
         {
             Debug.WriteLine("[PlaybackService] Pause requested.");
-            _waveOutDevice.Pause();
-            IsPlaying = false;
+            _waveOutDevice.Pause(); // Pause the device. PlaybackStopped is NOT usually fired on pause.
+            IsPlaying = false; // Update state properties
             CurrentPlaybackStatus = PlaybackStateStatus.Paused;
-            StopUiUpdateTimer();
+            StopUiUpdateTimer(); // Stop the timer while paused
+        }
+        else
+        {
+            Debug.WriteLine($"[PlaybackService] Pause requested but not currently playing. State: {_waveOutDevice?.PlaybackState}. Doing nothing.");
         }
     }
 
+    /// <summary>
+    /// Resumes playback from a paused state or starts playback from the beginning if stopped.
+    /// </summary>
     public void Resume()
     {
+        Debug.WriteLine($"[PlaybackService] Resume requested. Current Status: {CurrentPlaybackStatus}, HasSong: {HasCurrentSong}");
+
         if (CurrentSong == null)
         {
-            Debug.WriteLine("[PlaybackService] Resume requested but no CurrentSong. Doing nothing.");
+            Debug.WriteLine("[PlaybackService] Resume requested but no CurrentSong is set. Cannot resume.");
             return;
         }
 
+        // If currently paused, simply call Play() on the device.
         if (_waveOutDevice != null && _waveOutDevice.PlaybackState == PlaybackState.Paused && audioFileReader != null)
         {
-            Debug.WriteLine("[PlaybackService] Resume requested from Paused state.");
-            _waveOutDevice.Play();
-            IsPlaying = true;
+            Debug.WriteLine("[PlaybackService] Resume requested from Paused state. Playing device.");
+            _waveOutDevice.Play(); // Resume playback. PlaybackState changes to Playing.
+            IsPlaying = true; // Update state properties
             CurrentPlaybackStatus = PlaybackStateStatus.Playing;
-            StartUiUpdateTimer();
+            StartUiUpdateTimer(); // Restart the timer
         }
-        else if (CurrentPlaybackStatus == PlaybackStateStatus.Stopped)
+        // If stopped, and there is a CurrentSong set (meaning it was stopped after playing, not initially idle),
+        // we should re-initialize the pipeline and play from the last position or 0.
+        // Calling Play(CurrentSong) achieves this as Play handles initialization from scratch.
+        else if (CurrentPlaybackStatus == PlaybackStateStatus.Stopped) // Could also check _waveOutDevice == null
         {
             Debug.WriteLine("[PlaybackService] Resume requested from Stopped state. Re-playing current song.");
+            // Calling Play(CurrentSong) will stop any existing playback (which there shouldn't be),
+            // initialize a new pipeline, and start playback from 0 (or loop start).
+            // The state (_explicitStopRequested) is handled within Play().
             Play(CurrentSong);
         }
         else
         {
-            Debug.WriteLine($"[PlaybackService] Resume requested but conditions not met. State: {_waveOutDevice?.PlaybackState}, AFR: {audioFileReader != null}, Status: {CurrentPlaybackStatus}");
+            Debug.WriteLine($"[PlaybackService] Resume requested but conditions not met. Device State: {_waveOutDevice?.PlaybackState ?? PlaybackState.Stopped}, AFR: {audioFileReader != null}, Current Playback Status: {CurrentPlaybackStatus}. Doing nothing.");
         }
     }
 
+    /// <summary>
+    /// Initiates the stopping process. Sets the _explicitStopRequested flag and calls Stop() on the device if it exists.
+    /// This method relies on the PlaybackStopped event handler to perform cleanup and final state updates.
+    /// </summary>
+    /// <param name="resetCurrentSongAndRelatedState">If true, indicates a full stop that should also nullify CurrentSong etc. If false, indicates a stop initiated as part of starting a new song.</param>
     private void StopPlaybackInternal(bool resetCurrentSongAndRelatedState = true)
     {
-        IsPlaying = false;
-        CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-        StopUiUpdateTimer();
-        CleanUpNAudioResources();
+        Debug.WriteLine($"[PlaybackService] StopPlaybackInternal called. Reset state: {resetCurrentSongAndRelatedState}. Current device state: {_waveOutDevice?.PlaybackState}");
 
+        // Set the flag based on whether the song/state should be reset.
+        // If resetCurrentSongAndRelatedState is true (called from public Stop()), it IS an explicit user/VM stop.
+        // If resetCurrentSongAndRelatedState is false (called from Play()), it is NOT an explicit stop for the auto-advance logic.
+        _explicitStopRequested = resetCurrentSongAndRelatedState;
+
+
+        if (_waveOutDevice != null)
+        {
+            // Only call Stop() if the device is not already stopped.
+            // Calling Stop() on an already stopped device can sometimes throw exceptions or be a no-op.
+            if (_waveOutDevice.PlaybackState != PlaybackState.Stopped)
+            {
+                Debug.WriteLine("[PlaybackService] Calling device.Stop() from StopPlaybackInternal.");
+                try
+                {
+                    _waveOutDevice.Stop(); // This should trigger the PlaybackStopped event
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[PlaybackService] Error calling _waveOutDevice.Stop() in StopPlaybackInternal: {ex.Message}. Manually triggering cleanup.");
+                    // If Stop() fails, the event might not fire. We need to manually trigger the cleanup/state logic.
+                    // Marshal this to the UI thread as OnPlaybackStopped would be.
+                    Dispatcher.UIThread.InvokeAsync(() => {
+                        Debug.WriteLine("[PlaybackService] Manually triggering cleanup/state reset on UI thread after _waveOutDevice.Stop() failed.");
+                        // Simulate a stop with an error, or just a manual stop if the error is ignored.
+                        // Let's simulate a manual stop with no error for simplicity if device.Stop() itself failed.
+                        CleanUpNAudioResources();
+                        StopUiUpdateTimer();
+                        IsPlaying = false;
+                        CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
+                        this.CurrentPosition = TimeSpan.Zero; // Reset position on manual stop
+                                                              // If resetCurrentSongAndRelatedState was true, CurrentSong/Duration should be nulled/zeroed.
+                                                              // This is handled below *after* the manual cleanup.
+                    });
+                }
+            }
+            else
+            {
+                // Device is already stopped. The PlaybackStopped event won't fire.
+                // We need to manually trigger the cleanup and state reset logic that OnPlaybackStopped would perform for an explicit stop.
+                Debug.WriteLine("[PlaybackService] StopPlaybackInternal: Device already stopped. Manually triggering cleanup/state reset for explicit stop.");
+                // Marshal this to the UI thread as OnPlaybackStopped would be.
+                Dispatcher.UIThread.InvokeAsync(() => {
+                    Debug.WriteLine("[PlaybackService] Manually triggering cleanup/state reset on UI thread for already stopped device.");
+                    CleanUpNAudioResources();
+                    StopUiUpdateTimer();
+                    IsPlaying = false;
+                    CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
+                    this.CurrentPosition = TimeSpan.Zero; // Reset position on manual stop
+                                                          // If resetCurrentSongAndRelatedState was true, CurrentSong/Duration should be nulled/zeroed.
+                                                          // This is handled below *after* the manual cleanup.
+                });
+            }
+        }
+        else // _waveOutDevice is already null
+        {
+            // Playback is already fully stopped with no active device.
+            // Ensure state is consistent as if a manual stop completed.
+            Debug.WriteLine("[PlaybackService] StopPlaybackInternal: No active device found. Ensuring state is stopped.");
+            // Manually ensure state is stopped. No cleanup needed as resources are already null.
+            StopUiUpdateTimer(); // Ensure timer is stopped
+            IsPlaying = false;
+            CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
+            this.CurrentPosition = TimeSpan.Zero; // Reset position
+                                                  // If resetCurrentSongAndRelatedState was true, CurrentSong/Duration should be nulled/zeroed.
+                                                  // This is handled below.
+        }
+
+        // This part is crucial: Reset CurrentSong and related state *after* the cleanup/event handling logic
+        // has been triggered or completed for the *previous* device/song.
+        // If resetCurrentSongAndRelatedState is true (called from public Stop()), nullify CurrentSong.
+        // If false (called from Play()), the new song is already set as CurrentSong, so don't nullify it here.
+        // This ensures CurrentSong is set correctly for the *next* action (either staying null or being the new song).
         if (resetCurrentSongAndRelatedState)
         {
-            CurrentSong = null;
+            CurrentSong = null; // Setting this null also triggers HasCurrentSong change
             CurrentSongDuration = TimeSpan.Zero;
-            this.CurrentPosition = TimeSpan.Zero;
+            this.CurrentPosition = TimeSpan.Zero; // Ensure position is zero when no song is current
             Debug.WriteLine("[PlaybackService] StopPlaybackInternal: CurrentSong, Duration, Position reset.");
         }
         else
         {
-            Debug.WriteLine("[PlaybackService] StopPlaybackInternal: CurrentSong and related state NOT reset by this call (new song incoming). Resources cleaned.");
+            // CurrentSong, Duration, Position were set during Play()
+            Debug.WriteLine("[PlaybackService] StopPlaybackInternal: Resources cleaned/stop initiated. Song info preserved for new song.");
         }
+
+        // The _explicitStopRequested flag is reset *inside* OnPlaybackStopped or the manual cleanup handler.
     }
 
+    /// <summary>
+    /// Public method to stop playback completely and reset the current song state.
+    /// </summary>
     public void Stop()
     {
-        Debug.WriteLine("[PlaybackService] Public Stop() called.");
+        Debug.WriteLine("[PlaybackService] Public Stop() called. Performing full internal stop.");
+        // Call the internal stop method, requesting a full state reset (CurrentSong = null).
+        // This sets _explicitStopRequested to true.
         StopPlaybackInternal(resetCurrentSongAndRelatedState: true);
     }
 
+    /// <summary>
+    /// Seeks to a specific position in the current song.
+    /// Respects active loop regions by snapping the target position if needed.
+    /// </summary>
+    /// <param name="requestedPosition">The desired time position.</param>
     public void Seek(TimeSpan requestedPosition)
     {
-        if (audioFileReader == null || _waveOutDevice == null || CurrentSong == null)
+        // Check if there's a song loaded and audio file reader is initialized
+        if (audioFileReader == null || CurrentSong == null)
         {
-            Debug.WriteLine($"[PlaybackService] Seek ignored: AFR null? {audioFileReader == null}, Device null? {_waveOutDevice == null}, Song null? {CurrentSong == null}");
+            Debug.WriteLine($"[PlaybackService] Seek ignored: No active audio file reader or current song.");
+            return;
+        }
+
+        // Ensure the playback device is not stopped before attempting to seek the reader.
+        if (_waveOutDevice?.PlaybackState == PlaybackState.Stopped)
+        {
+            Debug.WriteLine("[PlaybackService] Seek ignored: Playback device is stopped.");
             return;
         }
 
         TimeSpan targetPosition = requestedPosition;
 
+        // Apply loop region constraints if an active loop is defined for the current song.
+        // If seeking *into* an active loop from *outside* its start, snap to start.
+        // If seeking *into* an active loop from *after* its end, snap to start (typical loop behavior).
+        // If seeking *outside* an active loop while playing the looped section, current logic snaps to loop start.
         if (CurrentSong.IsLoopActive && CurrentSong.SavedLoop != null)
         {
             var loop = CurrentSong.SavedLoop;
+            // Ensure loop end is after loop start
             if (loop.End > loop.Start)
             {
-                if (targetPosition < loop.Start)
+                // If the target position is outside the loop's bounds [loop.Start, loop.End),
+                // snap the target position to the loop's start time.
+                if (targetPosition < loop.Start || targetPosition >= loop.End)
                 {
-                    Debug.WriteLine($"[PlaybackService] Seek: Loop active, target {targetPosition} < loop start {loop.Start}. Snapping to loop start.");
+                    Debug.WriteLine($"[PlaybackService] Seek: Loop active, target {targetPosition:mm\\:ss\\.ff} is outside loop [{loop.Start:mm\\:ss\\.ff}-{loop.End:mm\\:ss\\.ff}). Snapping to loop start: {loop.Start:mm\\:ss\\.ff}.");
                     targetPosition = loop.Start;
                 }
-                else if (targetPosition > loop.End)
-                {
-                    Debug.WriteLine($"[PlaybackService] Seek: Loop active, target {targetPosition} > loop end {loop.End}. Snapping to loop start (as per spec: seeking outside loop end goes to loop start).");
-                    targetPosition = loop.Start;
-                }
+                // If targetPosition is within [loop.Start, loop.End), allow normal seek within the loop.
             }
         }
 
-        // Clamp targetPosition to valid range within the audio file.
-        // Prevent seeking too close to the very end to avoid issues with NAudio or file formats.
-        var maxSeekablePosition = audioFileReader.TotalTime - TimeSpan.FromMilliseconds(100);
-        if (maxSeekablePosition < TimeSpan.Zero) maxSeekablePosition = TimeSpan.Zero; // Handle very short files
+        // Clamp targetPosition to a valid range within the audio file's total duration.
+        // Seeking exactly to TotalTime can sometimes cause issues with readers.
+        // Subtract a small margin (e.g., 100ms) from the total time to get the maximum seekable position.
+        // Ensure the margin doesn't make the max seekable position negative for very short files.
+        var totalMs = audioFileReader.TotalTime.TotalMilliseconds;
+        var seekMarginMs = totalMs > 100 ? 100 : 0; // Subtract 100ms if total time is over 100ms
+        var maxSeekablePosition = TimeSpan.FromMilliseconds(totalMs - seekMarginMs);
+        // Ensure max seekable position is not less than zero.
+        if (maxSeekablePosition < TimeSpan.Zero) maxSeekablePosition = TimeSpan.Zero;
+
+        // Apply clamping to the target position
         targetPosition = TimeSpan.FromSeconds(Math.Clamp(targetPosition.TotalSeconds, 0, maxSeekablePosition.TotalSeconds));
 
+        // Optional: Add a small tolerance check to avoid seeking if the target is very close to the current position.
+        // This can reduce unnecessary operations from minor slider fluctuations.
+        // double positionToleranceSeconds = 0.05; // e.g., 50 milliseconds
+        // if (Math.Abs(audioFileReader.CurrentTime.TotalSeconds - targetPosition.TotalSeconds) < positionToleranceSeconds)
+        // {
+        //     Debug.WriteLine($"[PlaybackService] Seek target {targetPosition:mm\\:ss\\.ff} is very close to current position {audioFileReader.CurrentTime:mm\\:ss\\.ff}, ignoring.");
+        //     return;
+        // }
 
-        Debug.WriteLine($"[PlaybackService] Seeking to: {targetPosition}. Current AFR Time: {audioFileReader.CurrentTime}");
-        audioFileReader.CurrentTime = targetPosition; // Actual engine seek
+        Debug.WriteLine($"[PlaybackService] Seeking AudioFileReader to: {targetPosition:mm\\:ss\\.ff}. Current AFR Time before seek: {audioFileReader.CurrentTime:mm\\:ss\\.ff}");
 
-        // Update our CurrentPosition property to reflect the new position and notify listeners.
-        this.CurrentPosition = audioFileReader.CurrentTime;
-        Debug.WriteLine($"[PlaybackService] Seek completed. New Position: {this.CurrentPosition}, New AFR Time: {audioFileReader.CurrentTime}");
+        // Perform the actual seek operation on the AudioFileReader.
+        try
+        {
+            audioFileReader.CurrentTime = targetPosition; // Set the position
+                                                          // Read back the position immediately after setting to get the actual position the reader moved to.
+            this.CurrentPosition = audioFileReader.CurrentTime; // Update ViewModel property
+            Debug.WriteLine($"[PlaybackService] Seek executed. AFR Time after seek: {audioFileReader.CurrentTime:mm\\:ss\\.ff}. VM Position: {this.CurrentPosition:mm\\:ss\\.ff}");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[PlaybackService] Error during Seek to {targetPosition:mm\\:ss\\.ff}: {ex.Message}");
+            // Update VM position to reflect the last known good position, or zero on error
+            this.CurrentPosition = audioFileReader.CurrentTime; // Try to get current position after failed seek? Or leave as is? Leave as is might be safer.
+        }
     }
 
+    /// <summary>
+    /// Disposes of managed and unmanaged resources used by the playback service.
+    /// This should be called when the service is no longer needed (e.g., application shutdown).
+    /// </summary>
     public void Dispose()
     {
         Debug.WriteLine("[PlaybackService] Dispose() called.");
-        StopPlaybackInternal(true);
+
+        // Ensure timer is stopped and disposed
         uiUpdateTimer?.Dispose();
         uiUpdateTimer = null;
+
+        // Clean up NAudio resources. This includes stopping the device and disposing the reader/device.
+        // This also detaches the PlaybackStopped event handler.
+        CleanUpNAudioResources();
+
+        // Ensure the explicit stop flag is false
+        _explicitStopRequested = false;
+
+        // Explicitly clear state properties for completeness, although the service object itself is being disposed.
+        CurrentSong = null;
+        CurrentSongDuration = TimeSpan.Zero;
+        this.CurrentPosition = TimeSpan.Zero;
+        IsPlaying = false;
+        CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
+
+        // No other disposable resources managed directly by PlaybackService currently.
+
+        // Suppress finalization as Dispose has cleaned up resources.
         GC.SuppressFinalize(this);
+        Debug.WriteLine("[PlaybackService] Dispose() completed.");
+    }
+
+    // Finalizer (destructor) as a safeguard to ensure Dispose is called if the object is not explicitly disposed.
+    // Useful for unmanaged resources like audio devices, though our CleanUpNAudioResources handles the key parts.
+    ~PlaybackService()
+    {
+        Debug.WriteLine("[PlaybackService] Finalizer called for PlaybackService.");
+        // Call the public Dispose method.
+        Dispose(); // Call the public Dispose method to perform cleanup
+        Debug.WriteLine("[PlaybackService] Finalizer completed for PlaybackService.");
     }
 }
 </file>
@@ -1824,6 +2223,8 @@ public class LibraryViewModel : ViewModelBase
             if (SetProperty(ref _selectedSongInternal, value))
             {
                 Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"}");
+                // Raise CanExecuteChanged for navigation commands when selection changes
+                RaiseNavigationCommandsCanExecuteChanged();
             }
         }
     }
@@ -1927,6 +2328,10 @@ public class LibraryViewModel : ViewModelBase
 
     public ICommand SetDisplayModeCommand { get; }
 
+    // Navigation Commands
+    public ICommand PreviousTrackCommand { get; }
+    public ICommand NextTrackCommand { get; }
+
 
     public LibraryViewModel(SettingsService settingsService, MusicLibraryService musicLibraryService, LoopDataService loopDataService)
     {
@@ -1958,8 +2363,67 @@ public class LibraryViewModel : ViewModelBase
             _ => true
         );
 
+        // Initialize Navigation Commands
+        PreviousTrackCommand = new RelayCommand(ExecutePreviousTrack, CanExecutePreviousTrack);
+        NextTrackCommand = new RelayCommand(ExecuteNextTrack, CanExecuteNextTrack);
+
+        // Subscribe to FilteredSongs changes to update navigation command states
+        FilteredSongs.CollectionChanged += (sender, e) => RaiseNavigationCommandsCanExecuteChanged();
+
         UpdateStatusBarText();
     }
+
+    private void ExecutePreviousTrack(object? parameter)
+    {
+        if (SelectedSong == null || !FilteredSongs.Any()) return;
+
+        var currentIndex = FilteredSongs.IndexOf(SelectedSong);
+        if (currentIndex > 0)
+        {
+            SelectedSong = FilteredSongs[currentIndex - 1];
+            Debug.WriteLine($"[LibraryVM] Moved to previous track: {SelectedSong.Title}");
+        }
+        else
+        {
+            Debug.WriteLine("[LibraryVM] Already at the first track.");
+            // Optionally loop to the last track: SelectedSong = FilteredSongs.Last();
+        }
+    }
+
+    private bool CanExecutePreviousTrack(object? parameter)
+    {
+        if (SelectedSong == null || !FilteredSongs.Any()) return false;
+        return FilteredSongs.IndexOf(SelectedSong) > 0;
+    }
+
+    private void ExecuteNextTrack(object? parameter)
+    {
+        if (SelectedSong == null || !FilteredSongs.Any()) return;
+
+        var currentIndex = FilteredSongs.IndexOf(SelectedSong);
+        if (currentIndex < FilteredSongs.Count - 1 && currentIndex != -1)
+        {
+            SelectedSong = FilteredSongs[currentIndex + 1];
+            Debug.WriteLine($"[LibraryVM] Moved to next track: {SelectedSong.Title}");
+        }
+        else if (currentIndex != -1) // Already at the last track
+        {
+            Debug.WriteLine("[LibraryVM] Already at the last track.");
+            // Optionally loop to the first track: SelectedSong = FilteredSongs.First();
+        }
+        else // Selected song not found in filtered list - should not happen if SelectedSong is non-null and FilteredSongs contains it
+        {
+            Debug.WriteLine("[LibraryVM] Selected song not found in filtered list.");
+        }
+    }
+
+    private bool CanExecuteNextTrack(object? parameter)
+    {
+        if (SelectedSong == null || !FilteredSongs.Any()) return false;
+        var currentIndex = FilteredSongs.IndexOf(SelectedSong);
+        return currentIndex != -1 && currentIndex < FilteredSongs.Count - 1;
+    }
+
 
     public async Task LoadLibraryAsync()
     {
@@ -2052,7 +2516,7 @@ public class LibraryViewModel : ViewModelBase
                     }
                     OnPropertyChanged(nameof(Albums));
 
-                    ApplyFilter();
+                    ApplyFilter(); // This will populate FilteredSongs and trigger RaiseNavigationCommandsCanExecuteChanged
 
                     UpdateStatusBarText();
                 });
@@ -2071,13 +2535,14 @@ public class LibraryViewModel : ViewModelBase
         if (artist?.Name == null) return;
         Debug.WriteLine($"[LibraryVM] Artist selected: {artist.Name}");
         SearchQuery = artist.Name;
+        // ApplyFilter will be called by SearchQuery setter, which updates FilteredSongs
     }
 
     private void OnAlbumSelected(AlbumViewModel album)
     {
         if (album?.Title == null || album.Artist == null) return;
         Debug.WriteLine($"[LibraryVM] Album selected: {album.Title} by {album.Artist}");
-        SearchQuery = string.Empty;
+        SearchQuery = string.Empty; // Clear search query when selecting album
 
         FilteredSongs.Clear();
         var songsInAlbum = _allSongs.Where(s =>
@@ -2089,7 +2554,12 @@ public class LibraryViewModel : ViewModelBase
         {
             FilteredSongs.Add(song);
         }
+        if (SelectedSong != null && !FilteredSongs.Contains(SelectedSong))
+        {
+            SelectedSong = null; // Clear selection if the previously selected song is not in this album
+        }
         UpdateStatusBarText();
+        RaiseNavigationCommandsCanExecuteChanged(); // FilteredSongs changed
     }
 
     private void ApplyFilter()
@@ -2112,11 +2582,25 @@ public class LibraryViewModel : ViewModelBase
         {
             FilteredSongs.Add(song);
         }
+        // If the currently selected song is no longer in the filtered list, clear selection.
+        // This is important for playback state synchronization.
         if (SelectedSong != null && !FilteredSongs.Contains(SelectedSong))
         {
-            SelectedSong = null;
+            Debug.WriteLine($"[LibraryVM] Selected song '{SelectedSong.Title}' is no longer in the filtered list. Clearing selection.");
+            SelectedSong = null; // Clearing SelectedSong will trigger its PropertyChanged handler
         }
+        else if (SelectedSong != null && FilteredSongs.Contains(SelectedSong))
+        {
+            // If the selected song is still in the list, its index might have changed.
+            // Need to re-evaluate navigation commands.
+            RaiseNavigationCommandsCanExecuteChanged();
+        }
+        // If SelectedSong is null, this filter application didn't select one,
+        // and RaiseNavigationCommandsCanExecuteChanged is called because FilteredSongs changed.
+
         UpdateStatusBarText();
+        // Navigation commands also depend on FilteredSongs changing
+        RaiseNavigationCommandsCanExecuteChanged();
     }
 
     public void UpdateStatusBarText()
@@ -2151,6 +2635,14 @@ public class LibraryViewModel : ViewModelBase
     public void RaiseLibraryCommandsCanExecuteChanged()
     {
         (SetDisplayModeCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        // Navigation commands are handled by RaiseNavigationCommandsCanExecuteChanged
+    }
+
+    public void RaiseNavigationCommandsCanExecuteChanged()
+    {
+        //Debug.WriteLine("[LibraryVM] Raising navigation command CanExecute changed.");
+        (PreviousTrackCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (NextTrackCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 }
 </file>
@@ -2477,7 +2969,10 @@ using Avalonia.Threading;
 using Sonorize.Models;
 using Sonorize.Services;
 using Sonorize.Utils;
-using System.IO;
+using System.IO; // Required for Path.GetFullPath, Directory.Exists
+using System.Collections.Generic; // Required for List
+using System.Security.Cryptography; // Required for shuffle randomization
+using System.Runtime.InteropServices; // Required for Marshal.Copy
 
 namespace Sonorize.ViewModels;
 
@@ -2485,21 +2980,17 @@ public class MainWindowViewModel : ViewModelBase
 {
     private readonly SettingsService _settingsService;
     private readonly MusicLibraryService _musicLibraryService;
-    private readonly WaveformService _waveformService; // Still need to pass to PlaybackVM
-    private readonly LoopDataService _loopDataService; // Still need to pass to LibraryVM and LoopEditorVM
+    private readonly WaveformService _waveformService;
+    private readonly LoopDataService _loopDataService;
 
     // Expose the Services directly for child VMs or public properties
-    public PlaybackService PlaybackService { get; } // Keep reference to the service
-    public ThemeColors CurrentTheme { get; } // Theme is a top-level concern
+    public PlaybackService PlaybackService { get; }
+    public ThemeColors CurrentTheme { get; }
 
     // Expose the child ViewModels
     public LibraryViewModel Library { get; set; }
     public LoopEditorViewModel LoopEditor { get; }
-    public PlaybackViewModel Playback { get; } // New Playback ViewModel
-
-    // HasCurrentSong property moved to PlaybackViewModel - Access via Playback.HasCurrentSong
-    // IsWaveformLoading moved to PlaybackViewModel - Access via Playback.IsWaveformLoading
-    // WaveformRenderData moved to PlaybackViewModel - Access via Playback.WaveformRenderData
+    public PlaybackViewModel Playback { get; } // Playback ViewModel
 
     private string _statusBarText = "Welcome to Sonorize!";
     public string StatusBarText { get => _statusBarText; set => SetProperty(ref _statusBarText, value); }
@@ -2517,6 +3008,8 @@ public class MainWindowViewModel : ViewModelBase
     public ICommand AddDirectoryAndRefreshCommand { get; }
     public ICommand ToggleAdvancedPanelCommand { get; }
 
+    private readonly Random _shuffleRandom = new Random(); // Simple Random instance for shuffle index
+
     public MainWindowViewModel(
         SettingsService settingsService,
         MusicLibraryService musicLibraryService,
@@ -2527,10 +3020,10 @@ public class MainWindowViewModel : ViewModelBase
     {
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
-        PlaybackService = playbackService; // Keep service ref for child VMs
+        PlaybackService = playbackService;
         CurrentTheme = theme;
-        _waveformService = waveformService; // Keep service ref for child VMs
-        _loopDataService = loopDataService; // Keep service ref for child VMs
+        _waveformService = waveformService;
+        _loopDataService = loopDataService;
 
         // Initialize child ViewModels, passing required dependencies
         Library = new LibraryViewModel(_settingsService, _musicLibraryService, _loopDataService);
@@ -2541,6 +3034,9 @@ public class MainWindowViewModel : ViewModelBase
         // Subscribe to child ViewModel property changes relevant to the parent VM
         Library.PropertyChanged += Library_PropertyChanged;
         Playback.PropertyChanged += Playback_PropertyChanged; // Listen to Playback VM changes
+
+        // Subscribe to the new PlaybackEndedNaturally event
+        PlaybackService.PlaybackEndedNaturally += PlaybackService_PlaybackEndedNaturally;
 
         LoadInitialDataCommand = new RelayCommand(async _ => await Library.LoadLibraryAsync(), _ => !Library.IsLoadingLibrary);
         OpenSettingsCommand = new RelayCommand(async owner => await OpenSettingsDialog(owner), _ => !Library.IsLoadingLibrary);
@@ -2557,6 +3053,94 @@ public class MainWindowViewModel : ViewModelBase
         UpdateAllUIDependentStates();
     }
 
+    // Handler for the new PlaybackEndedNaturally event
+    private void PlaybackService_PlaybackEndedNaturally(object? sender, EventArgs e)
+    {
+        Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally event received.");
+        // This handler is invoked on the UI thread via Dispatcher.UIThread.InvokeAsync within PlaybackService.OnPlaybackStopped.
+
+        var currentSong = Library.SelectedSong; // Get the song that just ended
+        var currentList = Library.FilteredSongs.ToList(); // Get a snapshot of the current list
+
+        if (currentSong == null || !currentList.Any())
+        {
+            Debug.WriteLine("[MainVM] Playback ended naturally, but no song selected or library list is empty. Stopping playback.");
+            PlaybackService.Stop(); // Ensure state is stopped if no song is loaded
+            return;
+        }
+
+        Song? nextSong = null;
+
+        // --- Logic for determining the next song based on RepeatMode and ShuffleEnabled ---
+
+        // Priority 1: Repeat One Song
+        if (Playback.RepeatMode == RepeatMode.RepeatOne)
+        {
+            nextSong = currentSong; // Replay the same song
+            Debug.WriteLine($"[MainVM] Playback ended naturally. Repeat Mode is RepeatOne. Replaying: {nextSong.Title}");
+        }
+        // Priority 2: Shuffle (if not Repeating One)
+        else if (Playback.ShuffleEnabled)
+        {
+            // Pick a random song from the current list.
+            // This is a simple random selection, not a true shuffle queue.
+            if (currentList.Any())
+            {
+                var nextIndex = _shuffleRandom.Next(currentList.Count);
+                nextSong = currentList[nextIndex];
+                Debug.WriteLine($"[MainVM] Playback ended naturally. Shuffle is Enabled. Playing random song: {nextSong.Title}");
+            }
+            else
+            {
+                Debug.WriteLine("[MainVM] Playback ended naturally. Shuffle is Enabled, but list is empty. Stopping.");
+                nextSong = null; // List empty, stop
+            }
+        }
+        // Priority 3: Sequential (if not Repeating One and not Shuffling)
+        else // RepeatMode is Off (or RepeatAll - handled next), Shuffle is Off
+        {
+            var currentIndex = currentList.IndexOf(currentSong);
+            if (currentIndex != -1 && currentIndex < currentList.Count - 1)
+            {
+                nextSong = currentList[currentIndex + 1]; // Play the next song sequentially
+                Debug.WriteLine($"[MainVM] Playback ended naturally. Normal (Sequential) Mode. Playing next sequentially: {nextSong.Title}");
+            }
+            else
+            {
+                // Reached the end of the sequential list
+                Debug.WriteLine("[MainVM] Playback ended naturally. End of sequential list reached.");
+                nextSong = null; // By default, stop at the end of the list
+            }
+        }
+
+        // Priority 4: Repeat All (if end of list reached and Repeat All is enabled)
+        // This check applies *only* if the logic above (Shuffle or Sequential) resulted in no `nextSong`
+        // because the end of the list was reached, AND RepeatAll is on.
+        if (nextSong == null && Playback.RepeatMode == RepeatMode.RepeatAll && currentList.Any())
+        {
+            // Wrap around and start from the beginning of the list
+            nextSong = currentList.First();
+            Debug.WriteLine($"[MainVM] Playback ended naturally. Repeat Mode is RepeatAll and end of list reached. Starting again from: {nextSong.Title}");
+        }
+
+
+        // --- Trigger playback of the determined next song or stop if none ---
+        if (nextSong != null)
+        {
+            // Setting Library.SelectedSong triggers the Library_PropertyChanged handler,
+            // which then calls PlaybackService.Play(nextSong).
+            Debug.WriteLine($"[MainVM] Setting Library.SelectedSong to {nextSong.Title}");
+            Library.SelectedSong = nextSong;
+        }
+        else
+        {
+            // If no next song was determined (end of list with RepeatMode.Off, or empty list), explicitly stop.
+            Debug.WriteLine("[MainVM] No next song determined. Calling PlaybackService.Stop().");
+            PlaybackService.Stop(); // Explicitly stop playback
+        }
+        Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally handler completed.");
+    }
+
     private void Library_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         Dispatcher.UIThread.InvokeAsync(() =>
@@ -2565,19 +3149,16 @@ public class MainWindowViewModel : ViewModelBase
             {
                 case nameof(Library.SelectedSong):
                     Debug.WriteLine($"[MainVM_LibChanged] Library.SelectedSong changed to: {Library.SelectedSong?.Title ?? "null"}.");
-                    // When a song is selected in the Library, tell the PlaybackService to play it.
-                    // PlaybackService_PropertyChanged handler (in this VM and PlaybackVM) will react to this.
+                    // When a song is selected in the Library (either manually or programmatically by navigation logic),
+                    // tell the PlaybackService to play it.
                     if (Library.SelectedSong != null)
                     {
                         PlaybackService.Play(Library.SelectedSong);
                     }
-                    else
-                    {
-                        // If selection is cleared, do nothing? Or stop playback?
-                        // For now, let's not stop playback if selection is cleared.
-                        // The exception is if the *PlaybackService* stops (song ends),
-                        // we might want to clear the *Library* selection (handled in Playback_PropertyChanged).
-                    }
+                    // Note: If selection is cleared (SelectedSong becomes null), we don't stop playback here.
+                    // Playback stops only when the song naturally ends, user clicks stop, or the PlaybackEndedNaturally handler decides to stop.
+                    // The Playback_PropertyChanged handler listens for PlaybackService.CurrentSong becoming null and clears Library.SelectedSong then.
+
                     // Update commands that might depend on a song being selected/playing
                     RaiseAllCommandsCanExecuteChanged();
                     break;
@@ -2591,8 +3172,8 @@ public class MainWindowViewModel : ViewModelBase
                 case nameof(Library.LibraryStatusText):
                     UpdateStatusBarText(); // Library status affects overall status bar
                     break;
-                    // Properties like Artists, Albums, FilteredSongs changing don't need explicit handling here
-                    // as the UI is bound directly to Library.*
+                    // Properties like Artists, Albums, FilteredSongs changing are handled by LibraryVM itself.
+                    // When FilteredSongs changes, LibraryVM calls RaiseNavigationCommandsCanExecuteChanged internally.
             }
         });
     }
@@ -2604,60 +3185,83 @@ public class MainWindowViewModel : ViewModelBase
             // Listen for PlaybackViewModel changes that affect MainViewModel's state/UI
             switch (e.PropertyName)
             {
-                case nameof(PlaybackViewModel.HasCurrentSong):
-                    // Propagate HasCurrentSong from PlaybackVM (MainWindowViewModel doesn't have its own)
-                    // OnPropertyChanged(nameof(HasCurrentSong)); // Removed - MainVM doesn't have this property
-                    // Update commands that might depend on a song being playing
+                case nameof(PlaybackViewModel.CurrentSong):
+                    OnPropertyChanged(nameof(Playback.CurrentSong)); // Propagate the song itself
+                    OnPropertyChanged(nameof(Playback.HasCurrentSong)); // Propagate derived property
+                    // Commands that might depend on a song being loaded (like ToggleAdvancedPanelCommand)
                     RaiseAllCommandsCanExecuteChanged();
 
-                    // If playback stops entirely (HasCurrentSong becomes false in PlaybackVM), clear the library selection
+                    // If playback service reports no current song, ensure library selection is cleared
                     if (!Playback.HasCurrentSong && Library.SelectedSong != null)
                     {
                         Debug.WriteLine("[MainVM_PlaybackChanged] PlaybackService has no current song. Clearing Library selection.");
-                        Library.SelectedSong = null;
+                        Library.SelectedSong = null; // This will trigger Library_PropertyChanged
                     }
 
-                    // When a new song starts playing (HasCurrentSong becomes true after being false)
-                    // or if the song instance itself changes (Playback.CurrentSong),
+                    // When a new song is set in PlaybackService (either by Play() or PlaybackEndedNaturally handler),
                     // trigger waveform loading if panel is visible.
-                    // This reaction is tied to the *Playback* VM having a current song.
-                    // Checking CurrentSong is more precise than just HasCurrentSong for triggering waveform load.
+                    // Check if the *new* CurrentSong is different from the *previous* one (handled by PS).
                     if (Playback.CurrentSong != null && IsAdvancedPanelVisible)
                     {
                         Debug.WriteLine("[MainVM_PlaybackChanged] Playback has current song, advanced panel is visible. Requesting waveform load.");
+                        // Use await _ = to suppress the warning about calling async void, while ensuring the task runs.
                         _ = Playback.LoadWaveformForCurrentSongAsync(); // Delegate waveform load
                     }
-                    // Note: Clearing waveform when song becomes null is now handled inside PlaybackViewModel
+                    // Note: Clearing waveform when song becomes null is handled inside PlaybackViewModel
+
+                    // Update time displays when song changes (delegated to PlaybackVM)
+                    // UpdateStatusBarText(); // Playback status affects overall status bar - handled by CurrentPlaybackStatus change
+
+                    // Commands in PlaybackVM (Play/Pause, Seek, Speed/Pitch, Mode toggles) are handled by PlaybackVM itself.
+                    // Library navigation commands are handled by LibraryVM's SelectedSong/FilteredSongs change.
+                    // ToggleAdvancedPanelCommand depends on Playback.HasCurrentSong, so need to raise.
+                    RaiseAllCommandsCanExecuteChanged();
 
                     break;
                 case nameof(PlaybackViewModel.CurrentPlaybackStatus):
+                    OnPropertyChanged(nameof(Playback.CurrentPlaybackStatus)); // Propagate status
+                    OnPropertyChanged(nameof(Playback.IsPlaying)); // Propagate derived IsPlaying
                     UpdateStatusBarText(); // Playback status affects overall status bar
-                    // Commands like Play/Pause/Resume are now in PlaybackVM, it raises its own CanExecuteChanged
-                    // Raising all commands here is a safe bet if any MainVM commands depend on status directly (currently ToggleAdvancedPanel depends on HasCurrentSong).
+                    // Commands in PlaybackVM already listen to this. MainVM commands potentially affected? (currently none directly)
                     RaiseAllCommandsCanExecuteChanged();
                     break;
                 case nameof(PlaybackViewModel.CurrentPosition):
+                    OnPropertyChanged(nameof(Playback.CurrentPosition)); // Propagate position
+                    OnPropertyChanged(nameof(Playback.CurrentPositionSeconds)); // Propagate derived property
+                    OnPropertyChanged(nameof(Playback.CurrentTimeDisplay)); // Propagate derived property
+                    // Loop editor and UI slider are bound directly to PlaybackVM properties.
+                    // Commands in PlaybackVM already listen to this.
+                    // Raising all commands here is usually not needed for position change.
+                    break;
                 case nameof(PlaybackViewModel.CurrentSongDuration):
-                    // The UI slider is bound directly to Playback.CurrentPosition/DurationSeconds.
-                    // The time display is bound directly to Playback.CurrentTimeTotalTimeDisplay.
-                    // The loop editor listens directly to PlaybackService.CurrentPosition/Duration (via its own PS handler).
-                    // No need to re-propagate or call LoopEditor's Raise here; LoopEditor handles it.
-                    // Just ensure MainVM commands potentially affected by position/duration are updated (though none currently are).
-                    RaiseAllCommandsCanExecuteChanged();
+                    OnPropertyChanged(nameof(Playback.CurrentSongDuration)); // Propagate duration
+                    OnPropertyChanged(nameof(Playback.CurrentSongDurationSeconds)); // Propagate derived property
+                    OnPropertyChanged(nameof(Playback.TotalTimeDisplay)); // Propagate derived property
+                                                                          // UI slider is bound directly.
+                    RaiseAllCommandsCanExecuteChanged(); // PlaybackVM Seek command CanExecute depends on duration > 0
                     break;
                 case nameof(PlaybackViewModel.IsWaveformLoading):
-                    // Propagate IsWaveformLoading from PlaybackVM (MainWindowViewModel doesn't have its own)
-                    // OnPropertyChanged(nameof(IsWaveformLoading)); // Removed - MainVM doesn't have this property
+                    OnPropertyChanged(nameof(Playback.IsWaveformLoading)); // Propagate state
                     // Commands in PlaybackVM already listen to this.
-                    RaiseAllCommandsCanExecuteChanged(); // PlaybackVM commands affected
+                    // Raising all commands here is usually not needed unless a MainVM command directly depends on this.
                     break;
                 case nameof(PlaybackViewModel.WaveformRenderData):
-                    // Propagate WaveformRenderData from PlaybackVM (MainWindowViewModel doesn't have its own)
-                    // OnPropertyChanged(nameof(WaveformRenderData)); // Removed - MainVM doesn't have this property
-                    // Waveform display control is bound directly to Playback.WaveformRenderData
+                    OnPropertyChanged(nameof(Playback.WaveformRenderData)); // Propagate data
+                    // Waveform display is bound directly.
+                    break;
+                case nameof(PlaybackViewModel.ShuffleEnabled): // Modes changed
+                case nameof(PlaybackViewModel.RepeatMode): // Modes changed - Renamed
+                                                           // These affect the PlaybackEndedNaturally logic in MainVM,
+                                                           // but they also affect PlaybackVM commands and UI bindings.
+                                                           // Raise PlaybackVM commands' CanExecute state.
+                    Playback.RaisePlaybackCommandCanExecuteChanged();
+                    // Raising all commands here is generally redundant unless a MainVM command directly depends on these modes.
+                    // Update status bar to reflect mode changes
+                    UpdateStatusBarText();
                     break;
 
                     // PlaybackSpeed, PlaybackPitch, derived display properties are handled within PlaybackVM.
+                    // LoopEditor VM listens directly to PlaybackService for position/duration.
             }
         });
     }
@@ -2670,6 +3274,7 @@ public class MainWindowViewModel : ViewModelBase
         if (IsAdvancedPanelVisible && Playback.HasCurrentSong && !Playback.WaveformRenderData.Any() && !Playback.IsWaveformLoading)
         {
             Debug.WriteLine("[MainVM] Advanced Panel visible, song is playing, waveform not loaded/loading. Requesting waveform load.");
+            // Use await _ = to suppress the warning about calling async void, while ensuring the task runs.
             _ = Playback.LoadWaveformForCurrentSongAsync(); // Delegate waveform load
         }
         // Note: If it becomes hidden, we don't clear the waveform data automatically here.
@@ -2679,37 +3284,11 @@ public class MainWindowViewModel : ViewModelBase
     private void UpdateAllUIDependentStates()
     {
         // Update main VM properties that depend on child VM states
-        // OnPropertyChanged(nameof(HasCurrentSong)); // Removed
         OnPropertyChanged(nameof(IsLoadingLibrary)); // Depends on Library.IsLoadingLibrary
+        OnPropertyChanged(nameof(Playback.CurrentSong)); // Ensure Playback's CurrentSong is reflected
+        OnPropertyChanged(nameof(Playback.HasCurrentSong)); // Ensure Playback's HasCurrentSong is reflected
+        OnPropertyChanged(nameof(IsAdvancedPanelVisible)); // Ensure panel visibility is reflected
         UpdateStatusBarText(); // Depends on Playback and Library status
-
-        // Although the View binds directly to child VM properties, explicitly raising
-        // OnPropertyChanged for the child VM properties used in the View might help
-        // ensure bindings are refreshed during initial setup or after significant state changes.
-        // This is particularly important for derived properties or complex bindings.
-        // HOWEVER, binding directly to the child VM's property is the correct approach,
-        // and the child VM is responsible for raising OnPropertyChanged for its own properties.
-        // So, these explicit OnPropertyChanged calls for child properties are generally not needed
-        // and can be removed to simplify the parent VM.
-        /*
-        OnPropertyChanged(nameof(Playback.CurrentPositionSeconds)); // for Slider.Value binding
-        OnPropertyChanged(nameof(Playback.CurrentSongDurationSeconds)); // for Slider.Maximum binding
-        OnPropertyChanged(nameof(Playback.CurrentTimeTotalTimeDisplay)); // for time TextBlock
-        OnPropertyChanged(nameof(Playback.IsPlaying)); // for Play/Pause button text
-        OnPropertyChanged(nameof(Playback.CurrentPlaybackStatus)); // for command CanExecute
-        OnPropertyChanged(nameof(Playback.PlaybackSpeed)); // for Speed Slider.Value
-        OnPropertyChanged(nameof(Playback.PlaybackPitch)); // for Pitch Slider.Value
-        OnPropertyChanged(nameof(Playback.PlaybackSpeedDisplay)); // for speed TextBlock
-        OnPropertyChanged(nameof(Playback.PlaybackPitchDisplay)); // for pitch TextBlock
-        OnPropertyChanged(nameof(Playback.IsWaveformLoading)); // for waveform ProgressBar
-        OnPropertyChanged(nameof(Playback.WaveformRenderData)); // for WaveformDisplayControl
-
-        OnPropertyChanged(nameof(LoopEditor.NewLoopStartCandidateDisplay)); // for loop TextBlocks
-        OnPropertyChanged(nameof(LoopEditor.NewLoopEndCandidateDisplay));   // for loop TextBlocks
-        OnPropertyChanged(nameof(LoopEditor.ActiveLoopDisplayText));       // for loop TextBlock
-        OnPropertyChanged(nameof(LoopEditor.CanSaveLoopRegion));           // for Save button IsEnabled
-        OnPropertyChanged(nameof(LoopEditor.IsCurrentLoopActiveUiBinding)); // for loop CheckBox
-        */
 
         // Trigger commands CanExecute updates for all VMs
         RaiseAllCommandsCanExecuteChanged();
@@ -2728,7 +3307,9 @@ public class MainWindowViewModel : ViewModelBase
         (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
 
         // Tell child VMs to raise their commands' CanExecuteChanged
+        // This now includes the navigation commands within LibraryViewModel
         Library.RaiseLibraryCommandsCanExecuteChanged();
+        Library.RaiseNavigationCommandsCanExecuteChanged(); // Explicitly call navigation commands
         Playback.RaisePlaybackCommandCanExecuteChanged();
         LoopEditor.RaiseLoopCommandCanExecuteChanged();
     }
@@ -2748,6 +3329,27 @@ public class MainWindowViewModel : ViewModelBase
             if (LoopEditor.IsCurrentLoopActiveUiBinding && Playback.CurrentSong?.SavedLoop != null)
             {
                 status += $" (Loop Active)";
+            }
+
+            // Add mode status
+            string modeStatus = "";
+            if (Playback.ShuffleEnabled)
+            {
+                modeStatus += " | Shuffle";
+            }
+            // Use RepeatMode property
+            if (Playback.RepeatMode == RepeatMode.RepeatOne)
+            {
+                modeStatus += " | Repeat Song"; // Text updated
+            }
+            else if (Playback.RepeatMode == RepeatMode.RepeatAll)
+            {
+                modeStatus += " | Repeat All"; // Text updated
+            }
+
+            if (!string.IsNullOrEmpty(modeStatus))
+            {
+                status += modeStatus;
             }
         }
         else
@@ -2859,13 +3461,25 @@ public class MainWindowViewModel : ViewModelBase
             UpdateStatusBarText(); // Revert status bar to normal if not loading
         }
     }
+
+    // Use a cryptographically secure random number generator for better shuffle randomness if needed
+    // private int GetNextRandomIndex(int maxIndex)
+    // {
+    //     using (var rng = new RNGCryptoServiceProvider())
+    //     {
+    //         byte[] data = new byte[sizeof(uint)]; // Use uint size for randomness
+    //         rng.GetBytes(data);
+    //         uint randomValue = BitConverter.ToUInt32(data, 0);
+    //         return (int)(randomValue % maxIndex);
+    //     }
+    // }
 }
 </file>
 
 <file path="Source\ViewModels\PlaybackViewModel.cs">
 using Avalonia.Threading;
 using Sonorize.Models;
-using Sonorize.Services;
+using Sonorize.Services; // This using directive makes PlaybackStateStatus from the Service available
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -2875,6 +3489,14 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 
 namespace Sonorize.ViewModels;
+
+// Removed duplicate PlaybackStateStatus enum definition.
+// The definition from Sonorize.Services is used via the using directive.
+
+
+// Renamed enum for clarity based on standard playback controls
+public enum RepeatMode { Off, RepeatOne, RepeatAll }
+
 
 public class PlaybackViewModel : ViewModelBase
 {
@@ -2893,10 +3515,10 @@ public class PlaybackViewModel : ViewModelBase
         set
         {
             // Check if the value actually changed and if a song is loaded
-            if (PlaybackService.CurrentSong != null &&
-                Math.Abs(PlaybackService.CurrentPositionSeconds - value) > 0.01) // Use a small tolerance for double comparison
+            // Use a small tolerance for double comparison
+            if (PlaybackService.CurrentSong != null && Math.Abs(PlaybackService.CurrentPositionSeconds - value) > 0.01)
             {
-                Debug.WriteLine($"[PlaybackVM] CurrentPositionSeconds setter called with: {value}. Current PlaybackService PositionSeconds: {PlaybackService.CurrentPositionSeconds}. Seeking.");
+                // Debug.WriteLine($"[PlaybackVM] CurrentPositionSeconds setter called with: {value}. Current PlaybackService PositionSeconds: {PlaybackService.CurrentPositionSeconds}. Seeking.");
                 PlaybackService.Seek(TimeSpan.FromSeconds(value));
                 // After PlaybackService.Seek, it will update its CurrentPosition,
                 // which will fire PropertyChanged. This ViewModel's PlaybackService_PropertyChanged
@@ -2911,6 +3533,7 @@ public class PlaybackViewModel : ViewModelBase
     public TimeSpan CurrentSongDuration => PlaybackService.CurrentSongDuration;
     public double CurrentSongDurationSeconds => PlaybackService.CurrentSongDurationSeconds;
 
+    // Use PlaybackStateStatus from Sonorize.Services via the using directive
     public PlaybackStateStatus CurrentPlaybackStatus => PlaybackService.CurrentPlaybackStatus;
     public bool IsPlaying => PlaybackService.IsPlaying;
 
@@ -2922,6 +3545,48 @@ public class PlaybackViewModel : ViewModelBase
     private double _playbackPitch = 0.0;
     public double PlaybackPitch { get => _playbackPitch; set { value = Math.Round(value * 2, MidpointRounding.AwayFromZero) / 2.0; value = Math.Clamp(value, -4.0, 4.0); if (SetProperty(ref _playbackPitch, value)) { PlaybackService.PitchSemitones = (float)_playbackPitch; OnPropertyChanged(nameof(PlaybackPitchDisplay)); } } }
     public string PlaybackPitchDisplay => $"{PlaybackPitch:+0.0;-0.0;0} st";
+
+    // Properties for playback modes (Shuffle, Repeat)
+    private bool _shuffleEnabled = false;
+    public bool ShuffleEnabled
+    {
+        get => _shuffleEnabled;
+        set
+        {
+            if (SetProperty(ref _shuffleEnabled, value))
+            {
+                Debug.WriteLine($"[PlaybackVM] ShuffleEnabled set to: {value}");
+                // Saving preference could happen here
+            }
+        }
+    }
+
+    // Renamed property
+    private RepeatMode _repeatMode = RepeatMode.Off;
+    public RepeatMode RepeatMode
+    {
+        get => _repeatMode;
+        set
+        {
+            if (SetProperty(ref _repeatMode, value))
+            {
+                Debug.WriteLine($"[PlaybackVM] RepeatMode set to: {value}");
+                // Saving preference could happen here
+                OnPropertyChanged(nameof(IsRepeatOne));
+                OnPropertyChanged(nameof(IsRepeatAll));
+            }
+        }
+    }
+
+    // Helper properties for UI bindings (e.g., RadioButtons or toggling states) - Renamed
+    public bool IsRepeatOne { get => RepeatMode == RepeatMode.RepeatOne; set { if (value) RepeatMode = RepeatMode.RepeatOne; } }
+    public bool IsRepeatAll { get => RepeatMode == RepeatMode.RepeatAll; set { if (value) RepeatMode = RepeatMode.RepeatAll; } }
+    // Off state is implied if IsRepeatOne and IsRepeatAll are false
+
+    // Commands for UI controls for modes
+    public ICommand ToggleShuffleCommand { get; }
+    // Renamed command to reflect cycling through repeat modes
+    public ICommand CycleRepeatModeCommand { get; } // Cycles through Off -> RepeatOne -> RepeatAll -> Off
 
     // Waveform data
     public ObservableCollection<WaveformPoint> WaveformRenderData { get; } = new();
@@ -2959,18 +3624,19 @@ public class PlaybackViewModel : ViewModelBase
     public ICommand PlayPauseResumeCommand { get; } // Renamed from simple Click handler
     public ICommand SeekCommand { get; } // Command for slider/waveform seeking
 
-    // IsAdvancedPanelVisible and ToggleAdvancedPanelCommand remain in MainWindowViewModel
-    // Loop commands remain in LoopEditorViewModel
-
 
     public PlaybackViewModel(PlaybackService playbackService, WaveformService waveformService)
     {
         PlaybackService = playbackService;
         _waveformService = waveformService;
 
-        // Initialize playback controls
-        PlaybackSpeed = 1.0;
-        PlaybackPitch = 0.0;
+        // Initialize playback controls (Speed/Pitch)
+        PlaybackSpeed = 1.0; // Sets service value and raises property changed
+        PlaybackPitch = 0.0; // Sets service value and raises property changed
+
+        // Initialize playback modes (Defaults)
+        ShuffleEnabled = false;
+        RepeatMode = RepeatMode.Off;
 
         // Initialize commands
         PlayPauseResumeCommand = new RelayCommand(
@@ -2981,18 +3647,30 @@ public class PlaybackViewModel : ViewModelBase
             positionSecondsObj => {
                 if (positionSecondsObj is double seconds && PlaybackService.CurrentSongDuration.TotalSeconds > 0)
                 {
-                    // This command is now less critical if the TwoWay binding on CurrentPositionSeconds works,
-                    // but can be kept for other programmatic seek triggers if necessary.
+                    // This command is useful for explicit seek calls, although the slider two-way binding is primary.
                     PlaybackService.Seek(TimeSpan.FromSeconds(seconds));
                 }
             },
              _ => PlaybackService.CurrentSong != null && PlaybackService.CurrentSongDuration.TotalSeconds > 0 && !IsWaveformLoading);
+
+        ToggleShuffleCommand = new RelayCommand(
+            _ => ShuffleEnabled = !ShuffleEnabled,
+             _ => PlaybackService.CurrentSong != null // Can shuffle only if a song is loaded (implies a list exists)
+        );
+
+        // Renamed command handler call
+        CycleRepeatModeCommand = new RelayCommand(
+             _ => CycleRepeatMode(),
+             _ => PlaybackService.CurrentSong != null // Can repeat only if a song is loaded
+        );
 
 
         // Subscribe to PlaybackService property changes
         PlaybackService.PropertyChanged += PlaybackService_PropertyChanged;
 
         // Subscribe to PlaybackViewModel's own properties that affect command CanExecute
+        // ShuffleEnabled, RepeatMode, IsWaveformLoading affect command states.
+        // CurrentPosition, CurrentSongDuration affect seek command CanExecute (handled by PS_PropertyChanged)
         PropertyChanged += PlaybackViewModel_PropertyChanged;
     }
 
@@ -3019,6 +3697,18 @@ public class PlaybackViewModel : ViewModelBase
         }
     }
 
+    // Renamed handler
+    private void CycleRepeatMode()
+    {
+        RepeatMode = RepeatMode switch
+        {
+            RepeatMode.Off => RepeatMode.RepeatOne,
+            RepeatMode.RepeatOne => RepeatMode.RepeatAll,
+            RepeatMode.RepeatAll => RepeatMode.Off,
+            _ => RepeatMode.Off // Should not happen
+        };
+        RaisePlaybackCommandCanExecuteChanged(); // Repeat commands affected
+    }
 
     private void PlaybackService_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -3031,7 +3721,6 @@ public class PlaybackViewModel : ViewModelBase
                     OnPropertyChanged(nameof(CurrentSong)); // Propagate the song itself
                     OnPropertyChanged(nameof(HasCurrentSong));
                     // Duration, Position, State will also change, let's handle those explicitly or rely on other cases
-                    // Waveform needs to be loaded for the new song (handled outside this handler for now)
 
                     // If the song becomes null (e.g., after Stop), clear waveform data and loading state
                     if (PlaybackService.CurrentSong == null)
@@ -3045,19 +3734,21 @@ public class PlaybackViewModel : ViewModelBase
                     OnPropertyChanged(nameof(CurrentTimeDisplay));
                     OnPropertyChanged(nameof(TotalTimeDisplay));
 
+                    // Commands that require a song to be loaded might be affected
                     RaisePlaybackCommandCanExecuteChanged();
                     break;
                 case nameof(PlaybackService.CurrentPosition):
                     OnPropertyChanged(nameof(CurrentPosition));
                     OnPropertyChanged(nameof(CurrentPositionSeconds)); // This will reflect the change from PlaybackService
                     OnPropertyChanged(nameof(CurrentTimeDisplay)); // Update current time display
-                    RaisePlaybackCommandCanExecuteChanged(); // Seek command might be affected
+                    // Seek command might be affected (CanExecute depends on duration > 0, which changes less often)
+                    // RaisePlaybackCommandCanExecuteChanged(); // Usually not needed for position change
                     break;
                 case nameof(PlaybackService.CurrentSongDuration):
                     OnPropertyChanged(nameof(CurrentSongDuration));
                     OnPropertyChanged(nameof(CurrentSongDurationSeconds));
                     OnPropertyChanged(nameof(TotalTimeDisplay)); // Update total time display
-                    RaisePlaybackCommandCanExecuteChanged(); // Seek command might be affected
+                    RaisePlaybackCommandCanExecuteChanged(); // Seek command's CanExecute depends on duration > 0
                     break;
                 case nameof(PlaybackService.CurrentPlaybackStatus):
                     OnPropertyChanged(nameof(CurrentPlaybackStatus));
@@ -3076,20 +3767,16 @@ public class PlaybackViewModel : ViewModelBase
         switch (e.PropertyName)
         {
             case nameof(IsWaveformLoading):
-                RaisePlaybackCommandCanExecuteChanged(); // Play/Pause/Resume, Seek depend on this
+            case nameof(ShuffleEnabled): // Commands might be enabled/disabled based on modes
+            case nameof(RepeatMode): // Commands might be enabled/disabled based on modes - Renamed
+                RaisePlaybackCommandCanExecuteChanged();
                 break;
-                // Other properties like PlaybackSpeed/Pitch don't inherently affect command CanExecute
+            case nameof(HasCurrentSong):
+                RaisePlaybackCommandCanExecuteChanged(); // ToggleShuffle and CycleRepeatMode depend on this - Renamed
+                break;
+                // PlaybackSpeed, PlaybackPitch don't inherently affect command CanExecute
         }
     }
-
-
-    /// <summary>
-    /// Designed to be called by MainWindowViewModel when a new song is available (e.g., selected from library).
-    /// This VM will manage playing it and loading its waveform.
-    /// </summary>
-    /// <param name="song">The song to play.</param>
-    // Removed PlaySong method as PlaybackService.Play is called directly by MainVM now.
-    // Waveform loading is also triggered by MainVM when PlaybackService.CurrentSong changes.
 
 
     /// <summary>
@@ -3101,14 +3788,26 @@ public class PlaybackViewModel : ViewModelBase
         if (songToLoadWaveformFor == null || string.IsNullOrEmpty(songToLoadWaveformFor.FilePath))
         {
             Debug.WriteLine("[PlaybackVM] LoadWaveformForCurrentSongAsync skipped: No current song or invalid path.");
-            // Clear existing waveform data if any (handled by PlaybackService_PropertyChanged)
-            IsWaveformLoading = false;
+            // Clearing waveform data and setting loading state to false is handled by PlaybackService_PropertyChanged when CurrentSong becomes null
             return;
         }
 
+        // Check if waveform is already loaded for this song OR currently loading
+        // Need a way to know which file the current WaveformRenderData belongs to.
+        // For now, a simple check if there are any points is a rough indicator.
+        // A more robust approach would be to store the file path associated with WaveformRenderData.
+        // Add a check against the currently loaded waveform data's file path if known
+        // Example: if (_currentWaveformFilePath == songToLoadWaveformFor.FilePath && WaveformRenderData.Any() && !IsWaveformLoading) return;
+        // For simplicity, for now, if it has points OR is loading, assume it's for the current song.
+        if (WaveformRenderData.Any() || IsWaveformLoading)
+        {
+            Debug.WriteLine($"[PlaybackVM] Waveform already loaded ({WaveformRenderData.Count} points) or loading ({IsWaveformLoading}) for {songToLoadWaveformFor.Title}. Skipping load.");
+            return;
+        }
+
+
         // Clear existing waveform data immediately to show loading state
-        // Note: PlaybackService_PropertyChanged(CurrentSong) handler might have already cleared this if a new song replaced null
-        // but explicitly clearing here ensures state is reset before loading starts for a valid song change.
+        Debug.WriteLine($"[PlaybackVM] Clearing previous waveform data ({WaveformRenderData.Count} points).");
         WaveformRenderData.Clear(); OnPropertyChanged(nameof(WaveformRenderData));
         IsWaveformLoading = true; // Internal setter is fine here
 
@@ -3119,7 +3818,7 @@ public class PlaybackViewModel : ViewModelBase
             // For a fixed 80px height control, 1000 points is likely sufficient detail.
             var points = await _waveformService.GetWaveformAsync(songToLoadWaveformFor.FilePath, 1000);
 
-            // Check if the song is still the same after the async operation before updating the UI
+            // Check if the song is still the same AFTER the async operation before updating the UI
             if (PlaybackService.CurrentSong == songToLoadWaveformFor)
             {
                 Debug.WriteLine($"[PlaybackVM] Waveform loaded for: {songToLoadWaveformFor.Title}, {points.Count} points. Updating UI.");
@@ -3128,6 +3827,7 @@ public class PlaybackViewModel : ViewModelBase
                     foreach (var p in points) WaveformRenderData.Add(p);
                     OnPropertyChanged(nameof(WaveformRenderData)); // Notify UI
                 });
+                // _currentWaveformFilePath = songToLoadWaveformFor.FilePath; // Store the file path of the loaded waveform
 
             }
             else
@@ -3161,6 +3861,8 @@ public class PlaybackViewModel : ViewModelBase
         //Debug.WriteLine("[PlaybackVM] Raising playback command CanExecute changed.");
         (PlayPauseResumeCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (SeekCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (ToggleShuffleCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (CycleRepeatModeCommand as RelayCommand)?.RaiseCanExecuteChanged(); // Renamed
     }
 }
 </file>
@@ -3428,11 +4130,15 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia;
+using Avalonia.Data.Converters; // Added required using directive for FuncValueConverter
 
 using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.Views.MainWindowControls;
 using Avalonia.Media.Imaging; // Required for BitmapInterpolationMode
+using Sonorize.ViewModels; // Required for RepeatMode enum
+using System; // Required for Func
+using System.Diagnostics; // Added for Debug
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -3456,8 +4162,9 @@ public static class MainPlaybackControlsPanel
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center
         };
-        previousButton.Bind(Button.CommandProperty, new Binding("Playback.PreviousTrackCommand")); // Assuming this command exists or will exist
-        previousButton.Bind(Button.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
+        // Bind to Library.PreviousTrackCommand
+        previousButton.Bind(Button.CommandProperty, new Binding("Library.PreviousTrackCommand"));
+        // IsEnabled is controlled by the command's CanExecute
 
         var mainPlayPauseButton = new Button
         {
@@ -3492,32 +4199,129 @@ public static class MainPlaybackControlsPanel
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center
         };
-        nextButton.Bind(Button.CommandProperty, new Binding("Playback.NextTrackCommand")); // Assuming this command exists or will exist
-        nextButton.Bind(Button.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
+        // Bind to Library.NextTrackCommand
+        nextButton.Bind(Button.CommandProperty, new Binding("Library.NextTrackCommand"));
+        // IsEnabled is controlled by the command's CanExecute
 
-        var playbackButtonControlsPanel = new StackPanel
+
+        // --- Shuffle and Loop Buttons ---
+        var shuffleButton = new ToggleButton
+        {
+            // Content is now bound via converter
+            Foreground = theme.B_SecondaryTextColor, // Default color (off)
+            Background = Brushes.Transparent,
+            BorderBrush = theme.B_ControlBackgroundColor, // Default border color (off)
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4), // Add some rounded corners
+            Padding = new Thickness(5),
+            VerticalAlignment = VerticalAlignment.Center,
+            FontSize = 18,
+            FontFamily = "Segoe UI Symbol, Arial" // Fallback font for icons
+        };
+        // Bind IsChecked to Playback.ShuffleEnabled (TwoWay) - This is essential for the toggle state
+        shuffleButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.ShuffleEnabled", BindingMode.TwoWay));
+        // Bind Content directly using the converter
+        shuffleButton.Bind(ContentControl.ContentProperty, new Binding("Playback.ShuffleEnabled") { Converter = BooleanToShuffleIconConverter.Instance });
+        Debug.WriteLine($"[View] Shuffle Button Content Bound to Playback.ShuffleEnabled with BooleanToShuffleIconConverter.");
+
+
+        // Change Foreground color based on IsChecked state (using the FuncValueConverter)
+        shuffleButton[!ToggleButton.ForegroundProperty] = new Binding("IsChecked")
+        {
+            Source = shuffleButton,
+            Converter = new FuncValueConverter<bool, IBrush>(isChecked => isChecked ? theme.B_AccentColor : theme.B_SecondaryTextColor)
+        };
+        // Change BorderBrush color based on IsChecked state for a stronger visual cue (using the FuncValueConverter)
+        shuffleButton[!ToggleButton.BorderBrushProperty] = new Binding("IsChecked")
+        {
+            Source = shuffleButton,
+            Converter = new FuncValueConverter<bool, IBrush>(isChecked => isChecked ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
+        };
+        // Bind Command to Playback.ToggleShuffleCommand
+        shuffleButton.Bind(Button.CommandProperty, new Binding("Playback.ToggleShuffleCommand"));
+        // Ensure button is enabled only when a song is loaded
+        shuffleButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
+
+
+        var loopButton = new ToggleButton
+        {
+            Content = "Loop Off", // Content will be updated by Binding
+            Foreground = theme.B_SecondaryTextColor, // Default color (off)
+            Background = Brushes.Transparent,
+            BorderBrush = theme.B_ControlBackgroundColor, // Default border color (off)
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4), // Add some rounded corners
+            Padding = new Thickness(5),
+            VerticalAlignment = VerticalAlignment.Center,
+            FontSize = 12
+        };
+        // Bind Content to Playback.RepeatMode (using a converter to show state) - Renamed
+        loopButton.Bind(ToggleButton.ContentProperty, new Binding("Playback.RepeatMode")
+        {
+            Converter = new FuncValueConverter<RepeatMode, string>(mode => mode switch
+            {
+                RepeatMode.Off => "Loop Off",
+                RepeatMode.RepeatOne => "Loop One", // Text updated
+                RepeatMode.RepeatAll => "Loop All", // Text updated
+                _ => "Loop" // Fallback
+            })
+        });
+        // Change foreground color based on RepeatMode state (if not Off) - Renamed
+        loopButton[!ToggleButton.ForegroundProperty] = new Binding("Playback.RepeatMode")
+        {
+            Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.Off ? theme.B_AccentColor : theme.B_SecondaryTextColor)
+        };
+        // Change BorderBrush color based on RepeatMode state (if not Off)
+        loopButton[!ToggleButton.BorderBrushProperty] = new Binding("Playback.RepeatMode")
+        {
+            Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.Off ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
+        };
+        // IsChecked might be useful for visual styling, maybe bind to (RepeatMode != Off) - Renamed
+        loopButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.RepeatMode")
+        {
+            Converter = new FuncValueConverter<RepeatMode, bool>(mode => mode != RepeatMode.Off)
+        });
+        // Bind Command to Playback.CycleRepeatModeCommand - Renamed
+        loopButton.Bind(Button.CommandProperty, new Binding("Playback.CycleRepeatModeCommand"));
+        // Ensure button is enabled only when a song is loaded
+        loopButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
+
+
+        // --- Combined Playback Controls Panel (Shuffle + Nav Buttons + Loop) ---
+        // This stack panel holds the core playback buttons including the mode toggles
+        var combinedPlaybackButtonControlsPanel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 10,
-            HorizontalAlignment = HorizontalAlignment.Center, // Centered within its parent StackPanel
+            Spacing = 10, // Space between buttons
+            HorizontalAlignment = HorizontalAlignment.Center, // Center buttons within this stack panel
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0) // No margin needed here
+            Margin = new Thickness(0)
         };
-        playbackButtonControlsPanel.Children.Add(previousButton);
-        playbackButtonControlsPanel.Children.Add(mainPlayPauseButton);
-        playbackButtonControlsPanel.Children.Add(nextButton);
+
+        // Add the buttons in the desired order (Shuffle - Previous - Play/Pause - Next - Loop)
+        combinedPlaybackButtonControlsPanel.Children.Add(shuffleButton);
+        combinedPlaybackButtonControlsPanel.Children.Add(previousButton);
+        combinedPlaybackButtonControlsPanel.Children.Add(mainPlayPauseButton);
+        combinedPlaybackButtonControlsPanel.Children.Add(nextButton);
+        combinedPlaybackButtonControlsPanel.Children.Add(loopButton);
+
 
         var toggleAdvPanelButton = new Button
         {
             Content = "+",
             Background = theme.B_SlightlyLighterBackground,
             Foreground = theme.B_TextColor,
-            BorderBrush = theme.B_AccentColor,
+            BorderBrush = theme.B_AccentColor, // Default border color
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(3),
             Padding = new Thickness(8, 4),
             MinWidth = 30, // Give it a minimum size to occupy space
             FontWeight = FontWeight.Bold
+        };
+        // Change BorderBrush color based on IsAdvancedPanelVisible
+        toggleAdvPanelButton[!Button.BorderBrushProperty] = new Binding("IsAdvancedPanelVisible")
+        {
+            Converter = new FuncValueConverter<bool, IBrush>(isVisible => isVisible ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
         };
         toggleAdvPanelButton.Bind(Button.CommandProperty, new Binding("ToggleAdvancedPanelCommand"));
         toggleAdvPanelButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
@@ -3604,15 +4408,18 @@ public static class MainPlaybackControlsPanel
         timeSliderGrid.Children.Add(totalTimeTextBlock);
 
 
-        var centerPlaybackControlsStack = new StackPanel // Contains buttons and slider grid
+        // --- Center Playback Controls Stack (Combined Buttons Panel + Slider) ---
+        // This stack panel contains the combined button panel (including mode toggles) and the time/slider grid.
+        var centerPlaybackControlsStack = new StackPanel
         {
             Orientation = Orientation.Vertical,
             Margin = new Thickness(0, 5, 0, 0),
-            Spacing = 8,
-            HorizontalAlignment = HorizontalAlignment.Center, // Center this stack panel within the root Grid
-            VerticalAlignment = VerticalAlignment.Center // Center vertically within its grid row
+            Spacing = 8, // Space between the button row and the slider row
+            HorizontalAlignment = HorizontalAlignment.Center, // Center this stack panel within its parent grid cell
+            VerticalAlignment = VerticalAlignment.Center
         };
-        centerPlaybackControlsStack.Children.Add(playbackButtonControlsPanel);
+        // Add the combined button panel (now includes shuffle/loop, prev/play/next)
+        centerPlaybackControlsStack.Children.Add(combinedPlaybackButtonControlsPanel);
         centerPlaybackControlsStack.Children.Add(timeSliderGrid);
 
 
@@ -3678,10 +4485,11 @@ public static class MainPlaybackControlsPanel
         songInfoPanel.Children.Add(textStack);
 
 
-        // --- Main Grid Layout ---
-        // Use a single column Grid. The center element is centered within it.
-        // Left and Right elements are aligned to the sides *within* that same single column.
-        // This prevents the size of the left/right elements from affecting the center's horizontal position.
+        // --- Main Grid Layout (Restored Single Column Centering) ---
+        // Use a single star (*) column. All children are placed in this column.
+        // Their HorizontalAlignment determines their position within the column.
+        // The centerPlaybackControlsStack has HorizontalAlignment.Center, ensuring it's centered
+        // regardless of the width of the left (songInfoPanel) or right (rightControlsPanel) elements.
         var outerGrid = new Grid // This is the root panel
         {
             Background = theme.B_BackgroundColor,
@@ -3691,17 +4499,13 @@ public static class MainPlaybackControlsPanel
             ColumnDefinitions = new ColumnDefinitions("*") // Single column spanning the width
         };
 
-        // Place all three main sections in the *same* grid cell (row 0, column 0).
-        // Their HorizontalAlignment properties will dictate their position within that cell.
-        Grid.SetRow(songInfoPanel, 0);
+        // Place all panels in the single column (column 0).
+        // Their HorizontalAlignment will handle horizontal positioning.
         Grid.SetColumn(songInfoPanel, 0);
-
-        Grid.SetRow(centerPlaybackControlsStack, 0);
         Grid.SetColumn(centerPlaybackControlsStack, 0);
-
-        Grid.SetRow(rightControlsPanel, 0);
         Grid.SetColumn(rightControlsPanel, 0);
 
+        // Add children in any order; their position is determined by grid layout and alignment.
         outerGrid.Children.Add(songInfoPanel);
         outerGrid.Children.Add(centerPlaybackControlsStack);
         outerGrid.Children.Add(rightControlsPanel);

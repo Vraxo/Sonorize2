@@ -1,6 +1,6 @@
 ﻿using Avalonia.Threading;
 using Sonorize.Models;
-using Sonorize.Services;
+using Sonorize.Services; // This using directive makes PlaybackStateStatus from the Service available
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -10,6 +10,14 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 
 namespace Sonorize.ViewModels;
+
+// Removed duplicate PlaybackStateStatus enum definition.
+// The definition from Sonorize.Services is used via the using directive.
+
+
+// Renamed enum for clarity based on standard playback controls
+public enum RepeatMode { Off, RepeatOne, RepeatAll }
+
 
 public class PlaybackViewModel : ViewModelBase
 {
@@ -28,10 +36,10 @@ public class PlaybackViewModel : ViewModelBase
         set
         {
             // Check if the value actually changed and if a song is loaded
-            if (PlaybackService.CurrentSong != null &&
-                Math.Abs(PlaybackService.CurrentPositionSeconds - value) > 0.01) // Use a small tolerance for double comparison
+            // Use a small tolerance for double comparison
+            if (PlaybackService.CurrentSong != null && Math.Abs(PlaybackService.CurrentPositionSeconds - value) > 0.01)
             {
-                Debug.WriteLine($"[PlaybackVM] CurrentPositionSeconds setter called with: {value}. Current PlaybackService PositionSeconds: {PlaybackService.CurrentPositionSeconds}. Seeking.");
+                // Debug.WriteLine($"[PlaybackVM] CurrentPositionSeconds setter called with: {value}. Current PlaybackService PositionSeconds: {PlaybackService.CurrentPositionSeconds}. Seeking.");
                 PlaybackService.Seek(TimeSpan.FromSeconds(value));
                 // After PlaybackService.Seek, it will update its CurrentPosition,
                 // which will fire PropertyChanged. This ViewModel's PlaybackService_PropertyChanged
@@ -46,6 +54,7 @@ public class PlaybackViewModel : ViewModelBase
     public TimeSpan CurrentSongDuration => PlaybackService.CurrentSongDuration;
     public double CurrentSongDurationSeconds => PlaybackService.CurrentSongDurationSeconds;
 
+    // Use PlaybackStateStatus from Sonorize.Services via the using directive
     public PlaybackStateStatus CurrentPlaybackStatus => PlaybackService.CurrentPlaybackStatus;
     public bool IsPlaying => PlaybackService.IsPlaying;
 
@@ -57,6 +66,48 @@ public class PlaybackViewModel : ViewModelBase
     private double _playbackPitch = 0.0;
     public double PlaybackPitch { get => _playbackPitch; set { value = Math.Round(value * 2, MidpointRounding.AwayFromZero) / 2.0; value = Math.Clamp(value, -4.0, 4.0); if (SetProperty(ref _playbackPitch, value)) { PlaybackService.PitchSemitones = (float)_playbackPitch; OnPropertyChanged(nameof(PlaybackPitchDisplay)); } } }
     public string PlaybackPitchDisplay => $"{PlaybackPitch:+0.0;-0.0;0} st";
+
+    // Properties for playback modes (Shuffle, Repeat)
+    private bool _shuffleEnabled = false;
+    public bool ShuffleEnabled
+    {
+        get => _shuffleEnabled;
+        set
+        {
+            if (SetProperty(ref _shuffleEnabled, value))
+            {
+                Debug.WriteLine($"[PlaybackVM] ShuffleEnabled set to: {value}");
+                // Saving preference could happen here
+            }
+        }
+    }
+
+    // Renamed property
+    private RepeatMode _repeatMode = RepeatMode.Off;
+    public RepeatMode RepeatMode
+    {
+        get => _repeatMode;
+        set
+        {
+            if (SetProperty(ref _repeatMode, value))
+            {
+                Debug.WriteLine($"[PlaybackVM] RepeatMode set to: {value}");
+                // Saving preference could happen here
+                OnPropertyChanged(nameof(IsRepeatOne));
+                OnPropertyChanged(nameof(IsRepeatAll));
+            }
+        }
+    }
+
+    // Helper properties for UI bindings (e.g., RadioButtons or toggling states) - Renamed
+    public bool IsRepeatOne { get => RepeatMode == RepeatMode.RepeatOne; set { if (value) RepeatMode = RepeatMode.RepeatOne; } }
+    public bool IsRepeatAll { get => RepeatMode == RepeatMode.RepeatAll; set { if (value) RepeatMode = RepeatMode.RepeatAll; } }
+    // Off state is implied if IsRepeatOne and IsRepeatAll are false
+
+    // Commands for UI controls for modes
+    public ICommand ToggleShuffleCommand { get; }
+    // Renamed command to reflect cycling through repeat modes
+    public ICommand CycleRepeatModeCommand { get; } // Cycles through Off -> RepeatOne -> RepeatAll -> Off
 
     // Waveform data
     public ObservableCollection<WaveformPoint> WaveformRenderData { get; } = new();
@@ -94,18 +145,19 @@ public class PlaybackViewModel : ViewModelBase
     public ICommand PlayPauseResumeCommand { get; } // Renamed from simple Click handler
     public ICommand SeekCommand { get; } // Command for slider/waveform seeking
 
-    // IsAdvancedPanelVisible and ToggleAdvancedPanelCommand remain in MainWindowViewModel
-    // Loop commands remain in LoopEditorViewModel
-
 
     public PlaybackViewModel(PlaybackService playbackService, WaveformService waveformService)
     {
         PlaybackService = playbackService;
         _waveformService = waveformService;
 
-        // Initialize playback controls
-        PlaybackSpeed = 1.0;
-        PlaybackPitch = 0.0;
+        // Initialize playback controls (Speed/Pitch)
+        PlaybackSpeed = 1.0; // Sets service value and raises property changed
+        PlaybackPitch = 0.0; // Sets service value and raises property changed
+
+        // Initialize playback modes (Defaults)
+        ShuffleEnabled = false;
+        RepeatMode = RepeatMode.Off;
 
         // Initialize commands
         PlayPauseResumeCommand = new RelayCommand(
@@ -116,18 +168,30 @@ public class PlaybackViewModel : ViewModelBase
             positionSecondsObj => {
                 if (positionSecondsObj is double seconds && PlaybackService.CurrentSongDuration.TotalSeconds > 0)
                 {
-                    // This command is now less critical if the TwoWay binding on CurrentPositionSeconds works,
-                    // but can be kept for other programmatic seek triggers if necessary.
+                    // This command is useful for explicit seek calls, although the slider two-way binding is primary.
                     PlaybackService.Seek(TimeSpan.FromSeconds(seconds));
                 }
             },
              _ => PlaybackService.CurrentSong != null && PlaybackService.CurrentSongDuration.TotalSeconds > 0 && !IsWaveformLoading);
+
+        ToggleShuffleCommand = new RelayCommand(
+            _ => ShuffleEnabled = !ShuffleEnabled,
+             _ => PlaybackService.CurrentSong != null // Can shuffle only if a song is loaded (implies a list exists)
+        );
+
+        // Renamed command handler call
+        CycleRepeatModeCommand = new RelayCommand(
+             _ => CycleRepeatMode(),
+             _ => PlaybackService.CurrentSong != null // Can repeat only if a song is loaded
+        );
 
 
         // Subscribe to PlaybackService property changes
         PlaybackService.PropertyChanged += PlaybackService_PropertyChanged;
 
         // Subscribe to PlaybackViewModel's own properties that affect command CanExecute
+        // ShuffleEnabled, RepeatMode, IsWaveformLoading affect command states.
+        // CurrentPosition, CurrentSongDuration affect seek command CanExecute (handled by PS_PropertyChanged)
         PropertyChanged += PlaybackViewModel_PropertyChanged;
     }
 
@@ -154,6 +218,18 @@ public class PlaybackViewModel : ViewModelBase
         }
     }
 
+    // Renamed handler
+    private void CycleRepeatMode()
+    {
+        RepeatMode = RepeatMode switch
+        {
+            RepeatMode.Off => RepeatMode.RepeatOne,
+            RepeatMode.RepeatOne => RepeatMode.RepeatAll,
+            RepeatMode.RepeatAll => RepeatMode.Off,
+            _ => RepeatMode.Off // Should not happen
+        };
+        RaisePlaybackCommandCanExecuteChanged(); // Repeat commands affected
+    }
 
     private void PlaybackService_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -166,7 +242,6 @@ public class PlaybackViewModel : ViewModelBase
                     OnPropertyChanged(nameof(CurrentSong)); // Propagate the song itself
                     OnPropertyChanged(nameof(HasCurrentSong));
                     // Duration, Position, State will also change, let's handle those explicitly or rely on other cases
-                    // Waveform needs to be loaded for the new song (handled outside this handler for now)
 
                     // If the song becomes null (e.g., after Stop), clear waveform data and loading state
                     if (PlaybackService.CurrentSong == null)
@@ -180,19 +255,21 @@ public class PlaybackViewModel : ViewModelBase
                     OnPropertyChanged(nameof(CurrentTimeDisplay));
                     OnPropertyChanged(nameof(TotalTimeDisplay));
 
+                    // Commands that require a song to be loaded might be affected
                     RaisePlaybackCommandCanExecuteChanged();
                     break;
                 case nameof(PlaybackService.CurrentPosition):
                     OnPropertyChanged(nameof(CurrentPosition));
                     OnPropertyChanged(nameof(CurrentPositionSeconds)); // This will reflect the change from PlaybackService
                     OnPropertyChanged(nameof(CurrentTimeDisplay)); // Update current time display
-                    RaisePlaybackCommandCanExecuteChanged(); // Seek command might be affected
+                    // Seek command might be affected (CanExecute depends on duration > 0, which changes less often)
+                    // RaisePlaybackCommandCanExecuteChanged(); // Usually not needed for position change
                     break;
                 case nameof(PlaybackService.CurrentSongDuration):
                     OnPropertyChanged(nameof(CurrentSongDuration));
                     OnPropertyChanged(nameof(CurrentSongDurationSeconds));
                     OnPropertyChanged(nameof(TotalTimeDisplay)); // Update total time display
-                    RaisePlaybackCommandCanExecuteChanged(); // Seek command might be affected
+                    RaisePlaybackCommandCanExecuteChanged(); // Seek command's CanExecute depends on duration > 0
                     break;
                 case nameof(PlaybackService.CurrentPlaybackStatus):
                     OnPropertyChanged(nameof(CurrentPlaybackStatus));
@@ -211,20 +288,16 @@ public class PlaybackViewModel : ViewModelBase
         switch (e.PropertyName)
         {
             case nameof(IsWaveformLoading):
-                RaisePlaybackCommandCanExecuteChanged(); // Play/Pause/Resume, Seek depend on this
+            case nameof(ShuffleEnabled): // Commands might be enabled/disabled based on modes
+            case nameof(RepeatMode): // Commands might be enabled/disabled based on modes - Renamed
+                RaisePlaybackCommandCanExecuteChanged();
                 break;
-                // Other properties like PlaybackSpeed/Pitch don't inherently affect command CanExecute
+            case nameof(HasCurrentSong):
+                RaisePlaybackCommandCanExecuteChanged(); // ToggleShuffle and CycleRepeatMode depend on this - Renamed
+                break;
+                // PlaybackSpeed, PlaybackPitch don't inherently affect command CanExecute
         }
     }
-
-
-    /// <summary>
-    /// Designed to be called by MainWindowViewModel when a new song is available (e.g., selected from library).
-    /// This VM will manage playing it and loading its waveform.
-    /// </summary>
-    /// <param name="song">The song to play.</param>
-    // Removed PlaySong method as PlaybackService.Play is called directly by MainVM now.
-    // Waveform loading is also triggered by MainVM when PlaybackService.CurrentSong changes.
 
 
     /// <summary>
@@ -236,14 +309,26 @@ public class PlaybackViewModel : ViewModelBase
         if (songToLoadWaveformFor == null || string.IsNullOrEmpty(songToLoadWaveformFor.FilePath))
         {
             Debug.WriteLine("[PlaybackVM] LoadWaveformForCurrentSongAsync skipped: No current song or invalid path.");
-            // Clear existing waveform data if any (handled by PlaybackService_PropertyChanged)
-            IsWaveformLoading = false;
+            // Clearing waveform data and setting loading state to false is handled by PlaybackService_PropertyChanged when CurrentSong becomes null
             return;
         }
 
+        // Check if waveform is already loaded for this song OR currently loading
+        // Need a way to know which file the current WaveformRenderData belongs to.
+        // For now, a simple check if there are any points is a rough indicator.
+        // A more robust approach would be to store the file path associated with WaveformRenderData.
+        // Add a check against the currently loaded waveform data's file path if known
+        // Example: if (_currentWaveformFilePath == songToLoadWaveformFor.FilePath && WaveformRenderData.Any() && !IsWaveformLoading) return;
+        // For simplicity, for now, if it has points OR is loading, assume it's for the current song.
+        if (WaveformRenderData.Any() || IsWaveformLoading)
+        {
+            Debug.WriteLine($"[PlaybackVM] Waveform already loaded ({WaveformRenderData.Count} points) or loading ({IsWaveformLoading}) for {songToLoadWaveformFor.Title}. Skipping load.");
+            return;
+        }
+
+
         // Clear existing waveform data immediately to show loading state
-        // Note: PlaybackService_PropertyChanged(CurrentSong) handler might have already cleared this if a new song replaced null
-        // but explicitly clearing here ensures state is reset before loading starts for a valid song change.
+        Debug.WriteLine($"[PlaybackVM] Clearing previous waveform data ({WaveformRenderData.Count} points).");
         WaveformRenderData.Clear(); OnPropertyChanged(nameof(WaveformRenderData));
         IsWaveformLoading = true; // Internal setter is fine here
 
@@ -254,7 +339,7 @@ public class PlaybackViewModel : ViewModelBase
             // For a fixed 80px height control, 1000 points is likely sufficient detail.
             var points = await _waveformService.GetWaveformAsync(songToLoadWaveformFor.FilePath, 1000);
 
-            // Check if the song is still the same after the async operation before updating the UI
+            // Check if the song is still the same AFTER the async operation before updating the UI
             if (PlaybackService.CurrentSong == songToLoadWaveformFor)
             {
                 Debug.WriteLine($"[PlaybackVM] Waveform loaded for: {songToLoadWaveformFor.Title}, {points.Count} points. Updating UI.");
@@ -263,6 +348,7 @@ public class PlaybackViewModel : ViewModelBase
                     foreach (var p in points) WaveformRenderData.Add(p);
                     OnPropertyChanged(nameof(WaveformRenderData)); // Notify UI
                 });
+                // _currentWaveformFilePath = songToLoadWaveformFor.FilePath; // Store the file path of the loaded waveform
 
             }
             else
@@ -296,5 +382,7 @@ public class PlaybackViewModel : ViewModelBase
         //Debug.WriteLine("[PlaybackVM] Raising playback command CanExecute changed.");
         (PlayPauseResumeCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (SeekCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (ToggleShuffleCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (CycleRepeatModeCommand as RelayCommand)?.RaiseCanExecuteChanged(); // Renamed
     }
 }
