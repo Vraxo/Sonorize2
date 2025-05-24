@@ -81,7 +81,7 @@ public static class MainPlaybackControlsPanel
         // IsEnabled is controlled by the command's CanExecute
 
 
-        // --- Shuffle and Loop/Repeat Buttons ---
+        // --- Shuffle and Loop Buttons ---
 
         var shuffleButton = new ToggleButton
         {
@@ -93,14 +93,9 @@ public static class MainPlaybackControlsPanel
             CornerRadius = new CornerRadius(4), // Add some rounded corners
             Padding = new Thickness(5),
             VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center, // Center the button horizontally
-            VerticalContentAlignment = VerticalAlignment.Center, // Center content vertically
-            HorizontalContentAlignment = HorizontalAlignment.Center, // Center content horizontally
             FontSize = 18, // Set font size directly on button
             FontFamily = "Segoe UI Symbol, Arial", // Set font family directly on button
-            ContentTemplate = null, // No explicit template needed for simple string content
-            Width = 32, // Fixed width for icon
-            Height = 32 // Fixed height for icon
+            ContentTemplate = null // No explicit template needed for simple string content
         };
         // Bind IsChecked to Playback.ShuffleEnabled (TwoWay) - This is essential for the toggle state
         // This binding, when checked/unchecked by user click, will trigger the ShuffleEnabled setter in the VM.
@@ -130,9 +125,9 @@ public static class MainPlaybackControlsPanel
         shuffleButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
 
-        var repeatModeButton = new ToggleButton // Renamed from loopButton
+        var loopButton = new ToggleButton
         {
-            // Content is bound via converter directly
+            Content = "Loop Off", // Content will be updated by Binding
             Foreground = theme.B_SecondaryTextColor, // Default color (off) - Will be overridden by style
             Background = Brushes.Transparent,
             BorderBrush = theme.B_ControlBackgroundColor, // Default border color (off) - Will be overridden by style
@@ -140,45 +135,38 @@ public static class MainPlaybackControlsPanel
             CornerRadius = new CornerRadius(4), // Add some rounded corners
             Padding = new Thickness(5),
             VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center, // Center the button horizontally
-            VerticalContentAlignment = VerticalAlignment.Center, // Center content vertically
-            HorizontalContentAlignment = HorizontalAlignment.Center, // Center content horizontally
-            FontSize = 18, // Use larger font size for icons
-            FontFamily = "Segoe UI Symbol, Arial", // Explicitly set font family for symbols
-            ContentTemplate = null, // No explicit template needed for simple string content
-            Width = 32, // Fixed width for icon
-            Height = 32 // Fixed height for icon
+            FontSize = 12
         };
         // Bind Content to Playback.RepeatMode (using a converter to show state) - Renamed
-        repeatModeButton.Bind(ToggleButton.ContentProperty, new Binding("Playback.RepeatMode")
+        loopButton.Bind(ToggleButton.ContentProperty, new Binding("Playback.RepeatMode")
         {
             Converter = new FuncValueConverter<RepeatMode, string>(mode => mode switch
             {
-                RepeatMode.None => "―", // Horizontal Bar: Do Nothing / Stop
-                RepeatMode.PlayOnce => "₁", // Subscript 1: Play list once
-                RepeatMode.RepeatOne => "🔂", // Repeat One Button: Repeat current song
-                RepeatMode.RepeatAll => "🔁", // Repeat Button: Repeat all songs
-                _ => "?" // Fallback icon
+                RepeatMode.Off => "Loop Off",
+                RepeatMode.RepeatOne => "Loop One", // Text updated
+                RepeatMode.RepeatAll => "Loop All", // Text updated
+                _ => "Loop" // Fallback
             })
         });
-        // Change foreground color based on RepeatMode state (if not None - i.e. any repeat/cycle is active)
-        repeatModeButton[!ToggleButton.ForegroundProperty] = new Binding("Playback.RepeatMode")
+        // Change foreground color based on RepeatMode state (if not Off) - Renamed
+        loopButton[!ToggleButton.ForegroundProperty] = new Binding("Playback.RepeatMode")
         {
-            // Accent color for PlayOnce, RepeatOne, RepeatAll. Secondary for None.
-            Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.None ? theme.B_AccentColor : theme.B_SecondaryTextColor)
+            Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.Off ? theme.B_AccentColor : theme.B_SecondaryTextColor)
         };
-        // Change BorderBrush color based on RepeatMode state (if not None - i.e. any repeat/cycle is active)
-        repeatModeButton[!ToggleButton.BorderBrushProperty] = new Binding("Playback.RepeatMode")
+        // Change BorderBrush color based on RepeatMode state (if not Off)
+        loopButton[!ToggleButton.BorderBrushProperty] = new Binding("Playback.RepeatMode")
         {
-            // Accent color for PlayOnce, RepeatOne, RepeatAll. ControlBackground for None.
-            Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.None ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
+            Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.Off ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
         };
-        // Bind IsChecked to Playback.IsRepeatActive (ViewModel calculates this based on RepeatMode != None)
-        repeatModeButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.IsRepeatActive"));
-        // Bind Command to Playback.CycleRepeatModeCommand
-        repeatModeButton.Bind(Button.CommandProperty, new Binding("Playback.CycleRepeatModeCommand"));
+        // IsChecked might be useful for visual styling, maybe bind to (RepeatMode != Off) - Renamed
+        loopButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.RepeatMode")
+        {
+            Converter = new FuncValueConverter<RepeatMode, bool>(mode => mode != RepeatMode.Off)
+        });
+        // Bind Command to Playback.CycleRepeatModeCommand - Renamed
+        loopButton.Bind(Button.CommandProperty, new Binding("Playback.CycleRepeatModeCommand"));
         // Ensure button is enabled only when a song is loaded
-        repeatModeButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
+        loopButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
 
         // --- Combined Playback Controls Panel (Shuffle + Nav Buttons + Loop) ---
@@ -192,12 +180,12 @@ public static class MainPlaybackControlsPanel
             Margin = new Thickness(0)
         };
 
-        // Add the buttons in the desired order (Shuffle - Previous - Play/Pause - Next - Repeat Mode)
+        // Add the buttons in the desired order (Shuffle - Previous - Play/Pause - Next - Loop)
         combinedPlaybackButtonControlsPanel.Children.Add(shuffleButton);
         combinedPlaybackButtonControlsPanel.Children.Add(previousButton);
         combinedPlaybackButtonControlsPanel.Children.Add(mainPlayPauseButton);
         combinedPlaybackButtonControlsPanel.Children.Add(nextButton);
-        combinedPlaybackButtonControlsPanel.Children.Add(repeatModeButton); // Added the renamed repeat button
+        combinedPlaybackButtonControlsPanel.Children.Add(loopButton);
 
 
         var toggleAdvPanelButton = new Button
@@ -210,9 +198,7 @@ public static class MainPlaybackControlsPanel
             CornerRadius = new CornerRadius(3),
             Padding = new Thickness(8, 4),
             MinWidth = 30, // Give it a minimum size to occupy space
-            FontWeight = FontWeight.Bold,
-            Width = 32, // Fixed width for consistency
-            Height = 32 // Fixed height for consistency
+            FontWeight = FontWeight.Bold
         };
         // Change BorderBrush color based on IsAdvancedPanelVisible
         toggleAdvPanelButton[!Button.BorderBrushProperty] = new Binding("IsAdvancedPanelVisible")
