@@ -129,9 +129,26 @@ public class MainWindowViewModel : ViewModelBase
             // This is a simple random selection, not a true shuffle queue.
             if (currentList.Any())
             {
-                var nextIndex = _shuffleRandom.Next(currentList.Count);
-                nextSong = currentList[nextIndex];
-                Debug.WriteLine($"[MainVM] Playback ended naturally. Shuffle is Enabled. Playing random song: {nextSong.Title}");
+                // Exclude the current song if possible to avoid immediately repeating the same song in shuffle mode,
+                // unless it's the only song in the list.
+                var potentialNextSongs = currentList.Where(s => s != currentSong).ToList();
+                if (potentialNextSongs.Any())
+                {
+                    var nextIndex = _shuffleRandom.Next(potentialNextSongs.Count);
+                    nextSong = potentialNextSongs[nextIndex];
+                    Debug.WriteLine($"[MainVM] Playback ended naturally. Shuffle is Enabled. Playing random song (excluding current): {nextSong.Title}");
+                }
+                else if (currentList.Count == 1)
+                {
+                    // If only one song, shuffle can't pick a different one, repeat it.
+                    nextSong = currentList.Single();
+                    Debug.WriteLine($"[MainVM] Playback ended naturally. Shuffle enabled, but only one song in list. Replaying: {nextSong.Title}");
+                }
+                else
+                {
+                    Debug.WriteLine("[MainVM] Playback ended naturally. Shuffle is Enabled, but list is empty or only contains current song and no others could be selected. Stopping.");
+                    nextSong = null; // Should not happen if currentList.Count > 1, but defensive
+                }
             }
             else
             {
@@ -252,8 +269,12 @@ public class MainWindowViewModel : ViewModelBase
                     }
                     // Note: Clearing waveform when song becomes null is handled inside PlaybackViewModel
 
+                    // Update status bar text whenever the current song changes
+                    UpdateStatusBarText();
+
                     // Update time displays when song changes (delegated to PlaybackVM)
-                    // UpdateStatusBarText(); // Playback status affects overall status bar - handled by CurrentPlaybackStatus change
+                    OnPropertyChanged(nameof(Playback.CurrentTimeDisplay)); // Propagate derived property
+                    OnPropertyChanged(nameof(Playback.TotalTimeDisplay)); // Propagate derived property
 
                     // Commands in PlaybackVM (Play/Pause, Seek, Speed/Pitch, Mode toggles) are handled by PlaybackVM itself.
                     // Library navigation commands are handled by LibraryVM's SelectedSong/FilteredSongs change.
@@ -263,7 +284,7 @@ public class MainWindowViewModel : ViewModelBase
                     break;
                 case nameof(PlaybackViewModel.CurrentPlaybackStatus):
                     OnPropertyChanged(nameof(Playback.CurrentPlaybackStatus)); // Propagate status
-                    OnPropertyChanged(nameof(Playback.IsPlaying)); // Propagate derived IsPlaying
+                    OnPropertyChanged(nameof(Playback.IsPlaying)); // Derived from status
                     UpdateStatusBarText(); // Playback status affects overall status bar
                     // Commands in PlaybackVM already listen to this. MainVM commands potentially affected? (currently none directly)
                     RaiseAllCommandsCanExecuteChanged();
@@ -271,15 +292,15 @@ public class MainWindowViewModel : ViewModelBase
                 case nameof(PlaybackViewModel.CurrentPosition):
                     OnPropertyChanged(nameof(Playback.CurrentPosition)); // Propagate position
                     OnPropertyChanged(nameof(Playback.CurrentPositionSeconds)); // Propagate derived property
-                    OnPropertyChanged(nameof(Playback.CurrentTimeDisplay)); // Propagate derived property
+                    OnPropertyChanged(nameof(Playback.CurrentTimeDisplay)); // Propagate current time display
                     // Loop editor and UI slider are bound directly to PlaybackVM properties.
                     // Commands in PlaybackVM already listen to this.
                     // Raising all commands here is usually not needed for position change.
                     break;
                 case nameof(PlaybackViewModel.CurrentSongDuration):
                     OnPropertyChanged(nameof(Playback.CurrentSongDuration)); // Propagate duration
-                    OnPropertyChanged(nameof(Playback.CurrentSongDurationSeconds)); // Propagate derived property
-                    OnPropertyChanged(nameof(Playback.TotalTimeDisplay)); // Propagate derived property
+                    OnPropertyChanged(nameof(Playback.CurrentSongDurationSeconds));
+                    OnPropertyChanged(nameof(Playback.TotalTimeDisplay)); // Propagate total time display
                                                                           // UI slider is bound directly.
                     RaiseAllCommandsCanExecuteChanged(); // PlaybackVM Seek command CanExecute depends on duration > 0
                     break;
@@ -447,7 +468,7 @@ public class MainWindowViewModel : ViewModelBase
         {
             Debug.WriteLine("[MainVM] Settings dialog closed, no changes reported by SettingsViewModel.");
             // Ensure status bar reflects current state after dialog if no reload/theme change occurred
-            UpdateStatusBarText();
+            UpdateStatusBarText(); // Revert status bar to normal if not loading
         }
     }
 

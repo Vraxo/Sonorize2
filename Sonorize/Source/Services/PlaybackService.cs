@@ -173,16 +173,16 @@ public class PlaybackService : ViewModelBase, IDisposable
                 if (CurrentSong.IsLoopActive && CurrentSong.SavedLoop != null)
                 {
                     var loop = CurrentSong.SavedLoop;
-                    // Ensure loop end is valid and current position is at or past it
-                    if (loop.End > loop.Start && currentAudioTime >= loop.End)
+                    // Ensure loop end is after loop start
+                    // Check if current position is at or past the loop end AND not extremely close to the *total* song duration
+                    // Using 200ms tolerance near the total end to allow natural end detection to take over
+                    if (loop.End > loop.Start && currentAudioTime >= loop.End && currentAudioTime < audioFileReader.TotalTime - TimeSpan.FromMilliseconds(200))
                     {
-                        Debug.WriteLine($"[PlaybackService] Loop active & end reached ({currentAudioTime} >= {loop.End}). Seeking to loop start: {loop.Start}");
-                        // Perform the seek. Seek() handles its own logging and position update.
-                        Seek(loop.Start);
-                        // After Seek(), audioFileReader.CurrentTime and this.CurrentPosition will be updated.
+                        Debug.WriteLine($"[PlaybackService] Loop active & end reached ({currentAudioTime:mm\\:ss\\.ff} >= {loop.End:mm\\:ss\\.ff}) within file ({audioFileReader.TotalTime:mm\\:ss\\.ff}). Seeking to loop start: {loop.Start:mm\\:ss\\.ff}");
+                        Seek(loop.Start); // Perform the seek. Seek() handles its own logging and position update.
                     }
-                    // Do NOT check for natural end of song here if looping is active.
-                    // The loop logic *replaces* the natural end-of-file behavior.
+                    // If currentAudioTime is >= loop.End but also very close to audioFileReader.TotalTime,
+                    // we let the natural end-of-file event trigger instead of looping.
                 }
             });
         }
@@ -230,11 +230,12 @@ public class PlaybackService : ViewModelBase, IDisposable
         if (pipelineInitialized && _waveOutDevice != null && audioFileReader != null)
         {
             // If a loop is active for the new song, seek to the start of the loop before playing
-            if (CurrentSong.IsLoopActive && CurrentSong.SavedLoop != null)
+            if (CurrentSong.IsLoopActive && CurrentSong.SavedLoop != null && CurrentSong.SavedLoop.Start < audioFileReader.TotalTime)
             {
-                Debug.WriteLine($"[PlaybackService] New song has active loop. Seeking to loop start: {CurrentSong.SavedLoop.Start} before playing.");
-                Seek(CurrentSong.SavedLoop.Start); // Seek will update CurrentPosition
-                                                   // Note: This seek is best-effort. Playback might start slightly before or after the exact time.
+                Debug.WriteLine($"[PlaybackService] New song has active loop ({CurrentSong.SavedLoop.Start:mm\\:ss\\.ff} - {CurrentSong.SavedLoop.End:mm\\:ss\\.ff}). Seeking to loop start: {CurrentSong.SavedLoop.Start:mm\\:ss\\.ff} before playing.");
+                // Seek handles clamping and potential tolerance.
+                Seek(CurrentSong.SavedLoop.Start);
+                // Note: This seek is best-effort. Playback might start slightly before or after the exact time.
             }
             // If not looping, playback starts from TimeSpan.Zero, which is already set by InitializeNAudioPipeline.
 
@@ -419,8 +420,35 @@ public class PlaybackService : ViewModelBase, IDisposable
             Debug.WriteLine("[PlaybackService] OnPlaybackStopped received for a stale WaveOutDevice instance. Ignoring.");
             return;
         }
+        // Safely get the last known position before cleanup
+        TimeSpan lastKnownPosition = TimeSpan.Zero;
+        TimeSpan? songDuration = CurrentSongDuration.TotalSeconds > 0 ? (TimeSpan?)CurrentSongDuration : null;
 
-        Debug.WriteLine($"[PlaybackService] OnPlaybackStopped (UI Thread): Exception: {e.Exception?.Message ?? "None"}");
+        try
+        {
+            // Try to get the position from the reader before cleanup, if it exists and is accessible
+            if (audioFileReader != null)
+            {
+                lastKnownPosition = audioFileReader.CurrentTime;
+            }
+        }
+        catch (Exception posEx)
+        {
+            Debug.WriteLine($"[PlaybackService] Error getting last known position before cleanup: {posEx.Message}");
+            // Keep lastKnownPosition as TimeSpan.Zero on error
+        }
+
+        // Safely format TimeSpan? properties for logging
+        TimeSpan? loopStart = CurrentSong?.SavedLoop?.Start;
+        TimeSpan? loopEnd = CurrentSong?.SavedLoop?.End;
+        string loopStartFormatted = loopStart.HasValue ? $"{loopStart.Value:mm\\:ss\\.ff}" : "N/A";
+        string loopEndFormatted = loopEnd.HasValue ? $"{loopEnd.Value:mm\\:ss\\.ff}" : "N/A";
+        string songDurationFormatted = songDuration.HasValue ? $"{songDuration.Value:mm\\:ss\\.ff}" : "N/A";
+
+
+        Debug.WriteLine($"[PlaybackService] OnPlaybackStopped (UI Thread): Exception: {e.Exception?.Message ?? "None"}. ExplicitStopRequested: {_explicitStopRequested}. Current Song: {CurrentSong?.Title ?? "null"}. Current Pos Before Cleanup: {lastKnownPosition:mm\\:ss\\.ff}");
+        Debug.WriteLine($"[PlaybackService] OnPlaybackStopped (UI Thread): Current Song LoopActive: {CurrentSong?.IsLoopActive ?? false}, Loop: {loopStartFormatted} - {loopEndFormatted}. Duration: {songDurationFormatted}");
+
 
         // Clean up resources immediately. This also detaches the event handler from the instance.
         CleanUpNAudioResources(); // Dispose the specific instance that fired the event
@@ -435,7 +463,7 @@ public class PlaybackService : ViewModelBase, IDisposable
             // Set state to stopped and reset position
             IsPlaying = false;
             CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-            this.CurrentPosition = TimeSpan.Zero;
+            this.CurrentPosition = TimeSpan.Zero; // Position is reset on error
             // Optionally, log the error or notify the user via a higher-level VM/UI element.
         }
         // If no exception, it was a clean stop. Now distinguish between manual stop and natural end.
@@ -445,7 +473,10 @@ public class PlaybackService : ViewModelBase, IDisposable
             // If _explicitStopRequested is false, it means the stop was *not* explicitly requested by a user action (like clicking Stop).
             // Combined with e.Exception == null, this implies playback reached the end of the file naturally.
             // We also need to check if there *was* a CurrentSong, just in case.
-            bool wasNaturalEndOfFile = !_explicitStopRequested && CurrentSong != null;
+
+            // A more robust check for natural end might be if the stop event was fired
+            // and the last known position was very close to the total duration.
+            bool wasNaturalEndOfFile = !_explicitStopRequested && CurrentSong != null && songDuration.HasValue && lastKnownPosition >= songDuration.Value - TimeSpan.FromMilliseconds(200); // Within 200ms of end
 
             // Reset the flag AFTER determining the stop reason for this event.
             // It should be reset regardless of the stop reason.
@@ -454,7 +485,7 @@ public class PlaybackService : ViewModelBase, IDisposable
 
             if (wasNaturalEndOfFile)
             {
-                Debug.WriteLine("[PlaybackService] Playback ended naturally (event). Raising PlaybackEndedNaturally event.");
+                Debug.WriteLine("[PlaybackService] Playback stopped naturally (event). Raising PlaybackEndedNaturally event.");
                 // Reset position to the end (or duration) before raising the event,
                 // or let the next song start from 0. Resetting to 0 is cleaner.
                 this.CurrentPosition = TimeSpan.Zero; // Position is reset at the end of the file or on stop.
@@ -465,9 +496,9 @@ public class PlaybackService : ViewModelBase, IDisposable
                 // Do NOT set final state (IsPlaying/Status) here if raising the event.
                 // The event handler is responsible for the subsequent state change (either Play() or Stop()).
             }
-            else // It was a clean stop, but explicitly requested (e.g., user clicked Stop, or Play was called before the old song finished)
+            else // It was a clean stop, but explicitly requested (e.g., user clicked Stop, or Play was called before the old song finished) or CurrentSong was null
             {
-                Debug.WriteLine("[PlaybackService] Playback stopped manually (event) or new song requested. Finalizing state.");
+                Debug.WriteLine($"[PlaybackService] Playback stopped manually (event) or new song requested, or CurrentSong was null ({CurrentSong == null}). Finalizing state.");
                 // Set state to stopped and reset position.
                 // Note: If Play() called StopPlaybackInternal(false), CurrentSong/Duration are preserved.
                 // If public Stop() called StopPlaybackInternal(true), CurrentSong/Duration are nulled/zeroed.
@@ -526,7 +557,8 @@ public class PlaybackService : ViewModelBase, IDisposable
         // If stopped, and there is a CurrentSong set (meaning it was stopped after playing, not initially idle),
         // we should re-initialize the pipeline and play from the last position or 0.
         // Calling Play(CurrentSong) achieves this as Play handles initialization from scratch.
-        else if (CurrentPlaybackStatus == PlaybackStateStatus.Stopped) // Could also check _waveOutDevice == null
+        // If PlaybackStatus is Stopped but device is null/disposed, re-initialization is needed.
+        else if (CurrentPlaybackStatus == PlaybackStateStatus.Stopped)
         {
             Debug.WriteLine("[PlaybackService] Resume requested from Stopped state. Re-playing current song.");
             // Calling Play(CurrentSong) will stop any existing playback (which there shouldn't be),
@@ -573,9 +605,8 @@ public class PlaybackService : ViewModelBase, IDisposable
                     // Marshal this to the UI thread as OnPlaybackStopped would be.
                     Dispatcher.UIThread.InvokeAsync(() => {
                         Debug.WriteLine("[PlaybackService] Manually triggering cleanup/state reset on UI thread after _waveOutDevice.Stop() failed.");
-                        // Simulate a stop with an error, or just a manual stop if the error is ignored.
-                        // Let's simulate a manual stop with no error for simplicity if device.Stop() itself failed.
-                        CleanUpNAudioResources();
+                        // Simulate a manual stop with no error if device.Stop() itself failed.
+                        CleanUpNAudioResources(); // Clean up the specific instance that was active
                         StopUiUpdateTimer();
                         IsPlaying = false;
                         CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
@@ -589,11 +620,12 @@ public class PlaybackService : ViewModelBase, IDisposable
             {
                 // Device is already stopped. The PlaybackStopped event won't fire.
                 // We need to manually trigger the cleanup and state reset logic that OnPlaybackStopped would perform for an explicit stop.
+                // This occurs when Play() is called while a device is already stopped but not fully cleaned up.
                 Debug.WriteLine("[PlaybackService] StopPlaybackInternal: Device already stopped. Manually triggering cleanup/state reset for explicit stop.");
                 // Marshal this to the UI thread as OnPlaybackStopped would be.
                 Dispatcher.UIThread.InvokeAsync(() => {
                     Debug.WriteLine("[PlaybackService] Manually triggering cleanup/state reset on UI thread for already stopped device.");
-                    CleanUpNAudioResources();
+                    CleanUpNAudioResources(); // Clean up the instance that was supposedly active
                     StopUiUpdateTimer();
                     IsPlaying = false;
                     CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
@@ -664,11 +696,14 @@ public class PlaybackService : ViewModelBase, IDisposable
         }
 
         // Ensure the playback device is not stopped before attempting to seek the reader.
+        // This check prevents trying to seek a reader attached to a device that is already stopped/disposed,
+        // which can lead to exceptions.
         if (_waveOutDevice?.PlaybackState == PlaybackState.Stopped)
         {
             Debug.WriteLine("[PlaybackService] Seek ignored: Playback device is stopped.");
             return;
         }
+
 
         TimeSpan targetPosition = requestedPosition;
 
@@ -706,30 +741,75 @@ public class PlaybackService : ViewModelBase, IDisposable
         // Apply clamping to the target position
         targetPosition = TimeSpan.FromSeconds(Math.Clamp(targetPosition.TotalSeconds, 0, maxSeekablePosition.TotalSeconds));
 
-        // Optional: Add a small tolerance check to avoid seeking if the target is very close to the current position.
-        // This can reduce unnecessary operations from minor slider fluctuations.
-        // double positionToleranceSeconds = 0.05; // e.g., 50 milliseconds
-        // if (Math.Abs(audioFileReader.CurrentTime.TotalSeconds - targetPosition.TotalSeconds) < positionToleranceSeconds)
-        // {
-        //     Debug.WriteLine($"[PlaybackService] Seek target {targetPosition:mm\\:ss\\.ff} is very close to current position {audioFileReader.CurrentTime:mm\\:ss\\.ff}, ignoring.");
-        //     return;
-        // }
+        // Add a small tolerance check to avoid seeking if the target is very close to the current position.
+        // This can reduce unnecessary operations from minor slider fluctuations and potentially prevent tight seeking loops.
+        double positionToleranceSeconds = 0.2; // Increased tolerance to 200 milliseconds
+        try
+        {
+            // Safely get current time for tolerance check
+            TimeSpan currentAudioTimeForToleranceCheck = TimeSpan.Zero;
+            if (audioFileReader != null)
+            {
+                currentAudioTimeForToleranceCheck = audioFileReader.CurrentTime;
+            }
 
-        Debug.WriteLine($"[PlaybackService] Seeking AudioFileReader to: {targetPosition:mm\\:ss\\.ff}. Current AFR Time before seek: {audioFileReader.CurrentTime:mm\\:ss\\.ff}");
+            if (Math.Abs(currentAudioTimeForToleranceCheck.TotalSeconds - targetPosition.TotalSeconds) < positionToleranceSeconds)
+            {
+                Debug.WriteLine($"[PlaybackService] Seek target {targetPosition:mm\\:ss\\.ff} is very close to current position {currentAudioTimeForToleranceCheck:mm\\:ss\\.ff} (within {positionToleranceSeconds}s), ignoring seek.");
+                // We don't explicitly update this.CurrentPosition here; it will be updated by the timer callback if playing.
+                // This prevents a seek, but doesn't prevent the timer from reading the position and potentially triggering a loop seek if past the end.
+                // The loop check in UpdateUiCallback needs to be robust.
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[PlaybackService] Error checking current position for seek tolerance: {ex.Message}. Proceeding with seek.");
+            // Ignore error, continue with seek
+        }
+
+        // Safely get current time for logging before seek
+        string currentAudioTimeFormatted = "N/A";
+        try
+        {
+            if (audioFileReader != null)
+            {
+                currentAudioTimeFormatted = $"{audioFileReader.CurrentTime:mm\\:ss\\.ff}";
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[PlaybackService] Error formatting current position for log before seek: {ex.Message}");
+        }
+
+        Debug.WriteLine($"[PlaybackService] Seeking AudioFileReader to: {targetPosition:mm\\:ss\\.ff}. Current AFR Time before seek: {currentAudioTimeFormatted}");
 
         // Perform the actual seek operation on the AudioFileReader.
         try
         {
-            audioFileReader.CurrentTime = targetPosition; // Set the position
-                                                          // Read back the position immediately after setting to get the actual position the reader moved to.
-            this.CurrentPosition = audioFileReader.CurrentTime; // Update ViewModel property
-            Debug.WriteLine($"[PlaybackService] Seek executed. AFR Time after seek: {audioFileReader.CurrentTime:mm\\:ss\\.ff}. VM Position: {this.CurrentPosition:mm\\:ss\\.ff}");
+            // Ensure audioFileReader is still valid before setting position
+            if (audioFileReader != null)
+            {
+                audioFileReader.CurrentTime = targetPosition; // Set the position
+                                                              // Read back the position immediately after setting to get the actual position the reader moved to.
+                this.CurrentPosition = audioFileReader.CurrentTime; // Update ViewModel property
+                Debug.WriteLine($"[PlaybackService] Seek executed. AFR Time after seek: {audioFileReader.CurrentTime:mm\\:ss\\.ff}. VM Position: {this.CurrentPosition:mm\\:ss\\.ff}");
+            }
+            else
+            {
+                Debug.WriteLine($"[PlaybackService] Seek failed: audioFileReader is null.");
+            }
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"[PlaybackService] Error during Seek to {targetPosition:mm\\:ss\\.ff}: {ex.Message}");
             // Update VM position to reflect the last known good position, or zero on error
-            this.CurrentPosition = audioFileReader.CurrentTime; // Try to get current position after failed seek? Or leave as is? Leave as is might be safer.
+            // If audioFileReader is still valid, try to read current position after failed seek attempt.
+            if (audioFileReader != null)
+            {
+                try { this.CurrentPosition = audioFileReader.CurrentTime; }
+                catch (Exception readEx) { Debug.WriteLine($"[PlaybackService] Error reading position after failed seek: {readEx.Message}"); }
+            }
         }
     }
 
