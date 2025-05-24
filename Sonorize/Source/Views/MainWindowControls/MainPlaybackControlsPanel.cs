@@ -1,21 +1,16 @@
-﻿using Avalonia;
-using Avalonia.Controls.Primitives;
+﻿using System.Diagnostics; // Added for Debug
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Data;
+using Avalonia.Data.Converters; // Added required using directive for FuncValueConverter
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Imaging; // Required for BitmapInterpolationMode
 using Avalonia.Styling;
-using Avalonia;
-using Avalonia.Data.Converters; // Added required using directive for FuncValueConverter
-using Avalonia.Controls.Templates; // Required for FuncDataTemplate
-
 using Sonorize.Converters;
 using Sonorize.Models;
-using Sonorize.Views.MainWindowControls;
-using Avalonia.Media.Imaging; // Required for BitmapInterpolationMode
 using Sonorize.ViewModels; // Required for RepeatMode enum
-using System; // Required for Func
-using System.Diagnostics; // Added for Debug
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -96,22 +91,33 @@ public static class MainPlaybackControlsPanel
             HorizontalAlignment = HorizontalAlignment.Center, // Center the button horizontally
             VerticalContentAlignment = VerticalAlignment.Center, // Center content vertically
             HorizontalContentAlignment = HorizontalAlignment.Center, // Center content horizontally
-            FontSize = 18, // Set font size directly on button
-            FontFamily = "Segoe UI Symbol, Arial", // Set font family directly on button
-            ContentTemplate = null, // No explicit template needed for simple string content
+            FontSize = 18, // Set font size directly on button - Handled by TextBlock now
+            FontFamily = "Segoe UI Symbol, Arial", // Set font family directly on button - Handled by TextBlock now
+            ContentTemplate = null, // No explicit template needed, using direct Content
             Width = 32, // Fixed width for icon
             Height = 32 // Fixed height for icon
         };
+
+        // Set Content as a TextBlock for better centering of the icon
+        shuffleButton.Content = new TextBlock
+        {
+            TextAlignment = TextAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            FontSize = 18, // Font size for the icon
+            FontFamily = new FontFamily("Segoe UI Symbol, Arial"), // Font family for symbols
+            // Bind the TextBlock's Text property to the ShuffleEnabled state via converter
+            [!TextBlock.TextProperty] = new Binding("Playback.ShuffleEnabled") { Converter = BooleanToShuffleIconConverter.Instance }
+        };
+
         // Bind IsChecked to Playback.ShuffleEnabled (TwoWay) - This is essential for the toggle state
         // This binding, when checked/unchecked by user click, will trigger the ShuffleEnabled setter in the VM.
         shuffleButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.ShuffleEnabled", BindingMode.TwoWay));
-        // Bind Content directly using the converter based on the *ViewModel's* ShuffleEnabled state
-        shuffleButton.Bind(ContentControl.ContentProperty, new Binding("Playback.ShuffleEnabled") { Converter = BooleanToShuffleIconConverter.Instance });
 
-        // REMOVED: Explicit Button.Command binding. The TwoWay IsChecked binding handles the toggle.
-        // shuffleButton.Bind(Button.CommandProperty, new Binding("Playback.ToggleShuffleCommand"));
+        // REMOVED: Direct ContentControl.ContentProperty binding on the ToggleButton. Content is now a TextBlock.
+        // shuffleButton.Bind(ContentControl.ContentProperty, new Binding("Playback.ShuffleEnabled") { Converter = BooleanToShuffleIconConverter.Instance });
 
-        Debug.WriteLine($"[View] Shuffle Button Content Bound Directly to Playback.ShuffleEnabled with BooleanToShuffleIconConverter. Command binding removed.");
+        Debug.WriteLine($"[View] Shuffle Button TextBlock Content Bound Directly to Playback.ShuffleEnabled with BooleanToShuffleIconConverter. Command binding removed.");
 
 
         // Change Foreground color based on IsChecked state (using the FuncValueConverter)
@@ -143,8 +149,8 @@ public static class MainPlaybackControlsPanel
             HorizontalAlignment = HorizontalAlignment.Center, // Center the button horizontally
             VerticalContentAlignment = VerticalAlignment.Center, // Center content vertically
             HorizontalContentAlignment = HorizontalAlignment.Center, // Center content horizontally
-            FontSize = 18, // Use larger font size for icons
-            FontFamily = "Segoe UI Symbol, Arial", // Explicitly set font family for symbols
+            FontSize = 18, // Use larger font size for icons - Handled by TextBlock now
+            FontFamily = "Segoe UI Symbol, Arial", // Explicitly set font family for symbols - Handled by TextBlock now
             ContentTemplate = null, // No explicit template needed for simple string content
             Width = 32, // Fixed width for icon
             Height = 32 // Fixed height for icon
