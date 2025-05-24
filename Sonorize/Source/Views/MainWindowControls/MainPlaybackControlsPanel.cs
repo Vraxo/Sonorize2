@@ -125,9 +125,9 @@ public static class MainPlaybackControlsPanel
         shuffleButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
 
-        var loopButton = new ToggleButton
+        var repeatModeButton = new ToggleButton // Renamed from loopButton
         {
-            Content = "Loop Off", // Content will be updated by Binding
+            Content = "Do Nothing", // Default Content, will be updated by Binding
             Foreground = theme.B_SecondaryTextColor, // Default color (off) - Will be overridden by style
             Background = Brushes.Transparent,
             BorderBrush = theme.B_ControlBackgroundColor, // Default border color (off) - Will be overridden by style
@@ -135,38 +135,36 @@ public static class MainPlaybackControlsPanel
             CornerRadius = new CornerRadius(4), // Add some rounded corners
             Padding = new Thickness(5),
             VerticalAlignment = VerticalAlignment.Center,
-            FontSize = 12
+            FontSize = 12 // Adjusted font size slightly
         };
-        // Bind Content to Playback.RepeatMode (using a converter to show state) - Renamed
-        loopButton.Bind(ToggleButton.ContentProperty, new Binding("Playback.RepeatMode")
+        // Bind Content to Playback.RepeatMode (using a converter to show state)
+        repeatModeButton.Bind(ToggleButton.ContentProperty, new Binding("Playback.RepeatMode")
         {
             Converter = new FuncValueConverter<RepeatMode, string>(mode => mode switch
             {
-                RepeatMode.Off => "Loop Off",
-                RepeatMode.RepeatOne => "Loop One", // Text updated
-                RepeatMode.RepeatAll => "Loop All", // Text updated
-                _ => "Loop" // Fallback
+                RepeatMode.None => "Do Nothing",
+                RepeatMode.PlayOnce => "Play Once",
+                RepeatMode.RepeatOne => "Loop One",
+                RepeatMode.RepeatAll => "Loop All",
+                _ => "Repeat Mode" // Fallback
             })
         });
-        // Change foreground color based on RepeatMode state (if not Off) - Renamed
-        loopButton[!ToggleButton.ForegroundProperty] = new Binding("Playback.RepeatMode")
+        // Change foreground color based on RepeatMode state (if not None)
+        repeatModeButton[!ToggleButton.ForegroundProperty] = new Binding("Playback.RepeatMode")
         {
-            Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.Off ? theme.B_AccentColor : theme.B_SecondaryTextColor)
+            Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.None ? theme.B_AccentColor : theme.B_SecondaryTextColor)
         };
-        // Change BorderBrush color based on RepeatMode state (if not Off)
-        loopButton[!ToggleButton.BorderBrushProperty] = new Binding("Playback.RepeatMode")
+        // Change BorderBrush color based on RepeatMode state (if not None)
+        repeatModeButton[!ToggleButton.BorderBrushProperty] = new Binding("Playback.RepeatMode")
         {
-            Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.Off ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
+            Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.None ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
         };
-        // IsChecked might be useful for visual styling, maybe bind to (RepeatMode != Off) - Renamed
-        loopButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.RepeatMode")
-        {
-            Converter = new FuncValueConverter<RepeatMode, bool>(mode => mode != RepeatMode.Off)
-        });
-        // Bind Command to Playback.CycleRepeatModeCommand - Renamed
-        loopButton.Bind(Button.CommandProperty, new Binding("Playback.CycleRepeatModeCommand"));
+        // Bind IsChecked to Playback.IsRepeatActive (ViewModel calculates this based on RepeatMode != None)
+        repeatModeButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.IsRepeatActive"));
+        // Bind Command to Playback.CycleRepeatModeCommand
+        repeatModeButton.Bind(Button.CommandProperty, new Binding("Playback.CycleRepeatModeCommand"));
         // Ensure button is enabled only when a song is loaded
-        loopButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
+        repeatModeButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
 
         // --- Combined Playback Controls Panel (Shuffle + Nav Buttons + Loop) ---
@@ -180,12 +178,12 @@ public static class MainPlaybackControlsPanel
             Margin = new Thickness(0)
         };
 
-        // Add the buttons in the desired order (Shuffle - Previous - Play/Pause - Next - Loop)
+        // Add the buttons in the desired order (Shuffle - Previous - Play/Pause - Next - Repeat Mode)
         combinedPlaybackButtonControlsPanel.Children.Add(shuffleButton);
         combinedPlaybackButtonControlsPanel.Children.Add(previousButton);
         combinedPlaybackButtonControlsPanel.Children.Add(mainPlayPauseButton);
         combinedPlaybackButtonControlsPanel.Children.Add(nextButton);
-        combinedPlaybackButtonControlsPanel.Children.Add(loopButton);
+        combinedPlaybackButtonControlsPanel.Children.Add(repeatModeButton); // Added the renamed repeat button
 
 
         var toggleAdvPanelButton = new Button

@@ -16,7 +16,7 @@ namespace Sonorize.ViewModels;
 
 
 // Renamed enum for clarity based on standard playback controls
-public enum RepeatMode { Off, RepeatOne, RepeatAll }
+public enum RepeatMode { None, PlayOnce, RepeatOne, RepeatAll }
 
 
 public class PlaybackViewModel : ViewModelBase
@@ -83,7 +83,7 @@ public class PlaybackViewModel : ViewModelBase
     }
 
     // Renamed property
-    private RepeatMode _repeatMode = RepeatMode.Off;
+    private RepeatMode _repeatMode = RepeatMode.PlayOnce; // Default to PlayOnce
     public RepeatMode RepeatMode
     {
         get => _repeatMode;
@@ -95,6 +95,7 @@ public class PlaybackViewModel : ViewModelBase
                 // Saving preference could happen here
                 OnPropertyChanged(nameof(IsRepeatOne));
                 OnPropertyChanged(nameof(IsRepeatAll));
+                OnPropertyChanged(nameof(IsRepeatActive)); // Notify composite state change
             }
         }
     }
@@ -102,12 +103,15 @@ public class PlaybackViewModel : ViewModelBase
     // Helper properties for UI bindings (e.g., RadioButtons or toggling states) - Renamed
     public bool IsRepeatOne { get => RepeatMode == RepeatMode.RepeatOne; set { if (value) RepeatMode = RepeatMode.RepeatOne; } }
     public bool IsRepeatAll { get => RepeatMode == RepeatMode.RepeatAll; set { if (value) RepeatMode = RepeatMode.RepeatAll; } }
-    // Off state is implied if IsRepeatOne and IsRepeatAll are false
+    // Helper for the ToggleButton IsChecked state (active if not None)
+    public bool IsRepeatActive => RepeatMode != RepeatMode.None;
+
 
     // Commands for UI controls for modes
     public ICommand ToggleShuffleCommand { get; }
     // Renamed command to reflect cycling through repeat modes
-    public ICommand CycleRepeatModeCommand { get; } // Cycles through Off -> RepeatOne -> RepeatAll -> Off
+    public ICommand CycleRepeatModeCommand { get; } // Cycles through None -> PlayOnce -> RepeatOne -> RepeatAll -> None
+
 
     // Waveform data
     public ObservableCollection<WaveformPoint> WaveformRenderData { get; } = new();
@@ -157,7 +161,8 @@ public class PlaybackViewModel : ViewModelBase
 
         // Initialize playback modes (Defaults)
         ShuffleEnabled = false;
-        RepeatMode = RepeatMode.Off;
+        RepeatMode = RepeatMode.PlayOnce; // Default repeat mode
+
 
         // Initialize commands
         PlayPauseResumeCommand = new RelayCommand(
@@ -218,15 +223,16 @@ public class PlaybackViewModel : ViewModelBase
         }
     }
 
-    // Renamed handler
+    // Renamed handler and updated cycle logic
     private void CycleRepeatMode()
     {
         RepeatMode = RepeatMode switch
         {
-            RepeatMode.Off => RepeatMode.RepeatOne,
+            RepeatMode.None => RepeatMode.PlayOnce,
+            RepeatMode.PlayOnce => RepeatMode.RepeatOne,
             RepeatMode.RepeatOne => RepeatMode.RepeatAll,
-            RepeatMode.RepeatAll => RepeatMode.Off,
-            _ => RepeatMode.Off // Should not happen
+            RepeatMode.RepeatAll => RepeatMode.None,
+            _ => RepeatMode.None // Should not happen
         };
         RaisePlaybackCommandCanExecuteChanged(); // Repeat commands affected
     }
@@ -289,11 +295,13 @@ public class PlaybackViewModel : ViewModelBase
         {
             case nameof(IsWaveformLoading):
             case nameof(ShuffleEnabled): // Commands might be enabled/disabled based on modes
-            case nameof(RepeatMode): // Commands might be enabled/disabled based on modes - Renamed
+            case nameof(RepeatMode): // Commands might be enabled/disabled based on modes
                 RaisePlaybackCommandCanExecuteChanged();
+                // Also update the composite IsRepeatActive property
+                OnPropertyChanged(nameof(IsRepeatActive));
                 break;
             case nameof(HasCurrentSong):
-                RaisePlaybackCommandCanExecuteChanged(); // ToggleShuffle and CycleRepeatMode depend on this - Renamed
+                RaisePlaybackCommandCanExecuteChanged(); // ToggleShuffle and CycleRepeatMode depend on this
                 break;
                 // PlaybackSpeed, PlaybackPitch don't inherently affect command CanExecute
         }
@@ -314,11 +322,8 @@ public class PlaybackViewModel : ViewModelBase
         }
 
         // Check if waveform is already loaded for this song OR currently loading
-        // Need a way to know which file the current WaveformRenderData belongs to.
-        // For now, a simple check if there are any points is a rough indicator.
+        // A simple check if there are any points is a rough indicator.
         // A more robust approach would be to store the file path associated with WaveformRenderData.
-        // Add a check against the currently loaded waveform data's file path if known
-        // Example: if (_currentWaveformFilePath == songToLoadWaveformFor.FilePath && WaveformRenderData.Any() && !IsWaveformLoading) return;
         // For simplicity, for now, if it has points OR is loading, assume it's for the current song.
         if (WaveformRenderData.Any() || IsWaveformLoading)
         {
