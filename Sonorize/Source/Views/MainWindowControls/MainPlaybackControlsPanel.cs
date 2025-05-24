@@ -230,18 +230,31 @@ public static class MainPlaybackControlsPanel
 
         var toggleAdvPanelButton = new Button
         {
-            Content = "+",
+            // Content set as TextBlock for better centering
             Background = theme.B_SlightlyLighterBackground,
             Foreground = theme.B_TextColor, // Default color
             BorderBrush = theme.B_ControlBackgroundColor, // Default border color
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(3),
-            Padding = new Thickness(8, 4),
+            Padding = new Thickness(0), // Remove padding on the button itself
             MinWidth = 30, // Give it a minimum size to occupy space
-            FontWeight = FontWeight.Bold,
+            FontWeight = FontWeight.Bold, // Applied to TextBlock instead
             Width = 32, // Fixed width for consistency
-            Height = 32 // Fixed height for consistency
+            Height = 32, // Fixed height for consistency
+            HorizontalContentAlignment = HorizontalAlignment.Center, // Keep for centering the TextBlock
+            VerticalContentAlignment = VerticalAlignment.Center // Keep for centering the TextBlock
         };
+        // Set Content as a TextBlock for better centering of the "+" character
+        toggleAdvPanelButton.Content = new TextBlock
+        {
+            Text = "+",
+            TextAlignment = TextAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            FontSize = 16, // Adjusted font size slightly for fit/look
+            FontWeight = FontWeight.Bold // Apply bold to the TextBlock
+        };
+
         // Change BorderBrush color based on IsAdvancedPanelVisible
         toggleAdvPanelButton[!Button.BorderBrushProperty] = new Binding("IsAdvancedPanelVisible")
         {
