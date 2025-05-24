@@ -93,6 +93,9 @@ public static class MainPlaybackControlsPanel
             CornerRadius = new CornerRadius(4), // Add some rounded corners
             Padding = new Thickness(5),
             VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center, // Center the button horizontally
+            VerticalContentAlignment = VerticalAlignment.Center, // Center content vertically
+            HorizontalContentAlignment = HorizontalAlignment.Center, // Center content horizontally
             FontSize = 18, // Set font size directly on button
             FontFamily = "Segoe UI Symbol, Arial", // Set font family directly on button
             ContentTemplate = null, // No explicit template needed for simple string content
@@ -137,6 +140,9 @@ public static class MainPlaybackControlsPanel
             CornerRadius = new CornerRadius(4), // Add some rounded corners
             Padding = new Thickness(5),
             VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center, // Center the button horizontally
+            VerticalContentAlignment = VerticalAlignment.Center, // Center content vertically
+            HorizontalContentAlignment = HorizontalAlignment.Center, // Center content horizontally
             FontSize = 18, // Use larger font size for icons
             FontFamily = "Segoe UI Symbol, Arial", // Explicitly set font family for symbols
             ContentTemplate = null, // No explicit template needed for simple string content
