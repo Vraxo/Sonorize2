@@ -106,13 +106,9 @@ public class MainWindowViewModel : ViewModelBase
                     {
                         PlaybackService.Play(Library.SelectedSong);
                     }
-                    else
-                    {
-                        // If selection is cleared, do nothing? Or stop playback?
-                        // For now, let's not stop playback if selection is cleared.
-                        // The exception is if the *PlaybackService* stops (song ends),
-                        // we might want to clear the *Library* selection (handled in Playback_PropertyChanged).
-                    }
+                    // Note: If selection is cleared (SelectedSong becomes null), we don't stop playback here.
+                    // Playback stops only when the song naturally ends or the user clicks stop.
+
                     // Update commands that might depend on a song being selected/playing
                     RaiseAllCommandsCanExecuteChanged();
                     break;
@@ -126,8 +122,8 @@ public class MainWindowViewModel : ViewModelBase
                 case nameof(Library.LibraryStatusText):
                     UpdateStatusBarText(); // Library status affects overall status bar
                     break;
-                    // Properties like Artists, Albums, FilteredSongs changing don't need explicit handling here
-                    // as the UI is bound directly to Library.*
+                    // Properties like Artists, Albums, FilteredSongs changing are handled by LibraryVM itself.
+                    // When FilteredSongs changes, LibraryVM calls RaiseNavigationCommandsCanExecuteChanged internally.
             }
         });
     }
@@ -139,60 +135,74 @@ public class MainWindowViewModel : ViewModelBase
             // Listen for PlaybackViewModel changes that affect MainViewModel's state/UI
             switch (e.PropertyName)
             {
-                case nameof(PlaybackViewModel.HasCurrentSong):
-                    // Propagate HasCurrentSong from PlaybackVM (MainWindowViewModel doesn't have its own)
-                    // OnPropertyChanged(nameof(HasCurrentSong)); // Removed - MainVM doesn't have this property
-                    // Update commands that might depend on a song being playing
+                case nameof(PlaybackViewModel.CurrentSong):
+                    OnPropertyChanged(nameof(Playback.CurrentSong)); // Propagate the song itself
+                    OnPropertyChanged(nameof(Playback.HasCurrentSong)); // Propagate derived property
+                    // Commands that might depend on a song being playing (like ToggleAdvancedPanelCommand)
                     RaiseAllCommandsCanExecuteChanged();
 
-                    // If playback stops entirely (HasCurrentSong becomes false in PlaybackVM), clear the library selection
+                    // If playback stops entirely (HasCurrentSong becomes false), clear the library selection
+                    // This covers song ending or explicit Stop() call.
                     if (!Playback.HasCurrentSong && Library.SelectedSong != null)
                     {
                         Debug.WriteLine("[MainVM_PlaybackChanged] PlaybackService has no current song. Clearing Library selection.");
-                        Library.SelectedSong = null;
+                        Library.SelectedSong = null; // This will trigger Library_PropertyChanged
                     }
 
-                    // When a new song starts playing (HasCurrentSong becomes true after being false)
-                    // or if the song instance itself changes (Playback.CurrentSong),
+                    // When a new song starts playing (Playback.CurrentSong changes to non-null)
                     // trigger waveform loading if panel is visible.
-                    // This reaction is tied to the *Playback* VM having a current song.
-                    // Checking CurrentSong is more precise than just HasCurrentSong for triggering waveform load.
                     if (Playback.CurrentSong != null && IsAdvancedPanelVisible)
                     {
                         Debug.WriteLine("[MainVM_PlaybackChanged] Playback has current song, advanced panel is visible. Requesting waveform load.");
                         _ = Playback.LoadWaveformForCurrentSongAsync(); // Delegate waveform load
                     }
-                    // Note: Clearing waveform when song becomes null is now handled inside PlaybackViewModel
+                    // Note: Clearing waveform when song becomes null is handled inside PlaybackViewModel
+
+                    // Update time displays when song changes (delegated to PlaybackVM)
+                    // UpdateStatusBarText(); // Playback status affects overall status bar - handled by CurrentPlaybackStatus change
+
+                    // Commands in PlaybackVM (Play/Pause, Seek, Speed/Pitch) are handled by PlaybackVM itself.
+                    // Library navigation commands are handled by LibraryVM's SelectedSong/FilteredSongs change.
+                    // ToggleAdvancedPanelCommand depends on Playback.HasCurrentSong, so need to raise.
+                    RaiseAllCommandsCanExecuteChanged();
 
                     break;
                 case nameof(PlaybackViewModel.CurrentPlaybackStatus):
+                    OnPropertyChanged(nameof(Playback.CurrentPlaybackStatus)); // Propagate status
+                    OnPropertyChanged(nameof(Playback.IsPlaying)); // Propagate derived IsPlaying
                     UpdateStatusBarText(); // Playback status affects overall status bar
-                    // Commands like Play/Pause/Resume are now in PlaybackVM, it raises its own CanExecuteChanged
-                    // Raising all commands here is a safe bet if any MainVM commands depend on status directly (currently ToggleAdvancedPanel depends on HasCurrentSong).
+                    // Commands in PlaybackVM already listen to this. MainVM commands potentially affected? (currently none directly)
                     RaiseAllCommandsCanExecuteChanged();
                     break;
                 case nameof(PlaybackViewModel.CurrentPosition):
+                    OnPropertyChanged(nameof(Playback.CurrentPosition)); // Propagate position
+                    OnPropertyChanged(nameof(Playback.CurrentPositionSeconds)); // Propagate derived property
+                    OnPropertyChanged(nameof(Playback.CurrentTimeDisplay)); // Propagate derived property
+                    // Loop editor and UI slider are bound directly to PlaybackVM properties.
+                    // Commands in PlaybackVM already listen to this.
+                    // Raising all commands here is usually unnecessary unless a MainVM command directly depends on position.
+                    // RaiseAllCommandsCanExecuteChanged();
+                    break;
                 case nameof(PlaybackViewModel.CurrentSongDuration):
-                    // The UI slider is bound directly to Playback.CurrentPosition/DurationSeconds.
-                    // The time display is bound directly to Playback.CurrentTimeTotalTimeDisplay.
-                    // The loop editor listens directly to PlaybackService.CurrentPosition/Duration (via its own PS handler).
-                    // No need to re-propagate or call LoopEditor's Raise here; LoopEditor handles it.
-                    // Just ensure MainVM commands potentially affected by position/duration are updated (though none currently are).
-                    RaiseAllCommandsCanExecuteChanged();
+                    OnPropertyChanged(nameof(Playback.CurrentSongDuration)); // Propagate duration
+                    OnPropertyChanged(nameof(Playback.CurrentSongDurationSeconds)); // Propagate derived property
+                    OnPropertyChanged(nameof(Playback.TotalTimeDisplay)); // Propagate derived property
+                    // UI slider is bound directly.
+                    // RaiseAllCommandsCanExecuteChanged();
                     break;
                 case nameof(PlaybackViewModel.IsWaveformLoading):
-                    // Propagate IsWaveformLoading from PlaybackVM (MainWindowViewModel doesn't have its own)
-                    // OnPropertyChanged(nameof(IsWaveformLoading)); // Removed - MainVM doesn't have this property
+                    OnPropertyChanged(nameof(Playback.IsWaveformLoading)); // Propagate state
                     // Commands in PlaybackVM already listen to this.
-                    RaiseAllCommandsCanExecuteChanged(); // PlaybackVM commands affected
+                    // Raising all commands here is usually unnecessary unless a MainVM command directly depends on this.
+                    // RaiseAllCommandsCanExecuteChanged();
                     break;
                 case nameof(PlaybackViewModel.WaveformRenderData):
-                    // Propagate WaveformRenderData from PlaybackVM (MainWindowViewModel doesn't have its own)
-                    // OnPropertyChanged(nameof(WaveformRenderData)); // Removed - MainVM doesn't have this property
-                    // Waveform display control is bound directly to Playback.WaveformRenderData
+                    OnPropertyChanged(nameof(Playback.WaveformRenderData)); // Propagate data
+                    // Waveform display is bound directly.
                     break;
 
                     // PlaybackSpeed, PlaybackPitch, derived display properties are handled within PlaybackVM.
+                    // LoopEditor VM listens directly to PlaybackService for position/duration.
             }
         });
     }
@@ -214,37 +224,11 @@ public class MainWindowViewModel : ViewModelBase
     private void UpdateAllUIDependentStates()
     {
         // Update main VM properties that depend on child VM states
-        // OnPropertyChanged(nameof(HasCurrentSong)); // Removed
         OnPropertyChanged(nameof(IsLoadingLibrary)); // Depends on Library.IsLoadingLibrary
+        OnPropertyChanged(nameof(Playback.CurrentSong)); // Ensure Playback's CurrentSong is reflected
+        OnPropertyChanged(nameof(Playback.HasCurrentSong)); // Ensure Playback's HasCurrentSong is reflected
+        OnPropertyChanged(nameof(IsAdvancedPanelVisible)); // Ensure panel visibility is reflected
         UpdateStatusBarText(); // Depends on Playback and Library status
-
-        // Although the View binds directly to child VM properties, explicitly raising
-        // OnPropertyChanged for the child VM properties used in the View might help
-        // ensure bindings are refreshed during initial setup or after significant state changes.
-        // This is particularly important for derived properties or complex bindings.
-        // HOWEVER, binding directly to the child VM's property is the correct approach,
-        // and the child VM is responsible for raising OnPropertyChanged for its own properties.
-        // So, these explicit OnPropertyChanged calls for child properties are generally not needed
-        // and can be removed to simplify the parent VM.
-        /*
-        OnPropertyChanged(nameof(Playback.CurrentPositionSeconds)); // for Slider.Value binding
-        OnPropertyChanged(nameof(Playback.CurrentSongDurationSeconds)); // for Slider.Maximum binding
-        OnPropertyChanged(nameof(Playback.CurrentTimeTotalTimeDisplay)); // for time TextBlock
-        OnPropertyChanged(nameof(Playback.IsPlaying)); // for Play/Pause button text
-        OnPropertyChanged(nameof(Playback.CurrentPlaybackStatus)); // for command CanExecute
-        OnPropertyChanged(nameof(Playback.PlaybackSpeed)); // for Speed Slider.Value
-        OnPropertyChanged(nameof(Playback.PlaybackPitch)); // for Pitch Slider.Value
-        OnPropertyChanged(nameof(Playback.PlaybackSpeedDisplay)); // for speed TextBlock
-        OnPropertyChanged(nameof(Playback.PlaybackPitchDisplay)); // for pitch TextBlock
-        OnPropertyChanged(nameof(Playback.IsWaveformLoading)); // for waveform ProgressBar
-        OnPropertyChanged(nameof(Playback.WaveformRenderData)); // for WaveformDisplayControl
-
-        OnPropertyChanged(nameof(LoopEditor.NewLoopStartCandidateDisplay)); // for loop TextBlocks
-        OnPropertyChanged(nameof(LoopEditor.NewLoopEndCandidateDisplay));   // for loop TextBlocks
-        OnPropertyChanged(nameof(LoopEditor.ActiveLoopDisplayText));       // for loop TextBlock
-        OnPropertyChanged(nameof(LoopEditor.CanSaveLoopRegion));           // for Save button IsEnabled
-        OnPropertyChanged(nameof(LoopEditor.IsCurrentLoopActiveUiBinding)); // for loop CheckBox
-        */
 
         // Trigger commands CanExecute updates for all VMs
         RaiseAllCommandsCanExecuteChanged();
@@ -263,7 +247,9 @@ public class MainWindowViewModel : ViewModelBase
         (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
 
         // Tell child VMs to raise their commands' CanExecuteChanged
+        // This now includes the navigation commands within LibraryViewModel
         Library.RaiseLibraryCommandsCanExecuteChanged();
+        Library.RaiseNavigationCommandsCanExecuteChanged(); // Explicitly call navigation commands
         Playback.RaisePlaybackCommandCanExecuteChanged();
         LoopEditor.RaiseLoopCommandCanExecuteChanged();
     }

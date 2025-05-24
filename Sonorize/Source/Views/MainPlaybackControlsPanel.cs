@@ -34,8 +34,9 @@ public static class MainPlaybackControlsPanel
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center
         };
-        previousButton.Bind(Button.CommandProperty, new Binding("Playback.PreviousTrackCommand")); // Assuming this command exists or will exist
-        previousButton.Bind(Button.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
+        // Bind to Library.PreviousTrackCommand
+        previousButton.Bind(Button.CommandProperty, new Binding("Library.PreviousTrackCommand"));
+        // IsEnabled is controlled by the command's CanExecute
 
         var mainPlayPauseButton = new Button
         {
@@ -70,8 +71,9 @@ public static class MainPlaybackControlsPanel
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center
         };
-        nextButton.Bind(Button.CommandProperty, new Binding("Playback.NextTrackCommand")); // Assuming this command exists or will exist
-        nextButton.Bind(Button.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
+        // Bind to Library.NextTrackCommand
+        nextButton.Bind(Button.CommandProperty, new Binding("Library.NextTrackCommand"));
+        // IsEnabled is controlled by the command's CanExecute
 
         var playbackButtonControlsPanel = new StackPanel
         {

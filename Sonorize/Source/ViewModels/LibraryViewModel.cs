@@ -44,6 +44,8 @@ public class LibraryViewModel : ViewModelBase
             if (SetProperty(ref _selectedSongInternal, value))
             {
                 Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"}");
+                // Raise CanExecuteChanged for navigation commands when selection changes
+                RaiseNavigationCommandsCanExecuteChanged();
             }
         }
     }
@@ -147,6 +149,10 @@ public class LibraryViewModel : ViewModelBase
 
     public ICommand SetDisplayModeCommand { get; }
 
+    // Navigation Commands
+    public ICommand PreviousTrackCommand { get; }
+    public ICommand NextTrackCommand { get; }
+
 
     public LibraryViewModel(SettingsService settingsService, MusicLibraryService musicLibraryService, LoopDataService loopDataService)
     {
@@ -178,8 +184,67 @@ public class LibraryViewModel : ViewModelBase
             _ => true
         );
 
+        // Initialize Navigation Commands
+        PreviousTrackCommand = new RelayCommand(ExecutePreviousTrack, CanExecutePreviousTrack);
+        NextTrackCommand = new RelayCommand(ExecuteNextTrack, CanExecuteNextTrack);
+
+        // Subscribe to FilteredSongs changes to update navigation command states
+        FilteredSongs.CollectionChanged += (sender, e) => RaiseNavigationCommandsCanExecuteChanged();
+
         UpdateStatusBarText();
     }
+
+    private void ExecutePreviousTrack(object? parameter)
+    {
+        if (SelectedSong == null || !FilteredSongs.Any()) return;
+
+        var currentIndex = FilteredSongs.IndexOf(SelectedSong);
+        if (currentIndex > 0)
+        {
+            SelectedSong = FilteredSongs[currentIndex - 1];
+            Debug.WriteLine($"[LibraryVM] Moved to previous track: {SelectedSong.Title}");
+        }
+        else
+        {
+            Debug.WriteLine("[LibraryVM] Already at the first track.");
+            // Optionally loop to the last track: SelectedSong = FilteredSongs.Last();
+        }
+    }
+
+    private bool CanExecutePreviousTrack(object? parameter)
+    {
+        if (SelectedSong == null || !FilteredSongs.Any()) return false;
+        return FilteredSongs.IndexOf(SelectedSong) > 0;
+    }
+
+    private void ExecuteNextTrack(object? parameter)
+    {
+        if (SelectedSong == null || !FilteredSongs.Any()) return;
+
+        var currentIndex = FilteredSongs.IndexOf(SelectedSong);
+        if (currentIndex < FilteredSongs.Count - 1 && currentIndex != -1)
+        {
+            SelectedSong = FilteredSongs[currentIndex + 1];
+            Debug.WriteLine($"[LibraryVM] Moved to next track: {SelectedSong.Title}");
+        }
+        else if (currentIndex != -1) // Already at the last track
+        {
+            Debug.WriteLine("[LibraryVM] Already at the last track.");
+            // Optionally loop to the first track: SelectedSong = FilteredSongs.First();
+        }
+        else // Selected song not found in filtered list - should not happen if SelectedSong is non-null and FilteredSongs contains it
+        {
+            Debug.WriteLine("[LibraryVM] Selected song not found in filtered list.");
+        }
+    }
+
+    private bool CanExecuteNextTrack(object? parameter)
+    {
+        if (SelectedSong == null || !FilteredSongs.Any()) return false;
+        var currentIndex = FilteredSongs.IndexOf(SelectedSong);
+        return currentIndex != -1 && currentIndex < FilteredSongs.Count - 1;
+    }
+
 
     public async Task LoadLibraryAsync()
     {
@@ -272,7 +337,7 @@ public class LibraryViewModel : ViewModelBase
                     }
                     OnPropertyChanged(nameof(Albums));
 
-                    ApplyFilter();
+                    ApplyFilter(); // This will populate FilteredSongs and trigger RaiseNavigationCommandsCanExecuteChanged
 
                     UpdateStatusBarText();
                 });
@@ -291,13 +356,14 @@ public class LibraryViewModel : ViewModelBase
         if (artist?.Name == null) return;
         Debug.WriteLine($"[LibraryVM] Artist selected: {artist.Name}");
         SearchQuery = artist.Name;
+        // ApplyFilter will be called by SearchQuery setter, which updates FilteredSongs
     }
 
     private void OnAlbumSelected(AlbumViewModel album)
     {
         if (album?.Title == null || album.Artist == null) return;
         Debug.WriteLine($"[LibraryVM] Album selected: {album.Title} by {album.Artist}");
-        SearchQuery = string.Empty;
+        SearchQuery = string.Empty; // Clear search query when selecting album
 
         FilteredSongs.Clear();
         var songsInAlbum = _allSongs.Where(s =>
@@ -309,7 +375,12 @@ public class LibraryViewModel : ViewModelBase
         {
             FilteredSongs.Add(song);
         }
+        if (SelectedSong != null && !FilteredSongs.Contains(SelectedSong))
+        {
+            SelectedSong = null; // Clear selection if the previously selected song is not in this album
+        }
         UpdateStatusBarText();
+        RaiseNavigationCommandsCanExecuteChanged(); // FilteredSongs changed
     }
 
     private void ApplyFilter()
@@ -332,11 +403,25 @@ public class LibraryViewModel : ViewModelBase
         {
             FilteredSongs.Add(song);
         }
+        // If the currently selected song is no longer in the filtered list, clear selection.
+        // This is important for playback state synchronization.
         if (SelectedSong != null && !FilteredSongs.Contains(SelectedSong))
         {
-            SelectedSong = null;
+            Debug.WriteLine($"[LibraryVM] Selected song '{SelectedSong.Title}' is no longer in the filtered list. Clearing selection.");
+            SelectedSong = null; // Clearing SelectedSong will trigger its PropertyChanged handler
         }
+        else if (SelectedSong != null && FilteredSongs.Contains(SelectedSong))
+        {
+            // If the selected song is still in the list, its index might have changed.
+            // Need to re-evaluate navigation commands.
+            RaiseNavigationCommandsCanExecuteChanged();
+        }
+        // If SelectedSong is null, this filter application didn't select one,
+        // and RaiseNavigationCommandsCanExecuteChanged is called because FilteredSongs changed.
+
         UpdateStatusBarText();
+        // Navigation commands also depend on FilteredSongs changing
+        RaiseNavigationCommandsCanExecuteChanged();
     }
 
     public void UpdateStatusBarText()
@@ -371,5 +456,13 @@ public class LibraryViewModel : ViewModelBase
     public void RaiseLibraryCommandsCanExecuteChanged()
     {
         (SetDisplayModeCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        // Navigation commands are handled by RaiseNavigationCommandsCanExecuteChanged
+    }
+
+    public void RaiseNavigationCommandsCanExecuteChanged()
+    {
+        //Debug.WriteLine("[LibraryVM] Raising navigation command CanExecute changed.");
+        (PreviousTrackCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (NextTrackCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 }
