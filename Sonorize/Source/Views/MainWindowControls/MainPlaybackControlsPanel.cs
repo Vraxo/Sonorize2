@@ -10,8 +10,7 @@ using Avalonia.Media.Imaging; // Required for BitmapInterpolationMode
 using Avalonia.Styling;
 using Sonorize.Converters;
 using Sonorize.Models;
-using Sonorize.ViewModels;
-using TagLib.IFD.Tags; // Required for RepeatMode enum
+using Sonorize.ViewModels; // Required for RepeatMode enum
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -301,27 +300,23 @@ public static class MainPlaybackControlsPanel
             VerticalAlignment = VerticalAlignment.Center,
             Background = theme.B_SecondaryTextColor,
             Foreground = theme.B_AccentColor,
-            Height = 100,
-            HorizontalAlignment = HorizontalAlignment.Stretch, // Allow slider to fill the available space in its column
-            // Add bindings for slider functionality
-            [!Slider.MaximumProperty] = new Binding("Playback.CurrentSongDurationSeconds"), // Bind max to song duration in seconds
-            [!Slider.ValueProperty] = new Binding("Playback.CurrentPositionSeconds", BindingMode.TwoWay), // Bind value to current position in seconds (TwoWay for scrubbing)
-            [!Control.IsHitTestVisibleProperty] = new Binding("Playback.HasCurrentSong") // Disable slider interaction when no song is loaded
+            HorizontalAlignment = HorizontalAlignment.Stretch // Allow slider to fill the available space in its column
         };
         mainPlaybackSlider.Styles.Add(new Style(s => s.Is<Thumb>())
         {
             Setters =
-            {
-                new Setter(Thumb.WidthProperty, 4.0),
-                new Setter(Thumb.HeightProperty, 4.0),
-                new Setter(Thumb.MinWidthProperty, 4.0),
-                new Setter(Thumb.MinHeightProperty, 4.0),
-                new Setter(Thumb.MaxWidthProperty, 4.0),
-                new Setter(Thumb.MaxHeightProperty, 4.0),
-                new Setter(Thumb.MarginProperty, new Thickness(0)), // optional: remove any margin
-                new Setter(Thumb.PaddingProperty, new Thickness(0)) // optional: remove padding
-            }
+    {
+        new Setter(Thumb.WidthProperty, 10.0),
+        new Setter(Thumb.HeightProperty, 10.0),
+        new Setter(Thumb.MinWidthProperty, 10.0),
+        new Setter(Thumb.MinHeightProperty, 10.0),
+        new Setter(Thumb.MaxWidthProperty, 10.0),
+        new Setter(Thumb.MaxHeightProperty, 10.0),
+        new Setter(Thumb.MarginProperty, new Thickness(0)), // optional: remove any margin
+        new Setter(Thumb.PaddingProperty, new Thickness(0)) // optional: remove padding
+    }
         });
+
 
         // Use a Grid to place time text blocks next to the slider
         var timeSliderGrid = new Grid
