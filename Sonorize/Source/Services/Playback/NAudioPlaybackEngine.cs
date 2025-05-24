@@ -1,8 +1,7 @@
-﻿using System;
+﻿using NAudio.Wave;
 using System.Diagnostics;
 using System.IO;
-using NAudio.Wave;
-using Path = System.IO.Path;
+using System;
 
 namespace Sonorize.Services;
 
