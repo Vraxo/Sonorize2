@@ -150,17 +150,39 @@ public static class MainPlaybackControlsPanel
             Height = 32 // Fixed height for icon
         };
         // Bind Content to Playback.RepeatMode (using a converter to show state) - Renamed
-        repeatModeButton.Bind(ToggleButton.ContentProperty, new Binding("Playback.RepeatMode")
+        repeatModeButton.Content = new TextBlock
         {
-            Converter = new FuncValueConverter<RepeatMode, string>(mode => mode switch
+            TextAlignment = TextAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            FontSize = 18,
+            FontFamily = new FontFamily("Segoe UI Symbol, Arial"),
+            RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
+            [!TextBlock.TextProperty] = new Binding("Playback.RepeatMode")
             {
-                RepeatMode.None => "―", // Horizontal Bar: Do Nothing / Stop
-                RepeatMode.PlayOnce => "₁", // Subscript 1: Play list once
-                RepeatMode.RepeatOne => "🔂", // Repeat One Button: Repeat current song
-                RepeatMode.RepeatAll => "🔁", // Repeat Button: Repeat all songs
-                _ => "?" // Fallback icon
-            })
-        });
+                Converter = new FuncValueConverter<RepeatMode, string>(mode => mode switch
+                {
+                    RepeatMode.None => "―",
+                    RepeatMode.PlayOnce => "₁",
+                    RepeatMode.RepeatOne => "🔂",
+                    RepeatMode.RepeatAll => "🔁",
+                    _ => "?"
+                })
+            },
+            [!TextBlock.RenderTransformProperty] = new Binding("Playback.RepeatMode")
+            {
+                Converter = new FuncValueConverter<RepeatMode, ITransform?>(mode =>
+                {
+                    return mode switch
+                    {
+                        RepeatMode.PlayOnce => new TranslateTransform(0, -2), // Adjust "₁"
+                        RepeatMode.None => new TranslateTransform(0, -1),     // Adjust "―"
+                        _ => null // No transform needed for 🔂/🔁
+                    };
+                })
+            }
+        };
+
         // Change foreground color based on RepeatMode state (if not None - i.e. any repeat/cycle is active)
         repeatModeButton[!ToggleButton.ForegroundProperty] = new Binding("Playback.RepeatMode")
         {
