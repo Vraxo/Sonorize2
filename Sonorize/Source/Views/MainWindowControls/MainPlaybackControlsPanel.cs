@@ -6,102 +6,76 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia;
-using Avalonia.Data.Converters;
-using Avalonia.Controls.Templates;
+using Avalonia.Data.Converters; // Added required using directive for FuncValueConverter
+using Avalonia.Controls.Templates; // Required for FuncDataTemplate
 
 using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.Views.MainWindowControls;
-using Avalonia.Media.Imaging;
-using Sonorize.ViewModels;
-using System;
-using System.Diagnostics;
-// Required for SVG loading and SvgImage
-using Avalonia.Svg.Skia;
-using SkiaSharp;
-
+using Avalonia.Media.Imaging; // Required for BitmapInterpolationMode
+using Sonorize.ViewModels; // Required for RepeatMode enum
+using System; // Required for Func
+using System.Diagnostics; // Added for Debug
 
 namespace Sonorize.Views.MainWindowControls;
-
-// Note: To load SVG files from assets like "avares://Sonorize/Assets/Icons/Play.svg",
-// you need to install the Avalonia.Svg.Skia NuGet package in your project.
 
 public static class MainPlaybackControlsPanel
 {
     public static Grid Create(ThemeColors theme) // Root is a Grid
     {
-        // Shared style for icon images within buttons
-        var iconImageStyle = new Style(s => s.Is<Image>())
-        {
-            Setters =
-            {
-                new Setter(Image.WidthProperty, 24.0),
-                new Setter(Image.HeightProperty, 24.0),
-                new Setter(Image.StretchProperty, Stretch.Uniform),
-                new Setter(Image.VerticalAlignmentProperty, VerticalAlignment.Center),
-                new Setter(Image.HorizontalAlignmentProperty, HorizontalAlignment.Center)
-            }
-        };
-
         // Previous Button
         var previousButton = new Button
         {
+            Content = "<",
             Background = theme.B_SlightlyLighterBackground,
+            Foreground = theme.B_TextColor,
             BorderBrush = theme.B_ControlBackgroundColor,
             BorderThickness = new Thickness(1),
             Width = 32,
             Height = 32,
             CornerRadius = new CornerRadius(16),
-            Padding = new Thickness(0), // Padding handled by inner Image
+            Padding = new Thickness(0),
+            FontSize = 16,
             HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            Content = new Image().AddStyles(iconImageStyle) // Add Image and apply shared style
+            VerticalContentAlignment = VerticalAlignment.Center
         };
-        // Set specific icon source from path
-        (previousButton.Content as Image)!.Source = new SvgImage(new Uri("avares://Sonorize/Assets/Icons/Previous.svg"));
         // Bind to Library.PreviousTrackCommand
         previousButton.Bind(Button.CommandProperty, new Binding("Library.PreviousTrackCommand"));
         // IsEnabled is controlled by the command's CanExecute
 
-
         var mainPlayPauseButton = new Button
         {
             Background = theme.B_SlightlyLighterBackground,
-            BorderBrush = theme.B_AccentColor, // Primary Accent color border
+            Foreground = theme.B_TextColor,
+            BorderBrush = theme.B_AccentColor,
             BorderThickness = new Thickness(1),
             Width = 38,
             Height = 38,
             CornerRadius = new CornerRadius(19),
-            Padding = new Thickness(0), // Padding handled by inner Image
+            Padding = new Thickness(0),
+            FontSize = 18,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            // Content is now an Image, bound via converter
-            Content = new Image().AddStyles(iconImageStyle) // Add Image and apply shared style
+            HorizontalContentAlignment = HorizontalAlignment.Center
         };
-        // Bind Image Source directly to converter output (IImage?)
-        (mainPlayPauseButton.Content as Image)!.Bind(Image.SourceProperty, new Binding("Playback.IsPlaying")
-        {
-            Converter = BooleanToPlayPauseIconConverter.Instance // Converter now returns IImage?
-        });
         mainPlayPauseButton.Bind(Button.CommandProperty, new Binding("Playback.PlayPauseResumeCommand"));
-
+        mainPlayPauseButton.Bind(Button.ContentProperty, new Binding("Playback.IsPlaying") { Converter = BooleanToPlayPauseIconConverter.Instance });
 
         var nextButton = new Button
         {
+            Content = ">",
             Background = theme.B_SlightlyLighterBackground,
+            Foreground = theme.B_TextColor,
             BorderBrush = theme.B_ControlBackgroundColor,
             BorderThickness = new Thickness(1),
             Width = 32,
             Height = 32,
             CornerRadius = new CornerRadius(16),
-            Padding = new Thickness(0), // Padding handled by inner Image
+            Padding = new Thickness(0),
+            FontSize = 16,
             HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            Content = new Image().AddStyles(iconImageStyle) // Add Image and apply shared style
+            VerticalContentAlignment = VerticalAlignment.Center
         };
-        // Set specific icon source from path
-        (nextButton.Content as Image)!.Source = new SvgImage(new Uri("avares://Sonorize/Assets/Icons/Next.svg"));
         // Bind to Library.NextTrackCommand
         nextButton.Bind(Button.CommandProperty, new Binding("Library.NextTrackCommand"));
         // IsEnabled is controlled by the command's CanExecute
@@ -111,73 +85,96 @@ public static class MainPlaybackControlsPanel
 
         var shuffleButton = new ToggleButton
         {
+            // Content is bound via converter directly
+            Foreground = theme.B_SecondaryTextColor, // Default color (off) - This will be overridden by the style
             Background = Brushes.Transparent,
-            BorderBrush = theme.B_ControlBackgroundColor, // Default border color (off)
+            BorderBrush = theme.B_ControlBackgroundColor, // Default border color (off) - This will be overridden by the style
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4),
-            Padding = new Thickness(5), // Keep some padding around the icon
+            CornerRadius = new CornerRadius(4), // Add some rounded corners
+            Padding = new Thickness(5),
             VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            Content = new Image().AddStyles(iconImageStyle) // Add Image and apply shared style
+            HorizontalAlignment = HorizontalAlignment.Center, // Center the button horizontally
+            VerticalContentAlignment = VerticalAlignment.Center, // Center content vertically
+            HorizontalContentAlignment = HorizontalAlignment.Center, // Center content horizontally
+            FontSize = 18, // Set font size directly on button
+            FontFamily = "Segoe UI Symbol, Arial", // Set font family directly on button
+            ContentTemplate = null, // No explicit template needed for simple string content
+            Width = 32, // Fixed width for icon
+            Height = 32 // Fixed height for icon
         };
-        // Bind IsChecked to Playback.ShuffleEnabled (TwoWay)
+        // Bind IsChecked to Playback.ShuffleEnabled (TwoWay) - This is essential for the toggle state
+        // This binding, when checked/unchecked by user click, will trigger the ShuffleEnabled setter in the VM.
         shuffleButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.ShuffleEnabled", BindingMode.TwoWay));
-        // Bind Image Source directly to converter output (IImage?)
-        (shuffleButton.Content as Image)!.Bind(Image.SourceProperty, new Binding("Playback.ShuffleEnabled")
-        {
-            Converter = BooleanToShuffleIconConverter.Instance // Converter now returns IImage?
-        });
+        // Bind Content directly using the converter based on the *ViewModel's* ShuffleEnabled state
+        shuffleButton.Bind(ContentControl.ContentProperty, new Binding("Playback.ShuffleEnabled") { Converter = BooleanToShuffleIconConverter.Instance });
 
-        // Change BorderBrush color based on IsChecked state
+        // REMOVED: Explicit Button.Command binding. The TwoWay IsChecked binding handles the toggle.
+        // shuffleButton.Bind(Button.CommandProperty, new Binding("Playback.ToggleShuffleCommand"));
+
+        Debug.WriteLine($"[View] Shuffle Button Content Bound Directly to Playback.ShuffleEnabled with BooleanToShuffleIconConverter. Command binding removed.");
+
+
+        // Change Foreground color based on IsChecked state (using the FuncValueConverter)
+        shuffleButton[!ToggleButton.ForegroundProperty] = new Binding("IsChecked")
+        {
+            Source = shuffleButton,
+            Converter = new FuncValueConverter<bool, IBrush>(isChecked => isChecked ? theme.B_AccentColor : theme.B_SecondaryTextColor)
+        };
+        // Change BorderBrush color based on IsChecked state for a stronger visual cue (using the FuncValueConverter)
         shuffleButton[!ToggleButton.BorderBrushProperty] = new Binding("IsChecked")
         {
             Source = shuffleButton,
             Converter = new FuncValueConverter<bool, IBrush>(isChecked => isChecked ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
         };
-        // Change icon color based on IsChecked state by setting Image.Foreground or styling the Image
-        (shuffleButton.Content as Image)!.[!Image.ForegroundProperty] = new Binding("IsChecked") // Use Foreground to 'color' the SVG fill
-        {
-            Source = shuffleButton,
-            Converter = new FuncValueConverter<bool, IBrush>(isChecked => isChecked ? theme.B_AccentColor : theme.B_SecondaryTextColor)
-        };
         // Ensure button is enabled only when a song is loaded
         shuffleButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
 
-        var repeatModeButton = new ToggleButton
+        var repeatModeButton = new ToggleButton // Renamed from loopButton
         {
+            // Content is bound via converter directly
+            Foreground = theme.B_SecondaryTextColor, // Default color (off) - Will be overridden by style
             Background = Brushes.Transparent,
-            BorderBrush = theme.B_ControlBackgroundColor, // Default border color (off)
+            BorderBrush = theme.B_ControlBackgroundColor, // Default border color (off) - Will be overridden by style
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4),
-            Padding = new Thickness(5), // Keep some padding around the icon
+            CornerRadius = new CornerRadius(4), // Add some rounded corners
+            Padding = new Thickness(5),
             VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            Content = new Image().AddStyles(iconImageStyle) // Add Image and apply shared style
+            HorizontalAlignment = HorizontalAlignment.Center, // Center the button horizontally
+            VerticalContentAlignment = VerticalAlignment.Center, // Center content vertically
+            HorizontalContentAlignment = HorizontalAlignment.Center, // Center content horizontally
+            FontSize = 18, // Use larger font size for icons
+            FontFamily = "Segoe UI Symbol, Arial", // Explicitly set font family for symbols
+            ContentTemplate = null, // No explicit template needed for simple string content
+            Width = 32, // Fixed width for icon
+            Height = 32 // Fixed height for icon
         };
-        // Bind IsChecked to Playback.IsRepeatActive (ViewModel calculates this) - TwoWay binding might not be strictly necessary but harmless
-        repeatModeButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.IsRepeatActive", BindingMode.TwoWay));
-        // Bind Image Source directly to converter output (IImage?)
-        (repeatModeButton.Content as Image)!.Bind(Image.SourceProperty, new Binding("Playback.RepeatMode")
+        // Bind Content to Playback.RepeatMode (using a converter to show state) - Renamed
+        repeatModeButton.Bind(ToggleButton.ContentProperty, new Binding("Playback.RepeatMode")
         {
-            Converter = RepeatModeToIconPathConverter.Instance // Converter now returns IImage?
+            Converter = new FuncValueConverter<RepeatMode, string>(mode => mode switch
+            {
+                RepeatMode.None => "―", // Horizontal Bar: Do Nothing / Stop
+                RepeatMode.PlayOnce => "₁", // Subscript 1: Play list once
+                RepeatMode.RepeatOne => "🔂", // Repeat One Button: Repeat current song
+                RepeatMode.RepeatAll => "🔁", // Repeat Button: Repeat all songs
+                _ => "?" // Fallback icon
+            })
         });
-        // Change BorderBrush color based on RepeatMode state (if not None)
-        repeatModeButton[!ToggleButton.BorderBrushProperty] = new Binding("Playback.IsRepeatActive")
+        // Change foreground color based on RepeatMode state (if not None - i.e. any repeat/cycle is active)
+        repeatModeButton[!ToggleButton.ForegroundProperty] = new Binding("Playback.RepeatMode")
         {
-            Source = repeatModeButton, // Source the binding from the button itself (IsChecked)
-            Converter = new FuncValueConverter<bool, IBrush>(isActive => isActive ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
+            // Accent color for PlayOnce, RepeatOne, RepeatAll. Secondary for None.
+            Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.None ? theme.B_AccentColor : theme.B_SecondaryTextColor)
         };
-        // Change icon color based on RepeatMode state (if not None)
-        (repeatModeButton.Content as Image)!.[!Image.ForegroundProperty] = new Binding("Playback.IsRepeatActive") // Use Foreground to 'color' the SVG fill
+        // Change BorderBrush color based on RepeatMode state (if not None - i.e. any repeat/cycle is active)
+        repeatModeButton[!ToggleButton.BorderBrushProperty] = new Binding("Playback.RepeatMode")
         {
-            Source = repeatModeButton, // Source the binding from the button itself (IsChecked)
-            Converter = new FuncValueConverter<bool, IBrush>(isActive => isActive ? theme.B_AccentColor : theme.B_SecondaryTextColor)
+            // Accent color for PlayOnce, RepeatOne, RepeatAll. ControlBackground for None.
+            Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.None ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
         };
+        // Bind IsChecked to Playback.IsRepeatActive (ViewModel calculates this based on RepeatMode != None)
+        repeatModeButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.IsRepeatActive"));
         // Bind Command to Playback.CycleRepeatModeCommand
         repeatModeButton.Bind(Button.CommandProperty, new Binding("Playback.CycleRepeatModeCommand"));
         // Ensure button is enabled only when a song is loaded
@@ -200,41 +197,31 @@ public static class MainPlaybackControlsPanel
         combinedPlaybackButtonControlsPanel.Children.Add(previousButton);
         combinedPlaybackButtonControlsPanel.Children.Add(mainPlayPauseButton);
         combinedPlaybackButtonControlsPanel.Children.Add(nextButton);
-        combinedPlaybackButtonControlsPanel.Children.Add(repeatModeButton);
+        combinedPlaybackButtonControlsPanel.Children.Add(repeatModeButton); // Added the renamed repeat button
 
 
         var toggleAdvPanelButton = new Button
         {
+            Content = "+",
             Background = theme.B_SlightlyLighterBackground,
-            Foreground = theme.B_TextColor, // Default text color (not used by Image content)
+            Foreground = theme.B_TextColor, // Default color
             BorderBrush = theme.B_ControlBackgroundColor, // Default border color
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(3),
-            Padding = new Thickness(8, 4), // Padding around the icon
-            MinWidth = 30,
+            Padding = new Thickness(8, 4),
+            MinWidth = 30, // Give it a minimum size to occupy space
             FontWeight = FontWeight.Bold,
-            Width = 32,
-            Height = 32,
-            Content = new Image().AddStyles(iconImageStyle) // Add Image and apply shared style
+            Width = 32, // Fixed width for consistency
+            Height = 32 // Fixed height for consistency
         };
-        // Bind Image Source using converter based on panel visibility
-        (toggleAdvPanelButton.Content as Image)!.Bind(Image.SourceProperty, new Binding("IsAdvancedPanelVisible")
-        {
-            Converter = new FuncValueConverter<bool, SvgImage>(isVisible =>
-            isVisible
-            ? new SvgImage(new Uri("avares://Sonorize/Assets/Icons/AdvancedMinus.svg")) // Minus icon when visible
-            : new SvgImage(new Uri("avares://Sonorize/Assets/Icons/AdvancedPlus.svg")) // Plus icon when hidden
-           )
-        });
         // Change BorderBrush color based on IsAdvancedPanelVisible
         toggleAdvPanelButton[!Button.BorderBrushProperty] = new Binding("IsAdvancedPanelVisible")
         {
             Converter = new FuncValueConverter<bool, IBrush>(isVisible => isVisible ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
         };
-        // Change icon color based on IsAdvancedPanelVisible
-        (toggleAdvPanelButton.Content as Image)!.[!Image.ForegroundProperty] = new Binding("IsAdvancedPanelVisible")
+        toggleAdvPanelButton[!Button.ForegroundProperty] = new Binding("IsAdvancedPanelVisible")
         {
-            Converter = new FuncValueConverter<bool, IBrush>(isVisible => isVisible ? theme.B_AccentColor : theme.B_SecondaryTextColor)
+            Converter = new FuncValueConverter<bool, IBrush>(isVisible => isVisible ? theme.B_AccentColor : theme.B_TextColor)
         };
         toggleAdvPanelButton.Bind(Button.CommandProperty, new Binding("ToggleAdvancedPanelCommand"));
         toggleAdvPanelButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
@@ -425,15 +412,5 @@ public static class MainPlaybackControlsPanel
         outerGrid.Children.Add(rightControlsPanel);
 
         return outerGrid;
-    }
-
-    // Helper method to add styles in a fluent way
-    private static T AddStyles<T>(this T control, params Style[] styles) where T : Control
-    {
-        foreach (var style in styles)
-        {
-            control.Styles.Add(style);
-        }
-        return control;
     }
 }
