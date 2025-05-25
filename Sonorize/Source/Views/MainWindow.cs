@@ -5,7 +5,7 @@ using Avalonia.Controls.Templates;
 using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
-// Removed: using Avalonia.Media.Imaging;
+// Removed: using Avalonia.Media.Imaging; 
 // Removed: using Avalonia.Styling;
 // Removed: using Sonorize.Controls;
 // Removed: using Sonorize.Converters;
@@ -17,7 +17,6 @@ using System; // For EventArgs
 using System.ComponentModel; // For PropertyChangedEventArgs
 using System.Diagnostics; // For Debug
 using Avalonia.Threading; // Required for Dispatcher
-using Sonorize.Views.MainWindowControls;
 
 namespace Sonorize.Views;
 public class MainWindow : Window
@@ -29,8 +28,6 @@ public class MainWindow : Window
     private LibraryViewModel? _currentLibraryVM;
     private readonly SharedViewTemplates _sharedViewTemplates;
     private readonly MainTabViewControls _mainTabViewControls;
-    // Keep a reference to the created playback panel to potentially interact later
-    // private Control _mainPlaybackPanel;
 
 
     public MainWindow(ThemeColors theme)
@@ -51,12 +48,12 @@ public class MainWindow : Window
         {
             RowDefinitions =
             [
-                new(GridLength.Auto), // Menu Bar
-                new(GridLength.Auto), // Search Bar
-                new(GridLength.Star), // Tab Control (Library/Artists/Albums)
-                new(GridLength.Auto), // Advanced Playback Panel (Waveform, Speed/Pitch, Loop)
-                new(GridLength.Auto), // Main Playback Controls (Song Info, Buttons, Slider)
-                new(GridLength.Auto)  // Status Bar
+                new(GridLength.Auto),
+                new(GridLength.Auto),
+                new(GridLength.Star),
+                new(GridLength.Auto),
+                new(GridLength.Auto),
+                new(GridLength.Auto)
             ]
         };
 
@@ -77,11 +74,9 @@ public class MainWindow : Window
         Grid.SetRow(advancedPlaybackPanel, 3);
         mainGrid.Children.Add(advancedPlaybackPanel);
 
-        // Use the new composite MainPlaybackControlsPanel
-        var mainPlaybackPanel = MainPlaybackControlsPanel.Create(_theme);
-        Grid.SetRow(mainPlaybackPanel, 4);
-        mainGrid.Children.Add(mainPlaybackPanel);
-
+        var mainPlaybackControls = MainPlaybackControlsPanel.Create(_theme);
+        Grid.SetRow(mainPlaybackControls, 4);
+        mainGrid.Children.Add(mainPlaybackControls);
 
         var statusBar = CreateStatusBar();
         Grid.SetRow(statusBar, 5);
@@ -141,7 +136,6 @@ public class MainWindow : Window
         }
         _mainTabViewControls.UpdateListViewMode(mode, listBox, detailedTemplate, compactTemplate, gridTemplate);
     }
-
 
     private Border CreateStatusBar()
     {
