@@ -62,7 +62,8 @@ public class App : Application
                 Debug.WriteLine("[App] Warning: Custom theme AccentColor or AccentForeground is not a SolidColorBrush. Cannot fully override Fluent accent system.");
             }
 
-            var playbackService = new PlaybackService();
+            var scrobblingService = new ScrobblingService(settingsService); // Create ScrobblingService
+            var playbackService = new PlaybackService(scrobblingService); // Pass ScrobblingService
             var loopDataService = new LoopDataService();
             var musicLibraryService = new MusicLibraryService(loopDataService);
             var waveformService = new WaveformService();
@@ -73,7 +74,8 @@ public class App : Application
                 playbackService,
                 currentCustomTheme,
                 waveformService,
-                loopDataService);
+                loopDataService,
+                scrobblingService); // Pass ScrobblingService
 
             desktop.MainWindow = new MainWindow(currentCustomTheme)
             {

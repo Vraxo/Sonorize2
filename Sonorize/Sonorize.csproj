@@ -18,6 +18,7 @@
       <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
       <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="Inflatable.Lastfm" Version="1.2.0" />
     <PackageReference Include="NAudio" Version="1.9.0" />
     <PackageReference Include="SoundTouch.Net.NAudioSupport" Version="2.3.2" /> <!-- This is the one we want -->
     <PackageReference Include="TagLibSharp" Version="2.3.0" />

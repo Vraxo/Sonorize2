@@ -25,6 +25,7 @@ public class MainWindowViewModel : ViewModelBase
     private readonly MusicLibraryService _musicLibraryService;
     private readonly WaveformService _waveformService;
     private readonly LoopDataService _loopDataService;
+    private readonly ScrobblingService _scrobblingService; // Added
 
     // Expose the Services directly for child VMs or public properties
     public PlaybackService PlaybackService { get; }
@@ -60,14 +61,16 @@ public class MainWindowViewModel : ViewModelBase
         PlaybackService playbackService,
         ThemeColors theme,
         WaveformService waveformService,
-        LoopDataService loopDataService)
+        LoopDataService loopDataService,
+        ScrobblingService scrobblingService) // Added ScrobblingService
     {
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
-        PlaybackService = playbackService;
+        PlaybackService = playbackService; // PlaybackService now receives ScrobblingService from App.cs
         CurrentTheme = theme;
         _waveformService = waveformService;
         _loopDataService = loopDataService;
+        _scrobblingService = scrobblingService; // Store ScrobblingService
 
         // Initialize child ViewModels, passing required dependencies
         // Pass 'this' to LibraryViewModel
@@ -220,18 +223,6 @@ public class MainWindowViewModel : ViewModelBase
             {
                 case nameof(Library.SelectedSong):
                     Debug.WriteLine($"[MainVM_LibChanged] Library.SelectedSong changed to: {Library.SelectedSong?.Title ?? "null"}. Instance: {Library.SelectedSong?.GetHashCode() ?? 0}");
-                    // When a song is selected in the Library (either manually or programmatically by navigation logic),
-                    // tell the PlaybackService to play it.
-                    // This is handled here for explicit selection by the user or navigation commands.
-                    // RepeatOne is handled by calling PlaybackService.Play directly in the PlaybackEndedNaturally handler.
-                    // This handler should only initiate playback when a *new* song is selected from the list by the user or sequence/shuffle logic.
-                    // If PlaybackService.CurrentSong is null, this is the first song, or a stop occurred. Play the selected song.
-                    // If PlaybackService.CurrentSong is not null, and it's different from Library.SelectedSong, a new song was selected. Play it.
-                    // If PlaybackService.CurrentSong is not null, and it's the SAME as Library.SelectedSong, this selection change might be due to:
-                    // 1. RepeatOne completion (handled by direct Play call in handler)
-                    // 2. User clicking on the already selected song (no action needed, song is already playing)
-                    // 3. PlaybackEndedNaturally handler reaching end without repeat/shuffle (should stop)
-                    // 4. PlaybackService.Stop() setting CurrentSong = null then Library.SelectedSong = null (handled by Playback_PropertyChanged)
 
                     if (Library.SelectedSong != null && PlaybackService.CurrentSong != Library.SelectedSong)
                     {
@@ -240,32 +231,27 @@ public class MainWindowViewModel : ViewModelBase
                     }
                     else if (Library.SelectedSong != null && PlaybackService.CurrentSong == Library.SelectedSong)
                     {
-                        // Song instance is the same. This might be a user re-click or RepeatOne completing.
-                        // RepeatOne case is handled by direct Play in PlaybackEndedNaturally. User re-click means it's already playing.
                         Debug.WriteLine($"[MainVM_LibChanged] Library.SelectedSong changed but is the SAME song instance as PlaybackService.CurrentSong ({Library.SelectedSong.Title}). Assuming RepeatOne handled it or user re-clicked already playing song. No Play call needed here.");
                     }
                     else if (Library.SelectedSong == null)
                     {
-                        // If selection is cleared (e.g., by search filter or explicit stop), we don't start playback here.
-                        Debug.WriteLine("[MainVM_LibChanged] Library.SelectedSong is null. No Play call needed.");
+                        Debug.WriteLine("[MainVM_LibChanged] Library.SelectedSong is null. No Play call needed here. PlaybackService.Stop might have been called.");
+                        // If selection is cleared, and playback is active, stop playback.
+                        // This is more robust if clearing selection should always stop.
+                        // However, PlaybackService.Stop() is preferred to manage state and scrobbling.
+                        // if(PlaybackService.IsPlaying) PlaybackService.Stop(); 
                     }
 
-
-                    // Update commands that might depend on a song being selected/playing
                     RaiseAllCommandsCanExecuteChanged();
                     break;
                 case nameof(Library.IsLoadingLibrary):
-                    // Propagate the loading state change
                     OnPropertyChanged(nameof(IsLoadingLibrary));
-                    // Update commands dependent on loading state
                     RaiseAllCommandsCanExecuteChanged();
-                    UpdateStatusBarText(); // Status text includes loading info
+                    UpdateStatusBarText();
                     break;
                 case nameof(Library.LibraryStatusText):
-                    UpdateStatusBarText(); // Library status affects overall status bar
+                    UpdateStatusBarText();
                     break;
-                    // Properties like Artists, Albums, FilteredSongs changing are handled by LibraryVM itself.
-                    // When FilteredSongs changes, LibraryVM calls RaiseNavigationCommandsCanExecuteChanged internally.
             }
         });
     }
@@ -274,95 +260,59 @@ public class MainWindowViewModel : ViewModelBase
     {
         Dispatcher.UIThread.InvokeAsync(() =>
         {
-            // Listen for PlaybackViewModel changes that affect MainViewModel's state/UI
             switch (e.PropertyName)
             {
                 case nameof(PlaybackViewModel.CurrentSong):
-                    OnPropertyChanged(nameof(Playback.CurrentSong)); // Propagate the song itself
-                    OnPropertyChanged(nameof(Playback.HasCurrentSong)); // Propagate derived property
-                    // Commands that might depend on a song being loaded (like ToggleAdvancedPanelCommand)
+                    OnPropertyChanged(nameof(Playback.CurrentSong));
+                    OnPropertyChanged(nameof(Playback.HasCurrentSong));
                     RaiseAllCommandsCanExecuteChanged();
 
-                    // If playback service reports no current song, ensure library selection is cleared
-                    // Only clear selection if it matches the song that just became null in PlaybackService.
-                    // This prevents clearing selection if the user has already selected a *new* song.
-                    // However, relying on PlaybackService's CurrentSong becoming null is the most reliable way
-                    // to know playback has stopped *without* a new song immediately starting (like in RepeatOne).
-                    // Let's clear Library.SelectedSong if Playback.HasCurrentSong becomes false. This simplifies state.
                     if (!Playback.HasCurrentSong && Library.SelectedSong != null)
                     {
                         Debug.WriteLine("[MainVM_PlaybackChanged] PlaybackService has no current song. Clearing Library selection.");
-                        Library.SelectedSong = null; // This will trigger Library_PropertyChanged (which correctly won't call Play)
+                        Library.SelectedSong = null;
                     }
 
-                    // When a new song is set in PlaybackService (either by Play() or PlaybackEndedNaturally handler),
-                    // trigger waveform loading if panel is visible.
-                    // Check if the *new* CurrentSong is different from the *previous* one (handled by PS).
                     if (Playback.CurrentSong != null && IsAdvancedPanelVisible)
                     {
                         Debug.WriteLine("[MainVM_PlaybackChanged] Playback has current song, advanced panel is visible. Requesting waveform load.");
-                        // Use await _ = to suppress the warning about calling async void, while ensuring the task runs.
-                        _ = Playback.LoadWaveformForCurrentSongAsync(); // Delegate waveform load
+                        _ = Playback.LoadWaveformForCurrentSongAsync();
                     }
-                    // Note: Clearing waveform when song becomes null is handled inside PlaybackViewModel's PS handler
 
-                    // Update status bar text whenever the current song changes
                     UpdateStatusBarText();
-
-                    // Update time displays when song changes (delegated to PlaybackVM)
-                    OnPropertyChanged(nameof(Playback.CurrentTimeDisplay)); // Propagate derived property
-                    OnPropertyChanged(nameof(Playback.TotalTimeDisplay)); // Propagate derived property
-
-                    // Commands in PlaybackVM (Play/Pause, Seek, Speed/Pitch, Mode toggles) are handled by PlaybackVM itself.
-                    // Library navigation commands are handled by LibraryVM's SelectedSong/FilteredSongs change.
-                    // ToggleAdvancedPanelCommand depends on Playback.HasCurrentSong, so need to raise.
+                    OnPropertyChanged(nameof(Playback.CurrentTimeDisplay));
+                    OnPropertyChanged(nameof(Playback.TotalTimeDisplay));
                     RaiseAllCommandsCanExecuteChanged();
 
                     break;
                 case nameof(PlaybackViewModel.CurrentPlaybackStatus):
-                    OnPropertyChanged(nameof(Playback.CurrentPlaybackStatus)); // Propagate status
-                    OnPropertyChanged(nameof(Playback.IsPlaying)); // Derived from status
-                    UpdateStatusBarText(); // Playback status affects overall status bar
-                    // Commands in PlaybackVM already listen to this. MainVM commands potentially affected? (currently none directly)
+                    OnPropertyChanged(nameof(Playback.CurrentPlaybackStatus));
+                    OnPropertyChanged(nameof(Playback.IsPlaying));
+                    UpdateStatusBarText();
                     RaiseAllCommandsCanExecuteChanged();
                     break;
                 case nameof(PlaybackViewModel.CurrentPosition):
-                    OnPropertyChanged(nameof(Playback.CurrentPosition)); // Propagate position
-                    OnPropertyChanged(nameof(Playback.CurrentPositionSeconds)); // Propagate derived property
-                    OnPropertyChanged(nameof(Playback.CurrentTimeDisplay)); // Propagate current time display
-                    // Loop editor and UI slider are bound directly to PlaybackVM properties.
-                    // Commands in PlaybackVM already listen to this.
-                    // Raising all commands here is usually not needed for position change.
+                    OnPropertyChanged(nameof(Playback.CurrentPosition));
+                    OnPropertyChanged(nameof(Playback.CurrentPositionSeconds));
+                    OnPropertyChanged(nameof(Playback.CurrentTimeDisplay));
                     break;
                 case nameof(PlaybackViewModel.CurrentSongDuration):
-                    OnPropertyChanged(nameof(Playback.CurrentSongDuration)); // Propagate duration
+                    OnPropertyChanged(nameof(Playback.CurrentSongDuration));
                     OnPropertyChanged(nameof(Playback.CurrentSongDurationSeconds));
-                    OnPropertyChanged(nameof(Playback.TotalTimeDisplay)); // Propagate total time display
-                                                                          // UI slider is bound directly.
-                    RaiseAllCommandsCanExecuteChanged(); // PlaybackVM Seek command CanExecute depends on duration > 0
+                    OnPropertyChanged(nameof(Playback.TotalTimeDisplay));
+                    RaiseAllCommandsCanExecuteChanged();
                     break;
                 case nameof(PlaybackViewModel.IsWaveformLoading):
-                    OnPropertyChanged(nameof(Playback.IsWaveformLoading)); // Propagate state
-                    // Commands in PlaybackVM already listen to this.
-                    // Raising all commands here is usually not needed unless a MainVM command directly depends on this.
+                    OnPropertyChanged(nameof(Playback.IsWaveformLoading));
                     break;
                 case nameof(PlaybackViewModel.WaveformRenderData):
-                    OnPropertyChanged(nameof(Playback.WaveformRenderData)); // Propagate data
-                    // Waveform display is bound directly.
+                    OnPropertyChanged(nameof(Playback.WaveformRenderData));
                     break;
-                case nameof(PlaybackViewModel.ShuffleEnabled): // Modes changed
-                case nameof(PlaybackViewModel.RepeatMode): // Modes changed
-                                                           // These affect the PlaybackEndedNaturally logic in MainVM,
-                                                           // but they also affect PlaybackVM commands and UI bindings.
-                                                           // Raise PlaybackVM commands' CanExecute state.
+                case nameof(PlaybackViewModel.ShuffleEnabled):
+                case nameof(PlaybackViewModel.RepeatMode):
                     Playback.RaisePlaybackCommandCanExecuteChanged();
-                    // Raising all commands here is generally redundant unless a MainVM command directly depends on these modes.
-                    // Update status bar to reflect mode changes
                     UpdateStatusBarText();
                     break;
-
-                    // PlaybackSpeed, PlaybackPitch, derived display properties are handled within PlaybackVM.
-                    // LoopEditor VM listens directly to PlaybackService for position/duration.
             }
         });
     }
@@ -370,49 +320,35 @@ public class MainWindowViewModel : ViewModelBase
     private void OnAdvancedPanelVisibleChanged()
     {
         (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        // If Advanced Panel becomes visible, and a song is playing, load its waveform.
-        // Access PlaybackVM properties directly
         if (IsAdvancedPanelVisible && Playback.HasCurrentSong && !Playback.WaveformRenderData.Any() && !Playback.IsWaveformLoading)
         {
             Debug.WriteLine("[MainVM] Advanced Panel visible, song is playing, waveform not loaded/loading. Requesting waveform load.");
-            // Use await _ = to suppress the warning about calling async void, while ensuring the task runs.
-            _ = Playback.LoadWaveformForCurrentSongAsync(); // Delegate waveform load
+            _ = Playback.LoadWaveformForCurrentSongAsync();
         }
-        // Note: If it becomes hidden, we don't clear the waveform data automatically here.
-        // Clearing upon song change/stop is handled by PlaybackViewModel's PS handler.
     }
 
     private void UpdateAllUIDependentStates()
     {
-        // Update main VM properties that depend on child VM states
-        OnPropertyChanged(nameof(IsLoadingLibrary)); // Depends on Library.IsLoadingLibrary
-        OnPropertyChanged(nameof(Playback.CurrentSong)); // Ensure Playback's CurrentSong is reflected
-        OnPropertyChanged(nameof(Playback.HasCurrentSong)); // Ensure Playback's HasCurrentSong is reflected
-        OnPropertyChanged(nameof(IsAdvancedPanelVisible)); // Ensure panel visibility is reflected
-        OnPropertyChanged(nameof(ActiveTabIndex)); // Ensure tab index is reflected
+        OnPropertyChanged(nameof(IsLoadingLibrary));
+        OnPropertyChanged(nameof(Playback.CurrentSong));
+        OnPropertyChanged(nameof(Playback.HasCurrentSong));
+        OnPropertyChanged(nameof(IsAdvancedPanelVisible));
+        OnPropertyChanged(nameof(ActiveTabIndex));
 
-        UpdateStatusBarText(); // Depends on Playback and Library status
-
-        // Trigger commands CanExecute updates for all VMs
+        UpdateStatusBarText();
         RaiseAllCommandsCanExecuteChanged();
     }
 
-    /// <summary>
-    /// Raises CanExecuteChanged for commands owned by this ViewModel and tells child VMs to do the same.
-    /// </summary>
     public void RaiseAllCommandsCanExecuteChanged()
     {
-        // Raise CanExecuteChanged for commands owned by MainWindowViewModel
         (LoadInitialDataCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (OpenSettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ExitCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
 
-        // Tell child VMs to raise their commands' CanExecuteChanged
-        // This now includes the navigation commands within LibraryViewModel
         Library.RaiseLibraryCommandsCanExecuteChanged();
-        Library.RaiseNavigationCommandsCanExecuteChanged(); // Explicitly call navigation commands
+        Library.RaiseNavigationCommandsCanExecuteChanged();
         Playback.RaisePlaybackCommandCanExecuteChanged();
         LoopEditor.RaiseLoopCommandCanExecuteChanged();
     }
@@ -420,36 +356,29 @@ public class MainWindowViewModel : ViewModelBase
 
     private void UpdateStatusBarText()
     {
-        // Combine status from PlaybackViewModel and LibraryViewModel
         string status;
         if (Playback.HasCurrentSong)
         {
             string stateStr = Playback.CurrentPlaybackStatus switch { PlaybackStateStatus.Playing => "Playing", PlaybackStateStatus.Paused => "Paused", PlaybackStateStatus.Stopped => "Stopped", _ => "Idle" };
-            // Access CurrentSong via Playback property
             status = $"{stateStr}: {Playback.CurrentSong?.Title ?? "Unknown Song"}";
-            // Use LoopEditor's property for loop active state displayed in status bar
-            // Access CurrentSong via Playback property
             if (LoopEditor.IsCurrentLoopActiveUiBinding && Playback.CurrentSong?.SavedLoop != null)
             {
                 status += $" (Loop Active)";
             }
 
-            // Add mode status
             string modeStatus = "";
             if (Playback.ShuffleEnabled)
             {
                 modeStatus += " | Shuffle";
             }
-            // Use RepeatMode property
             modeStatus += Playback.RepeatMode switch
             {
                 RepeatMode.None => " | Do Nothing",
                 RepeatMode.PlayOnce => " | Play Once",
                 RepeatMode.RepeatOne => " | Repeat Song",
                 RepeatMode.RepeatAll => " | Repeat All",
-                _ => "" // Should not happen
+                _ => ""
             };
-
 
             if (!string.IsNullOrEmpty(modeStatus))
             {
@@ -458,7 +387,6 @@ public class MainWindowViewModel : ViewModelBase
         }
         else
         {
-            // No playback info, use library status
             status = Library.LibraryStatusText;
         }
         StatusBarText = status;
@@ -466,56 +394,75 @@ public class MainWindowViewModel : ViewModelBase
 
     private async Task LoadMusicLibrary()
     {
-        // Delegate the core loading logic to the LibraryViewModel
         await Library.LoadLibraryAsync();
-        // The Library_PropertyChanged handler for IsLoadingLibrary will trigger status updates.
     }
 
     private async Task OpenSettingsDialog(object? ownerWindow)
     {
         if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
-        IsAdvancedPanelVisible = false; // Hide advanced panel when opening settings
+        IsAdvancedPanelVisible = false;
 
         var currentSettingsBeforeDialog = _settingsService.LoadSettings();
         var settingsVM = new SettingsViewModel(_settingsService);
         var settingsDialog = new Sonorize.Views.SettingsWindow(CurrentTheme) { DataContext = settingsVM };
 
-        await settingsDialog.ShowDialog(owner); // Show dialog modally
+        await settingsDialog.ShowDialog(owner);
 
-        // After the dialog is closed
         if (settingsVM.SettingsChanged)
         {
             Debug.WriteLine("[MainVM] Settings changed detected after dialog closed.");
             var newSettingsAfterDialog = _settingsService.LoadSettings();
             bool dirsActuallyChanged = !currentSettingsBeforeDialog.MusicDirectories.SequenceEqual(newSettingsAfterDialog.MusicDirectories);
             bool themeActuallyChanged = currentSettingsBeforeDialog.PreferredThemeFileName != newSettingsAfterDialog.PreferredThemeFileName;
+            bool scrobbleSettingsActuallyChanged =
+                currentSettingsBeforeDialog.LastfmScrobblingEnabled != newSettingsAfterDialog.LastfmScrobblingEnabled ||
+                currentSettingsBeforeDialog.LastfmUsername != newSettingsAfterDialog.LastfmUsername ||
+                currentSettingsBeforeDialog.LastfmPassword != newSettingsAfterDialog.LastfmPassword;
+
 
             if (dirsActuallyChanged)
             {
                 Debug.WriteLine("[MainVM] Music directories changed. Reloading library.");
-                await Library.LoadLibraryAsync(); // Delegate library reload
-                // Status bar update triggered by Library.IsLoadingLibrary change.
+                await Library.LoadLibraryAsync();
             }
 
             if (themeActuallyChanged)
             {
                 Debug.WriteLine("[MainVM] Theme changed. Restart recommended.");
-                // Update status bar to inform user about restart
                 StatusBarText = "Theme changed. Please restart Sonorize for the changes to take full effect.";
+            }
+
+            if (scrobbleSettingsActuallyChanged)
+            {
+                Debug.WriteLine("[MainVM] Scrobbling settings changed. Refreshing ScrobblingService.");
+                _scrobblingService.RefreshSettings();
+                // Optionally, update status bar if scrobbling got enabled/disabled
+                if (newSettingsAfterDialog.LastfmScrobblingEnabled && !string.IsNullOrEmpty(newSettingsAfterDialog.LastfmUsername))
+                {
+                    if (StatusBarText.Contains("restart Sonorize")) {/* Append if needed */} else StatusBarText = "Scrobbling enabled.";
+                }
+                else if (!newSettingsAfterDialog.LastfmScrobblingEnabled && currentSettingsBeforeDialog.LastfmScrobblingEnabled)
+                {
+                    if (StatusBarText.Contains("restart Sonorize")) {/* Append if needed */} else StatusBarText = "Scrobbling disabled.";
+                }
+            }
+
+            if (!themeActuallyChanged && !dirsActuallyChanged && !scrobbleSettingsActuallyChanged)
+            {
+                UpdateStatusBarText(); // If only minor settings changed that don't require reload/restart/refresh
             }
         }
         else
         {
             Debug.WriteLine("[MainVM] Settings dialog closed, no changes reported by SettingsViewModel.");
-            // Ensure status bar reflects current state after dialog if no reload/theme change occurred
-            UpdateStatusBarText(); // Revert status bar to normal if not loading
+            UpdateStatusBarText();
         }
     }
 
     private async Task AddMusicDirectoryAndRefresh(object? ownerWindow)
     {
         if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
-        IsAdvancedPanelVisible = false; // Hide advanced panel
+        IsAdvancedPanelVisible = false;
 
         var result = await owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Select Music Directory", AllowMultiple = false });
 
@@ -524,7 +471,6 @@ public class MainWindowViewModel : ViewModelBase
             string? folderPath = null;
             try
             {
-                // Using Path.GetFullPath is crucial for consistent path representation
                 folderPath = Path.GetFullPath(result[0].Path.LocalPath);
             }
             catch (Exception ex)
@@ -537,14 +483,12 @@ public class MainWindowViewModel : ViewModelBase
             if (!string.IsNullOrEmpty(folderPath) && Directory.Exists(folderPath))
             {
                 var settings = _settingsService.LoadSettings();
-                // Use a case-insensitive comparison for existing directories
                 if (!settings.MusicDirectories.Any(d => string.Equals(d, folderPath, StringComparison.OrdinalIgnoreCase)))
                 {
                     settings.MusicDirectories.Add(folderPath);
                     _settingsService.SaveSettings(settings);
                     Debug.WriteLine($"[MainVM] Added new directory: {folderPath}. Reloading library.");
-                    await Library.LoadLibraryAsync(); // Delegate library reload
-                    // Status bar update triggered by Library.IsLoadingLibrary change.
+                    await Library.LoadLibraryAsync();
                 }
                 else
                 {
@@ -561,20 +505,7 @@ public class MainWindowViewModel : ViewModelBase
         else
         {
             Debug.WriteLine("[MainVM] Folder picker cancelled or returned no results.");
-            // Optionally update status bar if folder picker was cancelled
-            UpdateStatusBarText(); // Revert status bar to normal if not loading
+            UpdateStatusBarText();
         }
     }
-
-    // Use a cryptographically secure random number generator for better shuffle randomness if needed
-    // private int GetNextRandomIndex(int maxIndex)
-    // {
-    //     using (var rng = new RNGCryptoServiceProvider())
-    //     {
-    //         byte[] data = new byte[sizeof(uint)]; // Use uint size for randomness
-    //         rng.GetBytes(data);
-    //         uint randomValue = BitConverter.ToUInt32(data, 0);
-    //         return (int)(randomValue % maxIndex);
-    //     }
-    // }
 }

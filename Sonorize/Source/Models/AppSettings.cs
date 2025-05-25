@@ -11,4 +11,13 @@ public class AppSettings
     public string LibraryViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
     public string ArtistViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
     public string AlbumViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
+
+    // Last.fm Settings
+    public bool LastfmScrobblingEnabled { get; set; } = false;
+    public string? LastfmUsername { get; set; }
+    public string? LastfmPassword { get; set; } // Used for initial authentication to get a session key.
+    public string? LastfmSessionKey { get; set; } // Stores the authenticated session key.
+
+    public int ScrobbleThresholdPercentage { get; set; } = 50; // Default to 50%
+    public int ScrobbleThresholdAbsoluteSeconds { get; set; } = 240; // Default to 240 seconds (4 minutes)
 }
