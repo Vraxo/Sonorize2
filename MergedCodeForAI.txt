@@ -1088,6 +1088,127 @@ public class MusicLibraryService
 }
 </file>
 
+<file path="Source\Services\NextTrackSelectorService.cs">
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using Sonorize.Models;
+using Sonorize.ViewModels;
+
+namespace Sonorize.Services;
+
+public class NextTrackSelectorService(Random shuffleRandom)
+{
+    private readonly Random _shuffleRandom = shuffleRandom ?? throw new ArgumentNullException(nameof(shuffleRandom));
+
+    public Song? GetNextSong(Song? currentSong, List<Song> currentList, RepeatMode repeatMode, bool shuffleEnabled)
+    {
+        if (currentSong is null || currentList.Count == 0)
+        {
+            Debug.WriteLine("[NextTrackSelector] No current song or list is empty. No next song.");
+            return null;
+        }
+
+        if (repeatMode == RepeatMode.RepeatOne)
+        {
+            Debug.WriteLine($"[NextTrackSelector] Repeat Mode is RepeatOne. Next song is current: {currentSong.Title}");
+            return currentSong;
+        }
+
+        if (repeatMode == RepeatMode.None)
+        {
+            Debug.WriteLine("[NextTrackSelector] Repeat Mode is None. No next song.");
+            return null;
+        }
+
+        return shuffleEnabled
+            ? GetNextSongShuffle(currentSong, currentList, repeatMode)
+            : GetNextSongSequential(currentSong, currentList, repeatMode);
+    }
+
+    private Song? GetNextSongShuffle(Song currentSong, List<Song> currentList, RepeatMode repeatMode)
+    {
+        Debug.WriteLine("[NextTrackSelector] Shuffle is Enabled.");
+        
+        Song? nextSong = null;
+
+        if (currentList.Count == 0)
+        {
+            Debug.WriteLine("[NextTrackSelector] Shuffle enabled, but list is empty.");
+            return null;
+        }
+
+        List<Song> potentialNextSongs = currentList.Where(s => s != currentSong).ToList();
+
+        if (potentialNextSongs.Count != 0)
+        {
+            int nextIndex = _shuffleRandom.Next(potentialNextSongs.Count);
+            nextSong = potentialNextSongs[nextIndex];
+
+            Debug.WriteLine($"[NextTrackSelector] Shuffle pick: {nextSong?.Title ?? "null"}");
+        }
+        else if (currentList.Count == 1)
+        {
+            if (repeatMode == RepeatMode.RepeatAll)
+            {
+                Debug.WriteLine($"[NextTrackSelector] Shuffle enabled, one song in list, RepeatAll active. Replaying: {currentSong.Title}");
+                nextSong = currentSong;
+            }
+            else
+            {
+                Debug.WriteLine($"[NextTrackSelector] Shuffle enabled, only one song ({currentSong.Title}) in list, not RepeatAll. No next song.");
+                nextSong = null;
+            }
+        }
+        else
+        {
+            Debug.WriteLine("[NextTrackSelector] Shuffle enabled, logical error: no potential next songs from a multi-item list. No next song.");
+            nextSong = null;
+        }
+
+        return nextSong;
+    }
+
+    private static Song? GetNextSongSequential(Song currentSong, List<Song> currentList, RepeatMode repeatMode)
+    {
+        Debug.WriteLine("[NextTrackSelector] Shuffle is Disabled (Sequential).");
+        int currentIndex = currentList.IndexOf(currentSong);
+
+        if (currentIndex == -1)
+        {
+            Debug.WriteLine("[NextTrackSelector] Sequential: Current song not found in list. No next song.");
+            return null;
+        }
+
+        Song? nextSong;
+
+        if (currentIndex < currentList.Count - 1)
+        {
+            nextSong = currentList[currentIndex + 1];
+            Debug.WriteLine($"[NextTrackSelector] Sequential next: {nextSong?.Title ?? "null"}");
+        }
+        else
+        {
+            Debug.WriteLine("[NextTrackSelector] End of sequential list reached.");
+
+            if (repeatMode == RepeatMode.RepeatAll && currentList.Count != 0)
+            {
+                nextSong = currentList.First(); // Wrap around
+                Debug.WriteLine($"[NextTrackSelector] RepeatAll active, wrapping around to first: {nextSong.Title}");
+            }
+            else
+            {
+                Debug.WriteLine($"[NextTrackSelector] RepeatMode is {repeatMode} (not RepeatAll), end of list reached. No next song.");
+                nextSong = null;
+            }
+        }
+
+        return nextSong;
+    }
+}
+</file>
+
 <file path="Source\Services\ScrobblingService.cs">
 using Sonorize.Models;
 using System.Diagnostics;
@@ -1711,45 +1832,29 @@ public class ArtistViewModel : ViewModelBase // Inherit from ViewModelBase
 </file>
 
 <file path="Source\ViewModels\LibraryViewModel.cs">
-using Avalonia.Threading;
-using Sonorize.Models;
-using Sonorize.Services;
-using Sonorize.ViewModels;
-using System.Collections.Generic;
+using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Windows.Input;
-using System;
-
-using System;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Diagnostics;
-using System.Linq;
-using System.Threading.Tasks;
-using System.Windows.Input;
-using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Sonorize.Models;
 using Sonorize.Services;
-using Sonorize.Utils;
+using Sonorize.ViewModels.LibraryManagement;
 
 namespace Sonorize.ViewModels;
-
-public enum SongDisplayMode
-{
-    Detailed,
-    Compact,
-    Grid
-}
 
 public class LibraryViewModel : ViewModelBase
 {
     private readonly SettingsService _settingsService;
     private readonly MusicLibraryService _musicLibraryService;
     private readonly LoopDataService _loopDataService;
-    private readonly MainWindowViewModel _parentViewModel; // Reference to parent VM
+    private readonly MainWindowViewModel _parentViewModel;
+    private readonly ArtistAlbumCollectionManager _artistAlbumManager;
+    private readonly SongFilteringService _songFilteringService;
+    private readonly LibraryStatusTextGenerator _statusTextGenerator;
+    private readonly LibraryDataOrchestrator _libraryDataOrchestrator;
+    private readonly TrackNavigationManager _trackNavigationManager; // Added manager
 
     private readonly ObservableCollection<Song> _allSongs = [];
 
@@ -1758,8 +1863,9 @@ public class LibraryViewModel : ViewModelBase
     public ObservableCollection<AlbumViewModel> Albums { get; } = [];
 
     public ICommand SetDisplayModeCommand { get; }
-    public ICommand PreviousTrackCommand { get; }
-    public ICommand NextTrackCommand { get; }
+    // Navigation commands are now exposed from TrackNavigationManager
+    public ICommand PreviousTrackCommand => _trackNavigationManager.PreviousTrackCommand;
+    public ICommand NextTrackCommand => _trackNavigationManager.NextTrackCommand;
 
     public string SearchQuery
     {
@@ -1771,7 +1877,6 @@ public class LibraryViewModel : ViewModelBase
             {
                 return;
             }
-
             ApplyFilter();
         }
     } = string.Empty;
@@ -1785,10 +1890,11 @@ public class LibraryViewModel : ViewModelBase
             if (!SetProperty(ref field, value))
             {
                 return;
+                // Navigation command CanExecute is now handled by TrackNavigationManager
             }
+
             Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"}");
-            // Raise CanExecuteChanged for navigation commands when selection changes
-            RaiseNavigationCommandsCanExecuteChanged();
+            _trackNavigationManager.UpdateSelectedSong(value); // Inform the manager
         }
     }
 
@@ -1809,13 +1915,7 @@ public class LibraryViewModel : ViewModelBase
             }
             else
             {
-                // If SelectedArtist is cleared (e.g. by selecting an album),
-                // and if SearchQuery was previously set to this artist's name,
-                // we might want to clear SearchQuery or let ApplyFilter run with the old query.
-                // Current behavior: SearchQuery remains, ApplyFilter runs if it changed.
-                // If SelectedAlbum is set, it will take precedence in terms of display.
-                // For now, do not automatically clear SearchQuery here.
-                // ApplyFilter(); // Only if SearchQuery didn't change but context did.
+                ApplyFilter();
             }
         }
     }
@@ -1831,14 +1931,13 @@ public class LibraryViewModel : ViewModelBase
                 return;
             }
 
-            if (value is not null)
+            if (value != null)
             {
                 OnAlbumSelected(value);
             }
             else
             {
-                // Similar to SelectedArtist, if SelectedAlbum is cleared.
-                // ApplyFilter();
+                ApplyFilter();
             }
         }
     }
@@ -1860,13 +1959,11 @@ public class LibraryViewModel : ViewModelBase
 
     public string LibraryStatusText
     {
-        get;
+        get => _libraryStatusText;
+        private set => SetProperty(ref _libraryStatusText, value);
+    }
+    private string _libraryStatusText = "";
 
-        private set
-        {
-            SetProperty(ref field, value);
-        }
-    } = "";
 
     public SongDisplayMode LibraryViewMode
     {
@@ -1918,7 +2015,6 @@ public class LibraryViewModel : ViewModelBase
         }
     }
 
-    // Added parentViewModel dependency
     public LibraryViewModel(MainWindowViewModel parentViewModel, SettingsService settingsService, MusicLibraryService musicLibraryService, LoopDataService loopDataService)
     {
         _parentViewModel = parentViewModel ?? throw new ArgumentNullException(nameof(parentViewModel));
@@ -1926,8 +2022,18 @@ public class LibraryViewModel : ViewModelBase
         _musicLibraryService = musicLibraryService;
         _loopDataService = loopDataService;
 
-        _musicLibraryService.SongThumbnailUpdated += MusicLibraryService_SongThumbnailUpdated;
+        FilteredSongs = new ObservableCollection<Song>(); // Ensure it's initialized before passing
+        _trackNavigationManager = new TrackNavigationManager(FilteredSongs);
+        // If TrackNavigationManager needs to change LibraryViewModel.SelectedSong, subscribe to an event from it:
+        // _trackNavigationManager.ManagedSelectionChanged += (newSelection) => SelectedSong = newSelection;
 
+
+        _artistAlbumManager = new ArtistAlbumCollectionManager(Artists, Albums, _musicLibraryService);
+        _songFilteringService = new SongFilteringService();
+        _statusTextGenerator = new LibraryStatusTextGenerator();
+        _libraryDataOrchestrator = new LibraryDataOrchestrator(_musicLibraryService, _artistAlbumManager, _settingsService);
+
+        _musicLibraryService.SongThumbnailUpdated += MusicLibraryService_SongThumbnailUpdated;
 
         AppSettings appSettings = _settingsService.LoadSettings();
 
@@ -1954,7 +2060,6 @@ public class LibraryViewModel : ViewModelBase
 
                 switch (targetView)
                 {
-                    // Setters will handle saving
                     case "Library": LibraryViewMode = mode; break;
                     case "Artists": ArtistViewMode = mode; break;
                     case "Albums": AlbumViewMode = mode; break;
@@ -1963,12 +2068,9 @@ public class LibraryViewModel : ViewModelBase
             _ => true
         );
 
-        // Initialize Navigation Commands
-        PreviousTrackCommand = new RelayCommand(ExecutePreviousTrack, CanExecutePreviousTrack);
-        NextTrackCommand = new RelayCommand(ExecuteNextTrack, CanExecuteNextTrack);
-
-        // Subscribe to FilteredSongs changes to update navigation command states
-        FilteredSongs.CollectionChanged += (sender, e) => RaiseNavigationCommandsCanExecuteChanged();
+        // Previous/Next track commands are now handled by _trackNavigationManager
+        // FilteredSongs.CollectionChanged still needs to inform TrackNavigationManager
+        // This is handled inside TrackNavigationManager's constructor.
 
         UpdateStatusBarText();
     }
@@ -1977,113 +2079,10 @@ public class LibraryViewModel : ViewModelBase
     {
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            // Update ArtistViewModel
-            var artistVM = Artists.FirstOrDefault(a => a.Name == updatedSong.Artist);
-            if (artistVM != null && artistVM.Thumbnail != updatedSong.Thumbnail) // Check if update is needed
-            {
-                // If this song is the representative for the artist, update the artist's thumbnail
-                // This simple logic assumes the first song encountered (or its thumbnail) for an artist is representative.
-                // A more robust approach might re-evaluate based on all songs by that artist.
-                // For now, if the updatedSong's thumbnail is what we'd pick, update.
-                var firstSongOfArtistWithThumbnail = _allSongs.FirstOrDefault(s =>
-                    (s.Artist?.Equals(artistVM.Name, StringComparison.OrdinalIgnoreCase) ?? false) && s.Thumbnail != _musicLibraryService.GetDefaultThumbnail());
-
-                if (firstSongOfArtistWithThumbnail == updatedSong || (firstSongOfArtistWithThumbnail == null && updatedSong.Thumbnail != _musicLibraryService.GetDefaultThumbnail()))
-                {
-                    artistVM.Thumbnail = updatedSong.Thumbnail;
-                }
-            }
-
-            // Update AlbumViewModel
-            var albumVM = Albums.FirstOrDefault(al => al.Title == updatedSong.Album && al.Artist == updatedSong.Artist);
-            if (albumVM != null)
-            {
-                // Re-calculate SongThumbnailsForGrid and RepresentativeThumbnail for this album
-                var songsInAlbum = _allSongs.Where(s => (s.Album?.Equals(albumVM.Title, StringComparison.OrdinalIgnoreCase) ?? false) &&
-                                                        (s.Artist?.Equals(albumVM.Artist, StringComparison.OrdinalIgnoreCase) ?? false))
-                                             .ToList();
-
-                Bitmap? defaultSongThumbnail = _musicLibraryService.GetDefaultThumbnail();
-                List<Bitmap?> newSongThumbnailsForGrid = new List<Bitmap?>(new Bitmap?[4]);
-                List<Bitmap?> distinctSongThumbs = songsInAlbum
-                                                     .Select(s => s.Thumbnail ?? defaultSongThumbnail) // Use current thumbnails
-                                                     .Distinct()
-                                                     .Take(4)
-                                                     .ToList();
-
-                for (int i = 0; i < distinctSongThumbs.Count; i++)
-                {
-                    newSongThumbnailsForGrid[i] = distinctSongThumbs[i];
-                }
-
-                albumVM.SongThumbnailsForGrid = newSongThumbnailsForGrid; // This will trigger INPC on AlbumViewModel
-                albumVM.RepresentativeThumbnail = newSongThumbnailsForGrid.FirstOrDefault(t => t != null) ?? defaultSongThumbnail; // This also triggers INPC
-            }
+            _artistAlbumManager.UpdateCollectionsForSongThumbnail(updatedSong, _allSongs);
+            OnPropertyChanged(nameof(Artists));
+            OnPropertyChanged(nameof(Albums));
         });
-    }
-
-
-    private void ExecutePreviousTrack(object? parameter)
-    {
-        if (SelectedSong is null || !FilteredSongs.Any())
-        {
-            return;
-        }
-
-        int currentIndex = FilteredSongs.IndexOf(SelectedSong);
-
-        if (currentIndex > 0)
-        {
-            SelectedSong = FilteredSongs[currentIndex - 1];
-            Debug.WriteLine($"[LibraryVM] Moved to previous track: {SelectedSong.Title}");
-        }
-        else
-        {
-            Debug.WriteLine("[LibraryVM] Already at the first track.");
-            // Optionally loop to the last track: SelectedSong = FilteredSongs.Last();
-        }
-    }
-
-    private bool CanExecutePreviousTrack(object? parameter)
-    {
-        if (SelectedSong == null || !FilteredSongs.Any()) return false;
-        return FilteredSongs.IndexOf(SelectedSong) > 0;
-    }
-
-    private void ExecuteNextTrack(object? parameter)
-    {
-        if (SelectedSong is null || !FilteredSongs.Any())
-        {
-            return;
-        }
-
-        int currentIndex = FilteredSongs.IndexOf(SelectedSong);
-        if (currentIndex < FilteredSongs.Count - 1 && currentIndex != -1)
-        {
-            SelectedSong = FilteredSongs[currentIndex + 1];
-            Debug.WriteLine($"[LibraryVM] Moved to next track: {SelectedSong.Title}");
-        }
-        else if (currentIndex != -1) // Already at the last track
-        {
-            Debug.WriteLine("[LibraryVM] Already at the last track.");
-            // Optionally loop to the first track: SelectedSong = FilteredSongs.First();
-        }
-        else // Selected song not found in filtered list - should not happen if SelectedSong is non-null and FilteredSongs contains it
-        {
-            Debug.WriteLine("[LibraryVM] Selected song not found in filtered list.");
-        }
-    }
-
-    private bool CanExecuteNextTrack(object? parameter)
-    {
-        if (SelectedSong is null || !FilteredSongs.Any())
-        {
-            return false;
-        }
-
-        int currentIndex = FilteredSongs.IndexOf(SelectedSong);
-
-        return currentIndex != -1 && currentIndex < FilteredSongs.Count - 1;
     }
 
     public async Task LoadLibraryAsync()
@@ -2094,129 +2093,50 @@ public class LibraryViewModel : ViewModelBase
         }
 
         IsLoadingLibrary = true;
-        SearchQuery = string.Empty; // Clear search on full reload
-        SelectedArtist = null; // Clear artist selection
-        SelectedAlbum = null;  // Clear album selection
+        SearchQuery = string.Empty;
+        SelectedArtist = null;
+        SelectedAlbum = null;
+        // SelectedSong will be set to null as part of ApplyFilter if it's no longer in the filtered list,
+        // or explicitly set to null here if we want to ensure it's cleared before loading.
+        SelectedSong = null; // Explicitly clear selection before load
 
         await Dispatcher.UIThread.InvokeAsync(() => {
-            SelectedSong = null;
+            // SelectedSong already cleared
+            _allSongs.Clear();
+            FilteredSongs.Clear(); // TrackNavigationManager will see this change
             Artists.Clear();
             Albums.Clear();
-            FilteredSongs.Clear();
-            _allSongs.Clear();
             LibraryStatusText = "Preparing to load music...";
         });
 
-        AppSettings settings = _settingsService.LoadSettings();
+        Action<Song> songAddedCallback = song => _allSongs.Add(song);
+        Action<string> statusUpdateCallback = status => LibraryStatusText = status;
 
-        if (settings.MusicDirectories.Count == 0)
-        {
-            await Dispatcher.UIThread.InvokeAsync(() => {
-                LibraryStatusText = "No music directories configured.";
-            });
-        }
-        else
-        {
-            try
-            {
-                await Task.Run(async () => {
-                    await _musicLibraryService.LoadMusicFromDirectoriesAsync(
-                        settings.MusicDirectories,
-                        song => Dispatcher.UIThread.InvokeAsync(() => _allSongs.Add(song)),
-                        s => Dispatcher.UIThread.InvokeAsync(() => LibraryStatusText = s));
-                });
+        await _libraryDataOrchestrator.LoadAndProcessLibraryDataAsync(statusUpdateCallback, songAddedCallback);
 
-                await Dispatcher.UIThread.InvokeAsync(() => {
-                    Artists.Clear();
-                    var uniqueArtistNames = _allSongs
-                        .Where(s => !string.IsNullOrWhiteSpace(s.Artist))
-                        .Select(s => s.Artist!)
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .OrderBy(a => a, StringComparer.OrdinalIgnoreCase)
-                        .ToList();
-                    Bitmap? defaultSongThumbnail = _musicLibraryService.GetDefaultThumbnail();
-                    foreach (string? artistName in uniqueArtistNames)
-                    {
-                        // Initial representative thumbnail for artist (might be default)
-                        Bitmap? repThumb = _allSongs.FirstOrDefault(s =>
-                                               (s.Artist?.Equals(artistName, StringComparison.OrdinalIgnoreCase) ?? false) &&
-                                               s.Thumbnail != null && s.Thumbnail != defaultSongThumbnail)?.Thumbnail
-                                           ?? defaultSongThumbnail;
-                        Artists.Add(new ArtistViewModel { Name = artistName, Thumbnail = repThumb });
-                    }
-                    OnPropertyChanged(nameof(Artists));
+        await Dispatcher.UIThread.InvokeAsync(() => {
+            OnPropertyChanged(nameof(Artists));
+            OnPropertyChanged(nameof(Albums));
+            ApplyFilter();
+        });
 
-                    Albums.Clear();
-                    Func<Song, (string Album, string Artist)> keySelector = s => (s.Album?.Trim() ?? string.Empty, s.Artist?.Trim() ?? string.Empty);
-                    var uniqueAlbumsData = _allSongs
-                        .Where(s => !string.IsNullOrWhiteSpace(s.Album) && !string.IsNullOrWhiteSpace(s.Artist))
-                        .GroupBy(keySelector, AlbumArtistTupleComparer.Instance)
-                        .Select(g => new
-                        {
-                            AlbumTitle = g.Key.Item1,
-                            ArtistName = g.Key.Item2,
-                            SongsInAlbum = g.ToList()
-                        })
-                        .OrderBy(a => a.ArtistName, StringComparer.OrdinalIgnoreCase).ThenBy(a => a.AlbumTitle, StringComparer.OrdinalIgnoreCase)
-                        .ToList();
-
-                    foreach (var albumData in uniqueAlbumsData)
-                    {
-                        AlbumViewModel albumVM = new()
-                        {
-                            Title = albumData.AlbumTitle,
-                            Artist = albumData.ArtistName
-                        };
-
-                        // Initial thumbnails for album grid (might be default)
-                        List<Bitmap?> songThumbnailsForGrid = new(new Bitmap?[4]);
-                        List<Bitmap?> distinctSongThumbs = albumData.SongsInAlbum
-                                                     .Select(s => s.Thumbnail ?? defaultSongThumbnail)
-                                                     .Distinct()
-                                                     .Take(4)
-                                                     .ToList();
-
-                        for (int i = 0; i < distinctSongThumbs.Count; i++)
-                        {
-                            songThumbnailsForGrid[i] = distinctSongThumbs[i];
-                        }
-
-                        albumVM.SongThumbnailsForGrid = songThumbnailsForGrid;
-                        albumVM.RepresentativeThumbnail = songThumbnailsForGrid.FirstOrDefault(t => t != null) ?? defaultSongThumbnail;
-
-                        Albums.Add(albumVM);
-                    }
-                    OnPropertyChanged(nameof(Albums));
-
-                    ApplyFilter(); // This will populate FilteredSongs and trigger RaiseNavigationCommandsCanExecuteChanged
-
-                    UpdateStatusBarText();
-                });
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[LibraryVM] Error loading library: {ex}");
-                await Dispatcher.UIThread.InvokeAsync(() => LibraryStatusText = "Error loading music library.");
-            }
-        }
         IsLoadingLibrary = false;
+        UpdateStatusBarText();
     }
 
     private void OnArtistSelected(ArtistViewModel artist)
     {
-        if (artist?.Name == null)
+        if (artist?.Name is null)
         {
             return;
         }
 
         Debug.WriteLine($"[LibraryVM] Artist selected: {artist.Name}");
-        // Clear Album selection when Artist is selected
-        SelectedAlbum = null;
 
-        // Set SearchQuery. This will call ApplyFilter.
+        SelectedAlbum = null;
+        OnPropertyChanged(nameof(SelectedAlbum));
         SearchQuery = artist.Name;
 
-        // Switch back to the Library tab (index 0)
         _parentViewModel.ActiveTabIndex = 0;
     }
 
@@ -2228,121 +2148,86 @@ public class LibraryViewModel : ViewModelBase
         }
 
         Debug.WriteLine($"[LibraryVM] Album selected: {album.Title} by {album.Artist}");
-        // Clear Artist selection when Album is selected
-        SelectedArtist = null;
 
-        // Set SearchQuery to the album's title.
-        // This will populate the search bar and trigger ApplyFilter,
-        // which filters songs based on this query and updates UI states.
+        SelectedArtist = null;
+        OnPropertyChanged(nameof(SelectedArtist));
         SearchQuery = album.Title;
 
-        // Switch back to the Library tab (index 0)
         _parentViewModel.ActiveTabIndex = 0;
     }
 
     private void ApplyFilter()
     {
-        FilteredSongs.Clear();
-        IEnumerable<Song> songsToFilter = _allSongs.AsEnumerable();
+        var currentSelectedSongBeforeFilter = SelectedSong; // Preserve current selection
 
-        if (!string.IsNullOrWhiteSpace(SearchQuery))
+        FilteredSongs.Clear(); // This will notify TrackNavigationManager
+        var filtered = _songFilteringService.ApplyFilter(_allSongs, SearchQuery, SelectedArtist, SelectedAlbum);
+        foreach (var song in filtered)
         {
-            string query = SearchQuery.ToLowerInvariant().Trim();
-
-            songsToFilter = songsToFilter.Where(s =>
-                (s.Title?.ToLowerInvariant().Contains(query, StringComparison.InvariantCultureIgnoreCase) ?? false) ||
-                (s.Artist?.ToLowerInvariant().Contains(query, StringComparison.InvariantCultureIgnoreCase) ?? false) ||
-                (s.Album?.ToLowerInvariant().Contains(query, StringComparison.InvariantCultureIgnoreCase) ?? false));
+            FilteredSongs.Add(song); // This will notify TrackNavigationManager
         }
 
-        songsToFilter = songsToFilter.OrderBy(s => s.Title, StringComparer.OrdinalIgnoreCase);
-
-        foreach (var song in songsToFilter)
+        // Restore selection if still valid, or clear it
+        if (currentSelectedSongBeforeFilter != null && FilteredSongs.Contains(currentSelectedSongBeforeFilter))
         {
-            FilteredSongs.Add(song);
+            // If the setter for SelectedSong doesn't re-notify _trackNavigationManager when value is the same,
+            // we might need to manually ensure _trackNavigationManager is synced.
+            // However, our current SelectedSong setter will re-notify if `value` is different from `_selectedSong`.
+            // If `_selectedSong` was already `currentSelectedSongBeforeFilter`, no notification happens.
+            // So, we need to explicitly update the manager if the song instance is the same but list context changed.
+            SelectedSong = currentSelectedSongBeforeFilter; // Ensure TrackNavigationManager is aware
         }
-
-        if (SelectedSong != null && !FilteredSongs.Contains(SelectedSong))
+        else if (currentSelectedSongBeforeFilter != null) // Was selected, but no longer in list
         {
-            Debug.WriteLine($"[LibraryVM] Selected song '{SelectedSong.Title}' is no longer in the filtered list. Clearing selection.");
+            Debug.WriteLine($"[LibraryVM] Selected song '{currentSelectedSongBeforeFilter.Title}' is no longer in the filtered list. Clearing selection.");
             SelectedSong = null;
         }
-        else if (SelectedSong != null && FilteredSongs.Contains(SelectedSong))
+        else // Was not selected, or selection was cleared
         {
-            RaiseNavigationCommandsCanExecuteChanged();
+            // Ensure TrackNavigationManager knows selection is null if it wasn't already
+            if (SelectedSong != null) SelectedSong = null;
+            else _trackNavigationManager.UpdateSelectedSong(null);
         }
-
         UpdateStatusBarText();
-        RaiseNavigationCommandsCanExecuteChanged();
     }
 
     public void UpdateStatusBarText()
     {
-        if (IsLoadingLibrary)
+        if (!IsLoadingLibrary)
         {
-            // LibraryStatusText is already being updated during loading by LoadMusicFromDirectoriesAsync callback
-            return;
+            LibraryStatusText = _statusTextGenerator.GenerateStatusText(
+                IsLoadingLibrary,
+                _allSongs.Count,
+                FilteredSongs.Count,
+                SelectedArtist,
+                SelectedAlbum,
+                SearchQuery,
+                _settingsService
+            );
         }
-
-        string status;
-
-        if (_allSongs.Count == 0)
-        {
-            AppSettings settings = _settingsService.LoadSettings();
-
-            if (!settings.MusicDirectories.Any())
-            {
-                status = "Library empty. Add directories via File menu.";
-            }
-            else
-            {
-                status = "No songs found in configured directories.";
-            }
-        }
-        // Check if a specific artist or album view is active implicitly by checking SelectedArtist/Album
-        // AND if SearchQuery matches their name/title (which OnArtistSelected/OnAlbumSelected ensures).
-        else if (SelectedArtist != null && SearchQuery == SelectedArtist.Name)
-        {
-            status = $"Showing songs by {SelectedArtist.Name}: {FilteredSongs.Count} of {_allSongs.Count} total songs.";
-        }
-        else if (SelectedAlbum != null && SearchQuery == SelectedAlbum.Title)
-        {
-            status = $"Showing songs from {SelectedAlbum.Title} by {SelectedAlbum.Artist}: {FilteredSongs.Count} of {_allSongs.Count} total songs.";
-        }
-        else if (!string.IsNullOrWhiteSpace(SearchQuery)) // General search query active
-        {
-            status = $"{FilteredSongs.Count} of {_allSongs.Count} songs matching search.";
-        }
-        else // No specific view, no search query - showing all songs
-        {
-            status = $"{_allSongs.Count} songs in library.";
-        }
-
-        LibraryStatusText = status;
     }
 
 
     public void RaiseLibraryCommandsCanExecuteChanged()
     {
         (SetDisplayModeCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        // Navigation commands are handled by RaiseNavigationCommandsCanExecuteChanged
+        // Navigation commands are handled by TrackNavigationManager
     }
 
-    public void RaiseNavigationCommandsCanExecuteChanged()
-    {
-        //Debug.WriteLine("[LibraryVM] Raising navigation command CanExecute changed.");
-        (PreviousTrackCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        (NextTrackCommand as RelayCommand)?.RaiseCanExecuteChanged();
-    }
+    // This method is no longer strictly needed here if TrackNavigationManager handles its own commands
+    // public void RaiseNavigationCommandsCanExecuteChanged()
+    // {
+    //     _trackNavigationManager.RaiseCanExecuteChangedForAllCommands();
+    // }
 
-    // It's good practice to unsubscribe from events when the ViewModel is no longer needed,
-    // though for a main library view model, this might coincide with application shutdown.
     public void Dispose()
     {
         if (_musicLibraryService != null)
         {
             _musicLibraryService.SongThumbnailUpdated -= MusicLibraryService_SongThumbnailUpdated;
         }
+        // If TrackNavigationManager subscribed to events or needs disposal, handle here
+        // e.g., _trackNavigationManager.Dispose(); (if it implements IDisposable)
     }
 }
 </file>
@@ -2654,23 +2539,17 @@ public class LoopEditorViewModel : ViewModelBase
 
 <file path="Source\ViewModels\MainWindowViewModel.cs">
 using System;
-using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO; // Required for Path.GetFullPath, Directory.Exists
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Controls;
-using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Sonorize.Models;
 using Sonorize.Services;
-using Sonorize.Utils;
-using System.IO; // Required for Path.GetFullPath, Directory.Exists
-using System.Collections.Generic; // Required for List
-using System.Security.Cryptography; // Required for shuffle randomization
-using System.Runtime.InteropServices; // Required for Marshal.Copy
 
 namespace Sonorize.ViewModels;
 
@@ -2680,7 +2559,8 @@ public class MainWindowViewModel : ViewModelBase
     private readonly MusicLibraryService _musicLibraryService;
     private readonly WaveformService _waveformService;
     private readonly LoopDataService _loopDataService;
-    private readonly ScrobblingService _scrobblingService; // Added
+    private readonly ScrobblingService _scrobblingService;
+    private readonly NextTrackSelectorService _nextTrackSelectorService;
 
     // Expose the Services directly for child VMs or public properties
     public PlaybackService PlaybackService { get; }
@@ -2689,11 +2569,11 @@ public class MainWindowViewModel : ViewModelBase
     // Expose the child ViewModels
     public LibraryViewModel Library { get; set; }
     public LoopEditorViewModel LoopEditor { get; }
-    public PlaybackViewModel Playback { get; } // Playback ViewModel
+    public PlaybackViewModel Playback { get; }
     public string StatusBarText { get => field; set => SetProperty(ref field, value); } = "Welcome to Sonorize!";
 
     // Property to control the selected tab index in the main TabControl
-    public int ActiveTabIndex { get => field; set => SetProperty(ref field, value); } = 0; // Default to Library tab (index 0)
+    public int ActiveTabIndex { get => field; set => SetProperty(ref field, value); } = 0;
 
 
     // IsLoadingLibrary is a proxy to Library's state
@@ -2708,7 +2588,7 @@ public class MainWindowViewModel : ViewModelBase
     public ICommand AddDirectoryAndRefreshCommand { get; }
     public ICommand ToggleAdvancedPanelCommand { get; }
 
-    private readonly Random _shuffleRandom = new(); // Simple Random instance for shuffle randomization
+    private readonly Random _shuffleRandom = new();
 
     public MainWindowViewModel(
         SettingsService settingsService,
@@ -2717,28 +2597,25 @@ public class MainWindowViewModel : ViewModelBase
         ThemeColors theme,
         WaveformService waveformService,
         LoopDataService loopDataService,
-        ScrobblingService scrobblingService) // Added ScrobblingService
+        ScrobblingService scrobblingService)
     {
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
-        PlaybackService = playbackService; // PlaybackService now receives ScrobblingService from App.cs
+        PlaybackService = playbackService;
         CurrentTheme = theme;
         _waveformService = waveformService;
         _loopDataService = loopDataService;
-        _scrobblingService = scrobblingService; // Store ScrobblingService
+        _scrobblingService = scrobblingService;
+        _nextTrackSelectorService = new NextTrackSelectorService(_shuffleRandom);
 
-        // Initialize child ViewModels, passing required dependencies
-        // Pass 'this' to LibraryViewModel
         Library = new LibraryViewModel(this, _settingsService, _musicLibraryService, _loopDataService);
-        Playback = new PlaybackViewModel(PlaybackService, _waveformService); // Pass PlaybackService and WaveformService
-        LoopEditor = new LoopEditorViewModel(PlaybackService, _loopDataService); // Pass PlaybackService and LoopDataService
+        Playback = new PlaybackViewModel(PlaybackService, _waveformService);
+        LoopEditor = new LoopEditorViewModel(PlaybackService, _loopDataService);
 
 
-        // Subscribe to child ViewModel property changes relevant to the parent VM
         Library.PropertyChanged += Library_PropertyChanged;
-        Playback.PropertyChanged += Playback_PropertyChanged; // Listen to Playback VM changes
+        Playback.PropertyChanged += Playback_PropertyChanged;
 
-        // Subscribe to the new PlaybackEndedNaturally event
         PlaybackService.PlaybackEndedNaturally += PlaybackService_PlaybackEndedNaturally;
 
         LoadInitialDataCommand = new RelayCommand(async _ => await Library.LoadLibraryAsync(), _ => !Library.IsLoadingLibrary);
@@ -2746,125 +2623,34 @@ public class MainWindowViewModel : ViewModelBase
         ExitCommand = new RelayCommand(_ => Environment.Exit(0));
         AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefresh(owner), _ => !Library.IsLoadingLibrary);
 
-        // ToggleAdvancedPanelCommand depends on Playback.HasCurrentSong (derived from PlaybackService)
         ToggleAdvancedPanelCommand = new RelayCommand(
             _ => IsAdvancedPanelVisible = !IsAdvancedPanelVisible,
             _ => Playback.HasCurrentSong && !Library.IsLoadingLibrary);
 
 
-        // Initial state update
         UpdateAllUIDependentStates();
     }
 
-    // Handler for the new PlaybackEndedNaturally event
     private void PlaybackService_PlaybackEndedNaturally(object? sender, EventArgs e)
     {
         Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally event received.");
-        // This handler is invoked on the UI thread via Dispatcher.UIThread.InvokeAsync within PlaybackService.OnPlaybackStopped.
 
-        var currentSong = Library.SelectedSong; // Get the song that just ended
-        var currentList = Library.FilteredSongs.ToList(); // Get a snapshot of the current list
-
-        if (currentSong == null || !currentList.Any())
-        {
-            Debug.WriteLine("[MainVM] Playback ended naturally, but no song selected or library list is empty. Stopping playback.");
-            PlaybackService.Stop(); // Ensure state is stopped if no song is loaded
-            return; // Handled
-        }
-
-        // --- Logic for determining the next action based on RepeatMode and ShuffleEnabled ---
-
+        var currentSong = Library.SelectedSong;
+        var currentList = Library.FilteredSongs.ToList();
         var repeatMode = Playback.RepeatMode;
         var shuffleEnabled = Playback.ShuffleEnabled;
 
-        if (repeatMode == RepeatMode.RepeatOne)
-        {
-            Debug.WriteLine($"[MainVM] Playback ended naturally. Repeat Mode is RepeatOne. Replaying: {currentSong.Title}");
-            PlaybackService.Play(currentSong); // Directly tell the service to play the *same* song instance
-            Debug.WriteLine("[MainVM] PlaybackService.Play called directly for RepeatOne.");
-            return; // Handled
-        }
+        Song? nextSong = _nextTrackSelectorService.GetNextSong(currentSong, currentList, repeatMode, shuffleEnabled);
 
-        if (repeatMode == RepeatMode.None)
-        {
-            Debug.WriteLine("[MainVM] Playback ended naturally. Repeat Mode is None. Stopping playback.");
-            PlaybackService.Stop(); // Explicitly stop playback
-            return; // Handled
-        }
-
-        // If we reach here, RepeatMode is either PlayOnce or RepeatAll
-        Song? nextSong = null;
-
-        if (shuffleEnabled)
-        {
-            // Shuffle logic: Pick a random song (excluding current if possible)
-            Debug.WriteLine("[MainVM] Playback ended naturally. Shuffle is Enabled.");
-            if (currentList.Any())
-            {
-                var potentialNextSongs = currentList.Where(s => s != currentSong).ToList();
-                if (potentialNextSongs.Any())
-                {
-                    var nextIndex = _shuffleRandom.Next(potentialNextSongs.Count);
-                    nextSong = potentialNextSongs[nextIndex];
-                    Debug.WriteLine($"[MainVM] Shuffle pick: {nextSong?.Title ?? "null"}");
-                }
-                else if (currentList.Count == 1)
-                {
-                    Debug.WriteLine($"[MainVM] Shuffle enabled, but only one song ({currentSong.Title}) in list. Cannot pick a different one.");
-                    // In shuffle mode with only one song, ending means stopping unless RepeatOne was active (handled above).
-                    nextSong = null; // Will fall through to stop logic
-                }
-                else
-                {
-                    Debug.WriteLine("[MainVM] Shuffle enabled, list issues preventing next song pick.");
-                    nextSong = null; // Will fall through to stop logic
-                }
-            }
-            else
-            {
-                Debug.WriteLine("[MainVM] Shuffle enabled, but list is empty.");
-                nextSong = null; // Will fall through to stop logic
-            }
-        }
-        else // Shuffle Disabled - Sequential or RepeatAll
-        {
-            Debug.WriteLine("[MainVM] Playback ended naturally. Shuffle is Disabled.");
-            var currentIndex = currentList.IndexOf(currentSong);
-            if (currentIndex != -1 && currentIndex < currentList.Count - 1)
-            {
-                nextSong = currentList[currentIndex + 1]; // Play the next song sequentially
-                Debug.WriteLine($"[MainVM] Sequential next: {nextSong?.Title ?? "null"}");
-            }
-            else // Reached the end of the sequential list
-            {
-                Debug.WriteLine("[MainVM] End of sequential list reached.");
-                // Check Repeat All *only* here
-                if (repeatMode == RepeatMode.RepeatAll && currentList.Any())
-                {
-                    nextSong = currentList.First(); // Wrap around
-                    Debug.WriteLine($"[MainVM] RepeatAll active, wrapping around to first: {nextSong.Title}");
-                }
-                else
-                {
-                    Debug.WriteLine($"[MainVM] RepeatMode is {repeatMode} (not RepeatAll), end of list reached. Stopping.");
-                    nextSong = null; // Fall through to stop logic
-                }
-            }
-        }
-
-        // --- Trigger playback of the determined next song or stop if none ---
         if (nextSong != null)
         {
-            // Setting Library.SelectedSong triggers the Library_PropertyChanged handler,
-            // which then calls PlaybackService.Play(nextSong). This updates the UI selection.
-            Debug.WriteLine($"[MainVM] Setting Library.SelectedSong to {nextSong.Title}.");
+            Debug.WriteLine($"[MainVM] Next song determined by NextTrackSelectorService: {nextSong.Title}. Setting Library.SelectedSong.");
             Library.SelectedSong = nextSong;
         }
         else
         {
-            // If no next song was determined (end of PlayOnce sequential, shuffle failed in single-item list, empty list)
-            Debug.WriteLine("[MainVM] No next song determined. Calling PlaybackService.Stop().");
-            PlaybackService.Stop(); // Explicitly stop playback
+            Debug.WriteLine("[MainVM] No next song determined by NextTrackSelectorService. Calling PlaybackService.Stop().");
+            PlaybackService.Stop();
         }
 
         Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally handler completed.");
@@ -2891,13 +2677,9 @@ public class MainWindowViewModel : ViewModelBase
                     else if (Library.SelectedSong == null)
                     {
                         Debug.WriteLine("[MainVM_LibChanged] Library.SelectedSong is null. No Play call needed here. PlaybackService.Stop might have been called.");
-                        // If selection is cleared, and playback is active, stop playback.
-                        // This is more robust if clearing selection should always stop.
-                        // However, PlaybackService.Stop() is preferred to manage state and scrobbling.
-                        // if(PlaybackService.IsPlaying) PlaybackService.Stop(); 
                     }
 
-                    RaiseAllCommandsCanExecuteChanged();
+                    RaiseAllCommandsCanExecuteChanged(); // Still relevant for commands MainWindowViewModel owns.
                     break;
                 case nameof(Library.IsLoadingLibrary):
                     OnPropertyChanged(nameof(IsLoadingLibrary));
@@ -3002,8 +2784,9 @@ public class MainWindowViewModel : ViewModelBase
         (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
 
-        Library.RaiseLibraryCommandsCanExecuteChanged();
-        Library.RaiseNavigationCommandsCanExecuteChanged();
+        Library.RaiseLibraryCommandsCanExecuteChanged(); // For LibraryVM's own commands (e.g., SetDisplayMode)
+        // Navigation commands are handled by LibraryViewModel's TrackNavigationManager internally.
+        // No longer need: Library.RaiseNavigationCommandsCanExecuteChanged(); 
         Playback.RaisePlaybackCommandCanExecuteChanged();
         LoopEditor.RaiseLoopCommandCanExecuteChanged();
     }
@@ -3104,7 +2887,7 @@ public class MainWindowViewModel : ViewModelBase
 
             if (!themeActuallyChanged && !dirsActuallyChanged && !scrobbleSettingsActuallyChanged)
             {
-                UpdateStatusBarText(); // If only minor settings changed that don't require reload/restart/refresh
+                UpdateStatusBarText();
             }
         }
         else
@@ -3869,6 +3652,17 @@ public class SettingsViewModel : ViewModelBase
             SettingsChanged = false;
         }
     }
+}
+</file>
+
+<file path="Source\ViewModels\SongDisplayMode.cs">
+namespace Sonorize.ViewModels;
+
+public enum SongDisplayMode
+{
+    Detailed,
+    Compact,
+    Grid
 }
 </file>
 
@@ -5385,6 +5179,459 @@ public class PlaybackService : ViewModelBase, IDisposable
         Dispose();
         Debug.WriteLine("[PlaybackService] Finalizer completed for PlaybackService.");
     }
+}
+</file>
+
+<file path="Source\ViewModels\LibraryManagement\ArtistAlbumCollectionManager.cs">
+using Avalonia.Media.Imaging;
+using Sonorize.Models;
+using Sonorize.Services;
+using Sonorize.Utils; // For AlbumArtistTupleComparer
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
+
+namespace Sonorize.ViewModels.LibraryManagement;
+
+public class ArtistAlbumCollectionManager
+{
+    private readonly ObservableCollection<ArtistViewModel> _artistsCollection;
+    private readonly ObservableCollection<AlbumViewModel> _albumsCollection;
+    private readonly MusicLibraryService _musicLibraryService; // For default thumbnail
+
+    public ArtistAlbumCollectionManager(
+        ObservableCollection<ArtistViewModel> artistsCollection,
+        ObservableCollection<AlbumViewModel> albumsCollection,
+        MusicLibraryService musicLibraryService)
+    {
+        _artistsCollection = artistsCollection ?? throw new ArgumentNullException(nameof(artistsCollection));
+        _albumsCollection = albumsCollection ?? throw new ArgumentNullException(nameof(albumsCollection));
+        _musicLibraryService = musicLibraryService ?? throw new ArgumentNullException(nameof(musicLibraryService));
+    }
+
+    public void PopulateCollections(IEnumerable<Song> allSongs)
+    {
+        _artistsCollection.Clear();
+        var uniqueArtistNames = allSongs
+            .Where(s => !string.IsNullOrWhiteSpace(s.Artist))
+            .Select(s => s.Artist!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(a => a, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        Bitmap? defaultSongThumbnail = _musicLibraryService.GetDefaultThumbnail();
+        foreach (string? artistName in uniqueArtistNames)
+        {
+            Bitmap? repThumb = allSongs.FirstOrDefault(s =>
+                                   (s.Artist?.Equals(artistName, StringComparison.OrdinalIgnoreCase) ?? false) &&
+                                   s.Thumbnail != null && s.Thumbnail != defaultSongThumbnail)?.Thumbnail
+                               ?? defaultSongThumbnail;
+            _artistsCollection.Add(new ArtistViewModel { Name = artistName, Thumbnail = repThumb });
+        }
+
+        _albumsCollection.Clear();
+        Func<Song, (string Album, string Artist)> keySelector = s => (s.Album?.Trim() ?? string.Empty, s.Artist?.Trim() ?? string.Empty);
+        var uniqueAlbumsData = allSongs
+            .Where(s => !string.IsNullOrWhiteSpace(s.Album) && !string.IsNullOrWhiteSpace(s.Artist))
+            .GroupBy(keySelector, AlbumArtistTupleComparer.Instance)
+            .Select(g => new
+            {
+                AlbumTitle = g.Key.Item1,
+                ArtistName = g.Key.Item2,
+                SongsInAlbum = g.ToList()
+            })
+            .OrderBy(a => a.ArtistName, StringComparer.OrdinalIgnoreCase).ThenBy(a => a.AlbumTitle, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var albumData in uniqueAlbumsData)
+        {
+            AlbumViewModel albumVM = new()
+            {
+                Title = albumData.AlbumTitle,
+                Artist = albumData.ArtistName
+            };
+
+            List<Bitmap?> songThumbnailsForGrid = new(new Bitmap?[4]);
+            List<Bitmap?> distinctSongThumbs = albumData.SongsInAlbum
+                                                 .Select(s => s.Thumbnail ?? defaultSongThumbnail)
+                                                 .Distinct()
+                                                 .Take(4)
+                                                 .ToList();
+
+            for (int i = 0; i < distinctSongThumbs.Count; i++)
+            {
+                songThumbnailsForGrid[i] = distinctSongThumbs[i];
+            }
+
+            albumVM.SongThumbnailsForGrid = songThumbnailsForGrid;
+            albumVM.RepresentativeThumbnail = songThumbnailsForGrid.FirstOrDefault(t => t != null) ?? defaultSongThumbnail;
+
+            _albumsCollection.Add(albumVM);
+        }
+    }
+
+    public void UpdateCollectionsForSongThumbnail(Song updatedSong, IEnumerable<Song> allSongs)
+    {
+        // Update ArtistViewModel
+        var artistVM = _artistsCollection.FirstOrDefault(a => a.Name == updatedSong.Artist);
+        if (artistVM != null)
+        {
+            var firstSongOfArtistWithThumbnail = allSongs.FirstOrDefault(s =>
+                (s.Artist?.Equals(artistVM.Name, StringComparison.OrdinalIgnoreCase) ?? false) && s.Thumbnail != _musicLibraryService.GetDefaultThumbnail());
+
+            Bitmap? newArtistThumbnail = (firstSongOfArtistWithThumbnail?.Thumbnail ?? _musicLibraryService.GetDefaultThumbnail());
+            if (artistVM.Thumbnail != newArtistThumbnail) // Only update if changed to avoid needless notifications
+            {
+                artistVM.Thumbnail = newArtistThumbnail;
+            }
+        }
+
+        // Update AlbumViewModel
+        var albumVM = _albumsCollection.FirstOrDefault(al => al.Title == updatedSong.Album && al.Artist == updatedSong.Artist);
+        if (albumVM != null)
+        {
+            var songsInAlbum = allSongs.Where(s => (s.Album?.Equals(albumVM.Title, StringComparison.OrdinalIgnoreCase) ?? false) &&
+                                                    (s.Artist?.Equals(albumVM.Artist, StringComparison.OrdinalIgnoreCase) ?? false))
+                                         .ToList();
+
+            Bitmap? defaultSongThumbnail = _musicLibraryService.GetDefaultThumbnail();
+            List<Bitmap?> newSongThumbnailsForGrid = new List<Bitmap?>(new Bitmap?[4]);
+            List<Bitmap?> distinctSongThumbs = songsInAlbum
+                                                 .Select(s => s.Thumbnail ?? defaultSongThumbnail)
+                                                 .Distinct()
+                                                 .Take(4)
+                                                 .ToList();
+
+            for (int i = 0; i < distinctSongThumbs.Count; i++)
+            {
+                newSongThumbnailsForGrid[i] = distinctSongThumbs[i];
+            }
+
+            // Check if the grid thumbnails actually changed before assigning to avoid unnecessary UI updates.
+            if (!albumVM.SongThumbnailsForGrid.SequenceEqual(newSongThumbnailsForGrid))
+            {
+                albumVM.SongThumbnailsForGrid = newSongThumbnailsForGrid;
+            }
+
+            Bitmap? newRepresentativeThumbnail = newSongThumbnailsForGrid.FirstOrDefault(t => t != null) ?? defaultSongThumbnail;
+            if (albumVM.RepresentativeThumbnail != newRepresentativeThumbnail)
+            {
+                albumVM.RepresentativeThumbnail = newRepresentativeThumbnail;
+            }
+        }
+    }
+}
+</file>
+
+<file path="Source\ViewModels\LibraryManagement\LibraryDataOrchestrator.cs">
+using Avalonia.Threading;
+using Sonorize.Models;
+using Sonorize.Services;
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel; // Required for ObservableCollection
+using System.Diagnostics;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace Sonorize.ViewModels.LibraryManagement;
+
+public class LibraryDataOrchestrator
+{
+    private readonly MusicLibraryService _musicLibraryService;
+    private readonly ArtistAlbumCollectionManager _artistAlbumManager;
+    private readonly SettingsService _settingsService;
+
+    public LibraryDataOrchestrator(
+        MusicLibraryService musicLibraryService,
+        ArtistAlbumCollectionManager artistAlbumManager,
+        SettingsService settingsService)
+    {
+        _musicLibraryService = musicLibraryService ?? throw new ArgumentNullException(nameof(musicLibraryService));
+        _artistAlbumManager = artistAlbumManager ?? throw new ArgumentNullException(nameof(artistAlbumManager));
+        _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
+    }
+
+    public async Task<List<Song>> LoadAndProcessLibraryDataAsync(
+        Action<string> statusUpdateCallback,
+        Action<Song> songAddedToRawListCallback)
+    {
+        var rawSongs = new List<Song>(); // Temporary list to gather songs from MusicLibraryService
+
+        AppSettings settings = _settingsService.LoadSettings();
+        if (!settings.MusicDirectories.Any())
+        {
+            await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback("No music directories configured."));
+            return rawSongs; // Return empty list
+        }
+
+        try
+        {
+            // Phase 1: Load raw song metadata and thumbnails (thumbnails load in background via MusicLibraryService)
+            await _musicLibraryService.LoadMusicFromDirectoriesAsync(
+                settings.MusicDirectories,
+                song =>
+                {
+                    // This callback is invoked on UI thread by MusicLibraryService
+                    rawSongs.Add(song);
+                    songAddedToRawListCallback(song); // Notify caller (LibraryViewModel) to add to its _allSongs
+                },
+                status => Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback(status)) // Pass status updates
+            );
+
+            // Phase 2: Populate Artist and Album collections using the fully gathered rawSongs list
+            // This is done after all songs are initially processed by MusicLibraryService.
+            // The ArtistAlbumCollectionManager operates on the collections passed to its constructor,
+            // so this call effectively updates the Artists and Albums collections in LibraryViewModel.
+            // Ensure this runs on UI thread if ArtistAlbumCollectionManager modifies UI-bound collections directly.
+            // ArtistAlbumCollectionManager is designed to populate ObservableCollections, which should be UI thread safe if modified there.
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                _artistAlbumManager.PopulateCollections(rawSongs);
+            });
+
+            return rawSongs; // Return the populated list of all songs
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[LibraryDataOrchestrator] Error loading and processing library data: {ex}");
+            await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback("Error loading music library."));
+            return new List<Song>(); // Return empty list on error
+        }
+    }
+}
+</file>
+
+<file path="Source\ViewModels\LibraryManagement\LibraryStatusTextGenerator.cs">
+using Sonorize.Models;
+using Sonorize.Services; // For AppSettings in case it's needed indirectly
+using System.Linq;
+
+namespace Sonorize.ViewModels.LibraryManagement;
+
+public class LibraryStatusTextGenerator
+{
+    public string GenerateStatusText(
+        bool isLoadingLibrary,
+        int allSongsCount,
+        int filteredSongsCount,
+        ArtistViewModel? selectedArtist,
+        AlbumViewModel? selectedAlbum,
+        string? searchQuery,
+        SettingsService settingsService) // Pass SettingsService to check for configured directories
+    {
+        if (isLoadingLibrary)
+        {
+            // During loading, LibraryViewModel's LibraryStatusText is updated by MusicLibraryService callbacks.
+            // This generator is primarily for post-loading or idle states.
+            // However, if called during loading, we might return a generic loading message
+            // or expect the caller (LibraryViewModel) to handle this case.
+            // For now, assume this is called when not actively in the middle of the LoadMusicFromDirectoriesAsync song processing loop.
+            return "Loading library..."; // Or whatever the current LibraryStatusText is if passed in.
+        }
+
+        if (allSongsCount == 0)
+        {
+            AppSettings settings = settingsService.LoadSettings();
+            if (!settings.MusicDirectories.Any())
+            {
+                return "Library empty. Add directories via File menu.";
+            }
+            else
+            {
+                return "No songs found in configured directories.";
+            }
+        }
+
+        // Album selection takes precedence for status text
+        if (selectedAlbum?.Title != null && selectedAlbum.Artist != null)
+        {
+            return $"Showing songs from {selectedAlbum.Title} by {selectedAlbum.Artist}: {filteredSongsCount} of {allSongsCount} total songs.";
+        }
+        // Then artist selection
+        else if (selectedArtist?.Name != null)
+        {
+            return $"Showing songs by {selectedArtist.Name}: {filteredSongsCount} of {allSongsCount} total songs.";
+        }
+        else if (!string.IsNullOrWhiteSpace(searchQuery))
+        {
+            return $"{filteredSongsCount} of {allSongsCount} songs matching search.";
+        }
+        else // No specific view, no search query - showing all songs
+        {
+            return $"{allSongsCount} songs in library.";
+        }
+    }
+}
+</file>
+
+<file path="Source\ViewModels\LibraryManagement\SongFilteringService.cs">
+using Sonorize.Models;
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
+
+namespace Sonorize.ViewModels.LibraryManagement;
+
+public class SongFilteringService
+{
+    public IEnumerable<Song> ApplyFilter(
+        IEnumerable<Song> allSongs,
+        string? searchQuery,
+        ArtistViewModel? selectedArtist,
+        AlbumViewModel? selectedAlbum)
+    {
+        IEnumerable<Song> songsToFilter = allSongs;
+
+        // Priority:
+        // 1. If an album is selected, filter by album (and its artist).
+        // 2. Else if an artist is selected, filter by artist.
+        // 3. Else if a search query is present, filter by query.
+        // 4. Else, show all songs (after ordering).
+
+        bool specificAlbumSelected = selectedAlbum?.Title != null && selectedAlbum.Artist != null;
+        bool specificArtistSelected = selectedArtist?.Name != null;
+
+        if (specificAlbumSelected)
+        {
+            // When an album is selected, the searchQuery is often set to the album title.
+            // We should primarily filter by the album's identity.
+            songsToFilter = songsToFilter.Where(s =>
+                (s.Album?.Equals(selectedAlbum!.Title, StringComparison.OrdinalIgnoreCase) ?? false) &&
+                (s.Artist?.Equals(selectedAlbum!.Artist, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+        else if (specificArtistSelected)
+        {
+            // When an artist is selected, the searchQuery is often set to the artist name.
+            // Filter by the artist's identity.
+            songsToFilter = songsToFilter.Where(s =>
+                s.Artist?.Equals(selectedArtist!.Name, StringComparison.OrdinalIgnoreCase) ?? false);
+        }
+        else if (!string.IsNullOrWhiteSpace(searchQuery))
+        {
+            string query = searchQuery.ToLowerInvariant().Trim();
+            songsToFilter = songsToFilter.Where(s =>
+                (s.Title?.ToLowerInvariant().Contains(query, StringComparison.InvariantCultureIgnoreCase) ?? false) ||
+                (s.Artist?.ToLowerInvariant().Contains(query, StringComparison.InvariantCultureIgnoreCase) ?? false) ||
+                (s.Album?.ToLowerInvariant().Contains(query, StringComparison.InvariantCultureIgnoreCase) ?? false));
+        }
+
+        return songsToFilter.OrderBy(s => s.Title, StringComparer.OrdinalIgnoreCase);
+    }
+}
+</file>
+
+<file path="Source\ViewModels\LibraryManagement\TrackNavigationManager.cs">
+using Sonorize.Models;
+using System;
+using System.Collections.ObjectModel; // For ObservableCollection
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Linq;
+using System.Windows.Input;
+
+namespace Sonorize.ViewModels.LibraryManagement;
+
+public class TrackNavigationManager : ViewModelBase // Inherit for RelayCommand's RaiseCanExecuteChanged if needed
+{
+    private readonly ObservableCollection<Song> _filteredSongs;
+    private Song? _selectedSong;
+
+    public Song? SelectedSong
+    {
+        get => _selectedSong;
+        set
+        {
+            // This setter is crucial. It's what the LibraryViewModel will call.
+            // Or, LibraryViewModel could expose its SelectedSong and FilteredSongs
+            // and this manager could observe them. For direct control, LibraryViewModel calls this.
+            if (SetProperty(ref _selectedSong, value))
+            {
+                RaiseCanExecuteChangedForAllCommands();
+            }
+        }
+    }
+
+    public ICommand PreviousTrackCommand { get; }
+    public ICommand NextTrackCommand { get; }
+
+    public TrackNavigationManager(ObservableCollection<Song> filteredSongs)
+    {
+        _filteredSongs = filteredSongs ?? throw new ArgumentNullException(nameof(filteredSongs));
+        _filteredSongs.CollectionChanged += (s, e) => RaiseCanExecuteChangedForAllCommands();
+
+        PreviousTrackCommand = new RelayCommand(ExecutePreviousTrack, CanExecutePreviousTrack);
+        NextTrackCommand = new RelayCommand(ExecuteNextTrack, CanExecuteNextTrack);
+    }
+
+    // This method will be called by LibraryViewModel when its SelectedSong changes
+    public void UpdateSelectedSong(Song? newSelectedSong)
+    {
+        if (_selectedSong != newSelectedSong)
+        {
+            _selectedSong = newSelectedSong; // Update internal state
+            RaiseCanExecuteChangedForAllCommands(); // Update command states
+        }
+    }
+
+
+    private void ExecutePreviousTrack(object? parameter)
+    {
+        if (_selectedSong == null || !_filteredSongs.Any()) return;
+        int currentIndex = _filteredSongs.IndexOf(_selectedSong);
+        if (currentIndex > 0)
+        {
+            SelectedSong = _filteredSongs[currentIndex - 1]; // This will trigger property changed & command updates
+            Debug.WriteLine($"[TrackNavManager] Moved to previous track: {SelectedSong.Title}");
+        }
+        else
+        {
+            Debug.WriteLine("[TrackNavManager] Already at the first track.");
+        }
+    }
+
+    private bool CanExecutePreviousTrack(object? parameter)
+    {
+        if (_selectedSong == null || !_filteredSongs.Any()) return false;
+        return _filteredSongs.IndexOf(_selectedSong) > 0;
+    }
+
+    private void ExecuteNextTrack(object? parameter)
+    {
+        if (_selectedSong == null || !_filteredSongs.Any()) return;
+        int currentIndex = _filteredSongs.IndexOf(_selectedSong);
+        if (currentIndex < _filteredSongs.Count - 1 && currentIndex != -1)
+        {
+            SelectedSong = _filteredSongs[currentIndex + 1]; // This will trigger property changed & command updates
+            Debug.WriteLine($"[TrackNavManager] Moved to next track: {SelectedSong.Title}");
+        }
+        else if (currentIndex != -1)
+        {
+            Debug.WriteLine("[TrackNavManager] Already at the last track.");
+        }
+        else
+        {
+             Debug.WriteLine("[TrackNavManager] Selected song not found in filtered list.");
+        }
+    }
+
+    private bool CanExecuteNextTrack(object? parameter)
+    {
+        if (_selectedSong == null || !_filteredSongs.Any()) return false;
+        int currentIndex = _filteredSongs.IndexOf(_selectedSong);
+        return currentIndex != -1 && currentIndex < _filteredSongs.Count - 1;
+    }
+
+    private void RaiseCanExecuteChangedForAllCommands()
+    {
+        (PreviousTrackCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (NextTrackCommand as RelayCommand)?.RaiseCanExecuteChanged();
+    }
+
+    // Optional: Expose an event if LibraryViewModel needs to react to selection changes from this manager
+    // public event Action<Song?>? ManagedSelectionChanged;
 }
 </file>
 

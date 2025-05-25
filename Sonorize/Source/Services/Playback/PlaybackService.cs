@@ -23,13 +23,17 @@ public class PlaybackService : ViewModelBase, IDisposable
             {
                 Debug.WriteLine($"[PlaybackService] CurrentSong property set to: {value?.Title ?? "null"}");
                 OnPropertyChanged(nameof(HasCurrentSong));
-                CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-                IsPlaying = false;
-                CurrentPosition = TimeSpan.Zero;
-                CurrentSongDuration = TimeSpan.Zero;
-                StopUiUpdateTimer();
 
-                // Update the LoopHandler when the current song changes
+                if (value == null) // CurrentSong is being cleared
+                {
+                    Debug.WriteLine("[PlaybackService] CurrentSong set to null. Resetting playback state variables.");
+                    IsPlaying = false;
+                    CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
+                    CurrentPosition = TimeSpan.Zero;
+                    CurrentSongDuration = TimeSpan.Zero;
+                    StopUiUpdateTimer();
+                }
+
                 _loopHandler.UpdateCurrentSong(value);
             }
         }
@@ -81,7 +85,7 @@ public class PlaybackService : ViewModelBase, IDisposable
 
     private NAudioPlaybackEngine? _playbackEngine;
     private Timer? uiUpdateTimer;
-    private readonly PlaybackLoopHandler _loopHandler; // Instance of the new loop handler
+    private readonly PlaybackLoopHandler _loopHandler;
     private readonly ScrobblingService _scrobblingService;
 
 
@@ -120,7 +124,7 @@ public class PlaybackService : ViewModelBase, IDisposable
         Debug.WriteLine("[PlaybackService] Constructor called.");
         _scrobblingService = scrobblingService ?? throw new ArgumentNullException(nameof(scrobblingService));
         uiUpdateTimer = new Timer(UpdateUiCallback, null, Timeout.Infinite, Timeout.Infinite);
-        _loopHandler = new PlaybackLoopHandler(this); // Initialize the loop handler, injecting this service
+        _loopHandler = new PlaybackLoopHandler(this);
     }
 
     private void UpdateUiCallback(object? state)
@@ -135,7 +139,7 @@ public class PlaybackService : ViewModelBase, IDisposable
                 try
                 {
                     currentAudioTime = _playbackEngine.CurrentPosition;
-                    songDuration = _playbackEngine.CurrentSongDuration; // Get duration from engine
+                    songDuration = _playbackEngine.CurrentSongDuration;
                 }
                 catch (Exception ex)
                 {
@@ -145,16 +149,15 @@ public class PlaybackService : ViewModelBase, IDisposable
                 }
 
                 this.CurrentPosition = currentAudioTime;
-                this.CurrentSongDuration = songDuration; // Keep VM duration in sync with engine
+                this.CurrentSongDuration = songDuration;
 
-                // Delegate loop checking to the LoopHandler
                 _loopHandler.CheckForLoopSeek(currentAudioTime, songDuration);
             }
             else
             {
                 if (_playbackEngine == null || _playbackEngine.CurrentPlaybackStatus != PlaybackStateStatus.Playing)
                 {
-                    Debug.WriteLine($"[PlaybackService] Timer callback found engine state is not Playing ({_playbackEngine?.CurrentPlaybackStatus}). Stopping timer.");
+                    // Debug.WriteLine($"[PlaybackService] Timer callback found engine state is not Playing ({_playbackEngine?.CurrentPlaybackStatus}). Stopping timer.");
                     StopUiUpdateTimer();
                 }
             }
@@ -163,7 +166,8 @@ public class PlaybackService : ViewModelBase, IDisposable
 
     private async void TryScrobbleSong(Song? song, TimeSpan playedPosition)
     {
-        // Use ScrobblingService to check conditions based on current settings
+        if (song == null) return;
+        Debug.WriteLine($"[PlaybackService] TryScrobbleSong called for '{song.Title}' at {playedPosition}.");
         if (_scrobblingService.ShouldScrobble(song, playedPosition))
         {
             await _scrobblingService.ScrobbleAsync(song, DateTime.UtcNow);
@@ -174,23 +178,44 @@ public class PlaybackService : ViewModelBase, IDisposable
     {
         Debug.WriteLine($"[PlaybackService] Play requested for: {(song?.Title ?? "null song")}");
 
-        Song? oldSong = CurrentSong;
-        TimeSpan oldSongPlaybackPosition = _playbackEngine?.CurrentPosition ?? TimeSpan.Zero;
+        // --- Start: Handle interruption of the PREVIOUS song ---
+        Song? interruptedSong = null;
+        TimeSpan interruptedSongPosition = TimeSpan.Zero;
 
-        if (song == null || string.IsNullOrEmpty(song.FilePath) || !File.Exists(song.FilePath))
+        if (_playbackEngine != null && CurrentSong != null && CurrentSong != song) // An actual song is playing and is being interrupted by a DIFFERENT new song
         {
-            Debug.WriteLine("[PlaybackService] Play called with null/invalid/missing file song. Stopping.");
-            Stop();
-            return;
+            interruptedSong = CurrentSong; // Capture the song being interrupted
+            try
+            {
+                interruptedSongPosition = _playbackEngine.CurrentPosition; // Capture its position BEFORE stopping
+            }
+            catch (Exception ex) { Debug.WriteLine($"[PlaybackService] Error getting position of interrupted song '{interruptedSong.Title}': {ex.Message}"); }
+
+            _playbackEngine.Stop(); // Request stop
+            _playbackEngine.PlaybackStopped -= OnEnginePlaybackStopped; // Detach handler
+            _playbackEngine.Dispose();      // Dispose
+            _playbackEngine = null;         // Nullify reference
+            Debug.WriteLine($"[PlaybackService] Interrupted '{interruptedSong.Title}'. Old engine stopped & disposed.");
+
+            // Attempt to scrobble the interrupted song immediately
+            TryScrobbleSong(interruptedSong, interruptedSongPosition);
         }
-
-        if (_playbackEngine != null)
+        else if (_playbackEngine != null && CurrentSong == song) // Request to play the SAME song again (restart)
         {
+            Debug.WriteLine($"[PlaybackService] Restarting song '{song.Title}'. Old engine stopped & disposed.");
             _playbackEngine.Stop();
             _playbackEngine.PlaybackStopped -= OnEnginePlaybackStopped;
             _playbackEngine.Dispose();
             _playbackEngine = null;
-            Debug.WriteLine("[PlaybackService] Disposed existing playback engine.");
+        }
+        // --- End: Handle interruption of the PREVIOUS song ---
+
+        // --- Start: Validate and set up the NEW song ---
+        if (song == null || string.IsNullOrEmpty(song.FilePath) || !File.Exists(song.FilePath))
+        {
+            Debug.WriteLine("[PlaybackService] New song is null, path invalid, or file missing. Current playback will be fully stopped.");
+            CurrentSong = null; // Triggers UI state cleanup via its setter.
+            return;
         }
 
         CurrentSong = song;
@@ -201,16 +226,16 @@ public class PlaybackService : ViewModelBase, IDisposable
             _playbackEngine = new NAudioPlaybackEngine();
             _playbackEngine.PlaybackStopped += OnEnginePlaybackStopped;
 
-            _playbackEngine.PlaybackRate = PlaybackRate;
-            _playbackEngine.PitchSemitones = PitchSemitones;
+            _playbackEngine.PlaybackRate = this.PlaybackRate;
+            _playbackEngine.PitchSemitones = this.PitchSemitones;
 
             _playbackEngine.Load(song.FilePath);
 
             CurrentSongDuration = _playbackEngine.CurrentSongDuration;
             this.CurrentPosition = TimeSpan.Zero;
 
-            TimeSpan startPosition = _loopHandler.GetInitialPlaybackPosition(_playbackEngine.CurrentSongDuration);
-            if (startPosition != TimeSpan.Zero)
+            TimeSpan startPosition = _loopHandler.GetInitialPlaybackPosition(CurrentSongDuration);
+            if (startPosition > TimeSpan.Zero && startPosition < CurrentSongDuration)
             {
                 _playbackEngine.Seek(startPosition);
                 this.CurrentPosition = _playbackEngine.CurrentPosition;
@@ -224,14 +249,21 @@ public class PlaybackService : ViewModelBase, IDisposable
             Debug.WriteLine($"[PlaybackService] Playback started for: {CurrentSong.Title}. State: {CurrentPlaybackStatus}");
 
             _ = _scrobblingService.UpdateNowPlayingAsync(CurrentSong);
-
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[PlaybackService] CRITICAL ERROR during playback initiation for {Path.GetFileName(song.FilePath)}: {ex.ToString()}");
-            Stop();
+            Debug.WriteLine($"[PlaybackService] CRITICAL ERROR during playback initiation for '{CurrentSong?.FilePath ?? "UNKNOWN FILE"}': {ex.ToString()}");
+            if (_playbackEngine != null)
+            {
+                _playbackEngine.PlaybackStopped -= OnEnginePlaybackStopped;
+                _playbackEngine.Dispose();
+                _playbackEngine = null;
+            }
+            CurrentSong = null;
         }
+        // --- End: Validate and set up the NEW song ---
     }
+
 
     public void Pause()
     {
@@ -267,6 +299,7 @@ public class PlaybackService : ViewModelBase, IDisposable
         else if (_playbackEngine != null && CurrentPlaybackStatus == PlaybackStateStatus.Stopped)
         {
             Debug.WriteLine("[PlaybackService] Resume requested from Stopped state. Re-playing current song via engine.");
+            // Re-calling Play ensures the engine is freshly initialized if it was disposed.
             Play(CurrentSong);
         }
         else
@@ -279,25 +312,39 @@ public class PlaybackService : ViewModelBase, IDisposable
     {
         Debug.WriteLine("[PlaybackService] Public Stop() called.");
         _explicitStopRequested = true;
+
+        Song? songThatWasPlaying = CurrentSong;
+        TimeSpan positionOfStoppedSong = TimeSpan.Zero;
+
         if (_playbackEngine != null)
         {
+            try
+            {
+                // Capture position before stopping, as it might reset.
+                positionOfStoppedSong = _playbackEngine.CurrentPosition;
+            }
+            catch (Exception ex) { Debug.WriteLine($"[PlaybackService Stop] Error getting position before stop: {ex.Message}"); }
+
             _playbackEngine.Stop();
+            // OnEnginePlaybackStopped will handle the rest, including scrobbling and setting CurrentSong = null.
         }
         else
         {
-            Song? songToClear = CurrentSong;
-            TimeSpan lastKnownPosition = CurrentPosition;
+            Debug.WriteLine("[PlaybackService Stop] No playback engine. Performing direct cleanup.");
+            if (songThatWasPlaying != null) positionOfStoppedSong = this.CurrentPosition;
 
             IsPlaying = false;
             CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
             this.CurrentPosition = TimeSpan.Zero;
             CurrentSongDuration = TimeSpan.Zero;
-            CurrentSong = null;
-            _explicitStopRequested = false;
 
-            TryScrobbleSong(songToClear, lastKnownPosition);
+            TryScrobbleSong(songThatWasPlaying, positionOfStoppedSong);
+            CurrentSong = null;
+
+            _explicitStopRequested = false;
         }
     }
+
 
     public void Seek(TimeSpan requestedPosition)
     {
@@ -323,7 +370,7 @@ public class PlaybackService : ViewModelBase, IDisposable
             TimeSpan currentAudioTimeForToleranceCheck = _playbackEngine.CurrentPosition;
             if (Math.Abs(currentAudioTimeForToleranceCheck.TotalSeconds - targetPosition.TotalSeconds) < positionToleranceSeconds)
             {
-                Debug.WriteLine($"[PlaybackService] Seek target {targetPosition:mm\\:ss\\.ff} is very close to current position {currentAudioTimeForToleranceCheck:mm\\:ss\\.ff} (within {positionToleranceSeconds}s), ignoring seek.");
+                // Debug.WriteLine($"[PlaybackService] Seek target {targetPosition:mm\\:ss\\.ff} is very close to current position {currentAudioTimeForToleranceCheck:mm\\:ss\\.ff} (within {positionToleranceSeconds}s), ignoring seek.");
                 return;
             }
         }
@@ -332,12 +379,12 @@ public class PlaybackService : ViewModelBase, IDisposable
             Debug.WriteLine($"[PlaybackService] Error checking current position for seek tolerance: {ex.Message}. Proceeding with seek.");
         }
 
-        Debug.WriteLine($"[PlaybackService] Seeking engine to: {targetPosition:mm\\:ss\\.ff}");
+        // Debug.WriteLine($"[PlaybackService] Seeking engine to: {targetPosition:mm\\:ss\\.ff}");
         try
         {
             _playbackEngine.Seek(targetPosition);
-            this.CurrentPosition = _playbackEngine.CurrentPosition;
-            Debug.WriteLine($"[PlaybackService] Seek executed. Engine Time after seek: {_playbackEngine.CurrentPosition:mm\\:ss\\.ff}. VM Position: {this.CurrentPosition:mm\\:ss\\.ff}");
+            this.CurrentPosition = _playbackEngine.CurrentPosition; // Important to sync VM's position
+            // Debug.WriteLine($"[PlaybackService] Seek executed. Engine Time after seek: {_playbackEngine.CurrentPosition:mm\\:ss\\.ff}. VM Position: {this.CurrentPosition:mm\\:ss\\.ff}");
         }
         catch (Exception ex)
         {
@@ -359,55 +406,74 @@ public class PlaybackService : ViewModelBase, IDisposable
         Dispatcher.UIThread.InvokeAsync(() =>
         {
             Debug.WriteLine($"[PlaybackService] === OnEnginePlaybackStopped START === (UI Thread)");
-            Song? songThatStopped = CurrentSong;
-            TimeSpan stoppedPosition = _playbackEngine?.CurrentPosition ?? CurrentPosition;
-            TimeSpan stoppedSongDuration = _playbackEngine?.CurrentSongDuration ?? CurrentSongDuration;
+            Song? songThatJustStopped = CurrentSong;
+
+            TimeSpan stoppedPosition = TimeSpan.Zero;
+            TimeSpan stoppedSongDuration = TimeSpan.Zero;
+
+            // It's crucial that _playbackEngine here refers to the engine that *actually* stopped.
+            // If Play() creates a new engine and this event is from an old, disposed one, sender might not be _playbackEngine.
+            // However, we detach the handler from the old engine in Play(). So, this event should always be from the *current* _playbackEngine.
+            if (_playbackEngine != null && sender == _playbackEngine)
+            {
+                try { stoppedPosition = _playbackEngine.CurrentPosition; } catch (Exception ex) { Debug.WriteLine($"[PlaybackService OnEnginePlaybackStopped] Error getting position: {ex.Message}"); }
+                try { stoppedSongDuration = _playbackEngine.CurrentSongDuration; } catch (Exception ex) { Debug.WriteLine($"[PlaybackService OnEnginePlaybackStopped] Error getting duration: {ex.Message}"); }
+            }
+            else
+            {
+                Debug.WriteLine($"[PlaybackService OnEnginePlaybackStopped] Sender mismatch or _playbackEngine is null. Sender: {sender?.GetHashCode()}, _playbackEngine: {_playbackEngine?.GetHashCode()}. Using VM's last known values.");
+                stoppedPosition = this.CurrentPosition;
+                stoppedSongDuration = this.CurrentSongDuration;
+            }
 
             StopUiUpdateTimer();
+
+            // Detach from the engine that just stopped.
+            if (sender is NAudioPlaybackEngine engineInstance)
+            {
+                engineInstance.PlaybackStopped -= OnEnginePlaybackStopped;
+                Debug.WriteLine("[PlaybackService OnEnginePlaybackStopped] Detached handler from the stopping engine instance.");
+            }
+
 
             if (e.Exception != null)
             {
                 Debug.WriteLine($"[PlaybackService] Playback stopped due to error: {e.Exception.Message}. Finalizing state to Stopped.");
-                IsPlaying = false;
-                CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-                this.CurrentPosition = TimeSpan.Zero;
-                CurrentSongDuration = TimeSpan.Zero;
-                CurrentSong = null;
+                TryScrobbleSong(songThatJustStopped, stoppedPosition);
+                CurrentSong = null; // Setting to null resets other UI state via its setter
             }
             else
             {
-                bool isNearEndOfFile = stoppedPosition >= stoppedSongDuration - TimeSpan.FromMilliseconds(500);
-                Debug.WriteLine($"[PlaybackService] Clean Stop. ExplicitStop: {_explicitStopRequested}. NearEnd: {isNearEndOfFile}. Pos: {stoppedPosition:mm\\:ss\\.ff}, Dur: {stoppedSongDuration:mm\\:ss\\.ff}");
+                bool isNearEndOfFile = (stoppedSongDuration > TimeSpan.Zero) && (stoppedPosition >= stoppedSongDuration - TimeSpan.FromMilliseconds(500));
+                Debug.WriteLine($"[PlaybackService] Clean Stop. ExplicitStopReq: {_explicitStopRequested}. NearEnd: {isNearEndOfFile}. Pos: {stoppedPosition:mm\\:ss\\.ff}, Dur: {stoppedSongDuration:mm\\:ss\\.ff}");
 
                 if (_explicitStopRequested)
                 {
-                    Debug.WriteLine("[PlaybackService] Playback stopped by explicit user/app command (event). Finalizing state to Stopped.");
-                    TryScrobbleSong(songThatStopped, stoppedPosition);
-                    IsPlaying = false;
-                    CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-                    this.CurrentPosition = TimeSpan.Zero;
-                    CurrentSongDuration = TimeSpan.Zero;
+                    Debug.WriteLine("[PlaybackService] Playback stopped by explicit user/app command. Finalizing.");
+                    TryScrobbleSong(songThatJustStopped, stoppedPosition);
                     CurrentSong = null;
                 }
                 else if (isNearEndOfFile)
                 {
-                    Debug.WriteLine("[PlaybackService] Playback stopped naturally (event). Raising PlaybackEndedNaturally event.");
-                    TryScrobbleSong(songThatStopped, stoppedSongDuration);
-                    this.CurrentPosition = TimeSpan.Zero;
+                    Debug.WriteLine("[PlaybackService] Playback stopped naturally (end of file). Raising PlaybackEndedNaturally.");
+                    TryScrobbleSong(songThatJustStopped, stoppedSongDuration);
                     IsPlaying = false;
                     CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
+                    this.CurrentPosition = TimeSpan.Zero; // Reset position for UI, song remains "current" until next action.
                     PlaybackEndedNaturally?.Invoke(this, EventArgs.Empty);
                 }
                 else
                 {
-                    Debug.WriteLine("[PlaybackService] Playback interrupted (likely new song played). Scrobbling previous if conditions met.");
-                    TryScrobbleSong(songThatStopped, stoppedPosition);
-                    if (CurrentSong == songThatStopped)
-                    {
-                        IsPlaying = false;
-                        CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-                    }
+                    Debug.WriteLine("[PlaybackService] Playback stopped unexpectedly (not error, not explicit, not EOF). Scrobbling and stopping.");
+                    TryScrobbleSong(songThatJustStopped, stoppedPosition);
+                    CurrentSong = null;
                 }
+            }
+            // Ensure IsPlaying and CurrentPlaybackStatus are also set correctly if CurrentSong becomes null
+            if (CurrentSong == null)
+            {
+                IsPlaying = false;
+                CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
             }
             _explicitStopRequested = false;
             Debug.WriteLine($"[PlaybackService] OnEnginePlaybackStopped handler finishes. CurrentSong: {CurrentSong?.Title ?? "null"}");
@@ -418,13 +484,13 @@ public class PlaybackService : ViewModelBase, IDisposable
     private void StartUiUpdateTimer()
     {
         uiUpdateTimer?.Change(TimeSpan.Zero, TimeSpan.FromMilliseconds(100));
-        Debug.WriteLine("[PlaybackService] UI Update Timer Started.");
+        // Debug.WriteLine("[PlaybackService] UI Update Timer Started.");
     }
 
     private void StopUiUpdateTimer()
     {
         uiUpdateTimer?.Change(Timeout.Infinite, Timeout.Infinite);
-        Debug.WriteLine("[PlaybackService] UI Update Timer Stopped.");
+        // Debug.WriteLine("[PlaybackService] UI Update Timer Stopped.");
     }
 
     public void Dispose()
@@ -434,25 +500,34 @@ public class PlaybackService : ViewModelBase, IDisposable
         uiUpdateTimer = null;
 
         Song? songAtDispose = CurrentSong;
-        TimeSpan positionAtDispose = _playbackEngine?.CurrentPosition ?? CurrentPosition;
+        TimeSpan positionAtDispose = TimeSpan.Zero;
 
         if (_playbackEngine != null)
         {
+            try
+            {
+                positionAtDispose = _playbackEngine.CurrentPosition;
+            }
+            catch (Exception ex) { Debug.WriteLine($"[PlaybackService Dispose] Error getting position: {ex.Message}"); }
+
+            _playbackEngine.Stop();
             _playbackEngine.PlaybackStopped -= OnEnginePlaybackStopped;
             _playbackEngine.Dispose();
             _playbackEngine = null;
             Debug.WriteLine("[PlaybackService] Disposed playback engine during service dispose.");
         }
+        else
+        {
+            positionAtDispose = this.CurrentPosition;
+        }
 
-        TryScrobbleSong(songAtDispose, positionAtDispose);
-
+        if (songAtDispose != null)
+        {
+            TryScrobbleSong(songAtDispose, positionAtDispose);
+        }
 
         _explicitStopRequested = false;
         CurrentSong = null;
-        CurrentSongDuration = TimeSpan.Zero;
-        this.CurrentPosition = TimeSpan.Zero;
-        IsPlaying = false;
-        CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
 
         _loopHandler.Dispose();
 
@@ -463,7 +538,7 @@ public class PlaybackService : ViewModelBase, IDisposable
     ~PlaybackService()
     {
         Debug.WriteLine("[PlaybackService] Finalizer called for PlaybackService.");
-        Dispose();
+        Dispose(); // Call the same Dispose logic
         Debug.WriteLine("[PlaybackService] Finalizer completed for PlaybackService.");
     }
 }

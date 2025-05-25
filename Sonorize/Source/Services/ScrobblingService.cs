@@ -215,7 +215,7 @@ public class ScrobblingService
 
             if (response.Success)
             {
-                //Debug.WriteLine($"[ScrobblingService] Scrobble successful for: {song.Title}. Accepted: {response.Scrobbles?.AcceptedCount}, Ignored: {response.Scrobbles?.IgnoredCount}");
+                Debug.WriteLine($"[ScrobblingService] Scrobble successful for: {song.Title}");
             }
             else
             {
