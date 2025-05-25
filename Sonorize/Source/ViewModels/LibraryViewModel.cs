@@ -1,4 +1,15 @@
-﻿using System;
+﻿using Avalonia.Threading;
+using Sonorize.Models;
+using Sonorize.Services;
+using Sonorize.ViewModels;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Threading.Tasks;
+using System.Windows.Input;
+using System;
+
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -85,8 +96,13 @@ public class LibraryViewModel : ViewModelBase
             }
             else
             {
-                SearchQuery = string.Empty;
-                ApplyFilter();
+                // If SelectedArtist is cleared (e.g. by selecting an album),
+                // and if SearchQuery was previously set to this artist's name,
+                // we might want to clear SearchQuery or let ApplyFilter run with the old query.
+                // Current behavior: SearchQuery remains, ApplyFilter runs if it changed.
+                // If SelectedAlbum is set, it will take precedence in terms of display.
+                // For now, do not automatically clear SearchQuery here.
+                // ApplyFilter(); // Only if SearchQuery didn't change but context did.
             }
         }
     }
@@ -108,8 +124,8 @@ public class LibraryViewModel : ViewModelBase
             }
             else
             {
-                SearchQuery = string.Empty;
-                ApplyFilter();
+                // Similar to SelectedArtist, if SelectedAlbum is cleared.
+                // ApplyFilter();
             }
         }
     }
@@ -313,6 +329,8 @@ public class LibraryViewModel : ViewModelBase
 
         IsLoadingLibrary = true;
         SearchQuery = string.Empty; // Clear search on full reload
+        SelectedArtist = null; // Clear artist selection
+        SelectedAlbum = null;  // Clear album selection
 
         await Dispatcher.UIThread.InvokeAsync(() => {
             SelectedSong = null;
@@ -424,8 +442,10 @@ public class LibraryViewModel : ViewModelBase
         Debug.WriteLine($"[LibraryVM] Artist selected: {artist.Name}");
         // Clear Album selection when Artist is selected
         SelectedAlbum = null;
+
+        // Set SearchQuery. This will call ApplyFilter.
         SearchQuery = artist.Name;
-        // ApplyFilter will be called by SearchQuery setter, which updates FilteredSongs
+
         // Switch back to the Library tab (index 0)
         _parentViewModel.ActiveTabIndex = 0;
     }
@@ -440,27 +460,11 @@ public class LibraryViewModel : ViewModelBase
         Debug.WriteLine($"[LibraryVM] Album selected: {album.Title} by {album.Artist}");
         // Clear Artist selection when Album is selected
         SelectedArtist = null;
-        SearchQuery = string.Empty; // Clear search query when selecting album
 
-        FilteredSongs.Clear();
-
-        IOrderedEnumerable<Song> songsInAlbum = _allSongs.Where(s =>
-            s.Album.Equals(album.Title, StringComparison.OrdinalIgnoreCase) &&
-            s.Artist.Equals(album.Artist, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(s => s.Title, StringComparer.OrdinalIgnoreCase);
-
-        foreach (Song? song in songsInAlbum)
-        {
-            FilteredSongs.Add(song);
-        }
-
-        if (SelectedSong != null && !FilteredSongs.Contains(SelectedSong))
-        {
-            SelectedSong = null; // Clear selection if the previously selected song is not in this album
-        }
-
-        UpdateStatusBarText();
-        RaiseNavigationCommandsCanExecuteChanged(); // FilteredSongs changed
+        // Set SearchQuery to the album's title.
+        // This will populate the search bar and trigger ApplyFilter,
+        // which filters songs based on this query and updates UI states.
+        SearchQuery = album.Title;
 
         // Switch back to the Library tab (index 0)
         _parentViewModel.ActiveTabIndex = 0;
@@ -487,24 +491,18 @@ public class LibraryViewModel : ViewModelBase
         {
             FilteredSongs.Add(song);
         }
-        // If the currently selected song is no longer in the filtered list, clear selection.
-        // This is important for playback state synchronization.
+
         if (SelectedSong != null && !FilteredSongs.Contains(SelectedSong))
         {
             Debug.WriteLine($"[LibraryVM] Selected song '{SelectedSong.Title}' is no longer in the filtered list. Clearing selection.");
-            SelectedSong = null; // Clearing SelectedSong will trigger its PropertyChanged handler
+            SelectedSong = null;
         }
         else if (SelectedSong != null && FilteredSongs.Contains(SelectedSong))
         {
-            // If the selected song is still in the list, its index might have changed.
-            // Need to re-evaluate navigation commands.
             RaiseNavigationCommandsCanExecuteChanged();
         }
-        // If SelectedSong is null, this filter application didn't select one,
-        // and RaiseNavigationCommandsCanExecuteChanged is called because FilteredSongs changed.
 
         UpdateStatusBarText();
-        // Navigation commands also depend on FilteredSongs changing
         RaiseNavigationCommandsCanExecuteChanged();
     }
 
@@ -512,6 +510,7 @@ public class LibraryViewModel : ViewModelBase
     {
         if (IsLoadingLibrary)
         {
+            // LibraryStatusText is already being updated during loading by LoadMusicFromDirectoriesAsync callback
             return;
         }
 
@@ -530,11 +529,21 @@ public class LibraryViewModel : ViewModelBase
                 status = "No songs found in configured directories.";
             }
         }
-        else if (!string.IsNullOrWhiteSpace(SearchQuery) || SelectedAlbum != null || SelectedArtist != null)
+        // Check if a specific artist or album view is active implicitly by checking SelectedArtist/Album
+        // AND if SearchQuery matches their name/title (which OnArtistSelected/OnAlbumSelected ensures).
+        else if (SelectedArtist != null && SearchQuery == SelectedArtist.Name)
         {
-            status = $"{FilteredSongs.Count} of {_allSongs.Count} songs displayed.";
+            status = $"Showing songs by {SelectedArtist.Name}: {FilteredSongs.Count} of {_allSongs.Count} total songs.";
         }
-        else
+        else if (SelectedAlbum != null && SearchQuery == SelectedAlbum.Title)
+        {
+            status = $"Showing songs from {SelectedAlbum.Title} by {SelectedAlbum.Artist}: {FilteredSongs.Count} of {_allSongs.Count} total songs.";
+        }
+        else if (!string.IsNullOrWhiteSpace(SearchQuery)) // General search query active
+        {
+            status = $"{FilteredSongs.Count} of {_allSongs.Count} songs matching search.";
+        }
+        else // No specific view, no search query - showing all songs
         {
             status = $"{_allSongs.Count} songs in library.";
         }
