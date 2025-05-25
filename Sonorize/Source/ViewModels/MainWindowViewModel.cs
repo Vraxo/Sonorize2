@@ -25,7 +25,8 @@ public class MainWindowViewModel : ViewModelBase
     private readonly MusicLibraryService _musicLibraryService;
     private readonly WaveformService _waveformService;
     private readonly LoopDataService _loopDataService;
-    private readonly ScrobblingService _scrobblingService; // Added
+    private readonly ScrobblingService _scrobblingService;
+    private readonly NextTrackSelectorService _nextTrackSelectorService; // Added
 
     // Expose the Services directly for child VMs or public properties
     public PlaybackService PlaybackService { get; }
@@ -53,7 +54,7 @@ public class MainWindowViewModel : ViewModelBase
     public ICommand AddDirectoryAndRefreshCommand { get; }
     public ICommand ToggleAdvancedPanelCommand { get; }
 
-    private readonly Random _shuffleRandom = new(); // Simple Random instance for shuffle randomization
+    private readonly Random _shuffleRandom = new();
 
     public MainWindowViewModel(
         SettingsService settingsService,
@@ -62,28 +63,25 @@ public class MainWindowViewModel : ViewModelBase
         ThemeColors theme,
         WaveformService waveformService,
         LoopDataService loopDataService,
-        ScrobblingService scrobblingService) // Added ScrobblingService
+        ScrobblingService scrobblingService)
     {
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
-        PlaybackService = playbackService; // PlaybackService now receives ScrobblingService from App.cs
+        PlaybackService = playbackService;
         CurrentTheme = theme;
         _waveformService = waveformService;
         _loopDataService = loopDataService;
-        _scrobblingService = scrobblingService; // Store ScrobblingService
+        _scrobblingService = scrobblingService;
+        _nextTrackSelectorService = new NextTrackSelectorService(_shuffleRandom); // Initialize NextTrackSelectorService
 
-        // Initialize child ViewModels, passing required dependencies
-        // Pass 'this' to LibraryViewModel
         Library = new LibraryViewModel(this, _settingsService, _musicLibraryService, _loopDataService);
-        Playback = new PlaybackViewModel(PlaybackService, _waveformService); // Pass PlaybackService and WaveformService
-        LoopEditor = new LoopEditorViewModel(PlaybackService, _loopDataService); // Pass PlaybackService and LoopDataService
+        Playback = new PlaybackViewModel(PlaybackService, _waveformService);
+        LoopEditor = new LoopEditorViewModel(PlaybackService, _loopDataService);
 
 
-        // Subscribe to child ViewModel property changes relevant to the parent VM
         Library.PropertyChanged += Library_PropertyChanged;
-        Playback.PropertyChanged += Playback_PropertyChanged; // Listen to Playback VM changes
+        Playback.PropertyChanged += Playback_PropertyChanged;
 
-        // Subscribe to the new PlaybackEndedNaturally event
         PlaybackService.PlaybackEndedNaturally += PlaybackService_PlaybackEndedNaturally;
 
         LoadInitialDataCommand = new RelayCommand(async _ => await Library.LoadLibraryAsync(), _ => !Library.IsLoadingLibrary);
@@ -91,125 +89,34 @@ public class MainWindowViewModel : ViewModelBase
         ExitCommand = new RelayCommand(_ => Environment.Exit(0));
         AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefresh(owner), _ => !Library.IsLoadingLibrary);
 
-        // ToggleAdvancedPanelCommand depends on Playback.HasCurrentSong (derived from PlaybackService)
         ToggleAdvancedPanelCommand = new RelayCommand(
             _ => IsAdvancedPanelVisible = !IsAdvancedPanelVisible,
             _ => Playback.HasCurrentSong && !Library.IsLoadingLibrary);
 
 
-        // Initial state update
         UpdateAllUIDependentStates();
     }
 
-    // Handler for the new PlaybackEndedNaturally event
     private void PlaybackService_PlaybackEndedNaturally(object? sender, EventArgs e)
     {
         Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally event received.");
-        // This handler is invoked on the UI thread via Dispatcher.UIThread.InvokeAsync within PlaybackService.OnPlaybackStopped.
 
-        var currentSong = Library.SelectedSong; // Get the song that just ended
-        var currentList = Library.FilteredSongs.ToList(); // Get a snapshot of the current list
-
-        if (currentSong == null || !currentList.Any())
-        {
-            Debug.WriteLine("[MainVM] Playback ended naturally, but no song selected or library list is empty. Stopping playback.");
-            PlaybackService.Stop(); // Ensure state is stopped if no song is loaded
-            return; // Handled
-        }
-
-        // --- Logic for determining the next action based on RepeatMode and ShuffleEnabled ---
-
+        var currentSong = Library.SelectedSong;
+        var currentList = Library.FilteredSongs.ToList();
         var repeatMode = Playback.RepeatMode;
         var shuffleEnabled = Playback.ShuffleEnabled;
 
-        if (repeatMode == RepeatMode.RepeatOne)
-        {
-            Debug.WriteLine($"[MainVM] Playback ended naturally. Repeat Mode is RepeatOne. Replaying: {currentSong.Title}");
-            PlaybackService.Play(currentSong); // Directly tell the service to play the *same* song instance
-            Debug.WriteLine("[MainVM] PlaybackService.Play called directly for RepeatOne.");
-            return; // Handled
-        }
+        Song? nextSong = _nextTrackSelectorService.GetNextSong(currentSong, currentList, repeatMode, shuffleEnabled);
 
-        if (repeatMode == RepeatMode.None)
-        {
-            Debug.WriteLine("[MainVM] Playback ended naturally. Repeat Mode is None. Stopping playback.");
-            PlaybackService.Stop(); // Explicitly stop playback
-            return; // Handled
-        }
-
-        // If we reach here, RepeatMode is either PlayOnce or RepeatAll
-        Song? nextSong = null;
-
-        if (shuffleEnabled)
-        {
-            // Shuffle logic: Pick a random song (excluding current if possible)
-            Debug.WriteLine("[MainVM] Playback ended naturally. Shuffle is Enabled.");
-            if (currentList.Any())
-            {
-                var potentialNextSongs = currentList.Where(s => s != currentSong).ToList();
-                if (potentialNextSongs.Any())
-                {
-                    var nextIndex = _shuffleRandom.Next(potentialNextSongs.Count);
-                    nextSong = potentialNextSongs[nextIndex];
-                    Debug.WriteLine($"[MainVM] Shuffle pick: {nextSong?.Title ?? "null"}");
-                }
-                else if (currentList.Count == 1)
-                {
-                    Debug.WriteLine($"[MainVM] Shuffle enabled, but only one song ({currentSong.Title}) in list. Cannot pick a different one.");
-                    // In shuffle mode with only one song, ending means stopping unless RepeatOne was active (handled above).
-                    nextSong = null; // Will fall through to stop logic
-                }
-                else
-                {
-                    Debug.WriteLine("[MainVM] Shuffle enabled, list issues preventing next song pick.");
-                    nextSong = null; // Will fall through to stop logic
-                }
-            }
-            else
-            {
-                Debug.WriteLine("[MainVM] Shuffle enabled, but list is empty.");
-                nextSong = null; // Will fall through to stop logic
-            }
-        }
-        else // Shuffle Disabled - Sequential or RepeatAll
-        {
-            Debug.WriteLine("[MainVM] Playback ended naturally. Shuffle is Disabled.");
-            var currentIndex = currentList.IndexOf(currentSong);
-            if (currentIndex != -1 && currentIndex < currentList.Count - 1)
-            {
-                nextSong = currentList[currentIndex + 1]; // Play the next song sequentially
-                Debug.WriteLine($"[MainVM] Sequential next: {nextSong?.Title ?? "null"}");
-            }
-            else // Reached the end of the sequential list
-            {
-                Debug.WriteLine("[MainVM] End of sequential list reached.");
-                // Check Repeat All *only* here
-                if (repeatMode == RepeatMode.RepeatAll && currentList.Any())
-                {
-                    nextSong = currentList.First(); // Wrap around
-                    Debug.WriteLine($"[MainVM] RepeatAll active, wrapping around to first: {nextSong.Title}");
-                }
-                else
-                {
-                    Debug.WriteLine($"[MainVM] RepeatMode is {repeatMode} (not RepeatAll), end of list reached. Stopping.");
-                    nextSong = null; // Fall through to stop logic
-                }
-            }
-        }
-
-        // --- Trigger playback of the determined next song or stop if none ---
         if (nextSong != null)
         {
-            // Setting Library.SelectedSong triggers the Library_PropertyChanged handler,
-            // which then calls PlaybackService.Play(nextSong). This updates the UI selection.
-            Debug.WriteLine($"[MainVM] Setting Library.SelectedSong to {nextSong.Title}.");
+            Debug.WriteLine($"[MainVM] Next song determined by NextTrackSelectorService: {nextSong.Title}. Setting Library.SelectedSong.");
             Library.SelectedSong = nextSong;
         }
         else
         {
-            // If no next song was determined (end of PlayOnce sequential, shuffle failed in single-item list, empty list)
-            Debug.WriteLine("[MainVM] No next song determined. Calling PlaybackService.Stop().");
-            PlaybackService.Stop(); // Explicitly stop playback
+            Debug.WriteLine("[MainVM] No next song determined by NextTrackSelectorService. Calling PlaybackService.Stop().");
+            PlaybackService.Stop();
         }
 
         Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally handler completed.");
@@ -236,10 +143,6 @@ public class MainWindowViewModel : ViewModelBase
                     else if (Library.SelectedSong == null)
                     {
                         Debug.WriteLine("[MainVM_LibChanged] Library.SelectedSong is null. No Play call needed here. PlaybackService.Stop might have been called.");
-                        // If selection is cleared, and playback is active, stop playback.
-                        // This is more robust if clearing selection should always stop.
-                        // However, PlaybackService.Stop() is preferred to manage state and scrobbling.
-                        // if(PlaybackService.IsPlaying) PlaybackService.Stop(); 
                     }
 
                     RaiseAllCommandsCanExecuteChanged();

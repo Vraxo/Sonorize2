@@ -63,7 +63,8 @@ public class App : Application
                 Debug.WriteLine("[App] Warning: Custom theme AccentColor or AccentForeground is not a SolidColorBrush. Cannot fully override Fluent accent system.");
             }
 
-            var playbackService = new PlaybackService();
+            var scrobblingService = new ScrobblingService(settingsService); // Create ScrobblingService
+            var playbackService = new PlaybackService(scrobblingService); // Pass ScrobblingService
             var loopDataService = new LoopDataService();
             var musicLibraryService = new MusicLibraryService(loopDataService);
             var waveformService = new WaveformService();
@@ -74,7 +75,8 @@ public class App : Application
                 playbackService,
                 currentCustomTheme,
                 waveformService,
-                loopDataService);
+                loopDataService,
+                scrobblingService); // Pass ScrobblingService
 
             desktop.MainWindow = new MainWindow(currentCustomTheme)
             {
@@ -491,6 +493,15 @@ public class AppSettings
     public string LibraryViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
     public string ArtistViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
     public string AlbumViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
+
+    // Last.fm Settings
+    public bool LastfmScrobblingEnabled { get; set; } = false;
+    public string? LastfmUsername { get; set; }
+    public string? LastfmPassword { get; set; } // Used for initial authentication to get a session key.
+    public string? LastfmSessionKey { get; set; } // Stores the authenticated session key.
+
+    public int ScrobbleThresholdPercentage { get; set; } = 50; // Default to 50%
+    public int ScrobbleThresholdAbsoluteSeconds { get; set; } = 240; // Default to 240 seconds (4 minutes)
 }
 </file>
 
@@ -1073,6 +1084,239 @@ public class MusicLibraryService
 
             _isThumbnailProcessingRunning = false;
         });
+    }
+}
+</file>
+
+<file path="Source\Services\ScrobblingService.cs">
+using Sonorize.Models;
+using System.Diagnostics;
+using System.Threading.Tasks;
+using System;
+using IF.Lastfm.Core.Api;
+using IF.Lastfm.Core.Objects; // Added for service classes like Track, Auth
+
+namespace Sonorize.Services;
+
+public class ScrobblingService
+{
+    private readonly SettingsService _settingsService;
+    private AppSettings _currentSettings;
+
+    // !!! IMPORTANT: Replace these with your actual API key and secret from Last.fm !!!
+    private const string LastfmApiKey = "d623e7a246a80c3bd60819e86c7b5ee1";
+    private const string LastfmApiSecret = "9414a77c9b7f8c361d96d4575ccd97f0";
+    private const int MinTrackLengthForScrobbleSeconds = 30;
+
+    private string? _cachedSessionKey; // Cache session key for the current app session
+
+    public bool IsScrobblingEnabled => _currentSettings.LastfmScrobblingEnabled;
+
+    // Credentials are now configured if we have a session key, or if we have username/password to attempt to get one.
+    public bool AreCredentialsEffectivelyConfigured => !string.IsNullOrEmpty(_cachedSessionKey) ||
+                                                      (!string.IsNullOrEmpty(_currentSettings.LastfmUsername) &&
+                                                       !string.IsNullOrEmpty(_currentSettings.LastfmPassword));
+
+    public ScrobblingService(SettingsService settingsService)
+    {
+        _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
+        RefreshSettings(); // Initial load of settings and session key
+        Debug.WriteLine($"[ScrobblingService] Initialized. Scrobbling Enabled: {IsScrobblingEnabled}, SessionKey Cached: {!string.IsNullOrEmpty(_cachedSessionKey)}");
+    }
+
+    public void RefreshSettings()
+    {
+        _currentSettings = _settingsService.LoadSettings();
+        _cachedSessionKey = _currentSettings.LastfmSessionKey; // Load session key from settings
+        Debug.WriteLine($"[ScrobblingService] Settings refreshed. Scrobbling Enabled: {IsScrobblingEnabled}, SessionKey Cached: {!string.IsNullOrEmpty(_cachedSessionKey)}, Thresholds: {_currentSettings.ScrobbleThresholdPercentage}% / {_currentSettings.ScrobbleThresholdAbsoluteSeconds}s");
+    }
+
+    private async Task<LastfmClient?> GetClientAsync()
+    {
+        if (string.IsNullOrEmpty(LastfmApiKey) || LastfmApiKey == "YOUR_LASTFM_API_KEY" ||
+            string.IsNullOrEmpty(LastfmApiSecret) || LastfmApiSecret == "YOUR_LASTFM_API_SECRET")
+        {
+            Debug.WriteLine("[ScrobblingService] CRITICAL: Last.fm API Key or Secret is not configured. Aborting.");
+            return null;
+        }
+
+        RefreshSettings(); // reload the latest settings from disk
+
+        if (!string.IsNullOrEmpty(_cachedSessionKey))
+        {
+            // We already have a valid session key from a previous run.
+            var auth = new LastAuth(LastfmApiKey, LastfmApiSecret);
+            // Tell LastAuth to “use” the saved session key:
+            auth.LoadSession(new LastUserSession { Token = _cachedSessionKey });
+            return new LastfmClient(auth);
+        }
+
+        // No cached session key—attempt to authenticate with username/password
+        if (!string.IsNullOrEmpty(_currentSettings.LastfmUsername) &&
+            !string.IsNullOrEmpty(_currentSettings.LastfmPassword))
+        {
+            Debug.WriteLine($"[ScrobblingService] No session key; attempting login for '{_currentSettings.LastfmUsername}'…");
+            var auth = new LastAuth(LastfmApiKey, LastfmApiSecret);
+
+            try
+            {
+                var response = await auth.GetSessionTokenAsync(
+                    _currentSettings.LastfmUsername,
+                    _currentSettings.LastfmPassword
+                );
+
+                if (response.Success && auth.Authenticated)
+                {
+                    // Pull the just-obtained session out of auth.Session:
+                    var session = auth.UserSession;           // UserSession
+                    _cachedSessionKey = session.Token;      // The actual session key string
+                    _currentSettings.LastfmSessionKey = session.Token;
+                    _settingsService.SaveSettings(_currentSettings);
+
+                    Debug.WriteLine($"[ScrobblingService] Successfully obtained session key for '{_currentSettings.LastfmUsername}'.");
+
+                    // Return a new client that’s now “logged in” with the session key
+                    var authenticatedAuth = new LastAuth(LastfmApiKey, LastfmApiSecret);
+                    authenticatedAuth.LoadSession(session);
+                    return new LastfmClient(authenticatedAuth);
+                }
+                else
+                {
+                    Debug.WriteLine($"[ScrobblingService] Authentication failed. " +
+                                    $"Success={response.Success}, HasAuthenticated={auth.Authenticated}.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ScrobblingService] Exception during Last.fm login: {ex.Message}");
+            }
+        }
+        else
+        {
+            Debug.WriteLine("[ScrobblingService] Cannot login: username/password not set in settings.");
+        }
+
+        Debug.WriteLine("[ScrobblingService] GetClientAsync: Could not obtain a Last.fm client.");
+        return null;
+    }
+
+
+
+    public bool ShouldScrobble(Song song, TimeSpan playedDuration)
+    {
+        RefreshSettings();
+
+        if (song == null || song.Duration.TotalSeconds <= MinTrackLengthForScrobbleSeconds)
+        {
+            Debug.WriteLine($"[ScrobblingService] ShouldScrobble: Song '{song?.Title ?? "null"}' is null or too short ({song?.Duration.TotalSeconds ?? 0}s). Min required: {MinTrackLengthForScrobbleSeconds}s. Returning false.");
+            return false;
+        }
+
+        double percentagePlayed = (playedDuration.TotalSeconds / song.Duration.TotalSeconds) * 100.0;
+        double requiredPlaybackFromPercentage = song.Duration.TotalSeconds * (_currentSettings.ScrobbleThresholdPercentage / 100.0);
+        double requiredPlaybackAbsolute = _currentSettings.ScrobbleThresholdAbsoluteSeconds;
+        double effectiveRequiredSeconds = Math.Min(requiredPlaybackFromPercentage, requiredPlaybackAbsolute);
+        bool conditionMet = playedDuration.TotalSeconds >= effectiveRequiredSeconds;
+
+        Debug.WriteLine($"[ScrobblingService] ShouldScrobble for '{song.Title}': " +
+                        $"Played: {playedDuration.TotalSeconds:F1}s ({percentagePlayed:F1}%), " +
+                        $"Song Duration: {song.Duration.TotalSeconds:F1}s. " +
+                        $"Configured Thresholds: {_currentSettings.ScrobbleThresholdPercentage}% (gives {requiredPlaybackFromPercentage:F1}s) OR {_currentSettings.ScrobbleThresholdAbsoluteSeconds}s. " +
+                        $"Effective Threshold: {effectiveRequiredSeconds:F1}s. Met: {conditionMet}");
+        return conditionMet;
+    }
+
+
+    public async Task UpdateNowPlayingAsync(Song song)
+    {
+        RefreshSettings();
+        if (!IsScrobblingEnabled || song == null)
+        {
+            Debug.WriteLine($"[ScrobblingService] UpdateNowPlayingAsync skipped. Enabled: {IsScrobblingEnabled}, Song: {song?.Title ?? "null"}");
+            return;
+        }
+
+        var client = await GetClientAsync();
+        if (client == null)
+        {
+            Debug.WriteLine("[ScrobblingService] UpdateNowPlayingAsync: No authenticated client. Skipping.");
+            return;
+        }
+
+        try
+        {
+            Debug.WriteLine($"[ScrobblingService] Sending UpdateNowPlaying for: {song.Title} by {song.Artist}");
+            var trackInfo = new LastTrack { Name = song.Title, ArtistName = song.Artist, AlbumName = song.Album };
+            // Duration should be provided if known
+            if (song.Duration.TotalSeconds > 0)
+            {
+                trackInfo.Duration = song.Duration;
+            }
+
+            var scrobble = new Scrobble(song.Artist, song.Album, song.Title, DateTimeOffset.Now);
+            var response = await client.Track.UpdateNowPlayingAsync(scrobble);
+
+            if (response.Success)
+            {
+                Debug.WriteLine($"[ScrobblingService] UpdateNowPlaying successful for: {song.Title}");
+            }
+            else
+            {
+                Debug.WriteLine($"[ScrobblingService] UpdateNowPlaying FAILED for: {song.Title}. Error: {response.Status} - {response.Error}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[ScrobblingService] CRITICAL EXCEPTION during UpdateNowPlaying for {song.Title}: {ex.Message}");
+        }
+    }
+
+    public async Task ScrobbleAsync(Song song, DateTime timePlayed)
+    {
+        // ShouldScrobble check is done by PlaybackService before calling this.
+        // We still need to check IsScrobblingEnabled and if we can get a client.
+        RefreshSettings();
+        if (!IsScrobblingEnabled || song == null)
+        {
+            Debug.WriteLine($"[ScrobblingService] ScrobbleAsync skipped. Enabled: {IsScrobblingEnabled}, Song: {song?.Title ?? "null"}");
+            return;
+        }
+
+        var client = await GetClientAsync();
+        if (client == null)
+        {
+            Debug.WriteLine("[ScrobblingService] ScrobbleAsync: No authenticated client. Skipping.");
+            return;
+        }
+
+        try
+        {
+            Debug.WriteLine($"[ScrobblingService] Sending Scrobble for: {song.Title} by {song.Artist}, TimePlayed: {timePlayed}");
+
+            var scrobble = new Scrobble(song.Artist, song.Album, song.Title, timePlayed);
+
+            if (song.Duration.TotalSeconds > 0)
+            {
+                // While Inflatable.Lastfm ScrobbleEntry doesn't directly take duration,
+                // it's good practice to have it if other libraries/APIs use it.
+                // The API itself determines duration from its metadata if not provided with now playing.
+            }
+
+            var response = await client.Track.ScrobbleAsync(scrobble);
+
+            if (response.Success)
+            {
+                //Debug.WriteLine($"[ScrobblingService] Scrobble successful for: {song.Title}. Accepted: {response.Scrobbles?.AcceptedCount}, Ignored: {response.Scrobbles?.IgnoredCount}");
+            }
+            else
+            {
+                Debug.WriteLine($"[ScrobblingService] Scrobble FAILED for: {song.Title}. Error: {response.Status} - {response.Error}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[ScrobblingService] CRITICAL EXCEPTION during Scrobble for {song.Title}: {ex.Message}");
+        }
     }
 }
 </file>
@@ -2436,6 +2680,7 @@ public class MainWindowViewModel : ViewModelBase
     private readonly MusicLibraryService _musicLibraryService;
     private readonly WaveformService _waveformService;
     private readonly LoopDataService _loopDataService;
+    private readonly ScrobblingService _scrobblingService; // Added
 
     // Expose the Services directly for child VMs or public properties
     public PlaybackService PlaybackService { get; }
@@ -2471,14 +2716,16 @@ public class MainWindowViewModel : ViewModelBase
         PlaybackService playbackService,
         ThemeColors theme,
         WaveformService waveformService,
-        LoopDataService loopDataService)
+        LoopDataService loopDataService,
+        ScrobblingService scrobblingService) // Added ScrobblingService
     {
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
-        PlaybackService = playbackService;
+        PlaybackService = playbackService; // PlaybackService now receives ScrobblingService from App.cs
         CurrentTheme = theme;
         _waveformService = waveformService;
         _loopDataService = loopDataService;
+        _scrobblingService = scrobblingService; // Store ScrobblingService
 
         // Initialize child ViewModels, passing required dependencies
         // Pass 'this' to LibraryViewModel
@@ -2631,18 +2878,6 @@ public class MainWindowViewModel : ViewModelBase
             {
                 case nameof(Library.SelectedSong):
                     Debug.WriteLine($"[MainVM_LibChanged] Library.SelectedSong changed to: {Library.SelectedSong?.Title ?? "null"}. Instance: {Library.SelectedSong?.GetHashCode() ?? 0}");
-                    // When a song is selected in the Library (either manually or programmatically by navigation logic),
-                    // tell the PlaybackService to play it.
-                    // This is handled here for explicit selection by the user or navigation commands.
-                    // RepeatOne is handled by calling PlaybackService.Play directly in the PlaybackEndedNaturally handler.
-                    // This handler should only initiate playback when a *new* song is selected from the list by the user or sequence/shuffle logic.
-                    // If PlaybackService.CurrentSong is null, this is the first song, or a stop occurred. Play the selected song.
-                    // If PlaybackService.CurrentSong is not null, and it's different from Library.SelectedSong, a new song was selected. Play it.
-                    // If PlaybackService.CurrentSong is not null, and it's the SAME as Library.SelectedSong, this selection change might be due to:
-                    // 1. RepeatOne completion (handled by direct Play call in handler)
-                    // 2. User clicking on the already selected song (no action needed, song is already playing)
-                    // 3. PlaybackEndedNaturally handler reaching end without repeat/shuffle (should stop)
-                    // 4. PlaybackService.Stop() setting CurrentSong = null then Library.SelectedSong = null (handled by Playback_PropertyChanged)
 
                     if (Library.SelectedSong != null && PlaybackService.CurrentSong != Library.SelectedSong)
                     {
@@ -2651,32 +2886,27 @@ public class MainWindowViewModel : ViewModelBase
                     }
                     else if (Library.SelectedSong != null && PlaybackService.CurrentSong == Library.SelectedSong)
                     {
-                        // Song instance is the same. This might be a user re-click or RepeatOne completing.
-                        // RepeatOne case is handled by direct Play in PlaybackEndedNaturally. User re-click means it's already playing.
                         Debug.WriteLine($"[MainVM_LibChanged] Library.SelectedSong changed but is the SAME song instance as PlaybackService.CurrentSong ({Library.SelectedSong.Title}). Assuming RepeatOne handled it or user re-clicked already playing song. No Play call needed here.");
                     }
                     else if (Library.SelectedSong == null)
                     {
-                        // If selection is cleared (e.g., by search filter or explicit stop), we don't start playback here.
-                        Debug.WriteLine("[MainVM_LibChanged] Library.SelectedSong is null. No Play call needed.");
+                        Debug.WriteLine("[MainVM_LibChanged] Library.SelectedSong is null. No Play call needed here. PlaybackService.Stop might have been called.");
+                        // If selection is cleared, and playback is active, stop playback.
+                        // This is more robust if clearing selection should always stop.
+                        // However, PlaybackService.Stop() is preferred to manage state and scrobbling.
+                        // if(PlaybackService.IsPlaying) PlaybackService.Stop(); 
                     }
 
-
-                    // Update commands that might depend on a song being selected/playing
                     RaiseAllCommandsCanExecuteChanged();
                     break;
                 case nameof(Library.IsLoadingLibrary):
-                    // Propagate the loading state change
                     OnPropertyChanged(nameof(IsLoadingLibrary));
-                    // Update commands dependent on loading state
                     RaiseAllCommandsCanExecuteChanged();
-                    UpdateStatusBarText(); // Status text includes loading info
+                    UpdateStatusBarText();
                     break;
                 case nameof(Library.LibraryStatusText):
-                    UpdateStatusBarText(); // Library status affects overall status bar
+                    UpdateStatusBarText();
                     break;
-                    // Properties like Artists, Albums, FilteredSongs changing are handled by LibraryVM itself.
-                    // When FilteredSongs changes, LibraryVM calls RaiseNavigationCommandsCanExecuteChanged internally.
             }
         });
     }
@@ -2685,95 +2915,59 @@ public class MainWindowViewModel : ViewModelBase
     {
         Dispatcher.UIThread.InvokeAsync(() =>
         {
-            // Listen for PlaybackViewModel changes that affect MainViewModel's state/UI
             switch (e.PropertyName)
             {
                 case nameof(PlaybackViewModel.CurrentSong):
-                    OnPropertyChanged(nameof(Playback.CurrentSong)); // Propagate the song itself
-                    OnPropertyChanged(nameof(Playback.HasCurrentSong)); // Propagate derived property
-                    // Commands that might depend on a song being loaded (like ToggleAdvancedPanelCommand)
+                    OnPropertyChanged(nameof(Playback.CurrentSong));
+                    OnPropertyChanged(nameof(Playback.HasCurrentSong));
                     RaiseAllCommandsCanExecuteChanged();
 
-                    // If playback service reports no current song, ensure library selection is cleared
-                    // Only clear selection if it matches the song that just became null in PlaybackService.
-                    // This prevents clearing selection if the user has already selected a *new* song.
-                    // However, relying on PlaybackService's CurrentSong becoming null is the most reliable way
-                    // to know playback has stopped *without* a new song immediately starting (like in RepeatOne).
-                    // Let's clear Library.SelectedSong if Playback.HasCurrentSong becomes false. This simplifies state.
                     if (!Playback.HasCurrentSong && Library.SelectedSong != null)
                     {
                         Debug.WriteLine("[MainVM_PlaybackChanged] PlaybackService has no current song. Clearing Library selection.");
-                        Library.SelectedSong = null; // This will trigger Library_PropertyChanged (which correctly won't call Play)
+                        Library.SelectedSong = null;
                     }
 
-                    // When a new song is set in PlaybackService (either by Play() or PlaybackEndedNaturally handler),
-                    // trigger waveform loading if panel is visible.
-                    // Check if the *new* CurrentSong is different from the *previous* one (handled by PS).
                     if (Playback.CurrentSong != null && IsAdvancedPanelVisible)
                     {
                         Debug.WriteLine("[MainVM_PlaybackChanged] Playback has current song, advanced panel is visible. Requesting waveform load.");
-                        // Use await _ = to suppress the warning about calling async void, while ensuring the task runs.
-                        _ = Playback.LoadWaveformForCurrentSongAsync(); // Delegate waveform load
+                        _ = Playback.LoadWaveformForCurrentSongAsync();
                     }
-                    // Note: Clearing waveform when song becomes null is handled inside PlaybackViewModel's PS handler
 
-                    // Update status bar text whenever the current song changes
                     UpdateStatusBarText();
-
-                    // Update time displays when song changes (delegated to PlaybackVM)
-                    OnPropertyChanged(nameof(Playback.CurrentTimeDisplay)); // Propagate derived property
-                    OnPropertyChanged(nameof(Playback.TotalTimeDisplay)); // Propagate derived property
-
-                    // Commands in PlaybackVM (Play/Pause, Seek, Speed/Pitch, Mode toggles) are handled by PlaybackVM itself.
-                    // Library navigation commands are handled by LibraryVM's SelectedSong/FilteredSongs change.
-                    // ToggleAdvancedPanelCommand depends on Playback.HasCurrentSong, so need to raise.
+                    OnPropertyChanged(nameof(Playback.CurrentTimeDisplay));
+                    OnPropertyChanged(nameof(Playback.TotalTimeDisplay));
                     RaiseAllCommandsCanExecuteChanged();
 
                     break;
                 case nameof(PlaybackViewModel.CurrentPlaybackStatus):
-                    OnPropertyChanged(nameof(Playback.CurrentPlaybackStatus)); // Propagate status
-                    OnPropertyChanged(nameof(Playback.IsPlaying)); // Derived from status
-                    UpdateStatusBarText(); // Playback status affects overall status bar
-                    // Commands in PlaybackVM already listen to this. MainVM commands potentially affected? (currently none directly)
+                    OnPropertyChanged(nameof(Playback.CurrentPlaybackStatus));
+                    OnPropertyChanged(nameof(Playback.IsPlaying));
+                    UpdateStatusBarText();
                     RaiseAllCommandsCanExecuteChanged();
                     break;
                 case nameof(PlaybackViewModel.CurrentPosition):
-                    OnPropertyChanged(nameof(Playback.CurrentPosition)); // Propagate position
-                    OnPropertyChanged(nameof(Playback.CurrentPositionSeconds)); // Propagate derived property
-                    OnPropertyChanged(nameof(Playback.CurrentTimeDisplay)); // Propagate current time display
-                    // Loop editor and UI slider are bound directly to PlaybackVM properties.
-                    // Commands in PlaybackVM already listen to this.
-                    // Raising all commands here is usually not needed for position change.
+                    OnPropertyChanged(nameof(Playback.CurrentPosition));
+                    OnPropertyChanged(nameof(Playback.CurrentPositionSeconds));
+                    OnPropertyChanged(nameof(Playback.CurrentTimeDisplay));
                     break;
                 case nameof(PlaybackViewModel.CurrentSongDuration):
-                    OnPropertyChanged(nameof(Playback.CurrentSongDuration)); // Propagate duration
+                    OnPropertyChanged(nameof(Playback.CurrentSongDuration));
                     OnPropertyChanged(nameof(Playback.CurrentSongDurationSeconds));
-                    OnPropertyChanged(nameof(Playback.TotalTimeDisplay)); // Propagate total time display
-                                                                          // UI slider is bound directly.
-                    RaiseAllCommandsCanExecuteChanged(); // PlaybackVM Seek command CanExecute depends on duration > 0
+                    OnPropertyChanged(nameof(Playback.TotalTimeDisplay));
+                    RaiseAllCommandsCanExecuteChanged();
                     break;
                 case nameof(PlaybackViewModel.IsWaveformLoading):
-                    OnPropertyChanged(nameof(Playback.IsWaveformLoading)); // Propagate state
-                    // Commands in PlaybackVM already listen to this.
-                    // Raising all commands here is usually not needed unless a MainVM command directly depends on this.
+                    OnPropertyChanged(nameof(Playback.IsWaveformLoading));
                     break;
                 case nameof(PlaybackViewModel.WaveformRenderData):
-                    OnPropertyChanged(nameof(Playback.WaveformRenderData)); // Propagate data
-                    // Waveform display is bound directly.
+                    OnPropertyChanged(nameof(Playback.WaveformRenderData));
                     break;
-                case nameof(PlaybackViewModel.ShuffleEnabled): // Modes changed
-                case nameof(PlaybackViewModel.RepeatMode): // Modes changed
-                                                           // These affect the PlaybackEndedNaturally logic in MainVM,
-                                                           // but they also affect PlaybackVM commands and UI bindings.
-                                                           // Raise PlaybackVM commands' CanExecute state.
+                case nameof(PlaybackViewModel.ShuffleEnabled):
+                case nameof(PlaybackViewModel.RepeatMode):
                     Playback.RaisePlaybackCommandCanExecuteChanged();
-                    // Raising all commands here is generally redundant unless a MainVM command directly depends on these modes.
-                    // Update status bar to reflect mode changes
                     UpdateStatusBarText();
                     break;
-
-                    // PlaybackSpeed, PlaybackPitch, derived display properties are handled within PlaybackVM.
-                    // LoopEditor VM listens directly to PlaybackService for position/duration.
             }
         });
     }
@@ -2781,49 +2975,35 @@ public class MainWindowViewModel : ViewModelBase
     private void OnAdvancedPanelVisibleChanged()
     {
         (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        // If Advanced Panel becomes visible, and a song is playing, load its waveform.
-        // Access PlaybackVM properties directly
         if (IsAdvancedPanelVisible && Playback.HasCurrentSong && !Playback.WaveformRenderData.Any() && !Playback.IsWaveformLoading)
         {
             Debug.WriteLine("[MainVM] Advanced Panel visible, song is playing, waveform not loaded/loading. Requesting waveform load.");
-            // Use await _ = to suppress the warning about calling async void, while ensuring the task runs.
-            _ = Playback.LoadWaveformForCurrentSongAsync(); // Delegate waveform load
+            _ = Playback.LoadWaveformForCurrentSongAsync();
         }
-        // Note: If it becomes hidden, we don't clear the waveform data automatically here.
-        // Clearing upon song change/stop is handled by PlaybackViewModel's PS handler.
     }
 
     private void UpdateAllUIDependentStates()
     {
-        // Update main VM properties that depend on child VM states
-        OnPropertyChanged(nameof(IsLoadingLibrary)); // Depends on Library.IsLoadingLibrary
-        OnPropertyChanged(nameof(Playback.CurrentSong)); // Ensure Playback's CurrentSong is reflected
-        OnPropertyChanged(nameof(Playback.HasCurrentSong)); // Ensure Playback's HasCurrentSong is reflected
-        OnPropertyChanged(nameof(IsAdvancedPanelVisible)); // Ensure panel visibility is reflected
-        OnPropertyChanged(nameof(ActiveTabIndex)); // Ensure tab index is reflected
+        OnPropertyChanged(nameof(IsLoadingLibrary));
+        OnPropertyChanged(nameof(Playback.CurrentSong));
+        OnPropertyChanged(nameof(Playback.HasCurrentSong));
+        OnPropertyChanged(nameof(IsAdvancedPanelVisible));
+        OnPropertyChanged(nameof(ActiveTabIndex));
 
-        UpdateStatusBarText(); // Depends on Playback and Library status
-
-        // Trigger commands CanExecute updates for all VMs
+        UpdateStatusBarText();
         RaiseAllCommandsCanExecuteChanged();
     }
 
-    /// <summary>
-    /// Raises CanExecuteChanged for commands owned by this ViewModel and tells child VMs to do the same.
-    /// </summary>
     public void RaiseAllCommandsCanExecuteChanged()
     {
-        // Raise CanExecuteChanged for commands owned by MainWindowViewModel
         (LoadInitialDataCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (OpenSettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ExitCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
 
-        // Tell child VMs to raise their commands' CanExecuteChanged
-        // This now includes the navigation commands within LibraryViewModel
         Library.RaiseLibraryCommandsCanExecuteChanged();
-        Library.RaiseNavigationCommandsCanExecuteChanged(); // Explicitly call navigation commands
+        Library.RaiseNavigationCommandsCanExecuteChanged();
         Playback.RaisePlaybackCommandCanExecuteChanged();
         LoopEditor.RaiseLoopCommandCanExecuteChanged();
     }
@@ -2831,36 +3011,29 @@ public class MainWindowViewModel : ViewModelBase
 
     private void UpdateStatusBarText()
     {
-        // Combine status from PlaybackViewModel and LibraryViewModel
         string status;
         if (Playback.HasCurrentSong)
         {
             string stateStr = Playback.CurrentPlaybackStatus switch { PlaybackStateStatus.Playing => "Playing", PlaybackStateStatus.Paused => "Paused", PlaybackStateStatus.Stopped => "Stopped", _ => "Idle" };
-            // Access CurrentSong via Playback property
             status = $"{stateStr}: {Playback.CurrentSong?.Title ?? "Unknown Song"}";
-            // Use LoopEditor's property for loop active state displayed in status bar
-            // Access CurrentSong via Playback property
             if (LoopEditor.IsCurrentLoopActiveUiBinding && Playback.CurrentSong?.SavedLoop != null)
             {
                 status += $" (Loop Active)";
             }
 
-            // Add mode status
             string modeStatus = "";
             if (Playback.ShuffleEnabled)
             {
                 modeStatus += " | Shuffle";
             }
-            // Use RepeatMode property
             modeStatus += Playback.RepeatMode switch
             {
                 RepeatMode.None => " | Do Nothing",
                 RepeatMode.PlayOnce => " | Play Once",
                 RepeatMode.RepeatOne => " | Repeat Song",
                 RepeatMode.RepeatAll => " | Repeat All",
-                _ => "" // Should not happen
+                _ => ""
             };
-
 
             if (!string.IsNullOrEmpty(modeStatus))
             {
@@ -2869,7 +3042,6 @@ public class MainWindowViewModel : ViewModelBase
         }
         else
         {
-            // No playback info, use library status
             status = Library.LibraryStatusText;
         }
         StatusBarText = status;
@@ -2877,56 +3049,75 @@ public class MainWindowViewModel : ViewModelBase
 
     private async Task LoadMusicLibrary()
     {
-        // Delegate the core loading logic to the LibraryViewModel
         await Library.LoadLibraryAsync();
-        // The Library_PropertyChanged handler for IsLoadingLibrary will trigger status updates.
     }
 
     private async Task OpenSettingsDialog(object? ownerWindow)
     {
         if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
-        IsAdvancedPanelVisible = false; // Hide advanced panel when opening settings
+        IsAdvancedPanelVisible = false;
 
         var currentSettingsBeforeDialog = _settingsService.LoadSettings();
         var settingsVM = new SettingsViewModel(_settingsService);
         var settingsDialog = new Sonorize.Views.SettingsWindow(CurrentTheme) { DataContext = settingsVM };
 
-        await settingsDialog.ShowDialog(owner); // Show dialog modally
+        await settingsDialog.ShowDialog(owner);
 
-        // After the dialog is closed
         if (settingsVM.SettingsChanged)
         {
             Debug.WriteLine("[MainVM] Settings changed detected after dialog closed.");
             var newSettingsAfterDialog = _settingsService.LoadSettings();
             bool dirsActuallyChanged = !currentSettingsBeforeDialog.MusicDirectories.SequenceEqual(newSettingsAfterDialog.MusicDirectories);
             bool themeActuallyChanged = currentSettingsBeforeDialog.PreferredThemeFileName != newSettingsAfterDialog.PreferredThemeFileName;
+            bool scrobbleSettingsActuallyChanged =
+                currentSettingsBeforeDialog.LastfmScrobblingEnabled != newSettingsAfterDialog.LastfmScrobblingEnabled ||
+                currentSettingsBeforeDialog.LastfmUsername != newSettingsAfterDialog.LastfmUsername ||
+                currentSettingsBeforeDialog.LastfmPassword != newSettingsAfterDialog.LastfmPassword;
+
 
             if (dirsActuallyChanged)
             {
                 Debug.WriteLine("[MainVM] Music directories changed. Reloading library.");
-                await Library.LoadLibraryAsync(); // Delegate library reload
-                // Status bar update triggered by Library.IsLoadingLibrary change.
+                await Library.LoadLibraryAsync();
             }
 
             if (themeActuallyChanged)
             {
                 Debug.WriteLine("[MainVM] Theme changed. Restart recommended.");
-                // Update status bar to inform user about restart
                 StatusBarText = "Theme changed. Please restart Sonorize for the changes to take full effect.";
+            }
+
+            if (scrobbleSettingsActuallyChanged)
+            {
+                Debug.WriteLine("[MainVM] Scrobbling settings changed. Refreshing ScrobblingService.");
+                _scrobblingService.RefreshSettings();
+                // Optionally, update status bar if scrobbling got enabled/disabled
+                if (newSettingsAfterDialog.LastfmScrobblingEnabled && !string.IsNullOrEmpty(newSettingsAfterDialog.LastfmUsername))
+                {
+                    if (StatusBarText.Contains("restart Sonorize")) {/* Append if needed */} else StatusBarText = "Scrobbling enabled.";
+                }
+                else if (!newSettingsAfterDialog.LastfmScrobblingEnabled && currentSettingsBeforeDialog.LastfmScrobblingEnabled)
+                {
+                    if (StatusBarText.Contains("restart Sonorize")) {/* Append if needed */} else StatusBarText = "Scrobbling disabled.";
+                }
+            }
+
+            if (!themeActuallyChanged && !dirsActuallyChanged && !scrobbleSettingsActuallyChanged)
+            {
+                UpdateStatusBarText(); // If only minor settings changed that don't require reload/restart/refresh
             }
         }
         else
         {
             Debug.WriteLine("[MainVM] Settings dialog closed, no changes reported by SettingsViewModel.");
-            // Ensure status bar reflects current state after dialog if no reload/theme change occurred
-            UpdateStatusBarText(); // Revert status bar to normal if not loading
+            UpdateStatusBarText();
         }
     }
 
     private async Task AddMusicDirectoryAndRefresh(object? ownerWindow)
     {
         if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
-        IsAdvancedPanelVisible = false; // Hide advanced panel
+        IsAdvancedPanelVisible = false;
 
         var result = await owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Select Music Directory", AllowMultiple = false });
 
@@ -2935,7 +3126,6 @@ public class MainWindowViewModel : ViewModelBase
             string? folderPath = null;
             try
             {
-                // Using Path.GetFullPath is crucial for consistent path representation
                 folderPath = Path.GetFullPath(result[0].Path.LocalPath);
             }
             catch (Exception ex)
@@ -2948,14 +3138,12 @@ public class MainWindowViewModel : ViewModelBase
             if (!string.IsNullOrEmpty(folderPath) && Directory.Exists(folderPath))
             {
                 var settings = _settingsService.LoadSettings();
-                // Use a case-insensitive comparison for existing directories
                 if (!settings.MusicDirectories.Any(d => string.Equals(d, folderPath, StringComparison.OrdinalIgnoreCase)))
                 {
                     settings.MusicDirectories.Add(folderPath);
                     _settingsService.SaveSettings(settings);
                     Debug.WriteLine($"[MainVM] Added new directory: {folderPath}. Reloading library.");
-                    await Library.LoadLibraryAsync(); // Delegate library reload
-                    // Status bar update triggered by Library.IsLoadingLibrary change.
+                    await Library.LoadLibraryAsync();
                 }
                 else
                 {
@@ -2972,22 +3160,9 @@ public class MainWindowViewModel : ViewModelBase
         else
         {
             Debug.WriteLine("[MainVM] Folder picker cancelled or returned no results.");
-            // Optionally update status bar if folder picker was cancelled
-            UpdateStatusBarText(); // Revert status bar to normal if not loading
+            UpdateStatusBarText();
         }
     }
-
-    // Use a cryptographically secure random number generator for better shuffle randomness if needed
-    // private int GetNextRandomIndex(int maxIndex)
-    // {
-    //     using (var rng = new RNGCryptoServiceProvider())
-    //     {
-    //         byte[] data = new byte[sizeof(uint)]; // Use uint size for randomness
-    //         rng.GetBytes(data);
-    //         uint randomValue = BitConverter.ToUInt32(data, 0);
-    //         return (int)(randomValue % maxIndex);
-    //     }
-    // }
 }
 </file>
 
@@ -3460,6 +3635,7 @@ using System.Windows.Input;
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 using Sonorize.Services;
+using Sonorize.Models; // Required for AppSettings type
 
 namespace Sonorize.ViewModels;
 
@@ -3469,8 +3645,8 @@ public class SettingsViewModel : ViewModelBase
     private readonly ThemeService _themeService;
 
     public ObservableCollection<string> MusicDirectories { get; } = new();
-    public List<string> InitialMusicDirectories { get; private set; } // To track changes
-    
+    public List<string> InitialMusicDirectories { get; private set; }
+
     public string? SelectedDirectory
     {
         get;
@@ -3483,19 +3659,54 @@ public class SettingsViewModel : ViewModelBase
     public string? SelectedThemeFile
     {
         get;
-        
+
         set
         {
             if (!SetProperty(ref field, value))
             {
                 return;
             }
-
-            SettingsChanged = true;
+            MarkSettingsChanged();
         }
     }
 
-    // This flag indicates if any setting that requires action (like reload or restart) has changed.
+    // Last.fm Settings Properties
+    private bool _lastfmScrobblingEnabled;
+    public bool LastfmScrobblingEnabled
+    {
+        get => _lastfmScrobblingEnabled;
+        set { if (SetProperty(ref _lastfmScrobblingEnabled, value)) MarkSettingsChanged(); }
+    }
+
+    private string? _lastfmUsername;
+    public string? LastfmUsername
+    {
+        get => _lastfmUsername;
+        set { if (SetProperty(ref _lastfmUsername, value)) MarkSettingsChanged(); }
+    }
+
+    private string? _lastfmPassword;
+    public string? LastfmPassword
+    {
+        get => _lastfmPassword;
+        set { if (SetProperty(ref _lastfmPassword, value)) MarkSettingsChanged(); }
+    }
+
+    private int _scrobbleThresholdPercentage;
+    public int ScrobbleThresholdPercentage
+    {
+        get => _scrobbleThresholdPercentage;
+        set { if (SetProperty(ref _scrobbleThresholdPercentage, value)) MarkSettingsChanged(); }
+    }
+
+    private int _scrobbleThresholdAbsoluteSeconds;
+    public int ScrobbleThresholdAbsoluteSeconds
+    {
+        get => _scrobbleThresholdAbsoluteSeconds;
+        set { if (SetProperty(ref _scrobbleThresholdAbsoluteSeconds, value)) MarkSettingsChanged(); }
+    }
+
+
     public bool SettingsChanged { get; private set; } = false;
 
     public ICommand AddDirectoryCommand { get; }
@@ -3507,10 +3718,10 @@ public class SettingsViewModel : ViewModelBase
     public SettingsViewModel(SettingsService settingsService)
     {
         _settingsService = settingsService;
-        _themeService = new ThemeService(null); // Create a temporary instance to list files
+        _themeService = new ThemeService(null);
 
         var settings = _settingsService.LoadSettings();
-        InitialMusicDirectories = new List<string>(settings.MusicDirectories); // Store initial state
+        InitialMusicDirectories = new List<string>(settings.MusicDirectories);
 
         foreach (var dir in settings.MusicDirectories)
         {
@@ -3525,10 +3736,17 @@ public class SettingsViewModel : ViewModelBase
         SelectedThemeFile = settings.PreferredThemeFileName ?? ThemeService.DefaultThemeFileName;
         if (!AvailableThemes.Contains(SelectedThemeFile) && AvailableThemes.Any())
         {
-            SelectedThemeFile = AvailableThemes.First(); // Fallback if saved theme not found
+            SelectedThemeFile = AvailableThemes.First();
         }
 
-        // Reset SettingsChanged after initial load, as SelectedThemeFile property set might trigger it
+        // Load Last.fm settings
+        _lastfmScrobblingEnabled = settings.LastfmScrobblingEnabled;
+        _lastfmUsername = settings.LastfmUsername;
+        _lastfmPassword = settings.LastfmPassword;
+        _scrobbleThresholdPercentage = settings.ScrobbleThresholdPercentage;
+        _scrobbleThresholdAbsoluteSeconds = settings.ScrobbleThresholdAbsoluteSeconds;
+
+
         SettingsChanged = false;
 
         AddDirectoryCommand = new RelayCommand(async owner => await AddDirectory(owner as Window));
@@ -3541,17 +3759,24 @@ public class SettingsViewModel : ViewModelBase
                 (RemoveDirectoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
             }
         };
-        // Any change to MusicDirectories collection or SelectedThemeFile marks settings as changed.
-        MusicDirectories.CollectionChanged += (s, e) => SettingsChanged = true;
+        MusicDirectories.CollectionChanged += (s, e) => MarkSettingsChanged();
     }
+
+    private void MarkSettingsChanged()
+    {
+        if (!SettingsChanged)
+        {
+            SettingsChanged = true;
+            Debug.WriteLine("[SettingsVM] Settings marked as changed.");
+        }
+    }
+
 
     private async Task AddDirectory(Window? owner)
     {
         if (owner?.StorageProvider == null)
         {
-            // Handle cases where StorageProvider is not available (e.g., headless environments or older platforms)
             Debug.WriteLine("StorageProvider is not available.");
-            // Potentially show an error message to the user
             return;
         }
 
@@ -3566,62 +3791,82 @@ public class SettingsViewModel : ViewModelBase
         if (result != null && result.Count > 0)
         {
             var folder = result.FirstOrDefault();
-            if (folder == null)
-            {
-                return;
-            }
-            // Access the path using Path.LocalPath
+            if (folder == null) return;
+
             var path = folder.Path.LocalPath;
-            if (string.IsNullOrEmpty(path) || MusicDirectories.Contains(path))
-            {
-                return;
-                // SettingsChanged will be set by the CollectionChanged event handler
-            }
+            if (string.IsNullOrEmpty(path) || MusicDirectories.Contains(path)) return;
+
             MusicDirectories.Add(path);
         }
     }
 
     private void RemoveSelectedDirectory(object? parameter)
     {
-        if (SelectedDirectory == null)
-        {
-            return;
-            // SettingsChanged will be set by the CollectionChanged event handler
-        }
+        if (SelectedDirectory == null) return;
+
         MusicDirectories.Remove(SelectedDirectory);
         SelectedDirectory = null;
     }
 
     private void SaveSettings(object? parameter)
     {
-        var currentSettings = _settingsService.LoadSettings(); // Load current to preserve other settings if any
+        AppSettings currentSettings = _settingsService.LoadSettings();
+        bool actualChangesMade = false;
 
-        // Check if directories actually changed before saving and marking
-        bool dirsActuallyChanged = !InitialMusicDirectories.SequenceEqual(MusicDirectories);
-        bool themeActuallyChanged = currentSettings.PreferredThemeFileName != SelectedThemeFile;
-
-        if (dirsActuallyChanged)
+        if (!InitialMusicDirectories.SequenceEqual(MusicDirectories))
         {
-            currentSettings.MusicDirectories = MusicDirectories.ToList();
+            currentSettings.MusicDirectories = new List<string>(MusicDirectories);
+            InitialMusicDirectories = new List<string>(MusicDirectories);
+            actualChangesMade = true;
             Debug.WriteLine($"[SettingsVM] Saved directories count: {currentSettings.MusicDirectories.Count}");
         }
 
-        if (themeActuallyChanged)
+        if (currentSettings.PreferredThemeFileName != SelectedThemeFile)
         {
             currentSettings.PreferredThemeFileName = SelectedThemeFile;
+            actualChangesMade = true;
             Debug.WriteLine($"[SettingsVM] Saved theme: {SelectedThemeFile}");
         }
 
-        if (dirsActuallyChanged || themeActuallyChanged)
+        if (currentSettings.LastfmScrobblingEnabled != LastfmScrobblingEnabled)
+        {
+            currentSettings.LastfmScrobblingEnabled = LastfmScrobblingEnabled;
+            actualChangesMade = true;
+            Debug.WriteLine($"[SettingsVM] Saved LastfmScrobblingEnabled: {currentSettings.LastfmScrobblingEnabled}");
+        }
+        if (currentSettings.LastfmUsername != LastfmUsername)
+        {
+            currentSettings.LastfmUsername = LastfmUsername;
+            actualChangesMade = true;
+            Debug.WriteLine($"[SettingsVM] Saved LastfmUsername: {currentSettings.LastfmUsername}");
+        }
+        if (currentSettings.LastfmPassword != LastfmPassword)
+        {
+            currentSettings.LastfmPassword = LastfmPassword;
+            actualChangesMade = true;
+            Debug.WriteLine($"[SettingsVM] Saved LastfmPassword (length: {currentSettings.LastfmPassword?.Length ?? 0})");
+        }
+        if (currentSettings.ScrobbleThresholdPercentage != ScrobbleThresholdPercentage)
+        {
+            currentSettings.ScrobbleThresholdPercentage = ScrobbleThresholdPercentage;
+            actualChangesMade = true;
+            Debug.WriteLine($"[SettingsVM] Saved ScrobbleThresholdPercentage: {currentSettings.ScrobbleThresholdPercentage}");
+        }
+        if (currentSettings.ScrobbleThresholdAbsoluteSeconds != ScrobbleThresholdAbsoluteSeconds)
+        {
+            currentSettings.ScrobbleThresholdAbsoluteSeconds = ScrobbleThresholdAbsoluteSeconds;
+            actualChangesMade = true;
+            Debug.WriteLine($"[SettingsVM] Saved ScrobbleThresholdAbsoluteSeconds: {currentSettings.ScrobbleThresholdAbsoluteSeconds}");
+        }
+
+        if (actualChangesMade)
         {
             _settingsService.SaveSettings(currentSettings);
-            SettingsChanged = true; // Ensure this is true if anything was actually saved
-                                    // Update InitialMusicDirectories to reflect the saved state for subsequent checks if dialog is reopened
-            if (dirsActuallyChanged) InitialMusicDirectories = new List<string>(currentSettings.MusicDirectories);
+            SettingsChanged = true;
         }
         else
         {
-            SettingsChanged = false; // No actual changes were made that need saving.
+            SettingsChanged = false;
         }
     }
 }
@@ -3846,21 +4091,38 @@ using Avalonia.Media;
 using Avalonia.Data;
 using Sonorize.Models;
 using Sonorize.ViewModels;
+using Avalonia.Styling;
+using Avalonia.Controls.Primitives; // Required for Style
 
 namespace Sonorize.Views;
 
 public class SettingsWindow : Window
 {
-    private readonly ThemeColors _theme; // Current theme for styling THIS window
+    private readonly ThemeColors _theme;
 
     public SettingsWindow(ThemeColors currentDisplayTheme)
     {
         _theme = currentDisplayTheme;
 
-        // ... (Window properties and color definitions using _theme remain the same) ...
-        Title = "Sonorize Settings"; Width = 500; Height = 450; // Increased height for theme selector
+        Title = "Sonorize Settings"; Width = 500; Height = 700;
         CanResize = false; WindowStartupLocation = WindowStartupLocation.CenterOwner; Icon = null;
         Background = _theme.B_SlightlyLighterBackground;
+
+        // Style for the TextBox part of NumericUpDown controls in this window
+        this.Styles.Add(new Style(s => s.OfType<NumericUpDown>().Descendant().OfType<TextBox>())
+        {
+            Setters =
+            {
+                new Setter(TextBox.ForegroundProperty, _theme.B_TextColor),
+                new Setter(TextBox.BackgroundProperty, Brushes.Transparent), // Ensure NumericUpDown's background shows through
+                new Setter(TextBox.CaretBrushProperty, _theme.B_TextColor), // For when editing
+                new Setter(TextBox.BorderThicknessProperty, new Thickness(0)), // Remove internal border if any
+                new Setter(TextBox.VerticalContentAlignmentProperty, VerticalAlignment.Center),
+                new Setter(TextBox.HorizontalContentAlignmentProperty, HorizontalAlignment.Center), // Center the text
+                new Setter(TextBox.PaddingProperty, new Thickness(2,0)) // Minimal padding
+            }
+        });
+
 
         var mainPanel = new DockPanel { Margin = new Thickness(15) };
 
@@ -3873,7 +4135,6 @@ public class SettingsWindow : Window
             Foreground = _theme.B_TextColor,
             Margin = new Thickness(0, 0, 0, 10)
         };
-        // DockPanel.SetDock(dirHeaderBlock, Dock.Top); // We'll use a StackPanel for sections
 
         // --- Music Directories Section ---
         var directoriesPanel = new DockPanel();
@@ -3884,7 +4145,7 @@ public class SettingsWindow : Window
         var removeButton = new Button { Content = "Remove", Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor, HorizontalAlignment = HorizontalAlignment.Stretch };
         removeButton.Bind(Button.CommandProperty, new Binding("RemoveDirectoryCommand")); removeButton.Bind(Button.IsEnabledProperty, new Binding("CanRemoveDirectory"));
         dirManagementButtons.Children.Add(addButton); dirManagementButtons.Children.Add(removeButton);
-        var directoryListBox = new ListBox { Background = _theme.B_ControlBackgroundColor, BorderThickness = new Thickness(1), BorderBrush = _theme.B_SecondaryTextColor, Foreground = _theme.B_TextColor, Height = 150 }; // Set a height
+        var directoryListBox = new ListBox { Background = _theme.B_ControlBackgroundColor, BorderThickness = new Thickness(1), BorderBrush = _theme.B_SecondaryTextColor, Foreground = _theme.B_TextColor, Height = 120 };
         directoryListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("MusicDirectories")); directoryListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedDirectory", BindingMode.TwoWay));
         directoriesPanel.Children.Add(dirManagementButtons); directoriesPanel.Children.Add(directoryListBox);
 
@@ -3895,7 +4156,7 @@ public class SettingsWindow : Window
             FontSize = 16,
             FontWeight = FontWeight.SemiBold,
             Foreground = _theme.B_TextColor,
-            Margin = new Thickness(0, 15, 0, 5) // Margin top for separation
+            Margin = new Thickness(0, 15, 0, 5)
         };
 
         var themeComboBox = new ComboBox
@@ -3918,6 +4179,121 @@ public class SettingsWindow : Window
             TextWrapping = TextWrapping.Wrap
         };
 
+        // --- Scrobbling Section ---
+        var scrobblingHeaderBlock = new TextBlock
+        {
+            Text = "Last.fm Scrobbling",
+            FontSize = 16,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = _theme.B_TextColor,
+            Margin = new Thickness(0, 15, 0, 5)
+        };
+
+        var scrobblingEnableCheckBox = new CheckBox
+        {
+            Content = "Enable Scrobbling",
+            Foreground = _theme.B_TextColor,
+            Margin = new Thickness(0, 0, 0, 10)
+        };
+        scrobblingEnableCheckBox.Bind(ToggleButton.IsCheckedProperty, new Binding("LastfmScrobblingEnabled", BindingMode.TwoWay));
+
+        var usernameLabel = new TextBlock { Text = "Username:", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 5) };
+        var usernameTextBox = new TextBox
+        {
+            Background = _theme.B_ControlBackgroundColor,
+            Foreground = _theme.B_TextColor,
+            BorderBrush = _theme.B_SecondaryTextColor,
+            Watermark = "Last.fm Username",
+            Margin = new Thickness(0, 0, 0, 5)
+        };
+        usernameTextBox.Bind(TextBox.TextProperty, new Binding("LastfmUsername", BindingMode.TwoWay));
+
+        var passwordLabel = new TextBlock { Text = "Password:", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
+        var passwordTextBox = new TextBox
+        {
+            Background = _theme.B_ControlBackgroundColor,
+            Foreground = _theme.B_TextColor,
+            BorderBrush = _theme.B_SecondaryTextColor,
+            PasswordChar = '•',
+            Watermark = "Last.fm Password"
+        };
+        passwordTextBox.Bind(TextBox.TextProperty, new Binding("LastfmPassword", BindingMode.TwoWay));
+
+
+        var scrobblingGrid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+            RowDefinitions = new RowDefinitions("Auto,Auto"),
+            Margin = new Thickness(0, 0, 0, 10)
+        };
+        Grid.SetRow(usernameLabel, 0); Grid.SetColumn(usernameLabel, 0);
+        Grid.SetRow(usernameTextBox, 0); Grid.SetColumn(usernameTextBox, 1);
+        Grid.SetRow(passwordLabel, 1); Grid.SetColumn(passwordLabel, 0);
+        Grid.SetRow(passwordTextBox, 1); Grid.SetColumn(passwordTextBox, 1);
+        scrobblingGrid.Children.Add(usernameLabel);
+        scrobblingGrid.Children.Add(usernameTextBox);
+        scrobblingGrid.Children.Add(passwordLabel);
+        scrobblingGrid.Children.Add(passwordTextBox);
+
+        // Scrobbling Criteria Settings
+        var criteriaPanel = new StackPanel { Orientation = Orientation.Vertical, Spacing = 8, Margin = new Thickness(0, 10, 0, 5) };
+
+        var percentagePanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+        var percentageLabel = new TextBlock { Text = "Scrobble if played for at least ", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
+        var percentageUpDown = new NumericUpDown
+        {
+            Minimum = 1,
+            Maximum = 100,
+            Increment = 1,
+            Width = 90,
+            Background = _theme.B_ControlBackgroundColor,
+            Foreground = _theme.B_TextColor,
+            BorderBrush = _theme.B_SecondaryTextColor
+        };
+        percentageUpDown.Bind(NumericUpDown.ValueProperty, new Binding("ScrobbleThresholdPercentage", BindingMode.TwoWay));
+        var percentageUnitLabel = new TextBlock { Text = "% of duration", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
+        percentagePanel.Children.Add(percentageLabel); percentagePanel.Children.Add(percentageUpDown); percentagePanel.Children.Add(percentageUnitLabel);
+
+        var absolutePanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+        var absoluteLabel = new TextBlock { Text = "OR Scrobble if played for at least ", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
+        var absoluteUpDown = new NumericUpDown
+        {
+            Minimum = 10,
+            Maximum = 600,
+            Increment = 10,
+            Width = 100, // Lowered Minimum to 10
+            Background = _theme.B_ControlBackgroundColor,
+            Foreground = _theme.B_TextColor,
+            BorderBrush = _theme.B_SecondaryTextColor
+        };
+        absoluteUpDown.Bind(NumericUpDown.ValueProperty, new Binding("ScrobbleThresholdAbsoluteSeconds", BindingMode.TwoWay));
+        var absoluteUnitLabel = new TextBlock { Text = "seconds", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
+        absolutePanel.Children.Add(absoluteLabel); absolutePanel.Children.Add(absoluteUpDown); absolutePanel.Children.Add(absoluteUnitLabel);
+
+        var criteriaExplanation = new TextBlock
+        {
+            Text = "(Whichever threshold is met first, and track is > 30s)",
+            FontSize = 10,
+            Foreground = _theme.B_SecondaryTextColor,
+            FontStyle = FontStyle.Italic,
+            TextWrapping = TextWrapping.Wrap
+        };
+
+        criteriaPanel.Children.Add(percentagePanel);
+        criteriaPanel.Children.Add(absolutePanel);
+        criteriaPanel.Children.Add(criteriaExplanation);
+
+        var scrobblingInfoNotice = new TextBlock
+        {
+            Text = "Requires a Last.fm account. Password stored locally (exercise caution).",
+            FontSize = 10,
+            Foreground = _theme.B_SecondaryTextColor,
+            FontStyle = FontStyle.Italic,
+            Margin = new Thickness(0, 15, 0, 0),
+            TextWrapping = TextWrapping.Wrap
+        };
+
+
         // --- Layout using a main StackPanel for sections ---
         var sectionsStackPanel = new StackPanel { Orientation = Orientation.Vertical, Spacing = 5 };
         sectionsStackPanel.Children.Add(dirHeaderBlock);
@@ -3925,6 +4301,12 @@ public class SettingsWindow : Window
         sectionsStackPanel.Children.Add(themeHeaderBlock);
         sectionsStackPanel.Children.Add(themeComboBox);
         sectionsStackPanel.Children.Add(themeRestartNotice);
+        sectionsStackPanel.Children.Add(scrobblingHeaderBlock);
+        sectionsStackPanel.Children.Add(scrobblingEnableCheckBox);
+        sectionsStackPanel.Children.Add(scrobblingGrid);
+        sectionsStackPanel.Children.Add(criteriaPanel);
+        sectionsStackPanel.Children.Add(scrobblingInfoNotice);
+
 
         // --- Buttons Panel (Bottom) ---
         var buttonsPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 10, Margin = new Thickness(0, 20, 0, 0) };
@@ -3937,7 +4319,7 @@ public class SettingsWindow : Window
         // Main panel structure
         DockPanel.SetDock(buttonsPanel, Dock.Bottom);
         mainPanel.Children.Add(buttonsPanel);
-        mainPanel.Children.Add(sectionsStackPanel); // This will fill the center
+        mainPanel.Children.Add(new ScrollViewer { Content = sectionsStackPanel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
 
         Content = mainPanel;
     }
@@ -4619,6 +5001,8 @@ public class PlaybackService : ViewModelBase, IDisposable
     private NAudioPlaybackEngine? _playbackEngine;
     private Timer? uiUpdateTimer;
     private readonly PlaybackLoopHandler _loopHandler; // Instance of the new loop handler
+    private readonly ScrobblingService _scrobblingService;
+
 
     private volatile bool _explicitStopRequested = false;
 
@@ -4650,9 +5034,10 @@ public class PlaybackService : ViewModelBase, IDisposable
 
     public event EventHandler? PlaybackEndedNaturally;
 
-    public PlaybackService()
+    public PlaybackService(ScrobblingService scrobblingService)
     {
         Debug.WriteLine("[PlaybackService] Constructor called.");
+        _scrobblingService = scrobblingService ?? throw new ArgumentNullException(nameof(scrobblingService));
         uiUpdateTimer = new Timer(UpdateUiCallback, null, Timeout.Infinite, Timeout.Infinite);
         _loopHandler = new PlaybackLoopHandler(this); // Initialize the loop handler, injecting this service
     }
@@ -4695,9 +5080,21 @@ public class PlaybackService : ViewModelBase, IDisposable
         });
     }
 
+    private async void TryScrobbleSong(Song? song, TimeSpan playedPosition)
+    {
+        // Use ScrobblingService to check conditions based on current settings
+        if (_scrobblingService.ShouldScrobble(song, playedPosition))
+        {
+            await _scrobblingService.ScrobbleAsync(song, DateTime.UtcNow);
+        }
+    }
+
     public void Play(Song song)
     {
         Debug.WriteLine($"[PlaybackService] Play requested for: {(song?.Title ?? "null song")}");
+
+        Song? oldSong = CurrentSong;
+        TimeSpan oldSongPlaybackPosition = _playbackEngine?.CurrentPosition ?? TimeSpan.Zero;
 
         if (song == null || string.IsNullOrEmpty(song.FilePath) || !File.Exists(song.FilePath))
         {
@@ -4715,8 +5112,7 @@ public class PlaybackService : ViewModelBase, IDisposable
             Debug.WriteLine("[PlaybackService] Disposed existing playback engine.");
         }
 
-        CurrentSong = song; // Setting CurrentSong updates _loopHandler via property setter
-
+        CurrentSong = song;
         _explicitStopRequested = false;
 
         try
@@ -4729,23 +5125,15 @@ public class PlaybackService : ViewModelBase, IDisposable
 
             _playbackEngine.Load(song.FilePath);
 
-            // Update duration after loading
             CurrentSongDuration = _playbackEngine.CurrentSongDuration;
-            this.CurrentPosition = TimeSpan.Zero; // Engine Load resets position
+            this.CurrentPosition = TimeSpan.Zero;
 
-            // Ask LoopHandler for the initial position to start playback
             TimeSpan startPosition = _loopHandler.GetInitialPlaybackPosition(_playbackEngine.CurrentSongDuration);
             if (startPosition != TimeSpan.Zero)
             {
-                Debug.WriteLine($"[PlaybackService] Starting playback at initial position determined by LoopHandler: {startPosition:mm\\:ss\\.ff}");
                 _playbackEngine.Seek(startPosition);
-                this.CurrentPosition = _playbackEngine.CurrentPosition; // Sync VM position
+                this.CurrentPosition = _playbackEngine.CurrentPosition;
             }
-            else
-            {
-                Debug.WriteLine("[PlaybackService] Starting playback from the beginning (0).");
-            }
-
 
             _playbackEngine.Play();
 
@@ -4753,6 +5141,9 @@ public class PlaybackService : ViewModelBase, IDisposable
             CurrentPlaybackStatus = PlaybackStateStatus.Playing;
             StartUiUpdateTimer();
             Debug.WriteLine($"[PlaybackService] Playback started for: {CurrentSong.Title}. State: {CurrentPlaybackStatus}");
+
+            _ = _scrobblingService.UpdateNowPlayingAsync(CurrentSong);
+
         }
         catch (Exception ex)
         {
@@ -4790,6 +5181,7 @@ public class PlaybackService : ViewModelBase, IDisposable
             IsPlaying = true;
             CurrentPlaybackStatus = PlaybackStateStatus.Playing;
             StartUiUpdateTimer();
+            _ = _scrobblingService.UpdateNowPlayingAsync(CurrentSong);
         }
         else if (_playbackEngine != null && CurrentPlaybackStatus == PlaybackStateStatus.Stopped)
         {
@@ -4810,6 +5202,20 @@ public class PlaybackService : ViewModelBase, IDisposable
         {
             _playbackEngine.Stop();
         }
+        else
+        {
+            Song? songToClear = CurrentSong;
+            TimeSpan lastKnownPosition = CurrentPosition;
+
+            IsPlaying = false;
+            CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
+            this.CurrentPosition = TimeSpan.Zero;
+            CurrentSongDuration = TimeSpan.Zero;
+            CurrentSong = null;
+            _explicitStopRequested = false;
+
+            TryScrobbleSong(songToClear, lastKnownPosition);
+        }
     }
 
     public void Seek(TimeSpan requestedPosition)
@@ -4820,10 +5226,8 @@ public class PlaybackService : ViewModelBase, IDisposable
             return;
         }
 
-        // Ask LoopHandler for the adjusted position considering active loop
         TimeSpan targetPosition = _loopHandler.GetAdjustedSeekPosition(requestedPosition, _playbackEngine.CurrentSongDuration);
 
-        // Clamp targetPosition to a valid range within the audio file's total duration.
         var totalMs = _playbackEngine.CurrentSongDuration.TotalMilliseconds;
         var seekMarginMs = totalMs > 200 ? 100 : (totalMs > 0 ? Math.Min(totalMs / 2, 50) : 0);
         var maxSeekablePosition = TimeSpan.FromMilliseconds(totalMs - seekMarginMs);
@@ -4831,13 +5235,11 @@ public class PlaybackService : ViewModelBase, IDisposable
 
         targetPosition = TimeSpan.FromSeconds(Math.Clamp(targetPosition.TotalSeconds, 0, maxSeekablePosition.TotalSeconds));
 
-        // Add a small tolerance check to avoid seeking if the target is very close to the current position.
-        double positionToleranceSeconds = 0.3; // 300 milliseconds tolerance
+        double positionToleranceSeconds = 0.3;
 
         try
         {
             TimeSpan currentAudioTimeForToleranceCheck = _playbackEngine.CurrentPosition;
-
             if (Math.Abs(currentAudioTimeForToleranceCheck.TotalSeconds - targetPosition.TotalSeconds) < positionToleranceSeconds)
             {
                 Debug.WriteLine($"[PlaybackService] Seek target {targetPosition:mm\\:ss\\.ff} is very close to current position {currentAudioTimeForToleranceCheck:mm\\:ss\\.ff} (within {positionToleranceSeconds}s), ignoring seek.");
@@ -4876,8 +5278,9 @@ public class PlaybackService : ViewModelBase, IDisposable
         Dispatcher.UIThread.InvokeAsync(() =>
         {
             Debug.WriteLine($"[PlaybackService] === OnEnginePlaybackStopped START === (UI Thread)");
-            Debug.WriteLine($"[PlaybackService] Exception: {e.Exception?.Message ?? "None"}");
-            Debug.WriteLine($"[PlaybackService] _explicitStopRequested: {_explicitStopRequested}");
+            Song? songThatStopped = CurrentSong;
+            TimeSpan stoppedPosition = _playbackEngine?.CurrentPosition ?? CurrentPosition;
+            TimeSpan stoppedSongDuration = _playbackEngine?.CurrentSongDuration ?? CurrentSongDuration;
 
             StopUiUpdateTimer();
 
@@ -4889,45 +5292,47 @@ public class PlaybackService : ViewModelBase, IDisposable
                 this.CurrentPosition = TimeSpan.Zero;
                 CurrentSongDuration = TimeSpan.Zero;
                 CurrentSong = null;
-                _explicitStopRequested = false;
-                Debug.WriteLine("[PlaybackService] State set to Stopped by error handler.");
             }
             else
             {
-                // Determine if it was a natural end of file based on engine position
-                bool isNearEndOfFile = (_playbackEngine?.CurrentPosition ?? TimeSpan.Zero) >= (_playbackEngine?.CurrentSongDuration ?? TimeSpan.Zero) - TimeSpan.FromMilliseconds(200);
-
-                Debug.WriteLine($"[PlaybackService] Clean Stop. Was Explicit Stop: {_explicitStopRequested}. Is Near End of File: {isNearEndOfFile}. Engine Position: {(_playbackEngine?.CurrentPosition ?? TimeSpan.Zero):mm\\:ss\\.ff}, Engine Duration: {(_playbackEngine?.CurrentSongDuration ?? TimeSpan.Zero):mm\\:ss\\.ff}");
-
+                bool isNearEndOfFile = stoppedPosition >= stoppedSongDuration - TimeSpan.FromMilliseconds(500);
+                Debug.WriteLine($"[PlaybackService] Clean Stop. ExplicitStop: {_explicitStopRequested}. NearEnd: {isNearEndOfFile}. Pos: {stoppedPosition:mm\\:ss\\.ff}, Dur: {stoppedSongDuration:mm\\:ss\\.ff}");
 
                 if (_explicitStopRequested)
                 {
-                    Debug.WriteLine("[PlaybackService] Playback stopped by explicit user command (event). Finalizing state to Stopped.");
+                    Debug.WriteLine("[PlaybackService] Playback stopped by explicit user/app command (event). Finalizing state to Stopped.");
+                    TryScrobbleSong(songThatStopped, stoppedPosition);
                     IsPlaying = false;
                     CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
                     this.CurrentPosition = TimeSpan.Zero;
                     CurrentSongDuration = TimeSpan.Zero;
                     CurrentSong = null;
-                    _explicitStopRequested = false;
-                    Debug.WriteLine("[PlaybackService] State set to Stopped by explicit stop handler.");
                 }
                 else if (isNearEndOfFile)
                 {
                     Debug.WriteLine("[PlaybackService] Playback stopped naturally (event). Raising PlaybackEndedNaturally event.");
+                    TryScrobbleSong(songThatStopped, stoppedSongDuration);
                     this.CurrentPosition = TimeSpan.Zero;
                     IsPlaying = false;
                     CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
                     PlaybackEndedNaturally?.Invoke(this, EventArgs.Empty);
-                    Debug.WriteLine("[PlaybackService] State set to Stopped by natural end handler, event raised.");
                 }
                 else
                 {
-                    Debug.WriteLine("Playback stopped by interruption (likely Play called). State managed by calling Play() method.");
+                    Debug.WriteLine("[PlaybackService] Playback interrupted (likely new song played). Scrobbling previous if conditions met.");
+                    TryScrobbleSong(songThatStopped, stoppedPosition);
+                    if (CurrentSong == songThatStopped)
+                    {
+                        IsPlaying = false;
+                        CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
+                    }
                 }
             }
-            Debug.WriteLine("[PlaybackService] OnEnginePlaybackStopped handler finishes.");
+            _explicitStopRequested = false;
+            Debug.WriteLine($"[PlaybackService] OnEnginePlaybackStopped handler finishes. CurrentSong: {CurrentSong?.Title ?? "null"}");
         });
     }
+
 
     private void StartUiUpdateTimer()
     {
@@ -4947,6 +5352,9 @@ public class PlaybackService : ViewModelBase, IDisposable
         uiUpdateTimer?.Dispose();
         uiUpdateTimer = null;
 
+        Song? songAtDispose = CurrentSong;
+        TimeSpan positionAtDispose = _playbackEngine?.CurrentPosition ?? CurrentPosition;
+
         if (_playbackEngine != null)
         {
             _playbackEngine.PlaybackStopped -= OnEnginePlaybackStopped;
@@ -4955,15 +5363,17 @@ public class PlaybackService : ViewModelBase, IDisposable
             Debug.WriteLine("[PlaybackService] Disposed playback engine during service dispose.");
         }
 
+        TryScrobbleSong(songAtDispose, positionAtDispose);
+
+
         _explicitStopRequested = false;
-        CurrentSong = null; // Setting song to null cleans up loop handler
+        CurrentSong = null;
         CurrentSongDuration = TimeSpan.Zero;
         this.CurrentPosition = TimeSpan.Zero;
         IsPlaying = false;
         CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
 
-        // Dispose the loop handler as it holds a reference to this service
-        _loopHandler.Dispose(); // Ensure loop handler is also disposable if needed (it doesn't hold unmanaged resources directly, but it's good practice if its lifecycle matches the service)
+        _loopHandler.Dispose();
 
         GC.SuppressFinalize(this);
         Debug.WriteLine("[PlaybackService] Dispose() completed.");
