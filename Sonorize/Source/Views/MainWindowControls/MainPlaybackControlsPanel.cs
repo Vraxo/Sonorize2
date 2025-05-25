@@ -33,7 +33,9 @@ public static class MainPlaybackControlsPanel
             MinWidth = 30, // Give it a minimum size to occupy space
             FontWeight = FontWeight.Bold,
             Width = 32, // Fixed width for consistency
-            Height = 32 // Fixed height for consistency
+            Height = 32, // Fixed height for consistency
+            HorizontalContentAlignment = HorizontalAlignment.Center, // Center content horizontally
+            VerticalContentAlignment = VerticalAlignment.Center     // Center content vertically
         };
         // Change BorderBrush color based on IsAdvancedPanelVisible
         toggleAdvPanelButton[!Button.BorderBrushProperty] = new Binding("IsAdvancedPanelVisible")

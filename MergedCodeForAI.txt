@@ -448,6 +448,35 @@ public class NotNullToBooleanConverter : IValueConverter
 }
 </file>
 
+<file path="Source\Converters\SliderFillWidthConverter.cs">
+using Avalonia;
+using System;
+
+namespace Sonorize.Converters;
+
+public class SliderFillWidthConverter : Avalonia.Data.Converters.IMultiValueConverter
+{
+    public object Convert(System.Collections.Generic.IList<object> values, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+    {
+        if (values.Count == 3 &&
+            values[0] is double value &&
+            values[1] is double max &&
+            values[2] is Rect bounds &&
+            max > 0)
+        {
+            return bounds.Width * (value / max);
+        }
+
+        return 0.0;
+    }
+
+    public object[] ConvertBack(object value, Type[] targetTypes, object parameter, System.Globalization.CultureInfo culture)
+    {
+        throw new NotSupportedException();
+    }
+}
+</file>
+
 <file path="Source\Models\AppSettings.cs">
 using System.Collections.Generic;
 using Sonorize.ViewModels;
@@ -829,6 +858,9 @@ public class MusicLibraryService
     private readonly SemaphoreSlim _thumbnailWorkers = new(4); // Limit concurrent thumbnail loads
     private bool _isThumbnailProcessingRunning = false;
 
+    public event Action<Song>? SongThumbnailUpdated;
+
+
     public MusicLibraryService(LoopDataService loopDataService)
     {
         _loopDataService = loopDataService;
@@ -1021,7 +1053,11 @@ public class MusicLibraryService
                         var actualThumbnail = await LoadAlbumArtAsync(song.FilePath);
                         if (actualThumbnail != null)
                         {
-                            await Dispatcher.UIThread.InvokeAsync(() => song.Thumbnail = actualThumbnail);
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                song.Thumbnail = actualThumbnail;
+                                SongThumbnailUpdated?.Invoke(song); // Invoke event after thumbnail is set
+                            });
                         }
                     }
                     catch (Exception ex)
@@ -1416,10 +1452,16 @@ using Avalonia.Media.Imaging;
 
 namespace Sonorize.ViewModels;
 
-public class ArtistViewModel
+public class ArtistViewModel : ViewModelBase // Inherit from ViewModelBase
 {
-    public string? Name { get; set; }
-    public Bitmap? Thumbnail { get; set; }
+    public string? Name { get; set; } // Name can remain simple if not changed after creation
+
+    private Bitmap? _thumbnail;
+    public Bitmap? Thumbnail
+    {
+        get => _thumbnail;
+        set => SetProperty(ref _thumbnail, value); // Use SetProperty for INotifyPropertyChanged
+    }
     // You could add more properties later, like SongCount or AlbumCount
 }
 </file>
@@ -1640,6 +1682,9 @@ public class LibraryViewModel : ViewModelBase
         _musicLibraryService = musicLibraryService;
         _loopDataService = loopDataService;
 
+        _musicLibraryService.SongThumbnailUpdated += MusicLibraryService_SongThumbnailUpdated;
+
+
         AppSettings appSettings = _settingsService.LoadSettings();
 
         LibraryViewMode = Enum.TryParse<SongDisplayMode>(appSettings.LibraryViewModePreference, out var libMode)
@@ -1683,6 +1728,56 @@ public class LibraryViewModel : ViewModelBase
 
         UpdateStatusBarText();
     }
+
+    private async void MusicLibraryService_SongThumbnailUpdated(Song updatedSong)
+    {
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            // Update ArtistViewModel
+            var artistVM = Artists.FirstOrDefault(a => a.Name == updatedSong.Artist);
+            if (artistVM != null && artistVM.Thumbnail != updatedSong.Thumbnail) // Check if update is needed
+            {
+                // If this song is the representative for the artist, update the artist's thumbnail
+                // This simple logic assumes the first song encountered (or its thumbnail) for an artist is representative.
+                // A more robust approach might re-evaluate based on all songs by that artist.
+                // For now, if the updatedSong's thumbnail is what we'd pick, update.
+                var firstSongOfArtistWithThumbnail = _allSongs.FirstOrDefault(s =>
+                    (s.Artist?.Equals(artistVM.Name, StringComparison.OrdinalIgnoreCase) ?? false) && s.Thumbnail != _musicLibraryService.GetDefaultThumbnail());
+
+                if (firstSongOfArtistWithThumbnail == updatedSong || (firstSongOfArtistWithThumbnail == null && updatedSong.Thumbnail != _musicLibraryService.GetDefaultThumbnail()))
+                {
+                    artistVM.Thumbnail = updatedSong.Thumbnail;
+                }
+            }
+
+            // Update AlbumViewModel
+            var albumVM = Albums.FirstOrDefault(al => al.Title == updatedSong.Album && al.Artist == updatedSong.Artist);
+            if (albumVM != null)
+            {
+                // Re-calculate SongThumbnailsForGrid and RepresentativeThumbnail for this album
+                var songsInAlbum = _allSongs.Where(s => (s.Album?.Equals(albumVM.Title, StringComparison.OrdinalIgnoreCase) ?? false) &&
+                                                        (s.Artist?.Equals(albumVM.Artist, StringComparison.OrdinalIgnoreCase) ?? false))
+                                             .ToList();
+
+                Bitmap? defaultSongThumbnail = _musicLibraryService.GetDefaultThumbnail();
+                List<Bitmap?> newSongThumbnailsForGrid = new List<Bitmap?>(new Bitmap?[4]);
+                List<Bitmap?> distinctSongThumbs = songsInAlbum
+                                                     .Select(s => s.Thumbnail ?? defaultSongThumbnail) // Use current thumbnails
+                                                     .Distinct()
+                                                     .Take(4)
+                                                     .ToList();
+
+                for (int i = 0; i < distinctSongThumbs.Count; i++)
+                {
+                    newSongThumbnailsForGrid[i] = distinctSongThumbs[i];
+                }
+
+                albumVM.SongThumbnailsForGrid = newSongThumbnailsForGrid; // This will trigger INPC on AlbumViewModel
+                albumVM.RepresentativeThumbnail = newSongThumbnailsForGrid.FirstOrDefault(t => t != null) ?? defaultSongThumbnail; // This also triggers INPC
+            }
+        });
+    }
+
 
     private void ExecutePreviousTrack(object? parameter)
     {
@@ -1798,7 +1893,11 @@ public class LibraryViewModel : ViewModelBase
                     Bitmap? defaultSongThumbnail = _musicLibraryService.GetDefaultThumbnail();
                     foreach (string? artistName in uniqueArtistNames)
                     {
-                        Bitmap? repThumb = _allSongs.FirstOrDefault(s => (s.Artist?.Equals(artistName, StringComparison.OrdinalIgnoreCase) ?? false) && s.Thumbnail != null)?.Thumbnail ?? defaultSongThumbnail;
+                        // Initial representative thumbnail for artist (might be default)
+                        Bitmap? repThumb = _allSongs.FirstOrDefault(s =>
+                                               (s.Artist?.Equals(artistName, StringComparison.OrdinalIgnoreCase) ?? false) &&
+                                               s.Thumbnail != null && s.Thumbnail != defaultSongThumbnail)?.Thumbnail
+                                           ?? defaultSongThumbnail;
                         Artists.Add(new ArtistViewModel { Name = artistName, Thumbnail = repThumb });
                     }
                     OnPropertyChanged(nameof(Artists));
@@ -1825,6 +1924,7 @@ public class LibraryViewModel : ViewModelBase
                             Artist = albumData.ArtistName
                         };
 
+                        // Initial thumbnails for album grid (might be default)
                         List<Bitmap?> songThumbnailsForGrid = new(new Bitmap?[4]);
                         List<Bitmap?> distinctSongThumbs = albumData.SongsInAlbum
                                                      .Select(s => s.Thumbnail ?? defaultSongThumbnail)
@@ -1838,8 +1938,7 @@ public class LibraryViewModel : ViewModelBase
                         }
 
                         albumVM.SongThumbnailsForGrid = songThumbnailsForGrid;
-
-                        albumVM.RepresentativeThumbnail = songThumbnailsForGrid[0] ?? defaultSongThumbnail;
+                        albumVM.RepresentativeThumbnail = songThumbnailsForGrid.FirstOrDefault(t => t != null) ?? defaultSongThumbnail;
 
                         Albums.Add(albumVM);
                     }
@@ -1990,6 +2089,16 @@ public class LibraryViewModel : ViewModelBase
         //Debug.WriteLine("[LibraryVM] Raising navigation command CanExecute changed.");
         (PreviousTrackCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (NextTrackCommand as RelayCommand)?.RaiseCanExecuteChanged();
+    }
+
+    // It's good practice to unsubscribe from events when the ViewModel is no longer needed,
+    // though for a main library view model, this might coincide with application shutdown.
+    public void Dispose()
+    {
+        if (_musicLibraryService != null)
+        {
+            _musicLibraryService.SongThumbnailUpdated -= MusicLibraryService_SongThumbnailUpdated;
+        }
     }
 }
 </file>
@@ -5620,6 +5729,7 @@ using Avalonia.Controls.Templates;  // For FuncControlTemplate
 using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Sonorize.Converters;
 using Sonorize.Models; // For ThemeColors
 
 namespace Sonorize.Views.MainWindowControls;
@@ -5787,29 +5897,6 @@ public static class PlaybackTimeSliderPanel
         return timeSliderGrid;
     }
 }
-
-// Converter for binding filled track width
-public class SliderFillWidthConverter : Avalonia.Data.Converters.IMultiValueConverter
-{
-    public object Convert(System.Collections.Generic.IList<object> values, Type targetType, object parameter, System.Globalization.CultureInfo culture)
-    {
-        if (values.Count == 3 &&
-            values[0] is double value &&
-            values[1] is double max &&
-            values[2] is Rect bounds &&
-            max > 0)
-        {
-            return bounds.Width * (value / max);
-        }
-
-        return 0.0;
-    }
-
-    public object[] ConvertBack(object value, Type[] targetTypes, object parameter, System.Globalization.CultureInfo culture)
-    {
-        throw new NotSupportedException();
-    }
-}
 </file>
 
 <file path="Source\Views\MainWindowControls\SearchBarPanels.cs">
@@ -5857,9 +5944,11 @@ public static class SearchBarPanel
 </file>
 
 <file path="Source\Views\MainWindowControls\SharedViewTemplates.cs">
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
+using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -5904,12 +5993,20 @@ namespace Sonorize.Views.MainWindowControls
         private void InitializeSongTemplates()
         {
             // Detailed Song Template
-            DetailedSongTemplate = new FuncDataTemplate<Song>((song, nameScope) => {
-                var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 5, 0), Source = song.Thumbnail, Stretch = Stretch.UniformToFill };
+            DetailedSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) => {
+                var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 5, 0), Stretch = Stretch.UniformToFill };
+                image.Bind(Image.SourceProperty, new Binding(nameof(Song.Thumbnail)));
                 RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
-                var titleBlock = new TextBlock { Text = song.Title, FontSize = 14, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 1) };
-                var artistBlock = new TextBlock { Text = song.Artist, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
-                var durationBlock = new TextBlock { Text = song.DurationString, FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
+
+                var titleBlock = new TextBlock { FontSize = 14, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 1) };
+                titleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Title)));
+
+                var artistBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
+                artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
+
+                var durationBlock = new TextBlock { FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
+                durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
+
                 var textStack = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Children = { titleBlock, artistBlock } };
                 var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), VerticalAlignment = VerticalAlignment.Center, Children = { image, textStack, durationBlock } };
                 Grid.SetColumn(image, 0); Grid.SetColumn(textStack, 1); Grid.SetColumn(durationBlock, 2);
@@ -5917,11 +6014,19 @@ namespace Sonorize.Views.MainWindowControls
             }, supportsRecycling: true);
 
             // Compact Song Template
-            CompactSongTemplate = new FuncDataTemplate<Song>((song, nameScope) => {
-                var titleBlock = new TextBlock { Text = song.Title, FontSize = 12, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
-                var artistBlock = new TextBlock { Text = $" - {song.Artist}", FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(5, 0, 0, 0) };
+            CompactSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) => {
+                var titleBlock = new TextBlock { FontSize = 12, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+                titleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Title)));
+
+                var artistBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(5, 0, 0, 0) };
+                artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)) { StringFormat = " - {0}" });
+
+
                 var titleArtistPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { titleBlock, artistBlock } };
-                var durationBlock = new TextBlock { Text = song.DurationString, FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, Margin = new Thickness(5, 0, 0, 0) };
+
+                var durationBlock = new TextBlock { FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, Margin = new Thickness(5, 0, 0, 0) };
+                durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
+
                 var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), VerticalAlignment = VerticalAlignment.Center };
                 itemGrid.Children.Add(titleArtistPanel); itemGrid.Children.Add(durationBlock);
                 Grid.SetColumn(titleArtistPanel, 0); Grid.SetColumn(durationBlock, 1);
@@ -5929,11 +6034,17 @@ namespace Sonorize.Views.MainWindowControls
             }, supportsRecycling: true);
 
             // Grid Song Template
-            GridSongTemplate = new FuncDataTemplate<Song>((song, nameScope) => {
-                var image = new Image { Width = 80, Height = 80, Source = song.Thumbnail, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center };
+            GridSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) => {
+                var image = new Image { Width = 80, Height = 80, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center };
+                image.Bind(Image.SourceProperty, new Binding(nameof(Song.Thumbnail)));
                 RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
-                var titleBlock = new TextBlock { Text = song.Title, FontSize = 12, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, MaxHeight = 30, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 3, 0, 0) };
-                var artistBlock = new TextBlock { Text = song.Artist, FontSize = 10, Foreground = _theme.B_SecondaryTextColor, TextWrapping = TextWrapping.Wrap, MaxHeight = 15, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 1, 0, 0) };
+
+                var titleBlock = new TextBlock { FontSize = 12, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, MaxHeight = 30, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 3, 0, 0) };
+                titleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Title)));
+
+                var artistBlock = new TextBlock { FontSize = 10, Foreground = _theme.B_SecondaryTextColor, TextWrapping = TextWrapping.Wrap, MaxHeight = 15, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 1, 0, 0) };
+                artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
+
                 var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { image, titleBlock, artistBlock } };
                 return new Border { Width = 120, Height = 150, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             }, supportsRecycling: true);
@@ -5941,28 +6052,37 @@ namespace Sonorize.Views.MainWindowControls
 
         private void InitializeArtistTemplates()
         {
-            DetailedArtistTemplate = new FuncDataTemplate<ArtistViewModel>((artistVM, nameScope) =>
+            DetailedArtistTemplate = new FuncDataTemplate<ArtistViewModel>((dataContext, nameScope) =>
             {
-                var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 10, 0), Source = artistVM.Thumbnail, Stretch = Stretch.UniformToFill };
+                var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 10, 0), Stretch = Stretch.UniformToFill };
+                image.Bind(Image.SourceProperty, new Binding(nameof(ArtistViewModel.Thumbnail)));
                 RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
-                var artistNameBlock = new TextBlock { Text = artistVM.Name, FontSize = 14, VerticalAlignment = VerticalAlignment.Center };
+
+                var artistNameBlock = new TextBlock { FontSize = 14, VerticalAlignment = VerticalAlignment.Center };
+                artistNameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(ArtistViewModel.Name)));
+
                 var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), VerticalAlignment = VerticalAlignment.Center };
                 itemGrid.Children.Add(image); itemGrid.Children.Add(artistNameBlock);
                 Grid.SetColumn(image, 0); Grid.SetColumn(artistNameBlock, 1);
                 return new Border { Padding = new Thickness(10, 8), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
             }, supportsRecycling: true);
 
-            CompactArtistTemplate = new FuncDataTemplate<ArtistViewModel>((artistVM, nameScope) =>
+            CompactArtistTemplate = new FuncDataTemplate<ArtistViewModel>((dataContext, nameScope) =>
             {
-                var artistNameBlock = new TextBlock { Text = artistVM.Name, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+                var artistNameBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+                artistNameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(ArtistViewModel.Name)));
                 return new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = artistNameBlock };
             }, supportsRecycling: true);
 
-            GridArtistTemplate = new FuncDataTemplate<ArtistViewModel>((artistVM, nameScope) =>
+            GridArtistTemplate = new FuncDataTemplate<ArtistViewModel>((dataContext, nameScope) =>
             {
-                var image = new Image { Width = 80, Height = 80, Source = artistVM.Thumbnail, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center };
+                var image = new Image { Width = 80, Height = 80, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center };
+                image.Bind(Image.SourceProperty, new Binding(nameof(ArtistViewModel.Thumbnail)));
                 RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
-                var artistNameBlock = new TextBlock { Text = artistVM.Name, FontSize = 12, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, MaxHeight = 30, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 3, 0, 0) };
+
+                var artistNameBlock = new TextBlock { FontSize = 12, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, MaxHeight = 30, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 3, 0, 0) };
+                artistNameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(ArtistViewModel.Name)));
+
                 var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { image, artistNameBlock } };
                 return new Border { Width = 120, Height = 130, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             }, supportsRecycling: true);
@@ -5970,7 +6090,7 @@ namespace Sonorize.Views.MainWindowControls
 
         private void InitializeAlbumTemplates()
         {
-            DetailedAlbumTemplate = new FuncDataTemplate<AlbumViewModel>((albumVM, nameScope) =>
+            DetailedAlbumTemplate = new FuncDataTemplate<AlbumViewModel>((dataContext, nameScope) =>
             {
                 var itemGrid = new Grid
                 {
@@ -5989,18 +6109,12 @@ namespace Sonorize.Views.MainWindowControls
 
                 for (int i = 0; i < 4; i++)
                 {
-                    var img = new Image
-                    {
-                        Width = 28,
-                        Height = 28,
-                        Stretch = Stretch.UniformToFill
-                    };
-
-                    if (albumVM.SongThumbnailsForGrid != null && i < albumVM.SongThumbnailsForGrid.Count)
-                    {
-                        img.Source = albumVM.SongThumbnailsForGrid[i];
-                    }
-
+                    var img = new Image { Width = 28, Height = 28, Stretch = Stretch.UniformToFill };
+                    // Binding to an indexed property of a List<Bitmap?>.
+                    // This relies on AlbumViewModel.SongThumbnailsForGrid property itself raising PropertyChanged if the list instance changes,
+                    // or if AlbumViewModel.SongThumbnailsForGrid was an ObservableCollection and its items change.
+                    // Given current AlbumViewModel setup, this will show initial state.
+                    img.Bind(Image.SourceProperty, new Binding($"SongThumbnailsForGrid[{i}]"));
                     RenderOptions.SetBitmapInterpolationMode(img, BitmapInterpolationMode.HighQuality);
                     Grid.SetRow(img, i / 2);
                     Grid.SetColumn(img, i % 2);
@@ -6010,8 +6124,12 @@ namespace Sonorize.Views.MainWindowControls
                 Grid.SetColumn(imageGrid, 0);
                 itemGrid.Children.Add(imageGrid);
 
-                var albumTitleBlock = new TextBlock { Text = albumVM.Title, FontSize = 14, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center };
-                var albumArtistBlock = new TextBlock { Text = albumVM.Artist, FontSize = 11, Foreground = _theme.B_SecondaryTextColor, VerticalAlignment = VerticalAlignment.Center };
+                var albumTitleBlock = new TextBlock { FontSize = 14, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center };
+                albumTitleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(AlbumViewModel.Title)));
+
+                var albumArtistBlock = new TextBlock { FontSize = 11, Foreground = _theme.B_SecondaryTextColor, VerticalAlignment = VerticalAlignment.Center };
+                albumArtistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(AlbumViewModel.Artist)));
+
                 var textStack = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center, Children = { albumTitleBlock, albumArtistBlock } };
 
                 Grid.SetColumn(textStack, 1);
@@ -6020,15 +6138,19 @@ namespace Sonorize.Views.MainWindowControls
                 return new Border { Padding = new Thickness(10, 6), MinHeight = 68, Background = Brushes.Transparent, Child = itemGrid };
             }, supportsRecycling: true);
 
-            CompactAlbumTemplate = new FuncDataTemplate<AlbumViewModel>((albumVM, nameScope) =>
+            CompactAlbumTemplate = new FuncDataTemplate<AlbumViewModel>((dataContext, nameScope) =>
             {
-                var albumTitleBlock = new TextBlock { Text = albumVM.Title, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
-                var albumArtistBlock = new TextBlock { Text = $" - {albumVM.Artist}", FontSize = 11, Foreground = _theme.B_SecondaryTextColor, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(5, 0, 0, 0) };
+                var albumTitleBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+                albumTitleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(AlbumViewModel.Title)));
+
+                var albumArtistBlock = new TextBlock { FontSize = 11, Foreground = _theme.B_SecondaryTextColor, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(5, 0, 0, 0) };
+                albumArtistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(AlbumViewModel.Artist)) { StringFormat = " - {0}" });
+
                 var panel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { albumTitleBlock, albumArtistBlock } };
                 return new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = panel };
             }, supportsRecycling: true);
 
-            GridAlbumTemplate = new FuncDataTemplate<AlbumViewModel>((albumVM, nameScope) =>
+            GridAlbumTemplate = new FuncDataTemplate<AlbumViewModel>((dataContext, nameScope) =>
             {
                 var contentStack = new StackPanel
                 {
@@ -6037,17 +6159,26 @@ namespace Sonorize.Views.MainWindowControls
                     Spacing = 3
                 };
 
-                // Decide whether to show 2x2 grid or single large image
-                bool show2x2Grid = albumVM.SongThumbnailsForGrid != null &&
-                                   albumVM.SongThumbnailsForGrid.Count > 1 &&
-                                   albumVM.SongThumbnailsForGrid[1] != null;
+                // Logic to decide 2x2 or single image based on bound data needs to be cleaner if done in C# template.
+                // For simplicity, binding to RepresentativeThumbnail (which AlbumViewModel should prepare).
+                // A more complex template might use a ContentControl with a StyleSelector or multiple DataTemplates.
 
-                if (show2x2Grid)
+                // Create a placeholder for the image part, could be a Grid or single Image
+                var imagePresenter = new Panel { Width = 80, Height = 80, HorizontalAlignment = HorizontalAlignment.Center };
+
+
+                // Attempting a dynamic switch based on data. This is complex in FuncDataTemplate.
+                // A common approach is to have the ViewModel provide a single "display-ready" thumbnail or a type indicator.
+                // Here, we'll just bind to RepresentativeThumbnail for grid view.
+                // If more complex logic (like showing 2x2) is needed, it should ideally be handled by ViewModel state
+                // or a custom control / more sophisticated templating.
+
+                if (dataContext != null && dataContext.SongThumbnailsForGrid != null && dataContext.SongThumbnailsForGrid.Count(t => t != null) > 1)
                 {
                     var imageGrid = new Grid
                     {
-                        Width = 84,
-                        Height = 84,
+                        Width = 80, // Keep overall size consistent
+                        Height = 80,
                         HorizontalAlignment = HorizontalAlignment.Center,
                         ColumnDefinitions = new ColumnDefinitions("*,*"),
                         RowDefinitions = new RowDefinitions("*,*")
@@ -6055,40 +6186,33 @@ namespace Sonorize.Views.MainWindowControls
 
                     for (int i = 0; i < 4; i++)
                     {
-                        var img = new Image
-                        {
-                            Width = 40,
-                            Height = 40,
-                            Stretch = Stretch.UniformToFill
-                        };
-                        if (i < albumVM.SongThumbnailsForGrid!.Count) // Null check for SongThumbnailsForGrid done above
-                        {
-                            img.Source = albumVM.SongThumbnailsForGrid[i];
-                        }
+                        var img = new Image { Width = 38, Height = 38, Stretch = Stretch.UniformToFill, Margin = new Thickness(1) }; // Smaller images for grid
+                        img.Bind(Image.SourceProperty, new Binding($"SongThumbnailsForGrid[{i}]"));
                         RenderOptions.SetBitmapInterpolationMode(img, BitmapInterpolationMode.HighQuality);
                         Grid.SetRow(img, i / 2);
                         Grid.SetColumn(img, i % 2);
                         imageGrid.Children.Add(img);
                     }
-                    contentStack.Children.Add(imageGrid);
+                    imagePresenter.Children.Add(imageGrid);
                 }
                 else // Show single representative thumbnail
                 {
                     var singleImage = new Image
                     {
                         Width = 80,
-                        Height = 80, // Size for single large image
-                        Source = albumVM.RepresentativeThumbnail,
+                        Height = 80,
                         Stretch = Stretch.UniformToFill,
                         HorizontalAlignment = HorizontalAlignment.Center
                     };
+                    singleImage.Bind(Image.SourceProperty, new Binding(nameof(AlbumViewModel.RepresentativeThumbnail)));
                     RenderOptions.SetBitmapInterpolationMode(singleImage, BitmapInterpolationMode.HighQuality);
-                    contentStack.Children.Add(singleImage);
+                    imagePresenter.Children.Add(singleImage);
                 }
+                contentStack.Children.Add(imagePresenter);
+
 
                 var albumTitleBlock = new TextBlock
                 {
-                    Text = albumVM.Title,
                     FontSize = 12,
                     FontWeight = FontWeight.SemiBold,
                     TextWrapping = TextWrapping.Wrap,
@@ -6097,11 +6221,11 @@ namespace Sonorize.Views.MainWindowControls
                     HorizontalAlignment = HorizontalAlignment.Center,
                     Margin = new Thickness(0, 2, 0, 0)
                 };
+                albumTitleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(AlbumViewModel.Title)));
                 contentStack.Children.Add(albumTitleBlock);
 
                 var albumArtistBlock = new TextBlock
                 {
-                    Text = albumVM.Artist,
                     FontSize = 10,
                     Foreground = _theme.B_SecondaryTextColor,
                     TextWrapping = TextWrapping.Wrap,
@@ -6109,6 +6233,7 @@ namespace Sonorize.Views.MainWindowControls
                     TextAlignment = TextAlignment.Center,
                     HorizontalAlignment = HorizontalAlignment.Center
                 };
+                albumArtistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(AlbumViewModel.Artist)));
                 contentStack.Children.Add(albumArtistBlock);
 
                 return new Border
@@ -6127,7 +6252,7 @@ namespace Sonorize.Views.MainWindowControls
         private void InitializePanelTemplates()
         {
             StackPanelItemsPanelTemplate = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel { Orientation = Orientation.Vertical });
-            WrapPanelItemsPanelTemplate = new FuncTemplate<Panel?>(() => new WrapPanel { Orientation = Orientation.Horizontal });
+            WrapPanelItemsPanelTemplate = new FuncTemplate<Panel?>(() => new WrapPanel { Orientation = Orientation.Horizontal, ItemWidth = 130, ItemHeight = 160 }); // Adjusted ItemWidth/Height for grid items
         }
     }
 }
