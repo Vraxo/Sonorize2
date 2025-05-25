@@ -141,7 +141,6 @@ public class LoopDataService
         }
     }
 
-
     public void ClearLoop(string filePath)
     {
         if (string.IsNullOrEmpty(filePath)) return;

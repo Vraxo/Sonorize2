@@ -8,20 +8,17 @@ public class AlbumViewModel : ViewModelBase
 {
     public string? Title { get; set; }
     public string? Artist { get; set; }
-
-    private List<Bitmap?> _songThumbnailsForGrid = new List<Bitmap?>(new Bitmap?[4]); // Ensures 4 elements, can be null
     public List<Bitmap?> SongThumbnailsForGrid
     {
-        get => _songThumbnailsForGrid;
+        get;
         // Setter might be used by LibraryVM during initialization
-        set => SetProperty(ref _songThumbnailsForGrid, value);
-    }
+        set => SetProperty(ref field, value);
+    } = new List<Bitmap?>(new Bitmap?[4]);
 
-    private Bitmap? _representativeThumbnail;
     public Bitmap? RepresentativeThumbnail
     {
-        get => _representativeThumbnail;
-        set => SetProperty(ref _representativeThumbnail, value);
+        get;
+        set => SetProperty(ref field, value);
     }
 
     public string DisplayText => $"{Title} - {Artist}";

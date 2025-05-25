@@ -34,15 +34,12 @@ public class MainWindowViewModel : ViewModelBase
     public LibraryViewModel Library { get; set; }
     public LoopEditorViewModel LoopEditor { get; }
     public PlaybackViewModel Playback { get; } // Playback ViewModel
-
-    private string _statusBarText = "Welcome to Sonorize!";
-    public string StatusBarText { get => _statusBarText; set => SetProperty(ref _statusBarText, value); }
+    public string StatusBarText { get; set => SetProperty(ref field, value); } = "Welcome to Sonorize!";
 
     // IsLoadingLibrary is a proxy to Library's state
     public bool IsLoadingLibrary { get => Library.IsLoadingLibrary; }
 
-    private bool _isAdvancedPanelVisible;
-    public bool IsAdvancedPanelVisible { get => _isAdvancedPanelVisible; set { if (SetProperty(ref _isAdvancedPanelVisible, value)) OnAdvancedPanelVisibleChanged(); } }
+    public bool IsAdvancedPanelVisible { get; set { if (SetProperty(ref field, value)) OnAdvancedPanelVisibleChanged(); } }
 
     // Top-level commands
     public ICommand LoadInitialDataCommand { get; }
@@ -51,7 +48,7 @@ public class MainWindowViewModel : ViewModelBase
     public ICommand AddDirectoryAndRefreshCommand { get; }
     public ICommand ToggleAdvancedPanelCommand { get; }
 
-    private readonly Random _shuffleRandom = new Random(); // Simple Random instance for shuffle randomization
+    private readonly Random _shuffleRandom = new(); // Simple Random instance for shuffle randomization
 
     public MainWindowViewModel(
         SettingsService settingsService,

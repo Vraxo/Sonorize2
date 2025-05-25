@@ -1,13 +1,12 @@
-﻿using Avalonia;
+﻿using System;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives; // For Thumb, Track
 using Avalonia.Controls.Templates;  // For FuncControlTemplate
 using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Styling;
 using Sonorize.Models; // For ThemeColors
-using System;
 
 namespace Sonorize.Views.MainWindowControls;
 

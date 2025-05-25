@@ -1,9 +1,8 @@
-﻿// Path: Source/Utils/AlbumArtistTupleComparer.cs (or a similar appropriate location)
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis; // For NotNullWhen attribute
+using System.Diagnostics.CodeAnalysis;
 
-namespace Sonorize.Utils; // Or your preferred namespace for utility classes
+namespace Sonorize.Utils;
 
 public class AlbumArtistTupleComparer : IEqualityComparer<(string Album, string Artist)>
 {
@@ -15,13 +14,10 @@ public class AlbumArtistTupleComparer : IEqualityComparer<(string Album, string 
 
     public int GetHashCode([DisallowNull] (string Album, string Artist) obj)
     {
-        // Combine hash codes in a way that's sensitive to order and case-insensitivity
-        // For case-insensitivity in hash code, convert to a consistent case first
         int albumHashCode = obj.Album?.ToLowerInvariant().GetHashCode() ?? 0;
         int artistHashCode = obj.Artist?.ToLowerInvariant().GetHashCode() ?? 0;
         return HashCode.Combine(albumHashCode, artistHashCode);
     }
 
-    // Static instance for convenience
-    public static readonly AlbumArtistTupleComparer Instance = new AlbumArtistTupleComparer();
+    public static readonly AlbumArtistTupleComparer Instance = new();
 }

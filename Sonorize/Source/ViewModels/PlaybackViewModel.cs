@@ -2,6 +2,7 @@
 using Sonorize.Models;
 using Sonorize.Services; // This using directive makes PlaybackStateStatus from the Service available
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -11,13 +12,7 @@ using System.Windows.Input;
 
 namespace Sonorize.ViewModels;
 
-// Removed duplicate PlaybackStateStatus enum definition.
-// The definition from Sonorize.Services is used via the using directive.
-
-
-// Renamed enum for clarity based on standard playback controls
 public enum RepeatMode { None, PlayOnce, RepeatOne, RepeatAll }
-
 
 public class PlaybackViewModel : ViewModelBase
 {
@@ -37,15 +32,16 @@ public class PlaybackViewModel : ViewModelBase
         {
             // Check if the value actually changed and if a song is loaded
             // Use a small tolerance for double comparison
-            if (PlaybackService.CurrentSong != null && Math.Abs(PlaybackService.CurrentPositionSeconds - value) > 0.01)
+            if (PlaybackService.CurrentSong == null || Math.Abs(PlaybackService.CurrentPositionSeconds - value) <= 0.01)
             {
-                // Debug.WriteLine($"[PlaybackVM] CurrentPositionSeconds setter called with: {value}. Current PlaybackService PositionSeconds: {PlaybackService.CurrentPositionSeconds}. Seeking.");
-                PlaybackService.Seek(TimeSpan.FromSeconds(value));
+                return;
                 // After PlaybackService.Seek, it will update its CurrentPosition,
                 // which will fire PropertyChanged. This ViewModel's PlaybackService_PropertyChanged
                 // handler will then update its own properties (including this one's getter value)
                 // and notify the UI.
             }
+            // Debug.WriteLine($"[PlaybackVM] CurrentPositionSeconds setter called with: {value}. Current PlaybackService PositionSeconds: {PlaybackService.CurrentPositionSeconds}. Seeking.");
+            PlaybackService.Seek(TimeSpan.FromSeconds(value));
             // If value is effectively the same, do nothing to prevent potential feedback loops or unnecessary seeks.
             // If no song is loaded, seeking is not possible/meaningful.
         }
@@ -63,42 +59,59 @@ public class PlaybackViewModel : ViewModelBase
     public double PlaybackSpeed { get => _playbackSpeed; set { value = Math.Clamp(value, 0.5, 2.0); if (SetProperty(ref _playbackSpeed, value)) { PlaybackService.PlaybackRate = (float)value; OnPropertyChanged(nameof(PlaybackSpeedDisplay)); } } }
     public string PlaybackSpeedDisplay => $"{PlaybackSpeed:F2}x";
 
-    private double _playbackPitch = 0.0;
-    public double PlaybackPitch { get => _playbackPitch; set { value = Math.Round(value * 2, MidpointRounding.AwayFromZero) / 2.0; value = Math.Clamp(value, -4.0, 4.0); if (SetProperty(ref _playbackPitch, value)) { PlaybackService.PitchSemitones = (float)_playbackPitch; OnPropertyChanged(nameof(PlaybackPitchDisplay)); } } }
+    public double PlaybackPitch 
+    {
+        get; 
+        
+        set
+        {
+            value = double.Round(value * 2, MidpointRounding.AwayFromZero) / 2.0;
+            value = double.Clamp(value, -4.0, 4.0);
+
+            if (!SetProperty(ref field, value))
+            {
+                return;
+            }
+
+            PlaybackService.PitchSemitones = (float)field;
+            OnPropertyChanged(nameof(PlaybackPitchDisplay));
+        }
+    } = 0.0;
+
     public string PlaybackPitchDisplay => $"{PlaybackPitch:+0.0;-0.0;0} st";
 
-    // Properties for playback modes (Shuffle, Repeat)
-    private bool _shuffleEnabled = false;
     public bool ShuffleEnabled
     {
-        get => _shuffleEnabled;
+        get;
+
         set
         {
-            if (SetProperty(ref _shuffleEnabled, value))
+            if (!SetProperty(ref field, value))
             {
-                Debug.WriteLine($"[PlaybackVM] ShuffleEnabled set to: {value}");
+                return;
                 // Saving preference could happen here
             }
-        }
-    }
 
-    // Renamed property
-    private RepeatMode _repeatMode = RepeatMode.PlayOnce; // Default to PlayOnce
+            Debug.WriteLine($"[PlaybackVM] ShuffleEnabled set to: {value}");
+        }
+    } = false;
+
     public RepeatMode RepeatMode
     {
-        get => _repeatMode;
+        get;
         set
         {
-            if (SetProperty(ref _repeatMode, value))
+            if (!SetProperty(ref field, value))
             {
-                Debug.WriteLine($"[PlaybackVM] RepeatMode set to: {value}");
-                // Saving preference could happen here
-                OnPropertyChanged(nameof(IsRepeatOne));
-                OnPropertyChanged(nameof(IsRepeatAll));
-                OnPropertyChanged(nameof(IsRepeatActive)); // Notify composite state change
+                return;
             }
+            Debug.WriteLine($"[PlaybackVM] RepeatMode set to: {value}");
+            // Saving preference could happen here
+            OnPropertyChanged(nameof(IsRepeatOne));
+            OnPropertyChanged(nameof(IsRepeatAll));
+            OnPropertyChanged(nameof(IsRepeatActive)); // Notify composite state change
         }
-    }
+    } = RepeatMode.PlayOnce;
 
     // Helper properties for UI bindings (e.g., RadioButtons or toggling states) - Renamed
     public bool IsRepeatOne { get => RepeatMode == RepeatMode.RepeatOne; set { if (value) RepeatMode = RepeatMode.RepeatOne; } }
@@ -342,7 +355,7 @@ public class PlaybackViewModel : ViewModelBase
             Debug.WriteLine($"[PlaybackVM] Requesting waveform for: {songToLoadWaveformFor.Title}");
             // Target points should probably be based on control width or a fixed resolution
             // For a fixed 80px height control, 1000 points is likely sufficient detail.
-            var points = await _waveformService.GetWaveformAsync(songToLoadWaveformFor.FilePath, 1000);
+            List<WaveformPoint> points = await _waveformService.GetWaveformAsync(songToLoadWaveformFor.FilePath, 1000);
 
             // Check if the song is still the same AFTER the async operation before updating the UI
             if (PlaybackService.CurrentSong == songToLoadWaveformFor)

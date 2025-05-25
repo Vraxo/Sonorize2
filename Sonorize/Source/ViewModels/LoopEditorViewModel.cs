@@ -13,22 +13,20 @@ public class LoopEditorViewModel : ViewModelBase
     private readonly LoopDataService _loopDataService;
     private Song? _currentSongInternal; // Holds the Song instance from PlaybackService.CurrentSong
 
-    private TimeSpan? _newLoopStartCandidate;
     public TimeSpan? NewLoopStartCandidate
     {
-        get => _newLoopStartCandidate;
-        set { SetProperty(ref _newLoopStartCandidate, value); OnPropertyChanged(nameof(CanSaveLoopRegion)); OnPropertyChanged(nameof(NewLoopStartCandidateDisplay)); }
+        get;
+        set { SetProperty(ref field, value); OnPropertyChanged(nameof(CanSaveLoopRegion)); OnPropertyChanged(nameof(NewLoopStartCandidateDisplay)); }
     }
 
-    private TimeSpan? _newLoopEndCandidate;
     public TimeSpan? NewLoopEndCandidate
     {
-        get => _newLoopEndCandidate;
-        set { SetProperty(ref _newLoopEndCandidate, value); OnPropertyChanged(nameof(CanSaveLoopRegion)); OnPropertyChanged(nameof(NewLoopEndCandidateDisplay)); }
+        get;
+        set { SetProperty(ref field, value); OnPropertyChanged(nameof(CanSaveLoopRegion)); OnPropertyChanged(nameof(NewLoopEndCandidateDisplay)); }
     }
 
-    public string NewLoopStartCandidateDisplay => _newLoopStartCandidate.HasValue ? $"{_newLoopStartCandidate.Value:mm\\:ss\\.ff}" : "Not set";
-    public string NewLoopEndCandidateDisplay => _newLoopEndCandidate.HasValue ? $"{_newLoopEndCandidate.Value:mm\\:ss\\.ff}" : "Not set";
+    public string NewLoopStartCandidateDisplay => NewLoopStartCandidate.HasValue ? $"{NewLoopStartCandidate.Value:mm\\:ss\\.ff}" : "Not set";
+    public string NewLoopEndCandidateDisplay => NewLoopEndCandidate.HasValue ? $"{NewLoopEndCandidate.Value:mm\\:ss\\.ff}" : "Not set";
 
     private string _activeLoopDisplayText = "No loop defined.";
     public string ActiveLoopDisplayText { get => _activeLoopDisplayText; set => SetProperty(ref _activeLoopDisplayText, value); }

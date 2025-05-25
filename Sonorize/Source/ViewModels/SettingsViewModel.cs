@@ -1,13 +1,12 @@
-﻿using Avalonia.Controls;
-using Avalonia.Platform.Storage;
-using Sonorize.Models;
-using Sonorize.Services;
+﻿using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
-using System.Diagnostics;
-using System.Collections.Generic; // Required for List<string>
+using Avalonia.Controls;
+using Avalonia.Platform.Storage;
+using Sonorize.Services;
 
 namespace Sonorize.ViewModels;
 
@@ -18,25 +17,28 @@ public class SettingsViewModel : ViewModelBase
 
     public ObservableCollection<string> MusicDirectories { get; } = new();
     public List<string> InitialMusicDirectories { get; private set; } // To track changes
-
-    private string? _selectedDirectory;
+    
     public string? SelectedDirectory
     {
-        get => _selectedDirectory;
-        set => SetProperty(ref _selectedDirectory, value, nameof(CanRemoveDirectory));
+        get;
+
+        set => SetProperty(ref field, value, nameof(CanRemoveDirectory));
     }
 
     public ObservableCollection<string> AvailableThemes { get; } = new();
-    private string? _selectedThemeFile;
+
     public string? SelectedThemeFile
     {
-        get => _selectedThemeFile;
+        get;
+        
         set
         {
-            if (SetProperty(ref _selectedThemeFile, value))
+            if (!SetProperty(ref field, value))
             {
-                SettingsChanged = true;
+                return;
             }
+
+            SettingsChanged = true;
         }
     }
 
@@ -92,27 +94,49 @@ public class SettingsViewModel : ViewModelBase
 
     private async Task AddDirectory(Window? owner)
     {
-        if (owner == null) return;
-        var dialog = new OpenFolderDialog() { Title = "Select Music Directory" };
-        var result = await dialog.ShowAsync(owner);
-        if (result != null && !string.IsNullOrEmpty(result))
+        if (owner?.StorageProvider == null)
         {
-            if (!MusicDirectories.Contains(result))
+            // Handle cases where StorageProvider is not available (e.g., headless environments or older platforms)
+            Debug.WriteLine("StorageProvider is not available.");
+            // Potentially show an error message to the user
+            return;
+        }
+
+        var options = new FolderPickerOpenOptions
+        {
+            Title = "Select Music Directory",
+            AllowMultiple = false
+        };
+
+        var result = await owner.StorageProvider.OpenFolderPickerAsync(options);
+
+        if (result != null && result.Count > 0)
+        {
+            var folder = result.FirstOrDefault();
+            if (folder == null)
             {
-                MusicDirectories.Add(result);
+                return;
+            }
+            // Access the path using Path.LocalPath
+            var path = folder.Path.LocalPath;
+            if (string.IsNullOrEmpty(path) || MusicDirectories.Contains(path))
+            {
+                return;
                 // SettingsChanged will be set by the CollectionChanged event handler
             }
+            MusicDirectories.Add(path);
         }
     }
 
     private void RemoveSelectedDirectory(object? parameter)
     {
-        if (SelectedDirectory != null)
+        if (SelectedDirectory == null)
         {
-            MusicDirectories.Remove(SelectedDirectory);
-            SelectedDirectory = null;
+            return;
             // SettingsChanged will be set by the CollectionChanged event handler
         }
+        MusicDirectories.Remove(SelectedDirectory);
+        SelectedDirectory = null;
     }
 
     private void SaveSettings(object? parameter)

@@ -29,7 +29,7 @@ public class ThemeColors
 
     public static ThemeColors CreateAmoledSpotifyTheme()
     {
-        return new ThemeColors
+        return new()
         {
             BackgroundColor = "#FF000000",
             SlightlyLighterBackground = "#FF121212",

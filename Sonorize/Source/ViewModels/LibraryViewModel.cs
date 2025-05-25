@@ -1,16 +1,15 @@
-﻿using Avalonia.Media.Imaging;
-using Avalonia.Threading;
-using Sonorize.Models;
-using Sonorize.Services;
-using Sonorize.Utils;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
+using Sonorize.Models;
+using Sonorize.Services;
+using Sonorize.Utils;
 
 namespace Sonorize.ViewModels;
 
@@ -27,132 +26,167 @@ public class LibraryViewModel : ViewModelBase
     private readonly MusicLibraryService _musicLibraryService;
     private readonly LoopDataService _loopDataService;
 
-    private readonly ObservableCollection<Song> _allSongs = new();
-    public ObservableCollection<Song> FilteredSongs { get; } = new();
-    public ObservableCollection<ArtistViewModel> Artists { get; } = new();
-    public ObservableCollection<AlbumViewModel> Albums { get; } = new();
+    private readonly ObservableCollection<Song> _allSongs = [];
 
-    private string _searchQuery = string.Empty;
-    public string SearchQuery { get => _searchQuery; set { if (SetProperty(ref _searchQuery, value)) ApplyFilter(); } }
-
-    private Song? _selectedSongInternal;
-    public Song? SelectedSong
-    {
-        get => _selectedSongInternal;
-        set
-        {
-            if (SetProperty(ref _selectedSongInternal, value))
-            {
-                Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"}");
-                // Raise CanExecuteChanged for navigation commands when selection changes
-                RaiseNavigationCommandsCanExecuteChanged();
-            }
-        }
-    }
-
-    private ArtistViewModel? _selectedArtist;
-    public ArtistViewModel? SelectedArtist
-    {
-        get => _selectedArtist;
-        set
-        {
-            if (SetProperty(ref _selectedArtist, value))
-            {
-                if (value != null)
-                {
-                    OnArtistSelected(value);
-                }
-                else
-                {
-                    SearchQuery = string.Empty;
-                    ApplyFilter();
-                }
-            }
-        }
-    }
-
-    private AlbumViewModel? _selectedAlbum;
-    public AlbumViewModel? SelectedAlbum
-    {
-        get => _selectedAlbum;
-        set
-        {
-            if (SetProperty(ref _selectedAlbum, value))
-            {
-                if (value != null)
-                {
-                    OnAlbumSelected(value);
-                }
-                else
-                {
-                    SearchQuery = string.Empty;
-                    ApplyFilter();
-                }
-            }
-        }
-    }
-
-    private bool _isLoadingLibrary = false;
-    public bool IsLoadingLibrary
-    {
-        get => _isLoadingLibrary;
-        private set { if (SetProperty(ref _isLoadingLibrary, value)) RaiseLibraryCommandsCanExecuteChanged(); }
-    }
-
-    private string _libraryStatusText = "";
-    public string LibraryStatusText { get => _libraryStatusText; private set => SetProperty(ref _libraryStatusText, value); }
-
-    private SongDisplayMode _libraryViewMode;
-    public SongDisplayMode LibraryViewMode
-    {
-        get => _libraryViewMode;
-        set
-        {
-            if (SetProperty(ref _libraryViewMode, value))
-            {
-                var settings = _settingsService.LoadSettings();
-                settings.LibraryViewModePreference = value.ToString();
-                _settingsService.SaveSettings(settings);
-            }
-        }
-    }
-
-    private SongDisplayMode _artistViewMode;
-    public SongDisplayMode ArtistViewMode
-    {
-        get => _artistViewMode;
-        set
-        {
-            if (SetProperty(ref _artistViewMode, value))
-            {
-                var settings = _settingsService.LoadSettings();
-                settings.ArtistViewModePreference = value.ToString();
-                _settingsService.SaveSettings(settings);
-            }
-        }
-    }
-
-    private SongDisplayMode _albumViewMode;
-    public SongDisplayMode AlbumViewMode
-    {
-        get => _albumViewMode;
-        set
-        {
-            if (SetProperty(ref _albumViewMode, value))
-            {
-                var settings = _settingsService.LoadSettings();
-                settings.AlbumViewModePreference = value.ToString();
-                _settingsService.SaveSettings(settings);
-            }
-        }
-    }
+    public ObservableCollection<Song> FilteredSongs { get; } = [];
+    public ObservableCollection<ArtistViewModel> Artists { get; } = [];
+    public ObservableCollection<AlbumViewModel> Albums { get; } = [];
 
     public ICommand SetDisplayModeCommand { get; }
-
-    // Navigation Commands
     public ICommand PreviousTrackCommand { get; }
     public ICommand NextTrackCommand { get; }
 
+    public string SearchQuery 
+    { 
+        get; 
+
+        set
+        {
+            if (!SetProperty(ref field, value))
+            {
+                return;
+            }
+
+            ApplyFilter();
+        }
+    } = string.Empty;
+
+    public Song? SelectedSong
+    {
+        get;
+
+        set
+        {
+            if (!SetProperty(ref field, value))
+            {
+                return;
+            }
+            Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"}");
+            // Raise CanExecuteChanged for navigation commands when selection changes
+            RaiseNavigationCommandsCanExecuteChanged();
+        }
+    }
+
+    public ArtistViewModel? SelectedArtist
+    {
+        get;
+
+        set
+        {
+            if (!SetProperty(ref field, value))
+            {
+                return;
+            }
+
+            if (value != null)
+            {
+                OnArtistSelected(value);
+            }
+            else
+            {
+                SearchQuery = string.Empty;
+                ApplyFilter();
+            }
+        }
+    }
+
+    public AlbumViewModel? SelectedAlbum
+    {
+        get;
+
+        set
+        {
+            if (!SetProperty(ref field, value))
+            {
+                return;
+            }
+
+            if (value is not null)
+            {
+                OnAlbumSelected(value);
+            }
+            else
+            {
+                SearchQuery = string.Empty;
+                ApplyFilter();
+            }
+        }
+    }
+
+    public bool IsLoadingLibrary
+    {
+        get;
+
+        private set
+        {
+            if (!SetProperty(ref field, value))
+            {
+                return;
+            }
+
+            RaiseLibraryCommandsCanExecuteChanged();
+        }
+    } = false;
+
+    public string LibraryStatusText
+    {
+        get;
+
+        private set
+        {
+            SetProperty(ref field, value);
+        }
+    } = "";
+
+    public SongDisplayMode LibraryViewMode
+    {
+        get;
+
+        set
+        {
+            if (!SetProperty(ref field, value))
+            {
+                return;
+            }
+
+            AppSettings settings = _settingsService.LoadSettings();
+            settings.LibraryViewModePreference = value.ToString();
+            _settingsService.SaveSettings(settings);
+        }
+    }
+
+    public SongDisplayMode ArtistViewMode
+    {
+        get;
+        set
+        {
+            if (!SetProperty(ref field, value))
+            {
+                return;
+            }
+
+            AppSettings settings = _settingsService.LoadSettings();
+            settings.ArtistViewModePreference = value.ToString();
+            _settingsService.SaveSettings(settings);
+        }
+    }
+
+    public SongDisplayMode AlbumViewMode
+    {
+        get;
+
+        set
+        {
+            if (!SetProperty(ref field, value))
+            {
+                return;
+            }
+
+            AppSettings settings = _settingsService.LoadSettings();
+            settings.AlbumViewModePreference = value.ToString();
+            _settingsService.SaveSettings(settings);
+        }
+    }
 
     public LibraryViewModel(SettingsService settingsService, MusicLibraryService musicLibraryService, LoopDataService loopDataService)
     {
@@ -160,25 +194,35 @@ public class LibraryViewModel : ViewModelBase
         _musicLibraryService = musicLibraryService;
         _loopDataService = loopDataService;
 
-        // Load preferences
-        var appSettings = _settingsService.LoadSettings();
-        _libraryViewMode = Enum.TryParse<SongDisplayMode>(appSettings.LibraryViewModePreference, out var libMode) ? libMode : SongDisplayMode.Detailed;
-        _artistViewMode = Enum.TryParse<SongDisplayMode>(appSettings.ArtistViewModePreference, out var artMode) ? artMode : SongDisplayMode.Detailed;
-        _albumViewMode = Enum.TryParse<SongDisplayMode>(appSettings.AlbumViewModePreference, out var albMode) ? albMode : SongDisplayMode.Detailed;
+        AppSettings appSettings = _settingsService.LoadSettings();
+        
+        LibraryViewMode = Enum.TryParse<SongDisplayMode>(appSettings.LibraryViewModePreference, out var libMode) 
+            ? libMode 
+            : SongDisplayMode.Detailed;
+
+        ArtistViewMode = Enum.TryParse<SongDisplayMode>(appSettings.ArtistViewModePreference, out var artMode) 
+            ? artMode 
+            : SongDisplayMode.Detailed;
+
+        AlbumViewMode = Enum.TryParse<SongDisplayMode>(appSettings.AlbumViewModePreference, out var albMode) 
+            ? albMode
+            : SongDisplayMode.Detailed;
 
 
         SetDisplayModeCommand = new RelayCommand(
             param =>
             {
-                if (param is (string targetView, SongDisplayMode mode))
+                if (param is not (string targetView, SongDisplayMode mode))
                 {
-                    switch (targetView)
-                    {
-                        // Setters will handle saving
-                        case "Library": LibraryViewMode = mode; break;
-                        case "Artists": ArtistViewMode = mode; break;
-                        case "Albums": AlbumViewMode = mode; break;
-                    }
+                    return;
+                }
+
+                switch (targetView)
+                {
+                    // Setters will handle saving
+                    case "Library": LibraryViewMode = mode; break;
+                    case "Artists": ArtistViewMode = mode; break;
+                    case "Albums": AlbumViewMode = mode; break;
                 }
             },
             _ => true
@@ -196,9 +240,13 @@ public class LibraryViewModel : ViewModelBase
 
     private void ExecutePreviousTrack(object? parameter)
     {
-        if (SelectedSong == null || !FilteredSongs.Any()) return;
+        if (SelectedSong is null || !FilteredSongs.Any())
+        {
+            return;
+        }
 
-        var currentIndex = FilteredSongs.IndexOf(SelectedSong);
+        int currentIndex = FilteredSongs.IndexOf(SelectedSong);
+        
         if (currentIndex > 0)
         {
             SelectedSong = FilteredSongs[currentIndex - 1];
@@ -219,9 +267,12 @@ public class LibraryViewModel : ViewModelBase
 
     private void ExecuteNextTrack(object? parameter)
     {
-        if (SelectedSong == null || !FilteredSongs.Any()) return;
+        if (SelectedSong is null || !FilteredSongs.Any())
+        {
+            return;
+        }
 
-        var currentIndex = FilteredSongs.IndexOf(SelectedSong);
+        int currentIndex = FilteredSongs.IndexOf(SelectedSong);
         if (currentIndex < FilteredSongs.Count - 1 && currentIndex != -1)
         {
             SelectedSong = FilteredSongs[currentIndex + 1];
@@ -240,15 +291,22 @@ public class LibraryViewModel : ViewModelBase
 
     private bool CanExecuteNextTrack(object? parameter)
     {
-        if (SelectedSong == null || !FilteredSongs.Any()) return false;
-        var currentIndex = FilteredSongs.IndexOf(SelectedSong);
+        if (SelectedSong is null || !FilteredSongs.Any())
+        {
+            return false;
+        }
+
+        int currentIndex = FilteredSongs.IndexOf(SelectedSong);
+
         return currentIndex != -1 && currentIndex < FilteredSongs.Count - 1;
     }
 
-
     public async Task LoadLibraryAsync()
     {
-        if (IsLoadingLibrary) return;
+        if (IsLoadingLibrary)
+        {
+            return;
+        }
 
         IsLoadingLibrary = true;
         SearchQuery = string.Empty;
@@ -262,8 +320,9 @@ public class LibraryViewModel : ViewModelBase
             LibraryStatusText = "Preparing to load music...";
         });
 
-        var settings = _settingsService.LoadSettings();
-        if (!settings.MusicDirectories.Any())
+        AppSettings settings = _settingsService.LoadSettings();
+        
+        if (settings.MusicDirectories.Count == 0)
         {
             await Dispatcher.UIThread.InvokeAsync(() => {
                 LibraryStatusText = "No music directories configured.";
@@ -289,7 +348,7 @@ public class LibraryViewModel : ViewModelBase
                         .OrderBy(a => a, StringComparer.OrdinalIgnoreCase)
                         .ToList();
                     Bitmap? defaultSongThumbnail = _musicLibraryService.GetDefaultThumbnail();
-                    foreach (var artistName in uniqueArtistNames)
+                    foreach (string? artistName in uniqueArtistNames)
                     {
                         Bitmap? repThumb = _allSongs.FirstOrDefault(s => (s.Artist?.Equals(artistName, StringComparison.OrdinalIgnoreCase) ?? false) && s.Thumbnail != null)?.Thumbnail ?? defaultSongThumbnail;
                         Artists.Add(new ArtistViewModel { Name = artistName, Thumbnail = repThumb });
@@ -312,14 +371,14 @@ public class LibraryViewModel : ViewModelBase
 
                     foreach (var albumData in uniqueAlbumsData)
                     {
-                        var albumVM = new AlbumViewModel
+                        AlbumViewModel albumVM = new()
                         {
                             Title = albumData.AlbumTitle,
                             Artist = albumData.ArtistName
                         };
 
-                        var songThumbnailsForGrid = new List<Bitmap?>(new Bitmap?[4]);
-                        var distinctSongThumbs = albumData.SongsInAlbum
+                        List<Bitmap?> songThumbnailsForGrid = new(new Bitmap?[4]);
+                        List<Bitmap?> distinctSongThumbs = albumData.SongsInAlbum
                                                      .Select(s => s.Thumbnail ?? defaultSongThumbnail)
                                                      .Distinct()
                                                      .Take(4)
@@ -329,6 +388,7 @@ public class LibraryViewModel : ViewModelBase
                         {
                             songThumbnailsForGrid[i] = distinctSongThumbs[i];
                         }
+
                         albumVM.SongThumbnailsForGrid = songThumbnailsForGrid;
 
                         albumVM.RepresentativeThumbnail = songThumbnailsForGrid[0] ?? defaultSongThumbnail;
@@ -353,7 +413,11 @@ public class LibraryViewModel : ViewModelBase
 
     private void OnArtistSelected(ArtistViewModel artist)
     {
-        if (artist?.Name == null) return;
+        if (artist?.Name == null)
+        {
+            return;
+        }
+
         Debug.WriteLine($"[LibraryVM] Artist selected: {artist.Name}");
         SearchQuery = artist.Name;
         // ApplyFilter will be called by SearchQuery setter, which updates FilteredSongs
@@ -361,24 +425,31 @@ public class LibraryViewModel : ViewModelBase
 
     private void OnAlbumSelected(AlbumViewModel album)
     {
-        if (album?.Title == null || album.Artist == null) return;
+        if (album?.Title == null || album.Artist == null)
+        {
+            return;
+        }
+
         Debug.WriteLine($"[LibraryVM] Album selected: {album.Title} by {album.Artist}");
         SearchQuery = string.Empty; // Clear search query when selecting album
 
         FilteredSongs.Clear();
-        var songsInAlbum = _allSongs.Where(s =>
+        
+        IOrderedEnumerable<Song> songsInAlbum = _allSongs.Where(s =>
             s.Album.Equals(album.Title, StringComparison.OrdinalIgnoreCase) &&
             s.Artist.Equals(album.Artist, StringComparison.OrdinalIgnoreCase))
             .OrderBy(s => s.Title, StringComparer.OrdinalIgnoreCase);
 
-        foreach (var song in songsInAlbum)
+        foreach (Song? song in songsInAlbum)
         {
             FilteredSongs.Add(song);
         }
+
         if (SelectedSong != null && !FilteredSongs.Contains(SelectedSong))
         {
             SelectedSong = null; // Clear selection if the previously selected song is not in this album
         }
+
         UpdateStatusBarText();
         RaiseNavigationCommandsCanExecuteChanged(); // FilteredSongs changed
     }
@@ -386,15 +457,16 @@ public class LibraryViewModel : ViewModelBase
     private void ApplyFilter()
     {
         FilteredSongs.Clear();
-        var songsToFilter = _allSongs.AsEnumerable();
+        IEnumerable<Song> songsToFilter = _allSongs.AsEnumerable();
 
         if (!string.IsNullOrWhiteSpace(SearchQuery))
         {
-            var query = SearchQuery.ToLowerInvariant().Trim();
+            string query = SearchQuery.ToLowerInvariant().Trim();
+            
             songsToFilter = songsToFilter.Where(s =>
-                (s.Title?.ToLowerInvariant().Contains(query) ?? false) ||
-                (s.Artist?.ToLowerInvariant().Contains(query) ?? false) ||
-                (s.Album?.ToLowerInvariant().Contains(query) ?? false));
+                (s.Title?.ToLowerInvariant().Contains(query, StringComparison.InvariantCultureIgnoreCase) ?? false) ||
+                (s.Artist?.ToLowerInvariant().Contains(query, StringComparison.InvariantCultureIgnoreCase) ?? false) ||
+                (s.Album?.ToLowerInvariant().Contains(query, StringComparison.InvariantCultureIgnoreCase) ?? false));
         }
 
         songsToFilter = songsToFilter.OrderBy(s => s.Title, StringComparer.OrdinalIgnoreCase);
@@ -426,12 +498,17 @@ public class LibraryViewModel : ViewModelBase
 
     public void UpdateStatusBarText()
     {
-        if (IsLoadingLibrary) return;
+        if (IsLoadingLibrary)
+        {
+            return;
+        }
 
         string status;
+
         if (_allSongs.Count == 0)
         {
-            var settings = _settingsService.LoadSettings();
+            AppSettings settings = _settingsService.LoadSettings();
+
             if (!settings.MusicDirectories.Any())
             {
                 status = "Library empty. Add directories via File menu.";
@@ -449,6 +526,7 @@ public class LibraryViewModel : ViewModelBase
         {
             status = $"{_allSongs.Count} songs in library.";
         }
+
         LibraryStatusText = status;
     }
 
