@@ -27,6 +27,9 @@ public class MusicLibraryService
     private readonly SemaphoreSlim _thumbnailWorkers = new(4); // Limit concurrent thumbnail loads
     private bool _isThumbnailProcessingRunning = false;
 
+    public event Action<Song>? SongThumbnailUpdated;
+
+
     public MusicLibraryService(LoopDataService loopDataService)
     {
         _loopDataService = loopDataService;
@@ -219,7 +222,11 @@ public class MusicLibraryService
                         var actualThumbnail = await LoadAlbumArtAsync(song.FilePath);
                         if (actualThumbnail != null)
                         {
-                            await Dispatcher.UIThread.InvokeAsync(() => song.Thumbnail = actualThumbnail);
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                song.Thumbnail = actualThumbnail;
+                                SongThumbnailUpdated?.Invoke(song); // Invoke event after thumbnail is set
+                            });
                         }
                     }
                     catch (Exception ex)

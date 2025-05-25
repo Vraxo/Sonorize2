@@ -213,6 +213,9 @@ public class LibraryViewModel : ViewModelBase
         _musicLibraryService = musicLibraryService;
         _loopDataService = loopDataService;
 
+        _musicLibraryService.SongThumbnailUpdated += MusicLibraryService_SongThumbnailUpdated;
+
+
         AppSettings appSettings = _settingsService.LoadSettings();
 
         LibraryViewMode = Enum.TryParse<SongDisplayMode>(appSettings.LibraryViewModePreference, out var libMode)
@@ -256,6 +259,56 @@ public class LibraryViewModel : ViewModelBase
 
         UpdateStatusBarText();
     }
+
+    private async void MusicLibraryService_SongThumbnailUpdated(Song updatedSong)
+    {
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            // Update ArtistViewModel
+            var artistVM = Artists.FirstOrDefault(a => a.Name == updatedSong.Artist);
+            if (artistVM != null && artistVM.Thumbnail != updatedSong.Thumbnail) // Check if update is needed
+            {
+                // If this song is the representative for the artist, update the artist's thumbnail
+                // This simple logic assumes the first song encountered (or its thumbnail) for an artist is representative.
+                // A more robust approach might re-evaluate based on all songs by that artist.
+                // For now, if the updatedSong's thumbnail is what we'd pick, update.
+                var firstSongOfArtistWithThumbnail = _allSongs.FirstOrDefault(s =>
+                    (s.Artist?.Equals(artistVM.Name, StringComparison.OrdinalIgnoreCase) ?? false) && s.Thumbnail != _musicLibraryService.GetDefaultThumbnail());
+
+                if (firstSongOfArtistWithThumbnail == updatedSong || (firstSongOfArtistWithThumbnail == null && updatedSong.Thumbnail != _musicLibraryService.GetDefaultThumbnail()))
+                {
+                    artistVM.Thumbnail = updatedSong.Thumbnail;
+                }
+            }
+
+            // Update AlbumViewModel
+            var albumVM = Albums.FirstOrDefault(al => al.Title == updatedSong.Album && al.Artist == updatedSong.Artist);
+            if (albumVM != null)
+            {
+                // Re-calculate SongThumbnailsForGrid and RepresentativeThumbnail for this album
+                var songsInAlbum = _allSongs.Where(s => (s.Album?.Equals(albumVM.Title, StringComparison.OrdinalIgnoreCase) ?? false) &&
+                                                        (s.Artist?.Equals(albumVM.Artist, StringComparison.OrdinalIgnoreCase) ?? false))
+                                             .ToList();
+
+                Bitmap? defaultSongThumbnail = _musicLibraryService.GetDefaultThumbnail();
+                List<Bitmap?> newSongThumbnailsForGrid = new List<Bitmap?>(new Bitmap?[4]);
+                List<Bitmap?> distinctSongThumbs = songsInAlbum
+                                                     .Select(s => s.Thumbnail ?? defaultSongThumbnail) // Use current thumbnails
+                                                     .Distinct()
+                                                     .Take(4)
+                                                     .ToList();
+
+                for (int i = 0; i < distinctSongThumbs.Count; i++)
+                {
+                    newSongThumbnailsForGrid[i] = distinctSongThumbs[i];
+                }
+
+                albumVM.SongThumbnailsForGrid = newSongThumbnailsForGrid; // This will trigger INPC on AlbumViewModel
+                albumVM.RepresentativeThumbnail = newSongThumbnailsForGrid.FirstOrDefault(t => t != null) ?? defaultSongThumbnail; // This also triggers INPC
+            }
+        });
+    }
+
 
     private void ExecutePreviousTrack(object? parameter)
     {
@@ -371,7 +424,11 @@ public class LibraryViewModel : ViewModelBase
                     Bitmap? defaultSongThumbnail = _musicLibraryService.GetDefaultThumbnail();
                     foreach (string? artistName in uniqueArtistNames)
                     {
-                        Bitmap? repThumb = _allSongs.FirstOrDefault(s => (s.Artist?.Equals(artistName, StringComparison.OrdinalIgnoreCase) ?? false) && s.Thumbnail != null)?.Thumbnail ?? defaultSongThumbnail;
+                        // Initial representative thumbnail for artist (might be default)
+                        Bitmap? repThumb = _allSongs.FirstOrDefault(s =>
+                                               (s.Artist?.Equals(artistName, StringComparison.OrdinalIgnoreCase) ?? false) &&
+                                               s.Thumbnail != null && s.Thumbnail != defaultSongThumbnail)?.Thumbnail
+                                           ?? defaultSongThumbnail;
                         Artists.Add(new ArtistViewModel { Name = artistName, Thumbnail = repThumb });
                     }
                     OnPropertyChanged(nameof(Artists));
@@ -398,6 +455,7 @@ public class LibraryViewModel : ViewModelBase
                             Artist = albumData.ArtistName
                         };
 
+                        // Initial thumbnails for album grid (might be default)
                         List<Bitmap?> songThumbnailsForGrid = new(new Bitmap?[4]);
                         List<Bitmap?> distinctSongThumbs = albumData.SongsInAlbum
                                                      .Select(s => s.Thumbnail ?? defaultSongThumbnail)
@@ -411,8 +469,7 @@ public class LibraryViewModel : ViewModelBase
                         }
 
                         albumVM.SongThumbnailsForGrid = songThumbnailsForGrid;
-
-                        albumVM.RepresentativeThumbnail = songThumbnailsForGrid[0] ?? defaultSongThumbnail;
+                        albumVM.RepresentativeThumbnail = songThumbnailsForGrid.FirstOrDefault(t => t != null) ?? defaultSongThumbnail;
 
                         Albums.Add(albumVM);
                     }
@@ -563,5 +620,15 @@ public class LibraryViewModel : ViewModelBase
         //Debug.WriteLine("[LibraryVM] Raising navigation command CanExecute changed.");
         (PreviousTrackCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (NextTrackCommand as RelayCommand)?.RaiseCanExecuteChanged();
+    }
+
+    // It's good practice to unsubscribe from events when the ViewModel is no longer needed,
+    // though for a main library view model, this might coincide with application shutdown.
+    public void Dispose()
+    {
+        if (_musicLibraryService != null)
+        {
+            _musicLibraryService.SongThumbnailUpdated -= MusicLibraryService_SongThumbnailUpdated;
+        }
     }
 }
