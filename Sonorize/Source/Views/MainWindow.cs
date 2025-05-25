@@ -5,7 +5,7 @@ using Avalonia.Controls.Templates;
 using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
-// Removed: using Avalonia.Media.Imaging;
+// Removed: using Avalonia.Media.Imaging; 
 // Removed: using Avalonia.Styling;
 // Removed: using Sonorize.Controls;
 // Removed: using Sonorize.Converters;
@@ -92,7 +92,6 @@ public class MainWindow : Window
         if (_currentLibraryVM != null)
         {
             _currentLibraryVM.PropertyChanged -= LibraryViewModel_PropertyChanged;
-            // Removed: _currentLibraryVM.RequestViewModeRefresh -= LibraryViewModel_RequestViewModeRefresh; // Unsubscribe old handler
             _currentLibraryVM = null;
         }
 
@@ -100,11 +99,8 @@ public class MainWindow : Window
         {
             _currentLibraryVM = vm.Library;
             _currentLibraryVM.PropertyChanged += LibraryViewModel_PropertyChanged;
-            // Removed: _currentLibraryVM.RequestViewModeRefresh += LibraryViewModel_RequestViewModeRefresh; // Subscribe new handler
 
-            // Apply initial display modes for each list immediately when DataContext is set
-            // This ensures the correct template is assigned even before loading starts.
-            // The UI should update automatically as data arrives and thumbnails load via bindings.
+            // Apply initial display modes for each list
             ApplyListViewDisplayMode(_songListBox, _currentLibraryVM.LibraryViewMode, _sharedViewTemplates.DetailedSongTemplate, _sharedViewTemplates.CompactSongTemplate, _sharedViewTemplates.GridSongTemplate);
             ApplyListViewDisplayMode(_artistsListBox, _currentLibraryVM.ArtistViewMode, _sharedViewTemplates.DetailedArtistTemplate, _sharedViewTemplates.CompactArtistTemplate, _sharedViewTemplates.GridArtistTemplate);
             ApplyListViewDisplayMode(_albumsListBox, _currentLibraryVM.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate);
@@ -113,33 +109,22 @@ public class MainWindow : Window
 
     private void LibraryViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        // This handler is primarily for changes initiated *by* the user selecting a view mode,
-        // which triggers the setter in the ViewModel, which then saves settings and raises RequestViewModeRefresh.
-        // The RequestViewModeRefresh handler below will actually update the list box template/panel.
-        // Keeping this method allows for future specific handling of other property changes if needed.
-        // Debug.WriteLine($"[MainWindow] LibraryViewModel_PropertyChanged: {e.PropertyName}");
-
-        // With RequestViewModeRefresh removed, this handler might become less crucial unless we
-        // need to react to other specific LibraryViewModel property changes here.
-        // The view mode properties raising PropertyChanged in the ViewModel are enough for bindings,
-        // and the template is applied in DataContextChanged.
+        if (sender is LibraryViewModel lvm)
+        {
+            if (e.PropertyName == nameof(LibraryViewModel.LibraryViewMode))
+            {
+                Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_songListBox, lvm.LibraryViewMode, _sharedViewTemplates.DetailedSongTemplate, _sharedViewTemplates.CompactSongTemplate, _sharedViewTemplates.GridSongTemplate));
+            }
+            else if (e.PropertyName == nameof(LibraryViewModel.ArtistViewMode))
+            {
+                Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_artistsListBox, lvm.ArtistViewMode, _sharedViewTemplates.DetailedArtistTemplate, _sharedViewTemplates.CompactArtistTemplate, _sharedViewTemplates.GridArtistTemplate));
+            }
+            else if (e.PropertyName == nameof(LibraryViewModel.AlbumViewMode))
+            {
+                Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_albumsListBox, lvm.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate));
+            }
+        }
     }
-
-    // Removed: New handler for the RequestViewModeRefresh event
-    // Removed: private void LibraryViewModel_RequestViewModeRefresh(object? sender, EventArgs e)
-    // Removed: {
-    // Removed:     // This handler runs on the UI thread because the event is raised on the UI thread.
-    // Removed:     if (sender is LibraryViewModel lvm)
-    // Removed:     {
-    // Removed:         Debug.WriteLine($"[MainWindow] Received RequestViewModeRefresh event from LibraryVM. Re-applying current view modes.");
-    // Removed:         // Re-apply the current view mode for the ListBox whose mode might have changed
-    // Removed:         // or for the ListBox that needs a refresh (e.g., Library tab after initial load).
-    // Removed:         ApplyListViewDisplayMode(_songListBox, lvm.LibraryViewMode, _sharedViewTemplates.DetailedSongTemplate, _sharedViewTemplates.CompactSongTemplate, _sharedViewTemplates.GridSongTemplate);
-    // Removed:         ApplyListViewDisplayMode(_artistsListBox, lvm.ArtistViewMode, _sharedViewTemplates.DetailedArtistTemplate, _sharedViewTemplates.CompactArtistTemplate, _sharedViewTemplates.GridArtistTemplate);
-    // Removed:         ApplyListViewDisplayMode(_albumsListBox, lvm.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate);
-    // Removed:     }
-    // Removed: }
-
 
     // Renamed for clarity
     private void ApplyListViewDisplayMode(ListBox listBox, SongDisplayMode mode, IDataTemplate detailedTemplate, IDataTemplate compactTemplate, IDataTemplate gridTemplate)
@@ -166,7 +151,6 @@ public class MainWindow : Window
         if (_currentLibraryVM != null)
         {
             _currentLibraryVM.PropertyChanged -= LibraryViewModel_PropertyChanged;
-            // Removed: _currentLibraryVM.RequestViewModeRefresh -= LibraryViewModel_RequestViewModeRefresh; // Unsubscribe
         }
         base.OnClosed(e);
     }
