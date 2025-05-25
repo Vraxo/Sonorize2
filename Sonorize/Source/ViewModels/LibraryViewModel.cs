@@ -1,26 +1,14 @@
-﻿using Avalonia.Threading;
-using Sonorize.Models;
-using Sonorize.Services;
-using Sonorize.ViewModels;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Diagnostics;
-using System.Threading.Tasks;
-using System.Windows.Input;
-using System;
-
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
-using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Sonorize.Models;
 using Sonorize.Services;
-using Sonorize.Utils;
+using Sonorize.ViewModels.LibraryManagement; // Added for ArtistAlbumCollectionManager
 
 namespace Sonorize.ViewModels;
 
@@ -36,7 +24,8 @@ public class LibraryViewModel : ViewModelBase
     private readonly SettingsService _settingsService;
     private readonly MusicLibraryService _musicLibraryService;
     private readonly LoopDataService _loopDataService;
-    private readonly MainWindowViewModel _parentViewModel; // Reference to parent VM
+    private readonly MainWindowViewModel _parentViewModel;
+    private readonly ArtistAlbumCollectionManager _artistAlbumManager; // Added manager
 
     private readonly ObservableCollection<Song> _allSongs = [];
 
@@ -74,7 +63,6 @@ public class LibraryViewModel : ViewModelBase
                 return;
             }
             Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"}");
-            // Raise CanExecuteChanged for navigation commands when selection changes
             RaiseNavigationCommandsCanExecuteChanged();
         }
     }
@@ -94,16 +82,6 @@ public class LibraryViewModel : ViewModelBase
             {
                 OnArtistSelected(value);
             }
-            else
-            {
-                // If SelectedArtist is cleared (e.g. by selecting an album),
-                // and if SearchQuery was previously set to this artist's name,
-                // we might want to clear SearchQuery or let ApplyFilter run with the old query.
-                // Current behavior: SearchQuery remains, ApplyFilter runs if it changed.
-                // If SelectedAlbum is set, it will take precedence in terms of display.
-                // For now, do not automatically clear SearchQuery here.
-                // ApplyFilter(); // Only if SearchQuery didn't change but context did.
-            }
         }
     }
 
@@ -121,11 +99,6 @@ public class LibraryViewModel : ViewModelBase
             if (value is not null)
             {
                 OnAlbumSelected(value);
-            }
-            else
-            {
-                // Similar to SelectedArtist, if SelectedAlbum is cleared.
-                // ApplyFilter();
             }
         }
     }
@@ -205,7 +178,6 @@ public class LibraryViewModel : ViewModelBase
         }
     }
 
-    // Added parentViewModel dependency
     public LibraryViewModel(MainWindowViewModel parentViewModel, SettingsService settingsService, MusicLibraryService musicLibraryService, LoopDataService loopDataService)
     {
         _parentViewModel = parentViewModel ?? throw new ArgumentNullException(nameof(parentViewModel));
@@ -213,8 +185,10 @@ public class LibraryViewModel : ViewModelBase
         _musicLibraryService = musicLibraryService;
         _loopDataService = loopDataService;
 
-        _musicLibraryService.SongThumbnailUpdated += MusicLibraryService_SongThumbnailUpdated;
+        // Initialize the manager
+        _artistAlbumManager = new ArtistAlbumCollectionManager(Artists, Albums, _musicLibraryService);
 
+        _musicLibraryService.SongThumbnailUpdated += MusicLibraryService_SongThumbnailUpdated;
 
         AppSettings appSettings = _settingsService.LoadSettings();
 
@@ -241,7 +215,6 @@ public class LibraryViewModel : ViewModelBase
 
                 switch (targetView)
                 {
-                    // Setters will handle saving
                     case "Library": LibraryViewMode = mode; break;
                     case "Artists": ArtistViewMode = mode; break;
                     case "Albums": AlbumViewMode = mode; break;
@@ -250,11 +223,9 @@ public class LibraryViewModel : ViewModelBase
             _ => true
         );
 
-        // Initialize Navigation Commands
         PreviousTrackCommand = new RelayCommand(ExecutePreviousTrack, CanExecutePreviousTrack);
         NextTrackCommand = new RelayCommand(ExecuteNextTrack, CanExecuteNextTrack);
 
-        // Subscribe to FilteredSongs changes to update navigation command states
         FilteredSongs.CollectionChanged += (sender, e) => RaiseNavigationCommandsCanExecuteChanged();
 
         UpdateStatusBarText();
@@ -264,48 +235,10 @@ public class LibraryViewModel : ViewModelBase
     {
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            // Update ArtistViewModel
-            var artistVM = Artists.FirstOrDefault(a => a.Name == updatedSong.Artist);
-            if (artistVM != null && artistVM.Thumbnail != updatedSong.Thumbnail) // Check if update is needed
-            {
-                // If this song is the representative for the artist, update the artist's thumbnail
-                // This simple logic assumes the first song encountered (or its thumbnail) for an artist is representative.
-                // A more robust approach might re-evaluate based on all songs by that artist.
-                // For now, if the updatedSong's thumbnail is what we'd pick, update.
-                var firstSongOfArtistWithThumbnail = _allSongs.FirstOrDefault(s =>
-                    (s.Artist?.Equals(artistVM.Name, StringComparison.OrdinalIgnoreCase) ?? false) && s.Thumbnail != _musicLibraryService.GetDefaultThumbnail());
-
-                if (firstSongOfArtistWithThumbnail == updatedSong || (firstSongOfArtistWithThumbnail == null && updatedSong.Thumbnail != _musicLibraryService.GetDefaultThumbnail()))
-                {
-                    artistVM.Thumbnail = updatedSong.Thumbnail;
-                }
-            }
-
-            // Update AlbumViewModel
-            var albumVM = Albums.FirstOrDefault(al => al.Title == updatedSong.Album && al.Artist == updatedSong.Artist);
-            if (albumVM != null)
-            {
-                // Re-calculate SongThumbnailsForGrid and RepresentativeThumbnail for this album
-                var songsInAlbum = _allSongs.Where(s => (s.Album?.Equals(albumVM.Title, StringComparison.OrdinalIgnoreCase) ?? false) &&
-                                                        (s.Artist?.Equals(albumVM.Artist, StringComparison.OrdinalIgnoreCase) ?? false))
-                                             .ToList();
-
-                Bitmap? defaultSongThumbnail = _musicLibraryService.GetDefaultThumbnail();
-                List<Bitmap?> newSongThumbnailsForGrid = new List<Bitmap?>(new Bitmap?[4]);
-                List<Bitmap?> distinctSongThumbs = songsInAlbum
-                                                     .Select(s => s.Thumbnail ?? defaultSongThumbnail) // Use current thumbnails
-                                                     .Distinct()
-                                                     .Take(4)
-                                                     .ToList();
-
-                for (int i = 0; i < distinctSongThumbs.Count; i++)
-                {
-                    newSongThumbnailsForGrid[i] = distinctSongThumbs[i];
-                }
-
-                albumVM.SongThumbnailsForGrid = newSongThumbnailsForGrid; // This will trigger INPC on AlbumViewModel
-                albumVM.RepresentativeThumbnail = newSongThumbnailsForGrid.FirstOrDefault(t => t != null) ?? defaultSongThumbnail; // This also triggers INPC
-            }
+            _artistAlbumManager.UpdateCollectionsForSongThumbnail(updatedSong, _allSongs);
+            // Notify that Artists and Albums might have changed (though manager handles internal property changes)
+            OnPropertyChanged(nameof(Artists));
+            OnPropertyChanged(nameof(Albums));
         });
     }
 
@@ -327,7 +260,6 @@ public class LibraryViewModel : ViewModelBase
         else
         {
             Debug.WriteLine("[LibraryVM] Already at the first track.");
-            // Optionally loop to the last track: SelectedSong = FilteredSongs.Last();
         }
     }
 
@@ -350,12 +282,11 @@ public class LibraryViewModel : ViewModelBase
             SelectedSong = FilteredSongs[currentIndex + 1];
             Debug.WriteLine($"[LibraryVM] Moved to next track: {SelectedSong.Title}");
         }
-        else if (currentIndex != -1) // Already at the last track
+        else if (currentIndex != -1)
         {
             Debug.WriteLine("[LibraryVM] Already at the last track.");
-            // Optionally loop to the first track: SelectedSong = FilteredSongs.First();
         }
-        else // Selected song not found in filtered list - should not happen if SelectedSong is non-null and FilteredSongs contains it
+        else
         {
             Debug.WriteLine("[LibraryVM] Selected song not found in filtered list.");
         }
@@ -381,14 +312,16 @@ public class LibraryViewModel : ViewModelBase
         }
 
         IsLoadingLibrary = true;
-        SearchQuery = string.Empty; // Clear search on full reload
-        SelectedArtist = null; // Clear artist selection
-        SelectedAlbum = null;  // Clear album selection
+        SearchQuery = string.Empty;
+        SelectedArtist = null;
+        SelectedAlbum = null;
 
         await Dispatcher.UIThread.InvokeAsync(() => {
             SelectedSong = null;
-            Artists.Clear();
-            Albums.Clear();
+            // Clearing is now handled by ArtistAlbumManager internally if needed,
+            // or here if we want to ensure they are visually cleared before population starts.
+            // Artists.Clear(); 
+            // Albums.Clear();
             FilteredSongs.Clear();
             _allSongs.Clear();
             LibraryStatusText = "Preparing to load music...";
@@ -414,69 +347,12 @@ public class LibraryViewModel : ViewModelBase
                 });
 
                 await Dispatcher.UIThread.InvokeAsync(() => {
-                    Artists.Clear();
-                    var uniqueArtistNames = _allSongs
-                        .Where(s => !string.IsNullOrWhiteSpace(s.Artist))
-                        .Select(s => s.Artist!)
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .OrderBy(a => a, StringComparer.OrdinalIgnoreCase)
-                        .ToList();
-                    Bitmap? defaultSongThumbnail = _musicLibraryService.GetDefaultThumbnail();
-                    foreach (string? artistName in uniqueArtistNames)
-                    {
-                        // Initial representative thumbnail for artist (might be default)
-                        Bitmap? repThumb = _allSongs.FirstOrDefault(s =>
-                                               (s.Artist?.Equals(artistName, StringComparison.OrdinalIgnoreCase) ?? false) &&
-                                               s.Thumbnail != null && s.Thumbnail != defaultSongThumbnail)?.Thumbnail
-                                           ?? defaultSongThumbnail;
-                        Artists.Add(new ArtistViewModel { Name = artistName, Thumbnail = repThumb });
-                    }
-                    OnPropertyChanged(nameof(Artists));
+                    // Delegate population to the manager
+                    _artistAlbumManager.PopulateCollections(_allSongs);
+                    OnPropertyChanged(nameof(Artists)); // Notify UI that Artists collection has been repopulated
+                    OnPropertyChanged(nameof(Albums));  // Notify UI that Albums collection has been repopulated
 
-                    Albums.Clear();
-                    Func<Song, (string Album, string Artist)> keySelector = s => (s.Album?.Trim() ?? string.Empty, s.Artist?.Trim() ?? string.Empty);
-                    var uniqueAlbumsData = _allSongs
-                        .Where(s => !string.IsNullOrWhiteSpace(s.Album) && !string.IsNullOrWhiteSpace(s.Artist))
-                        .GroupBy(keySelector, AlbumArtistTupleComparer.Instance)
-                        .Select(g => new
-                        {
-                            AlbumTitle = g.Key.Item1,
-                            ArtistName = g.Key.Item2,
-                            SongsInAlbum = g.ToList()
-                        })
-                        .OrderBy(a => a.ArtistName, StringComparer.OrdinalIgnoreCase).ThenBy(a => a.AlbumTitle, StringComparer.OrdinalIgnoreCase)
-                        .ToList();
-
-                    foreach (var albumData in uniqueAlbumsData)
-                    {
-                        AlbumViewModel albumVM = new()
-                        {
-                            Title = albumData.AlbumTitle,
-                            Artist = albumData.ArtistName
-                        };
-
-                        // Initial thumbnails for album grid (might be default)
-                        List<Bitmap?> songThumbnailsForGrid = new(new Bitmap?[4]);
-                        List<Bitmap?> distinctSongThumbs = albumData.SongsInAlbum
-                                                     .Select(s => s.Thumbnail ?? defaultSongThumbnail)
-                                                     .Distinct()
-                                                     .Take(4)
-                                                     .ToList();
-
-                        for (int i = 0; i < distinctSongThumbs.Count; i++)
-                        {
-                            songThumbnailsForGrid[i] = distinctSongThumbs[i];
-                        }
-
-                        albumVM.SongThumbnailsForGrid = songThumbnailsForGrid;
-                        albumVM.RepresentativeThumbnail = songThumbnailsForGrid.FirstOrDefault(t => t != null) ?? defaultSongThumbnail;
-
-                        Albums.Add(albumVM);
-                    }
-                    OnPropertyChanged(nameof(Albums));
-
-                    ApplyFilter(); // This will populate FilteredSongs and trigger RaiseNavigationCommandsCanExecuteChanged
-
+                    ApplyFilter();
                     UpdateStatusBarText();
                 });
             }
@@ -497,13 +373,8 @@ public class LibraryViewModel : ViewModelBase
         }
 
         Debug.WriteLine($"[LibraryVM] Artist selected: {artist.Name}");
-        // Clear Album selection when Artist is selected
         SelectedAlbum = null;
-
-        // Set SearchQuery. This will call ApplyFilter.
         SearchQuery = artist.Name;
-
-        // Switch back to the Library tab (index 0)
         _parentViewModel.ActiveTabIndex = 0;
     }
 
@@ -515,15 +386,8 @@ public class LibraryViewModel : ViewModelBase
         }
 
         Debug.WriteLine($"[LibraryVM] Album selected: {album.Title} by {album.Artist}");
-        // Clear Artist selection when Album is selected
         SelectedArtist = null;
-
-        // Set SearchQuery to the album's title.
-        // This will populate the search bar and trigger ApplyFilter,
-        // which filters songs based on this query and updates UI states.
         SearchQuery = album.Title;
-
-        // Switch back to the Library tab (index 0)
         _parentViewModel.ActiveTabIndex = 0;
     }
 
@@ -567,7 +431,6 @@ public class LibraryViewModel : ViewModelBase
     {
         if (IsLoadingLibrary)
         {
-            // LibraryStatusText is already being updated during loading by LoadMusicFromDirectoriesAsync callback
             return;
         }
 
@@ -586,8 +449,6 @@ public class LibraryViewModel : ViewModelBase
                 status = "No songs found in configured directories.";
             }
         }
-        // Check if a specific artist or album view is active implicitly by checking SelectedArtist/Album
-        // AND if SearchQuery matches their name/title (which OnArtistSelected/OnAlbumSelected ensures).
         else if (SelectedArtist != null && SearchQuery == SelectedArtist.Name)
         {
             status = $"Showing songs by {SelectedArtist.Name}: {FilteredSongs.Count} of {_allSongs.Count} total songs.";
@@ -596,11 +457,11 @@ public class LibraryViewModel : ViewModelBase
         {
             status = $"Showing songs from {SelectedAlbum.Title} by {SelectedAlbum.Artist}: {FilteredSongs.Count} of {_allSongs.Count} total songs.";
         }
-        else if (!string.IsNullOrWhiteSpace(SearchQuery)) // General search query active
+        else if (!string.IsNullOrWhiteSpace(SearchQuery))
         {
             status = $"{FilteredSongs.Count} of {_allSongs.Count} songs matching search.";
         }
-        else // No specific view, no search query - showing all songs
+        else
         {
             status = $"{_allSongs.Count} songs in library.";
         }
@@ -612,18 +473,14 @@ public class LibraryViewModel : ViewModelBase
     public void RaiseLibraryCommandsCanExecuteChanged()
     {
         (SetDisplayModeCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        // Navigation commands are handled by RaiseNavigationCommandsCanExecuteChanged
     }
 
     public void RaiseNavigationCommandsCanExecuteChanged()
     {
-        //Debug.WriteLine("[LibraryVM] Raising navigation command CanExecute changed.");
         (PreviousTrackCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (NextTrackCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
-    // It's good practice to unsubscribe from events when the ViewModel is no longer needed,
-    // though for a main library view model, this might coincide with application shutdown.
     public void Dispose()
     {
         if (_musicLibraryService != null)
