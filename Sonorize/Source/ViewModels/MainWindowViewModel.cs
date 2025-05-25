@@ -34,12 +34,16 @@ public class MainWindowViewModel : ViewModelBase
     public LibraryViewModel Library { get; set; }
     public LoopEditorViewModel LoopEditor { get; }
     public PlaybackViewModel Playback { get; } // Playback ViewModel
-    public string StatusBarText { get; set => SetProperty(ref field, value); } = "Welcome to Sonorize!";
+    public string StatusBarText { get => field; set => SetProperty(ref field, value); } = "Welcome to Sonorize!";
+
+    // Property to control the selected tab index in the main TabControl
+    public int ActiveTabIndex { get => field; set => SetProperty(ref field, value); } = 0; // Default to Library tab (index 0)
+
 
     // IsLoadingLibrary is a proxy to Library's state
     public bool IsLoadingLibrary { get => Library.IsLoadingLibrary; }
 
-    public bool IsAdvancedPanelVisible { get; set { if (SetProperty(ref field, value)) OnAdvancedPanelVisibleChanged(); } }
+    public bool IsAdvancedPanelVisible { get => field; set { if (SetProperty(ref field, value)) OnAdvancedPanelVisibleChanged(); } }
 
     // Top-level commands
     public ICommand LoadInitialDataCommand { get; }
@@ -66,7 +70,8 @@ public class MainWindowViewModel : ViewModelBase
         _loopDataService = loopDataService;
 
         // Initialize child ViewModels, passing required dependencies
-        Library = new LibraryViewModel(_settingsService, _musicLibraryService, _loopDataService);
+        // Pass 'this' to LibraryViewModel
+        Library = new LibraryViewModel(this, _settingsService, _musicLibraryService, _loopDataService);
         Playback = new PlaybackViewModel(PlaybackService, _waveformService); // Pass PlaybackService and WaveformService
         LoopEditor = new LoopEditorViewModel(PlaybackService, _loopDataService); // Pass PlaybackService and LoopDataService
 
@@ -106,7 +111,7 @@ public class MainWindowViewModel : ViewModelBase
         {
             Debug.WriteLine("[MainVM] Playback ended naturally, but no song selected or library list is empty. Stopping playback.");
             PlaybackService.Stop(); // Ensure state is stopped if no song is loaded
-            return;
+            return; // Handled
         }
 
         // --- Logic for determining the next action based on RepeatMode and ShuffleEnabled ---
@@ -384,6 +389,8 @@ public class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(Playback.CurrentSong)); // Ensure Playback's CurrentSong is reflected
         OnPropertyChanged(nameof(Playback.HasCurrentSong)); // Ensure Playback's HasCurrentSong is reflected
         OnPropertyChanged(nameof(IsAdvancedPanelVisible)); // Ensure panel visibility is reflected
+        OnPropertyChanged(nameof(ActiveTabIndex)); // Ensure tab index is reflected
+
         UpdateStatusBarText(); // Depends on Playback and Library status
 
         // Trigger commands CanExecute updates for all VMs

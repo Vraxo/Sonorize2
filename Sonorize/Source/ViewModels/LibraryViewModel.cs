@@ -25,6 +25,7 @@ public class LibraryViewModel : ViewModelBase
     private readonly SettingsService _settingsService;
     private readonly MusicLibraryService _musicLibraryService;
     private readonly LoopDataService _loopDataService;
+    private readonly MainWindowViewModel _parentViewModel; // Reference to parent VM
 
     private readonly ObservableCollection<Song> _allSongs = [];
 
@@ -36,9 +37,9 @@ public class LibraryViewModel : ViewModelBase
     public ICommand PreviousTrackCommand { get; }
     public ICommand NextTrackCommand { get; }
 
-    public string SearchQuery 
-    { 
-        get; 
+    public string SearchQuery
+    {
+        get;
 
         set
         {
@@ -188,23 +189,25 @@ public class LibraryViewModel : ViewModelBase
         }
     }
 
-    public LibraryViewModel(SettingsService settingsService, MusicLibraryService musicLibraryService, LoopDataService loopDataService)
+    // Added parentViewModel dependency
+    public LibraryViewModel(MainWindowViewModel parentViewModel, SettingsService settingsService, MusicLibraryService musicLibraryService, LoopDataService loopDataService)
     {
+        _parentViewModel = parentViewModel ?? throw new ArgumentNullException(nameof(parentViewModel));
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
         _loopDataService = loopDataService;
 
         AppSettings appSettings = _settingsService.LoadSettings();
-        
-        LibraryViewMode = Enum.TryParse<SongDisplayMode>(appSettings.LibraryViewModePreference, out var libMode) 
-            ? libMode 
+
+        LibraryViewMode = Enum.TryParse<SongDisplayMode>(appSettings.LibraryViewModePreference, out var libMode)
+            ? libMode
             : SongDisplayMode.Detailed;
 
-        ArtistViewMode = Enum.TryParse<SongDisplayMode>(appSettings.ArtistViewModePreference, out var artMode) 
-            ? artMode 
+        ArtistViewMode = Enum.TryParse<SongDisplayMode>(appSettings.ArtistViewModePreference, out var artMode)
+            ? artMode
             : SongDisplayMode.Detailed;
 
-        AlbumViewMode = Enum.TryParse<SongDisplayMode>(appSettings.AlbumViewModePreference, out var albMode) 
+        AlbumViewMode = Enum.TryParse<SongDisplayMode>(appSettings.AlbumViewModePreference, out var albMode)
             ? albMode
             : SongDisplayMode.Detailed;
 
@@ -246,7 +249,7 @@ public class LibraryViewModel : ViewModelBase
         }
 
         int currentIndex = FilteredSongs.IndexOf(SelectedSong);
-        
+
         if (currentIndex > 0)
         {
             SelectedSong = FilteredSongs[currentIndex - 1];
@@ -309,7 +312,7 @@ public class LibraryViewModel : ViewModelBase
         }
 
         IsLoadingLibrary = true;
-        SearchQuery = string.Empty;
+        SearchQuery = string.Empty; // Clear search on full reload
 
         await Dispatcher.UIThread.InvokeAsync(() => {
             SelectedSong = null;
@@ -321,7 +324,7 @@ public class LibraryViewModel : ViewModelBase
         });
 
         AppSettings settings = _settingsService.LoadSettings();
-        
+
         if (settings.MusicDirectories.Count == 0)
         {
             await Dispatcher.UIThread.InvokeAsync(() => {
@@ -419,8 +422,12 @@ public class LibraryViewModel : ViewModelBase
         }
 
         Debug.WriteLine($"[LibraryVM] Artist selected: {artist.Name}");
+        // Clear Album selection when Artist is selected
+        SelectedAlbum = null;
         SearchQuery = artist.Name;
         // ApplyFilter will be called by SearchQuery setter, which updates FilteredSongs
+        // Switch back to the Library tab (index 0)
+        _parentViewModel.ActiveTabIndex = 0;
     }
 
     private void OnAlbumSelected(AlbumViewModel album)
@@ -431,10 +438,12 @@ public class LibraryViewModel : ViewModelBase
         }
 
         Debug.WriteLine($"[LibraryVM] Album selected: {album.Title} by {album.Artist}");
+        // Clear Artist selection when Album is selected
+        SelectedArtist = null;
         SearchQuery = string.Empty; // Clear search query when selecting album
 
         FilteredSongs.Clear();
-        
+
         IOrderedEnumerable<Song> songsInAlbum = _allSongs.Where(s =>
             s.Album.Equals(album.Title, StringComparison.OrdinalIgnoreCase) &&
             s.Artist.Equals(album.Artist, StringComparison.OrdinalIgnoreCase))
@@ -452,6 +461,9 @@ public class LibraryViewModel : ViewModelBase
 
         UpdateStatusBarText();
         RaiseNavigationCommandsCanExecuteChanged(); // FilteredSongs changed
+
+        // Switch back to the Library tab (index 0)
+        _parentViewModel.ActiveTabIndex = 0;
     }
 
     private void ApplyFilter()
@@ -462,7 +474,7 @@ public class LibraryViewModel : ViewModelBase
         if (!string.IsNullOrWhiteSpace(SearchQuery))
         {
             string query = SearchQuery.ToLowerInvariant().Trim();
-            
+
             songsToFilter = songsToFilter.Where(s =>
                 (s.Title?.ToLowerInvariant().Contains(query, StringComparison.InvariantCultureIgnoreCase) ?? false) ||
                 (s.Artist?.ToLowerInvariant().Contains(query, StringComparison.InvariantCultureIgnoreCase) ?? false) ||

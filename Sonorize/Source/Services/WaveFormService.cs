@@ -34,7 +34,7 @@ public class WaveformService
         }
 
         Debug.WriteLine($"[WaveformService] Generating waveform for \"{Path.GetFileName(filePath)}\". Target points: {targetPoints}.");
-        List<WaveformPoint> points = new List<WaveformPoint>();
+        List<WaveformPoint> points = [];
 
         try
         {

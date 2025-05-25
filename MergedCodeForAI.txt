@@ -426,9 +426,7 @@ namespace Sonorize.Converters
 </file>
 
 <file path="Source\Converters\NotNullToBooleanConverter.cs">
-// Path: Source/Views/MainView.cs
 using System;
-using Avalonia.Controls;
 using System.Globalization;
 using Avalonia.Data.Converters;
 
@@ -438,12 +436,12 @@ public class NotNullToBooleanConverter : IValueConverter
 {
     public static readonly NotNullToBooleanConverter Instance = new();
 
-    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         return value != null;
     }
 
-    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         throw new NotSupportedException();
     }
@@ -452,16 +450,15 @@ public class NotNullToBooleanConverter : IValueConverter
 
 <file path="Source\Models\AppSettings.cs">
 using System.Collections.Generic;
-using Sonorize.ViewModels; // Required for SongDisplayMode
+using Sonorize.ViewModels;
 
 namespace Sonorize.Models;
 
 public class AppSettings
 {
-    public List<string> MusicDirectories { get; set; } = new List<string>();
-    public string? PreferredThemeFileName { get; set; } // Stores the name of the theme file
+    public List<string> MusicDirectories { get; set; } = [];
+    public string? PreferredThemeFileName { get; set; }
 
-    // Preferences for view modes, stored as strings for easy serialization
     public string LibraryViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
     public string ArtistViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
     public string AlbumViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
@@ -478,41 +475,53 @@ namespace Sonorize.Models;
 
 public class LoopRegion(TimeSpan start, TimeSpan end, string name = "Loop") : INotifyPropertyChanged
 {
-    private string _name = name; // Name field remains, but not prominently used in UI
+    private TimeSpan end = end;
+
     public string Name
     {
-        get => _name;
-        set => SetProperty(ref _name, value);
-    }
+        get;
 
-    private TimeSpan _start = start;
+        set
+        {
+            SetProperty(ref field, value);
+        }
+    } = name;
+
     public TimeSpan Start
     {
-        get => _start;
-        set => SetProperty(ref _start, value);
-    }
+        get;
+        
+        set
+        {
+            SetProperty(ref field, value);
+        }
+    } = start;
 
-    private TimeSpan _end = end;
     public TimeSpan End
     {
-        get => _end;
-        set => SetProperty(ref _end, value);
+        get => end;
+        set => end = value;
     }
 
-    // DisplayText no longer includes the name by default for main UI, focused on times
     public string DisplayText => $"({Start:mm\\:ss} - {End:mm\\:ss})";
 
     public event PropertyChangedEventHandler? PropertyChanged;
+    
     protected bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {
-        if (EqualityComparer<T>.Default.Equals(field, value)) return false;
+        if (EqualityComparer<T>.Default.Equals(field, value))
+        {
+            return false;
+        }
+
         field = value;
         OnPropertyChanged(propertyName);
         return true;
     }
+
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        PropertyChanged?.Invoke(this, new(propertyName));
     }
 }
 </file>
@@ -611,7 +620,7 @@ public class ThemeColors
 
     public static ThemeColors CreateAmoledSpotifyTheme()
     {
-        return new ThemeColors
+        return new()
         {
             BackgroundColor = "#FF000000",
             SlightlyLighterBackground = "#FF121212",
@@ -769,7 +778,6 @@ public class LoopDataService
             }
         }
     }
-
 
     public void ClearLoop(string filePath)
     {
@@ -1185,7 +1193,6 @@ public class ThemeService
 </file>
 
 <file path="Source\Services\WaveFormService.cs">
-using Avalonia;
 using NAudio.Wave;
 using System;
 using System.Collections.Generic;
@@ -1209,7 +1216,7 @@ public class WaveformService
         if (string.IsNullOrEmpty(filePath) || targetPoints <= 0)
         {
             Debug.WriteLine($"[WaveformService] Invalid input: filePath is null/empty or targetPoints <= 0. File: '{filePath}', Points: {targetPoints}");
-            return new List<WaveformPoint>();
+            return [];
         }
 
         // For debugging, temporarily disable cache to ensure fresh generation
@@ -1222,77 +1229,75 @@ public class WaveformService
         }
 
         Debug.WriteLine($"[WaveformService] Generating waveform for \"{Path.GetFileName(filePath)}\". Target points: {targetPoints}.");
-        List<WaveformPoint> points = new List<WaveformPoint>();
+        List<WaveformPoint> points = [];
 
         try
         {
             await Task.Run(() =>
             {
-                using (var reader = new AudioFileReader(filePath))
+                using var reader = new AudioFileReader(filePath);
+                Debug.WriteLine($"[WaveformServiceReader] File: \"{Path.GetFileName(filePath)}\", TotalTime: {reader.TotalTime}, Channels: {reader.WaveFormat.Channels}, SampleRate: {reader.WaveFormat.SampleRate}, BitsPerSample: {reader.WaveFormat.BitsPerSample}, Encoding: {reader.WaveFormat.Encoding}, BlockAlign: {reader.WaveFormat.BlockAlign}, Length (bytes): {reader.Length}");
+
+                if (reader.WaveFormat.BlockAlign == 0)
                 {
-                    Debug.WriteLine($"[WaveformServiceReader] File: \"{Path.GetFileName(filePath)}\", TotalTime: {reader.TotalTime}, Channels: {reader.WaveFormat.Channels}, SampleRate: {reader.WaveFormat.SampleRate}, BitsPerSample: {reader.WaveFormat.BitsPerSample}, Encoding: {reader.WaveFormat.Encoding}, BlockAlign: {reader.WaveFormat.BlockAlign}, Length (bytes): {reader.Length}");
-
-                    if (reader.WaveFormat.BlockAlign == 0)
-                    {
-                        Debug.WriteLine($"[WaveformServiceReader] File \"{Path.GetFileName(filePath)}\" has BlockAlign = 0. Cannot calculate total sample frames.");
-                        return;
-                    }
-
-                    long totalSampleFrames = reader.Length / reader.WaveFormat.BlockAlign;
-
-                    if (totalSampleFrames == 0)
-                    {
-                        Debug.WriteLine($"[WaveformServiceReader] File \"{Path.GetFileName(filePath)}\" has 0 sample frames (Length: {reader.Length}, BlockAlign: {reader.WaveFormat.BlockAlign}). Cannot generate waveform.");
-                        return;
-                    }
-
-                    var samplesPerFrameToProcessPerPoint = (int)Math.Max(1, totalSampleFrames / targetPoints);
-                    var bufferSizeInSamples = samplesPerFrameToProcessPerPoint * reader.WaveFormat.Channels;
-
-                    if (bufferSizeInSamples == 0)
-                    {
-                        Debug.WriteLine($"[WaveformServiceReader] Calculated bufferSizeInSamples is 0 for \"{Path.GetFileName(filePath)}\". TotalSampleFrames: {totalSampleFrames}, TargetPoints: {targetPoints}, Channels: {reader.WaveFormat.Channels}, SamplesPerFrameToProcessPerPoint: {samplesPerFrameToProcessPerPoint}. Cannot generate.");
-                        return;
-                    }
-
-                    var buffer = new float[bufferSizeInSamples];
-                    int samplesReadFromAudioFile;
-                    double currentX = 0;
-                    double xIncrement = 1.0 / targetPoints;
-                    int pointsGeneratedCount = 0;
-
-                    Debug.WriteLine($"[WaveformServiceReader] Processing \"{Path.GetFileName(filePath)}\": TotalSampleFrames: {totalSampleFrames}, TargetPoints: {targetPoints}, SamplesPerFrameToProcessPerPoint: {samplesPerFrameToProcessPerPoint}, BufferSizeInFloats: {bufferSizeInSamples}");
-
-                    for (int i = 0; i < targetPoints; i++)
-                    {
-                        float maxPeakInChunk = 0f;
-
-                        samplesReadFromAudioFile = reader.Read(buffer, 0, buffer.Length);
-
-                        if (samplesReadFromAudioFile == 0)
-                        {
-                            Debug.WriteLine($"[WaveformServiceReader] Read 0 samples at waveform point index {i} (target: {targetPoints}) for \"{Path.GetFileName(filePath)}\". End of audio stream reached.");
-                            break;
-                        }
-
-                        for (int n = 0; n < samplesReadFromAudioFile; n++)
-                        {
-                            maxPeakInChunk = Math.Max(maxPeakInChunk, Math.Abs(buffer[n]));
-                        }
-
-                        points.Add(new WaveformPoint(currentX, maxPeakInChunk));
-                        pointsGeneratedCount++;
-
-                        if (i < 5 || (i > 0 && i % (targetPoints / 10) == 0) || i == targetPoints - 1)
-                        {
-                            Debug.WriteLine($"[WaveformServiceReader] Point {i}: X={currentX:F3}, Calculated YPeak={maxPeakInChunk:F4}, SamplesInThisChunk={samplesReadFromAudioFile}");
-                        }
-
-                        currentX += xIncrement;
-                        if (currentX > 1.0) currentX = 1.0;
-                    }
-                    Debug.WriteLine($"[WaveformServiceReader] Loop finished for \"{Path.GetFileName(filePath)}\". Total waveform points generated: {pointsGeneratedCount}. (Target was {targetPoints})");
+                    Debug.WriteLine($"[WaveformServiceReader] File \"{Path.GetFileName(filePath)}\" has BlockAlign = 0. Cannot calculate total sample frames.");
+                    return;
                 }
+
+                long totalSampleFrames = reader.Length / reader.WaveFormat.BlockAlign;
+
+                if (totalSampleFrames == 0)
+                {
+                    Debug.WriteLine($"[WaveformServiceReader] File \"{Path.GetFileName(filePath)}\" has 0 sample frames (Length: {reader.Length}, BlockAlign: {reader.WaveFormat.BlockAlign}). Cannot generate waveform.");
+                    return;
+                }
+
+                var samplesPerFrameToProcessPerPoint = (int)Math.Max(1, totalSampleFrames / targetPoints);
+                var bufferSizeInSamples = samplesPerFrameToProcessPerPoint * reader.WaveFormat.Channels;
+
+                if (bufferSizeInSamples == 0)
+                {
+                    Debug.WriteLine($"[WaveformServiceReader] Calculated bufferSizeInSamples is 0 for \"{Path.GetFileName(filePath)}\". TotalSampleFrames: {totalSampleFrames}, TargetPoints: {targetPoints}, Channels: {reader.WaveFormat.Channels}, SamplesPerFrameToProcessPerPoint: {samplesPerFrameToProcessPerPoint}. Cannot generate.");
+                    return;
+                }
+
+                var buffer = new float[bufferSizeInSamples];
+                int samplesReadFromAudioFile;
+                double currentX = 0;
+                double xIncrement = 1.0 / targetPoints;
+                int pointsGeneratedCount = 0;
+
+                Debug.WriteLine($"[WaveformServiceReader] Processing \"{Path.GetFileName(filePath)}\": TotalSampleFrames: {totalSampleFrames}, TargetPoints: {targetPoints}, SamplesPerFrameToProcessPerPoint: {samplesPerFrameToProcessPerPoint}, BufferSizeInFloats: {bufferSizeInSamples}");
+
+                for (int i = 0; i < targetPoints; i++)
+                {
+                    float maxPeakInChunk = 0f;
+
+                    samplesReadFromAudioFile = reader.Read(buffer, 0, buffer.Length);
+
+                    if (samplesReadFromAudioFile == 0)
+                    {
+                        Debug.WriteLine($"[WaveformServiceReader] Read 0 samples at waveform point index {i} (target: {targetPoints}) for \"{Path.GetFileName(filePath)}\". End of audio stream reached.");
+                        break;
+                    }
+
+                    for (int n = 0; n < samplesReadFromAudioFile; n++)
+                    {
+                        maxPeakInChunk = Math.Max(maxPeakInChunk, Math.Abs(buffer[n]));
+                    }
+
+                    points.Add(new WaveformPoint(currentX, maxPeakInChunk));
+                    pointsGeneratedCount++;
+
+                    if (i < 5 || (i > 0 && i % (targetPoints / 10) == 0) || i == targetPoints - 1)
+                    {
+                        Debug.WriteLine($"[WaveformServiceReader] Point {i}: X={currentX:F3}, Calculated YPeak={maxPeakInChunk:F4}, SamplesInThisChunk={samplesReadFromAudioFile}");
+                    }
+
+                    currentX += xIncrement;
+                    if (currentX > 1.0) currentX = 1.0;
+                }
+                Debug.WriteLine($"[WaveformServiceReader] Loop finished for \"{Path.GetFileName(filePath)}\". Total waveform points generated: {pointsGeneratedCount}. (Target was {targetPoints})");
             });
 
             if (points.Any())
@@ -1308,7 +1313,7 @@ public class WaveformService
         catch (Exception ex)
         {
             Debug.WriteLine($"[WaveformService] CRITICAL Error generating waveform for \"{Path.GetFileName(filePath)}\": {ex.ToString()}");
-            return new List<WaveformPoint>();
+            return [];
         }
         return points;
     }
@@ -1322,12 +1327,11 @@ public class WaveformService
 </file>
 
 <file path="Source\Utils\AlbumArtistTupleComparer.cs">
-// Path: Source/Utils/AlbumArtistTupleComparer.cs (or a similar appropriate location)
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis; // For NotNullWhen attribute
+using System.Diagnostics.CodeAnalysis;
 
-namespace Sonorize.Utils; // Or your preferred namespace for utility classes
+namespace Sonorize.Utils;
 
 public class AlbumArtistTupleComparer : IEqualityComparer<(string Album, string Artist)>
 {
@@ -1339,15 +1343,12 @@ public class AlbumArtistTupleComparer : IEqualityComparer<(string Album, string 
 
     public int GetHashCode([DisallowNull] (string Album, string Artist) obj)
     {
-        // Combine hash codes in a way that's sensitive to order and case-insensitivity
-        // For case-insensitivity in hash code, convert to a consistent case first
         int albumHashCode = obj.Album?.ToLowerInvariant().GetHashCode() ?? 0;
         int artistHashCode = obj.Artist?.ToLowerInvariant().GetHashCode() ?? 0;
         return HashCode.Combine(albumHashCode, artistHashCode);
     }
 
-    // Static instance for convenience
-    public static readonly AlbumArtistTupleComparer Instance = new AlbumArtistTupleComparer();
+    public static readonly AlbumArtistTupleComparer Instance = new();
 }
 </file>
 
@@ -1362,20 +1363,17 @@ public class AlbumViewModel : ViewModelBase
 {
     public string? Title { get; set; }
     public string? Artist { get; set; }
-
-    private List<Bitmap?> _songThumbnailsForGrid = new List<Bitmap?>(new Bitmap?[4]); // Ensures 4 elements, can be null
     public List<Bitmap?> SongThumbnailsForGrid
     {
-        get => _songThumbnailsForGrid;
+        get;
         // Setter might be used by LibraryVM during initialization
-        set => SetProperty(ref _songThumbnailsForGrid, value);
-    }
+        set => SetProperty(ref field, value);
+    } = new List<Bitmap?>(new Bitmap?[4]);
 
-    private Bitmap? _representativeThumbnail;
     public Bitmap? RepresentativeThumbnail
     {
-        get => _representativeThumbnail;
-        set => SetProperty(ref _representativeThumbnail, value);
+        get;
+        set => SetProperty(ref field, value);
     }
 
     public string DisplayText => $"{Title} - {Artist}";
@@ -1396,19 +1394,18 @@ public class ArtistViewModel
 </file>
 
 <file path="Source\ViewModels\LibraryViewModel.cs">
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows.Input;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Sonorize.Models;
 using Sonorize.Services;
 using Sonorize.Utils;
-using System;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.ComponentModel;
-using System.Diagnostics;
-using System.Linq;
-using System.Threading.Tasks;
-using System.Windows.Input;
 
 namespace Sonorize.ViewModels;
 
@@ -1425,132 +1422,167 @@ public class LibraryViewModel : ViewModelBase
     private readonly MusicLibraryService _musicLibraryService;
     private readonly LoopDataService _loopDataService;
 
-    private readonly ObservableCollection<Song> _allSongs = new();
-    public ObservableCollection<Song> FilteredSongs { get; } = new();
-    public ObservableCollection<ArtistViewModel> Artists { get; } = new();
-    public ObservableCollection<AlbumViewModel> Albums { get; } = new();
+    private readonly ObservableCollection<Song> _allSongs = [];
 
-    private string _searchQuery = string.Empty;
-    public string SearchQuery { get => _searchQuery; set { if (SetProperty(ref _searchQuery, value)) ApplyFilter(); } }
-
-    private Song? _selectedSongInternal;
-    public Song? SelectedSong
-    {
-        get => _selectedSongInternal;
-        set
-        {
-            if (SetProperty(ref _selectedSongInternal, value))
-            {
-                Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"}");
-                // Raise CanExecuteChanged for navigation commands when selection changes
-                RaiseNavigationCommandsCanExecuteChanged();
-            }
-        }
-    }
-
-    private ArtistViewModel? _selectedArtist;
-    public ArtistViewModel? SelectedArtist
-    {
-        get => _selectedArtist;
-        set
-        {
-            if (SetProperty(ref _selectedArtist, value))
-            {
-                if (value != null)
-                {
-                    OnArtistSelected(value);
-                }
-                else
-                {
-                    SearchQuery = string.Empty;
-                    ApplyFilter();
-                }
-            }
-        }
-    }
-
-    private AlbumViewModel? _selectedAlbum;
-    public AlbumViewModel? SelectedAlbum
-    {
-        get => _selectedAlbum;
-        set
-        {
-            if (SetProperty(ref _selectedAlbum, value))
-            {
-                if (value != null)
-                {
-                    OnAlbumSelected(value);
-                }
-                else
-                {
-                    SearchQuery = string.Empty;
-                    ApplyFilter();
-                }
-            }
-        }
-    }
-
-    private bool _isLoadingLibrary = false;
-    public bool IsLoadingLibrary
-    {
-        get => _isLoadingLibrary;
-        private set { if (SetProperty(ref _isLoadingLibrary, value)) RaiseLibraryCommandsCanExecuteChanged(); }
-    }
-
-    private string _libraryStatusText = "";
-    public string LibraryStatusText { get => _libraryStatusText; private set => SetProperty(ref _libraryStatusText, value); }
-
-    private SongDisplayMode _libraryViewMode;
-    public SongDisplayMode LibraryViewMode
-    {
-        get => _libraryViewMode;
-        set
-        {
-            if (SetProperty(ref _libraryViewMode, value))
-            {
-                var settings = _settingsService.LoadSettings();
-                settings.LibraryViewModePreference = value.ToString();
-                _settingsService.SaveSettings(settings);
-            }
-        }
-    }
-
-    private SongDisplayMode _artistViewMode;
-    public SongDisplayMode ArtistViewMode
-    {
-        get => _artistViewMode;
-        set
-        {
-            if (SetProperty(ref _artistViewMode, value))
-            {
-                var settings = _settingsService.LoadSettings();
-                settings.ArtistViewModePreference = value.ToString();
-                _settingsService.SaveSettings(settings);
-            }
-        }
-    }
-
-    private SongDisplayMode _albumViewMode;
-    public SongDisplayMode AlbumViewMode
-    {
-        get => _albumViewMode;
-        set
-        {
-            if (SetProperty(ref _albumViewMode, value))
-            {
-                var settings = _settingsService.LoadSettings();
-                settings.AlbumViewModePreference = value.ToString();
-                _settingsService.SaveSettings(settings);
-            }
-        }
-    }
+    public ObservableCollection<Song> FilteredSongs { get; } = [];
+    public ObservableCollection<ArtistViewModel> Artists { get; } = [];
+    public ObservableCollection<AlbumViewModel> Albums { get; } = [];
 
     public ICommand SetDisplayModeCommand { get; }
-
-    // Navigation Commands
     public ICommand PreviousTrackCommand { get; }
     public ICommand NextTrackCommand { get; }
 
+    public string SearchQuery 
+    { 
+        get; 
+
+        set
+        {
+            if (!SetProperty(ref field, value))
+            {
+                return;
+            }
+
+            ApplyFilter();
+        }
+    } = string.Empty;
+
+    public Song? SelectedSong
+    {
+        get;
+
+        set
+        {
+            if (!SetProperty(ref field, value))
+            {
+                return;
+            }
+            Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"}");
+            // Raise CanExecuteChanged for navigation commands when selection changes
+            RaiseNavigationCommandsCanExecuteChanged();
+        }
+    }
+
+    public ArtistViewModel? SelectedArtist
+    {
+        get;
+
+        set
+        {
+            if (!SetProperty(ref field, value))
+            {
+                return;
+            }
+
+            if (value != null)
+            {
+                OnArtistSelected(value);
+            }
+            else
+            {
+                SearchQuery = string.Empty;
+                ApplyFilter();
+            }
+        }
+    }
+
+    public AlbumViewModel? SelectedAlbum
+    {
+        get;
+
+        set
+        {
+            if (!SetProperty(ref field, value))
+            {
+                return;
+            }
+
+            if (value is not null)
+            {
+                OnAlbumSelected(value);
+            }
+            else
+            {
+                SearchQuery = string.Empty;
+                ApplyFilter();
+            }
+        }
+    }
+
+    public bool IsLoadingLibrary
+    {
+        get;
+
+        private set
+        {
+            if (!SetProperty(ref field, value))
+            {
+                return;
+            }
+
+            RaiseLibraryCommandsCanExecuteChanged();
+        }
+    } = false;
+
+    public string LibraryStatusText
+    {
+        get;
+
+        private set
+        {
+            SetProperty(ref field, value);
+        }
+    } = "";
+
+    public SongDisplayMode LibraryViewMode
+    {
+        get;
+
+        set
+        {
+            if (!SetProperty(ref field, value))
+            {
+                return;
+            }
+
+            AppSettings settings = _settingsService.LoadSettings();
+            settings.LibraryViewModePreference = value.ToString();
+            _settingsService.SaveSettings(settings);
+        }
+    }
+
+    public SongDisplayMode ArtistViewMode
+    {
+        get;
+        set
+        {
+            if (!SetProperty(ref field, value))
+            {
+                return;
+            }
+
+            AppSettings settings = _settingsService.LoadSettings();
+            settings.ArtistViewModePreference = value.ToString();
+            _settingsService.SaveSettings(settings);
+        }
+    }
+
+    public SongDisplayMode AlbumViewMode
+    {
+        get;
+
+        set
+        {
+            if (!SetProperty(ref field, value))
+            {
+                return;
+            }
+
+            AppSettings settings = _settingsService.LoadSettings();
+            settings.AlbumViewModePreference = value.ToString();
+            _settingsService.SaveSettings(settings);
+        }
+    }
 
     public LibraryViewModel(SettingsService settingsService, MusicLibraryService musicLibraryService, LoopDataService loopDataService)
     {
@@ -1558,25 +1590,35 @@ public class LibraryViewModel : ViewModelBase
         _musicLibraryService = musicLibraryService;
         _loopDataService = loopDataService;
 
-        // Load preferences
-        var appSettings = _settingsService.LoadSettings();
-        _libraryViewMode = Enum.TryParse<SongDisplayMode>(appSettings.LibraryViewModePreference, out var libMode) ? libMode : SongDisplayMode.Detailed;
-        _artistViewMode = Enum.TryParse<SongDisplayMode>(appSettings.ArtistViewModePreference, out var artMode) ? artMode : SongDisplayMode.Detailed;
-        _albumViewMode = Enum.TryParse<SongDisplayMode>(appSettings.AlbumViewModePreference, out var albMode) ? albMode : SongDisplayMode.Detailed;
+        AppSettings appSettings = _settingsService.LoadSettings();
+        
+        LibraryViewMode = Enum.TryParse<SongDisplayMode>(appSettings.LibraryViewModePreference, out var libMode) 
+            ? libMode 
+            : SongDisplayMode.Detailed;
+
+        ArtistViewMode = Enum.TryParse<SongDisplayMode>(appSettings.ArtistViewModePreference, out var artMode) 
+            ? artMode 
+            : SongDisplayMode.Detailed;
+
+        AlbumViewMode = Enum.TryParse<SongDisplayMode>(appSettings.AlbumViewModePreference, out var albMode) 
+            ? albMode
+            : SongDisplayMode.Detailed;
 
 
         SetDisplayModeCommand = new RelayCommand(
             param =>
             {
-                if (param is (string targetView, SongDisplayMode mode))
+                if (param is not (string targetView, SongDisplayMode mode))
                 {
-                    switch (targetView)
-                    {
-                        // Setters will handle saving
-                        case "Library": LibraryViewMode = mode; break;
-                        case "Artists": ArtistViewMode = mode; break;
-                        case "Albums": AlbumViewMode = mode; break;
-                    }
+                    return;
+                }
+
+                switch (targetView)
+                {
+                    // Setters will handle saving
+                    case "Library": LibraryViewMode = mode; break;
+                    case "Artists": ArtistViewMode = mode; break;
+                    case "Albums": AlbumViewMode = mode; break;
                 }
             },
             _ => true
@@ -1594,9 +1636,13 @@ public class LibraryViewModel : ViewModelBase
 
     private void ExecutePreviousTrack(object? parameter)
     {
-        if (SelectedSong == null || !FilteredSongs.Any()) return;
+        if (SelectedSong is null || !FilteredSongs.Any())
+        {
+            return;
+        }
 
-        var currentIndex = FilteredSongs.IndexOf(SelectedSong);
+        int currentIndex = FilteredSongs.IndexOf(SelectedSong);
+        
         if (currentIndex > 0)
         {
             SelectedSong = FilteredSongs[currentIndex - 1];
@@ -1617,9 +1663,12 @@ public class LibraryViewModel : ViewModelBase
 
     private void ExecuteNextTrack(object? parameter)
     {
-        if (SelectedSong == null || !FilteredSongs.Any()) return;
+        if (SelectedSong is null || !FilteredSongs.Any())
+        {
+            return;
+        }
 
-        var currentIndex = FilteredSongs.IndexOf(SelectedSong);
+        int currentIndex = FilteredSongs.IndexOf(SelectedSong);
         if (currentIndex < FilteredSongs.Count - 1 && currentIndex != -1)
         {
             SelectedSong = FilteredSongs[currentIndex + 1];
@@ -1638,15 +1687,22 @@ public class LibraryViewModel : ViewModelBase
 
     private bool CanExecuteNextTrack(object? parameter)
     {
-        if (SelectedSong == null || !FilteredSongs.Any()) return false;
-        var currentIndex = FilteredSongs.IndexOf(SelectedSong);
+        if (SelectedSong is null || !FilteredSongs.Any())
+        {
+            return false;
+        }
+
+        int currentIndex = FilteredSongs.IndexOf(SelectedSong);
+
         return currentIndex != -1 && currentIndex < FilteredSongs.Count - 1;
     }
 
-
     public async Task LoadLibraryAsync()
     {
-        if (IsLoadingLibrary) return;
+        if (IsLoadingLibrary)
+        {
+            return;
+        }
 
         IsLoadingLibrary = true;
         SearchQuery = string.Empty;
@@ -1660,8 +1716,9 @@ public class LibraryViewModel : ViewModelBase
             LibraryStatusText = "Preparing to load music...";
         });
 
-        var settings = _settingsService.LoadSettings();
-        if (!settings.MusicDirectories.Any())
+        AppSettings settings = _settingsService.LoadSettings();
+        
+        if (settings.MusicDirectories.Count == 0)
         {
             await Dispatcher.UIThread.InvokeAsync(() => {
                 LibraryStatusText = "No music directories configured.";
@@ -1687,7 +1744,7 @@ public class LibraryViewModel : ViewModelBase
                         .OrderBy(a => a, StringComparer.OrdinalIgnoreCase)
                         .ToList();
                     Bitmap? defaultSongThumbnail = _musicLibraryService.GetDefaultThumbnail();
-                    foreach (var artistName in uniqueArtistNames)
+                    foreach (string? artistName in uniqueArtistNames)
                     {
                         Bitmap? repThumb = _allSongs.FirstOrDefault(s => (s.Artist?.Equals(artistName, StringComparison.OrdinalIgnoreCase) ?? false) && s.Thumbnail != null)?.Thumbnail ?? defaultSongThumbnail;
                         Artists.Add(new ArtistViewModel { Name = artistName, Thumbnail = repThumb });
@@ -1710,14 +1767,14 @@ public class LibraryViewModel : ViewModelBase
 
                     foreach (var albumData in uniqueAlbumsData)
                     {
-                        var albumVM = new AlbumViewModel
+                        AlbumViewModel albumVM = new()
                         {
                             Title = albumData.AlbumTitle,
                             Artist = albumData.ArtistName
                         };
 
-                        var songThumbnailsForGrid = new List<Bitmap?>(new Bitmap?[4]);
-                        var distinctSongThumbs = albumData.SongsInAlbum
+                        List<Bitmap?> songThumbnailsForGrid = new(new Bitmap?[4]);
+                        List<Bitmap?> distinctSongThumbs = albumData.SongsInAlbum
                                                      .Select(s => s.Thumbnail ?? defaultSongThumbnail)
                                                      .Distinct()
                                                      .Take(4)
@@ -1727,6 +1784,7 @@ public class LibraryViewModel : ViewModelBase
                         {
                             songThumbnailsForGrid[i] = distinctSongThumbs[i];
                         }
+
                         albumVM.SongThumbnailsForGrid = songThumbnailsForGrid;
 
                         albumVM.RepresentativeThumbnail = songThumbnailsForGrid[0] ?? defaultSongThumbnail;
@@ -1751,7 +1809,11 @@ public class LibraryViewModel : ViewModelBase
 
     private void OnArtistSelected(ArtistViewModel artist)
     {
-        if (artist?.Name == null) return;
+        if (artist?.Name == null)
+        {
+            return;
+        }
+
         Debug.WriteLine($"[LibraryVM] Artist selected: {artist.Name}");
         SearchQuery = artist.Name;
         // ApplyFilter will be called by SearchQuery setter, which updates FilteredSongs
@@ -1759,24 +1821,31 @@ public class LibraryViewModel : ViewModelBase
 
     private void OnAlbumSelected(AlbumViewModel album)
     {
-        if (album?.Title == null || album.Artist == null) return;
+        if (album?.Title == null || album.Artist == null)
+        {
+            return;
+        }
+
         Debug.WriteLine($"[LibraryVM] Album selected: {album.Title} by {album.Artist}");
         SearchQuery = string.Empty; // Clear search query when selecting album
 
         FilteredSongs.Clear();
-        var songsInAlbum = _allSongs.Where(s =>
+        
+        IOrderedEnumerable<Song> songsInAlbum = _allSongs.Where(s =>
             s.Album.Equals(album.Title, StringComparison.OrdinalIgnoreCase) &&
             s.Artist.Equals(album.Artist, StringComparison.OrdinalIgnoreCase))
             .OrderBy(s => s.Title, StringComparer.OrdinalIgnoreCase);
 
-        foreach (var song in songsInAlbum)
+        foreach (Song? song in songsInAlbum)
         {
             FilteredSongs.Add(song);
         }
+
         if (SelectedSong != null && !FilteredSongs.Contains(SelectedSong))
         {
             SelectedSong = null; // Clear selection if the previously selected song is not in this album
         }
+
         UpdateStatusBarText();
         RaiseNavigationCommandsCanExecuteChanged(); // FilteredSongs changed
     }
@@ -1784,15 +1853,16 @@ public class LibraryViewModel : ViewModelBase
     private void ApplyFilter()
     {
         FilteredSongs.Clear();
-        var songsToFilter = _allSongs.AsEnumerable();
+        IEnumerable<Song> songsToFilter = _allSongs.AsEnumerable();
 
         if (!string.IsNullOrWhiteSpace(SearchQuery))
         {
-            var query = SearchQuery.ToLowerInvariant().Trim();
+            string query = SearchQuery.ToLowerInvariant().Trim();
+            
             songsToFilter = songsToFilter.Where(s =>
-                (s.Title?.ToLowerInvariant().Contains(query) ?? false) ||
-                (s.Artist?.ToLowerInvariant().Contains(query) ?? false) ||
-                (s.Album?.ToLowerInvariant().Contains(query) ?? false));
+                (s.Title?.ToLowerInvariant().Contains(query, StringComparison.InvariantCultureIgnoreCase) ?? false) ||
+                (s.Artist?.ToLowerInvariant().Contains(query, StringComparison.InvariantCultureIgnoreCase) ?? false) ||
+                (s.Album?.ToLowerInvariant().Contains(query, StringComparison.InvariantCultureIgnoreCase) ?? false));
         }
 
         songsToFilter = songsToFilter.OrderBy(s => s.Title, StringComparer.OrdinalIgnoreCase);
@@ -1824,12 +1894,17 @@ public class LibraryViewModel : ViewModelBase
 
     public void UpdateStatusBarText()
     {
-        if (IsLoadingLibrary) return;
+        if (IsLoadingLibrary)
+        {
+            return;
+        }
 
         string status;
+
         if (_allSongs.Count == 0)
         {
-            var settings = _settingsService.LoadSettings();
+            AppSettings settings = _settingsService.LoadSettings();
+
             if (!settings.MusicDirectories.Any())
             {
                 status = "Library empty. Add directories via File menu.";
@@ -1847,6 +1922,7 @@ public class LibraryViewModel : ViewModelBase
         {
             status = $"{_allSongs.Count} songs in library.";
         }
+
         LibraryStatusText = status;
     }
 
@@ -1882,22 +1958,20 @@ public class LoopEditorViewModel : ViewModelBase
     private readonly LoopDataService _loopDataService;
     private Song? _currentSongInternal; // Holds the Song instance from PlaybackService.CurrentSong
 
-    private TimeSpan? _newLoopStartCandidate;
     public TimeSpan? NewLoopStartCandidate
     {
-        get => _newLoopStartCandidate;
-        set { SetProperty(ref _newLoopStartCandidate, value); OnPropertyChanged(nameof(CanSaveLoopRegion)); OnPropertyChanged(nameof(NewLoopStartCandidateDisplay)); }
+        get;
+        set { SetProperty(ref field, value); OnPropertyChanged(nameof(CanSaveLoopRegion)); OnPropertyChanged(nameof(NewLoopStartCandidateDisplay)); }
     }
 
-    private TimeSpan? _newLoopEndCandidate;
     public TimeSpan? NewLoopEndCandidate
     {
-        get => _newLoopEndCandidate;
-        set { SetProperty(ref _newLoopEndCandidate, value); OnPropertyChanged(nameof(CanSaveLoopRegion)); OnPropertyChanged(nameof(NewLoopEndCandidateDisplay)); }
+        get;
+        set { SetProperty(ref field, value); OnPropertyChanged(nameof(CanSaveLoopRegion)); OnPropertyChanged(nameof(NewLoopEndCandidateDisplay)); }
     }
 
-    public string NewLoopStartCandidateDisplay => _newLoopStartCandidate.HasValue ? $"{_newLoopStartCandidate.Value:mm\\:ss\\.ff}" : "Not set";
-    public string NewLoopEndCandidateDisplay => _newLoopEndCandidate.HasValue ? $"{_newLoopEndCandidate.Value:mm\\:ss\\.ff}" : "Not set";
+    public string NewLoopStartCandidateDisplay => NewLoopStartCandidate.HasValue ? $"{NewLoopStartCandidate.Value:mm\\:ss\\.ff}" : "Not set";
+    public string NewLoopEndCandidateDisplay => NewLoopEndCandidate.HasValue ? $"{NewLoopEndCandidate.Value:mm\\:ss\\.ff}" : "Not set";
 
     private string _activeLoopDisplayText = "No loop defined.";
     public string ActiveLoopDisplayText { get => _activeLoopDisplayText; set => SetProperty(ref _activeLoopDisplayText, value); }
@@ -2210,15 +2284,12 @@ public class MainWindowViewModel : ViewModelBase
     public LibraryViewModel Library { get; set; }
     public LoopEditorViewModel LoopEditor { get; }
     public PlaybackViewModel Playback { get; } // Playback ViewModel
-
-    private string _statusBarText = "Welcome to Sonorize!";
-    public string StatusBarText { get => _statusBarText; set => SetProperty(ref _statusBarText, value); }
+    public string StatusBarText { get; set => SetProperty(ref field, value); } = "Welcome to Sonorize!";
 
     // IsLoadingLibrary is a proxy to Library's state
     public bool IsLoadingLibrary { get => Library.IsLoadingLibrary; }
 
-    private bool _isAdvancedPanelVisible;
-    public bool IsAdvancedPanelVisible { get => _isAdvancedPanelVisible; set { if (SetProperty(ref _isAdvancedPanelVisible, value)) OnAdvancedPanelVisibleChanged(); } }
+    public bool IsAdvancedPanelVisible { get; set { if (SetProperty(ref field, value)) OnAdvancedPanelVisibleChanged(); } }
 
     // Top-level commands
     public ICommand LoadInitialDataCommand { get; }
@@ -2227,7 +2298,7 @@ public class MainWindowViewModel : ViewModelBase
     public ICommand AddDirectoryAndRefreshCommand { get; }
     public ICommand ToggleAdvancedPanelCommand { get; }
 
-    private readonly Random _shuffleRandom = new Random(); // Simple Random instance for shuffle randomization
+    private readonly Random _shuffleRandom = new(); // Simple Random instance for shuffle randomization
 
     public MainWindowViewModel(
         SettingsService settingsService,
@@ -2757,6 +2828,7 @@ using Avalonia.Threading;
 using Sonorize.Models;
 using Sonorize.Services; // This using directive makes PlaybackStateStatus from the Service available
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -2766,13 +2838,7 @@ using System.Windows.Input;
 
 namespace Sonorize.ViewModels;
 
-// Removed duplicate PlaybackStateStatus enum definition.
-// The definition from Sonorize.Services is used via the using directive.
-
-
-// Renamed enum for clarity based on standard playback controls
 public enum RepeatMode { None, PlayOnce, RepeatOne, RepeatAll }
-
 
 public class PlaybackViewModel : ViewModelBase
 {
@@ -2792,15 +2858,16 @@ public class PlaybackViewModel : ViewModelBase
         {
             // Check if the value actually changed and if a song is loaded
             // Use a small tolerance for double comparison
-            if (PlaybackService.CurrentSong != null && Math.Abs(PlaybackService.CurrentPositionSeconds - value) > 0.01)
+            if (PlaybackService.CurrentSong == null || Math.Abs(PlaybackService.CurrentPositionSeconds - value) <= 0.01)
             {
-                // Debug.WriteLine($"[PlaybackVM] CurrentPositionSeconds setter called with: {value}. Current PlaybackService PositionSeconds: {PlaybackService.CurrentPositionSeconds}. Seeking.");
-                PlaybackService.Seek(TimeSpan.FromSeconds(value));
+                return;
                 // After PlaybackService.Seek, it will update its CurrentPosition,
                 // which will fire PropertyChanged. This ViewModel's PlaybackService_PropertyChanged
                 // handler will then update its own properties (including this one's getter value)
                 // and notify the UI.
             }
+            // Debug.WriteLine($"[PlaybackVM] CurrentPositionSeconds setter called with: {value}. Current PlaybackService PositionSeconds: {PlaybackService.CurrentPositionSeconds}. Seeking.");
+            PlaybackService.Seek(TimeSpan.FromSeconds(value));
             // If value is effectively the same, do nothing to prevent potential feedback loops or unnecessary seeks.
             // If no song is loaded, seeking is not possible/meaningful.
         }
@@ -2818,42 +2885,59 @@ public class PlaybackViewModel : ViewModelBase
     public double PlaybackSpeed { get => _playbackSpeed; set { value = Math.Clamp(value, 0.5, 2.0); if (SetProperty(ref _playbackSpeed, value)) { PlaybackService.PlaybackRate = (float)value; OnPropertyChanged(nameof(PlaybackSpeedDisplay)); } } }
     public string PlaybackSpeedDisplay => $"{PlaybackSpeed:F2}x";
 
-    private double _playbackPitch = 0.0;
-    public double PlaybackPitch { get => _playbackPitch; set { value = Math.Round(value * 2, MidpointRounding.AwayFromZero) / 2.0; value = Math.Clamp(value, -4.0, 4.0); if (SetProperty(ref _playbackPitch, value)) { PlaybackService.PitchSemitones = (float)_playbackPitch; OnPropertyChanged(nameof(PlaybackPitchDisplay)); } } }
+    public double PlaybackPitch 
+    {
+        get; 
+        
+        set
+        {
+            value = double.Round(value * 2, MidpointRounding.AwayFromZero) / 2.0;
+            value = double.Clamp(value, -4.0, 4.0);
+
+            if (!SetProperty(ref field, value))
+            {
+                return;
+            }
+
+            PlaybackService.PitchSemitones = (float)field;
+            OnPropertyChanged(nameof(PlaybackPitchDisplay));
+        }
+    } = 0.0;
+
     public string PlaybackPitchDisplay => $"{PlaybackPitch:+0.0;-0.0;0} st";
 
-    // Properties for playback modes (Shuffle, Repeat)
-    private bool _shuffleEnabled = false;
     public bool ShuffleEnabled
     {
-        get => _shuffleEnabled;
+        get;
+
         set
         {
-            if (SetProperty(ref _shuffleEnabled, value))
+            if (!SetProperty(ref field, value))
             {
-                Debug.WriteLine($"[PlaybackVM] ShuffleEnabled set to: {value}");
+                return;
                 // Saving preference could happen here
             }
-        }
-    }
 
-    // Renamed property
-    private RepeatMode _repeatMode = RepeatMode.PlayOnce; // Default to PlayOnce
+            Debug.WriteLine($"[PlaybackVM] ShuffleEnabled set to: {value}");
+        }
+    } = false;
+
     public RepeatMode RepeatMode
     {
-        get => _repeatMode;
+        get;
         set
         {
-            if (SetProperty(ref _repeatMode, value))
+            if (!SetProperty(ref field, value))
             {
-                Debug.WriteLine($"[PlaybackVM] RepeatMode set to: {value}");
-                // Saving preference could happen here
-                OnPropertyChanged(nameof(IsRepeatOne));
-                OnPropertyChanged(nameof(IsRepeatAll));
-                OnPropertyChanged(nameof(IsRepeatActive)); // Notify composite state change
+                return;
             }
+            Debug.WriteLine($"[PlaybackVM] RepeatMode set to: {value}");
+            // Saving preference could happen here
+            OnPropertyChanged(nameof(IsRepeatOne));
+            OnPropertyChanged(nameof(IsRepeatAll));
+            OnPropertyChanged(nameof(IsRepeatActive)); // Notify composite state change
         }
-    }
+    } = RepeatMode.PlayOnce;
 
     // Helper properties for UI bindings (e.g., RadioButtons or toggling states) - Renamed
     public bool IsRepeatOne { get => RepeatMode == RepeatMode.RepeatOne; set { if (value) RepeatMode = RepeatMode.RepeatOne; } }
@@ -3097,7 +3181,7 @@ public class PlaybackViewModel : ViewModelBase
             Debug.WriteLine($"[PlaybackVM] Requesting waveform for: {songToLoadWaveformFor.Title}");
             // Target points should probably be based on control width or a fixed resolution
             // For a fixed 80px height control, 1000 points is likely sufficient detail.
-            var points = await _waveformService.GetWaveformAsync(songToLoadWaveformFor.FilePath, 1000);
+            List<WaveformPoint> points = await _waveformService.GetWaveformAsync(songToLoadWaveformFor.FilePath, 1000);
 
             // Check if the song is still the same AFTER the async operation before updating the UI
             if (PlaybackService.CurrentSong == songToLoadWaveformFor)
@@ -3199,16 +3283,15 @@ public class RelayCommand : ICommand
 </file>
 
 <file path="Source\ViewModels\SettingsViewModel.cs">
-using Avalonia.Controls;
-using Avalonia.Platform.Storage;
-using Sonorize.Models;
-using Sonorize.Services;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
-using System.Diagnostics;
-using System.Collections.Generic; // Required for List<string>
+using Avalonia.Controls;
+using Avalonia.Platform.Storage;
+using Sonorize.Services;
 
 namespace Sonorize.ViewModels;
 
@@ -3219,25 +3302,28 @@ public class SettingsViewModel : ViewModelBase
 
     public ObservableCollection<string> MusicDirectories { get; } = new();
     public List<string> InitialMusicDirectories { get; private set; } // To track changes
-
-    private string? _selectedDirectory;
+    
     public string? SelectedDirectory
     {
-        get => _selectedDirectory;
-        set => SetProperty(ref _selectedDirectory, value, nameof(CanRemoveDirectory));
+        get;
+
+        set => SetProperty(ref field, value, nameof(CanRemoveDirectory));
     }
 
     public ObservableCollection<string> AvailableThemes { get; } = new();
-    private string? _selectedThemeFile;
+
     public string? SelectedThemeFile
     {
-        get => _selectedThemeFile;
+        get;
+        
         set
         {
-            if (SetProperty(ref _selectedThemeFile, value))
+            if (!SetProperty(ref field, value))
             {
-                SettingsChanged = true;
+                return;
             }
+
+            SettingsChanged = true;
         }
     }
 
@@ -3293,27 +3379,49 @@ public class SettingsViewModel : ViewModelBase
 
     private async Task AddDirectory(Window? owner)
     {
-        if (owner == null) return;
-        var dialog = new OpenFolderDialog() { Title = "Select Music Directory" };
-        var result = await dialog.ShowAsync(owner);
-        if (result != null && !string.IsNullOrEmpty(result))
+        if (owner?.StorageProvider == null)
         {
-            if (!MusicDirectories.Contains(result))
+            // Handle cases where StorageProvider is not available (e.g., headless environments or older platforms)
+            Debug.WriteLine("StorageProvider is not available.");
+            // Potentially show an error message to the user
+            return;
+        }
+
+        var options = new FolderPickerOpenOptions
+        {
+            Title = "Select Music Directory",
+            AllowMultiple = false
+        };
+
+        var result = await owner.StorageProvider.OpenFolderPickerAsync(options);
+
+        if (result != null && result.Count > 0)
+        {
+            var folder = result.FirstOrDefault();
+            if (folder == null)
             {
-                MusicDirectories.Add(result);
+                return;
+            }
+            // Access the path using Path.LocalPath
+            var path = folder.Path.LocalPath;
+            if (string.IsNullOrEmpty(path) || MusicDirectories.Contains(path))
+            {
+                return;
                 // SettingsChanged will be set by the CollectionChanged event handler
             }
+            MusicDirectories.Add(path);
         }
     }
 
     private void RemoveSelectedDirectory(object? parameter)
     {
-        if (SelectedDirectory != null)
+        if (SelectedDirectory == null)
         {
-            MusicDirectories.Remove(SelectedDirectory);
-            SelectedDirectory = null;
+            return;
             // SettingsChanged will be set by the CollectionChanged event handler
         }
+        MusicDirectories.Remove(SelectedDirectory);
+        SelectedDirectory = null;
     }
 
     private void SaveSettings(object? parameter)
@@ -4945,215 +5053,8 @@ public static class MainPlaybackControlsPanel
 {
     public static Grid Create(ThemeColors theme) // Root is a Grid
     {
-        // Previous Button
-        var previousButton = new Button
-        {
-            Content = "<",
-            Background = theme.B_SlightlyLighterBackground,
-            Foreground = theme.B_TextColor,
-            BorderBrush = theme.B_ControlBackgroundColor,
-            BorderThickness = new Thickness(1),
-            Width = 32,
-            Height = 32,
-            CornerRadius = new CornerRadius(16),
-            Padding = new Thickness(0),
-            FontSize = 16,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center
-        };
-        // Bind to Library.PreviousTrackCommand
-        previousButton.Bind(Button.CommandProperty, new Binding("Library.PreviousTrackCommand"));
-        // IsEnabled is controlled by the command's CanExecute
-
-        var mainPlayPauseButton = new Button
-        {
-            Background = theme.B_SlightlyLighterBackground,
-            Foreground = theme.B_TextColor,
-            BorderBrush = theme.B_AccentColor,
-            BorderThickness = new Thickness(1),
-            Width = 38,
-            Height = 38,
-            CornerRadius = new CornerRadius(19),
-            Padding = new Thickness(0),
-            FontSize = 18,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            HorizontalContentAlignment = HorizontalAlignment.Center
-        };
-        mainPlayPauseButton.Bind(Button.CommandProperty, new Binding("Playback.PlayPauseResumeCommand"));
-        mainPlayPauseButton.Bind(Button.ContentProperty, new Binding("Playback.IsPlaying") { Converter = BooleanToPlayPauseIconConverter.Instance });
-
-        var nextButton = new Button
-        {
-            Content = ">",
-            Background = theme.B_SlightlyLighterBackground,
-            Foreground = theme.B_TextColor,
-            BorderBrush = theme.B_ControlBackgroundColor,
-            BorderThickness = new Thickness(1),
-            Width = 32,
-            Height = 32,
-            CornerRadius = new CornerRadius(16),
-            Padding = new Thickness(0),
-            FontSize = 16,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center
-        };
-        // Bind to Library.NextTrackCommand
-        nextButton.Bind(Button.CommandProperty, new Binding("Library.NextTrackCommand"));
-        // IsEnabled is controlled by the command's CanExecute
-
-
-        // --- Shuffle and Loop/Repeat Buttons ---
-
-        var shuffleButton = new ToggleButton
-        {
-            // Content is bound via converter directly
-            Foreground = theme.B_SecondaryTextColor, // Default color (off) - This will be overridden by the style
-            Background = Brushes.Transparent,
-            BorderBrush = theme.B_ControlBackgroundColor, // Default border color (off) - This will be overridden by the style
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4), // Add some rounded corners
-            Padding = new Thickness(5),
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center, // Center the button horizontally
-            VerticalContentAlignment = VerticalAlignment.Center, // Center content vertically
-            HorizontalContentAlignment = HorizontalAlignment.Center, // Center content horizontally
-            FontSize = 18, // Set font size directly on button - Handled by TextBlock now
-            FontFamily = "Segoe UI Symbol, Arial", // Set font family directly on button - Handled by TextBlock now
-            ContentTemplate = null, // No explicit template needed, using direct Content
-            Width = 32, // Fixed width for icon
-            Height = 32 // Fixed height for icon
-        };
-
-        // Set Content as a TextBlock for better centering of the icon
-        shuffleButton.Content = new TextBlock
-        {
-            TextAlignment = TextAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            FontSize = 18, // Font size for the icon
-            FontFamily = new FontFamily("Segoe UI Symbol, Arial"), // Font family for symbols
-            // Bind the TextBlock's Text property to the ShuffleEnabled state via converter
-            [!TextBlock.TextProperty] = new Binding("Playback.ShuffleEnabled") { Converter = BooleanToShuffleIconConverter.Instance }
-        };
-
-        // Bind IsChecked to Playback.ShuffleEnabled (TwoWay) - This is essential for the toggle state
-        // This binding, when checked/unchecked by user click, will trigger the ShuffleEnabled setter in the VM.
-        shuffleButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.ShuffleEnabled", BindingMode.TwoWay));
-
-        // REMOVED: Direct ContentControl.ContentProperty binding on the ToggleButton. Content is now a TextBlock.
-        // shuffleButton.Bind(ContentControl.ContentProperty, new Binding("Playback.ShuffleEnabled") { Converter = BooleanToShuffleIconConverter.Instance });
-
-        Debug.WriteLine($"[View] Shuffle Button TextBlock Content Bound Directly to Playback.ShuffleEnabled with BooleanToShuffleIconConverter. Command binding removed.");
-
-
-        // Change Foreground color based on IsChecked state (using the FuncValueConverter)
-        shuffleButton[!ToggleButton.ForegroundProperty] = new Binding("IsChecked")
-        {
-            Source = shuffleButton,
-            Converter = new FuncValueConverter<bool, IBrush>(isChecked => isChecked ? theme.B_AccentColor : theme.B_SecondaryTextColor)
-        };
-        // Change BorderBrush color based on IsChecked state for a stronger visual cue (using the FuncValueConverter)
-        shuffleButton[!ToggleButton.BorderBrushProperty] = new Binding("IsChecked")
-        {
-            Source = shuffleButton,
-            Converter = new FuncValueConverter<bool, IBrush>(isChecked => isChecked ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
-        };
-        // Ensure button is enabled only when a song is loaded
-        shuffleButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
-
-
-        var repeatModeButton = new ToggleButton // Renamed from loopButton
-        {
-            // Content is bound via converter directly
-            Foreground = theme.B_SecondaryTextColor, // Default color (off) - Will be overridden by style
-            Background = Brushes.Transparent,
-            BorderBrush = theme.B_ControlBackgroundColor, // Default border color (off) - Will be overridden by style
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4), // Add some rounded corners
-            Padding = new Thickness(5),
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center, // Center the button horizontally
-            VerticalContentAlignment = VerticalAlignment.Center, // Center content vertically
-            HorizontalContentAlignment = HorizontalAlignment.Center, // Center content horizontally
-            FontSize = 18, // Use larger font size for icons - Handled by TextBlock now
-            FontFamily = "Segoe UI Symbol, Arial", // Explicitly set font family for symbols - Handled by TextBlock now
-            ContentTemplate = null, // No explicit template needed for simple string content
-            Width = 32, // Fixed width for icon
-            Height = 32 // Fixed height for icon
-        };
-        // Bind Content to Playback.RepeatMode (using a converter to show state) - Renamed
-        repeatModeButton.Content = new TextBlock
-        {
-            TextAlignment = TextAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            FontSize = 18,
-            FontFamily = new FontFamily("Segoe UI Symbol, Arial"),
-            RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
-            [!TextBlock.TextProperty] = new Binding("Playback.RepeatMode")
-            {
-                Converter = new FuncValueConverter<RepeatMode, string>(mode => mode switch
-                {
-                    RepeatMode.None => "―",
-                    RepeatMode.PlayOnce => "₁",
-                    RepeatMode.RepeatOne => "🔂",
-                    RepeatMode.RepeatAll => "🔁",
-                    _ => "?"
-                })
-            },
-            [!TextBlock.RenderTransformProperty] = new Binding("Playback.RepeatMode")
-            {
-                Converter = new FuncValueConverter<RepeatMode, ITransform?>(mode =>
-                {
-                    return mode switch
-                    {
-                        RepeatMode.PlayOnce => new TranslateTransform(0, -3), // Adjusted Y offset for "₁"
-                        RepeatMode.None => new TranslateTransform(0, -1),     // Adjust "―"
-                        _ => null // No transform needed for 🔂/🔁
-                    };
-                })
-            }
-        };
-
-        // Change foreground color based on RepeatMode state (if not None - i.e. any repeat/cycle is active)
-        repeatModeButton[!ToggleButton.ForegroundProperty] = new Binding("Playback.RepeatMode")
-        {
-            // Accent color for PlayOnce, RepeatOne, RepeatAll. Secondary for None.
-            Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.None ? theme.B_AccentColor : theme.B_SecondaryTextColor)
-        };
-        // Change BorderBrush color based on RepeatMode state (if not None - i.e. any repeat/cycle is active)
-        repeatModeButton[!ToggleButton.BorderBrushProperty] = new Binding("Playback.RepeatMode")
-        {
-            // Accent color for PlayOnce, RepeatOne, RepeatAll. ControlBackground for None.
-            Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.None ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
-        };
-        // Bind IsChecked to Playback.IsRepeatActive (ViewModel calculates this based on RepeatMode != None)
-        repeatModeButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.IsRepeatActive"));
-        // Bind Command to Playback.CycleRepeatModeCommand
-        repeatModeButton.Bind(Button.CommandProperty, new Binding("Playback.CycleRepeatModeCommand"));
-        // Ensure button is enabled only when a song is loaded
-        repeatModeButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
-
-
-        // --- Combined Playback Controls Panel (Shuffle + Nav Buttons + Loop) ---
-        // This stack panel holds the core playback buttons including the mode toggles
-        var combinedPlaybackButtonControlsPanel = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 10, // Space between buttons
-            HorizontalAlignment = HorizontalAlignment.Center, // Center buttons within this stack panel
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0)
-        };
-
-        // Add the buttons in the desired order (Shuffle - Previous - Play/Pause - Next - Repeat Mode)
-        combinedPlaybackButtonControlsPanel.Children.Add(shuffleButton);
-        combinedPlaybackButtonControlsPanel.Children.Add(previousButton);
-        combinedPlaybackButtonControlsPanel.Children.Add(mainPlayPauseButton);
-        combinedPlaybackButtonControlsPanel.Children.Add(nextButton);
-        combinedPlaybackButtonControlsPanel.Children.Add(repeatModeButton); // Added the renamed repeat button
-
+        // --- Playback Navigation Buttons Panel (Extracted) ---
+        var combinedPlaybackButtonControlsPanel = PlaybackNavigationButtonsPanel.Create(theme);
 
         var toggleAdvPanelButton = new Button
         {
@@ -5193,79 +5094,12 @@ public static class MainPlaybackControlsPanel
         };
         rightControlsPanel.Children.Add(toggleAdvPanelButton);
 
-        // TextBlock for Current Time
-        var currentTimeTextBlock = new TextBlock
-        {
-            Foreground = theme.B_SecondaryTextColor, // Use secondary color
-            FontSize = 11,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 5, 0), // Margin to the right of the text
-            MinWidth = 40, // Ensure enough space for MM:SS
-            HorizontalAlignment = HorizontalAlignment.Left // Explicitly left align within its grid cell
-        };
-        currentTimeTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentTimeDisplay"));
-        currentTimeTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
-
-        // TextBlock for Total Time
-        var totalTimeTextBlock = new TextBlock
-        {
-            Foreground = theme.B_SecondaryTextColor, // Use secondary color
-            FontSize = 11,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(5, 0, 0, 0), // Margin to the left of the text
-            MinWidth = 40, // Ensure enough space for MM:SS
-            HorizontalAlignment = HorizontalAlignment.Right // Explicitly right align within its grid cell
-        };
-        totalTimeTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.TotalTimeDisplay"));
-        totalTimeTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
-
-
-        var mainPlaybackSlider = new Slider
-        {
-            Name = "MainPlaybackSliderInstance",
-            Minimum = 0,
-            VerticalAlignment = VerticalAlignment.Center,
-            Background = theme.B_SecondaryTextColor,
-            Foreground = theme.B_AccentColor,
-            HorizontalAlignment = HorizontalAlignment.Stretch // Allow slider to fill the available space in its column
-        };
-        mainPlaybackSlider.Styles.Add(new Style(s => s.Is<Thumb>())
-        {
-            Setters =
-            {
-                new Setter(Thumb.WidthProperty, 0.0),
-                new Setter(Thumb.HeightProperty, 0.0),
-                new Setter(Thumb.OpacityProperty, 0.0) // Hide the thumb visually
-            }
-        });
-        mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("Playback.CurrentSongDurationSeconds"));
-        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("Playback.CurrentPositionSeconds", BindingMode.TwoWay));
-        mainPlaybackSlider.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
-
-
-        // Use a Grid to place time text blocks next to the slider
-        var timeSliderGrid = new Grid
-        {
-            // Three columns: Auto (CurrentTime), * (Slider), Auto (TotalTime)
-            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
-            VerticalAlignment = VerticalAlignment.Center,
-            Height = 30, // Fixed height
-            MinWidth = 500, // Ensure minimum width for layout stability
-            HorizontalAlignment = HorizontalAlignment.Stretch // Stretch to fill the center container
-        };
-
-        // Place controls in the grid columns
-        Grid.SetColumn(currentTimeTextBlock, 0);
-        Grid.SetColumn(mainPlaybackSlider, 1);
-        Grid.SetColumn(totalTimeTextBlock, 2);
-
-        timeSliderGrid.Children.Add(currentTimeTextBlock);
-        timeSliderGrid.Children.Add(mainPlaybackSlider);
-        timeSliderGrid.Children.Add(totalTimeTextBlock);
+        // --- Playback Time Slider Panel (Extracted) ---
+        var timeSliderGrid = PlaybackTimeSliderPanel.Create(theme);
 
 
         // --- Center Playback Controls Stack (Combined Buttons Panel + Slider) ---
-        // This stack panel contains the combined button panel (including mode toggles) and the time/slider grid.
+        // This stack panel contains the combined button panel (now includes shuffle/loop, prev/play/next) and the time/slider grid.
         var centerPlaybackControlsStack = new StackPanel
         {
             Orientation = Orientation.Vertical,
@@ -5279,66 +5113,8 @@ public static class MainPlaybackControlsPanel
         centerPlaybackControlsStack.Children.Add(timeSliderGrid);
 
 
-        // --- Currently Playing Song Info Panel (Bottom Left) ---
-        var songInfoPanel = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            VerticalAlignment = VerticalAlignment.Center, // Center vertically in its grid cell
-            HorizontalAlignment = HorizontalAlignment.Left, // Align to the left edge of its grid cell
-            Margin = new Thickness(10, 0, 0, 0), // Margin from the left edge of the grid cell
-            Spacing = 8,
-            // Add MaxWidth to prevent text pushing content, trimming is handled by TextBlock MaxWidth/TextTrimming
-            // We rely on the root Grid column definition to prevent pushing the center.
-        };
-        songInfoPanel.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong")); // Only visible when a song is loaded
-
-        // MODIFIED: Increased thumbnail size from 48x48 to 64x64
-        var thumbnailImage = new Image
-        {
-            Width = 64, // Increased size
-            Height = 64, // Increased size
-            Source = null, // Will be bound
-            Stretch = Stretch.UniformToFill,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        RenderOptions.SetBitmapInterpolationMode(thumbnailImage, BitmapInterpolationMode.HighQuality);
-        thumbnailImage.Bind(Image.SourceProperty, new Binding("Playback.CurrentSong.Thumbnail"));
-
-        var textStack = new StackPanel
-        {
-            Orientation = Orientation.Vertical,
-            VerticalAlignment = VerticalAlignment.Center,
-            Spacing = 1
-        };
-
-        var titleTextBlock = new TextBlock
-        {
-            Text = "Unknown Title", // Default, will be bound
-            FontSize = 14,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = theme.B_TextColor,
-            TextTrimming = TextTrimming.CharacterEllipsis, // Crucial for preventing overflow
-            VerticalAlignment = VerticalAlignment.Center,
-            MaxWidth = 200 // Limit width of the text itself
-        };
-        titleTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentSong.Title"));
-
-        var artistTextBlock = new TextBlock
-        {
-            Text = "Unknown Artist", // Default, will be bound
-            FontSize = 11,
-            Foreground = theme.B_SecondaryTextColor,
-            TextTrimming = TextTrimming.CharacterEllipsis, // Crucial for preventing overflow
-            VerticalAlignment = VerticalAlignment.Center,
-            MaxWidth = 200 // Limit width of the text itself
-        };
-        artistTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentSong.Artist"));
-
-        textStack.Children.Add(titleTextBlock);
-        textStack.Children.Add(artistTextBlock);
-
-        songInfoPanel.Children.Add(thumbnailImage);
-        songInfoPanel.Children.Add(textStack);
+        // --- Currently Playing Song Info Panel (Extracted) ---
+        var songInfoPanel = SongInfoDisplayPanel.Create(theme);
 
 
         // --- Main Grid Layout (Restored Single Column Centering) ---
@@ -5582,6 +5358,397 @@ namespace Sonorize.Views.MainWindowControls
                     break;
             }
         }
+    }
+}
+</file>
+
+<file path="Source\Views\MainWindowControls\PlaybackNavigationButtonsPanel.cs">
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Data;
+using Avalonia.Data.Converters;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Sonorize.Converters;
+using Sonorize.Models;
+using Sonorize.ViewModels; // Required for RepeatMode enum
+using System.Diagnostics;
+
+namespace Sonorize.Views.MainWindowControls;
+
+public static class PlaybackNavigationButtonsPanel
+{
+    public static StackPanel Create(ThemeColors theme)
+    {
+        // Previous Button
+        var previousButton = new Button
+        {
+            Content = "<",
+            Background = theme.B_SlightlyLighterBackground,
+            Foreground = theme.B_TextColor,
+            BorderBrush = theme.B_ControlBackgroundColor,
+            BorderThickness = new Thickness(1),
+            Width = 32,
+            Height = 32,
+            CornerRadius = new CornerRadius(16),
+            Padding = new Thickness(0),
+            FontSize = 16,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+        previousButton.Bind(Button.CommandProperty, new Binding("Library.PreviousTrackCommand"));
+
+        var mainPlayPauseButton = new Button
+        {
+            Background = theme.B_SlightlyLighterBackground,
+            Foreground = theme.B_TextColor,
+            BorderBrush = theme.B_AccentColor,
+            BorderThickness = new Thickness(1),
+            Width = 38,
+            Height = 38,
+            CornerRadius = new CornerRadius(19),
+            Padding = new Thickness(0),
+            FontSize = 18,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center
+        };
+        mainPlayPauseButton.Bind(Button.CommandProperty, new Binding("Playback.PlayPauseResumeCommand"));
+        mainPlayPauseButton.Bind(Button.ContentProperty, new Binding("Playback.IsPlaying") { Converter = BooleanToPlayPauseIconConverter.Instance });
+
+        var nextButton = new Button
+        {
+            Content = ">",
+            Background = theme.B_SlightlyLighterBackground,
+            Foreground = theme.B_TextColor,
+            BorderBrush = theme.B_ControlBackgroundColor,
+            BorderThickness = new Thickness(1),
+            Width = 32,
+            Height = 32,
+            CornerRadius = new CornerRadius(16),
+            Padding = new Thickness(0),
+            FontSize = 16,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+        nextButton.Bind(Button.CommandProperty, new Binding("Library.NextTrackCommand"));
+
+        var shuffleButton = new ToggleButton
+        {
+            Foreground = theme.B_SecondaryTextColor,
+            Background = Brushes.Transparent,
+            BorderBrush = theme.B_ControlBackgroundColor,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(5),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            ContentTemplate = null,
+            Width = 32,
+            Height = 32
+        };
+        shuffleButton.Content = new TextBlock
+        {
+            TextAlignment = TextAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            FontSize = 18,
+            FontFamily = new FontFamily("Segoe UI Symbol, Arial"),
+            [!TextBlock.TextProperty] = new Binding("Playback.ShuffleEnabled") { Converter = BooleanToShuffleIconConverter.Instance }
+        };
+        shuffleButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.ShuffleEnabled", BindingMode.TwoWay));
+        shuffleButton[!ToggleButton.ForegroundProperty] = new Binding("IsChecked")
+        {
+            Source = shuffleButton,
+            Converter = new FuncValueConverter<bool, IBrush>(isChecked => isChecked ? theme.B_AccentColor : theme.B_SecondaryTextColor)
+        };
+        shuffleButton[!ToggleButton.BorderBrushProperty] = new Binding("IsChecked")
+        {
+            Source = shuffleButton,
+            Converter = new FuncValueConverter<bool, IBrush>(isChecked => isChecked ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
+        };
+        shuffleButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
+
+        var repeatModeButton = new ToggleButton
+        {
+            Foreground = theme.B_SecondaryTextColor,
+            Background = Brushes.Transparent,
+            BorderBrush = theme.B_ControlBackgroundColor,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(5),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            ContentTemplate = null,
+            Width = 32,
+            Height = 32
+        };
+        repeatModeButton.Content = new TextBlock
+        {
+            TextAlignment = TextAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            FontSize = 18,
+            FontFamily = new FontFamily("Segoe UI Symbol, Arial"),
+            RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
+            [!TextBlock.TextProperty] = new Binding("Playback.RepeatMode")
+            {
+                Converter = new FuncValueConverter<RepeatMode, string>(mode => mode switch
+                {
+                    RepeatMode.None => "―",
+                    RepeatMode.PlayOnce => "₁",
+                    RepeatMode.RepeatOne => "🔂",
+                    RepeatMode.RepeatAll => "🔁",
+                    _ => "?"
+                })
+            },
+            [!TextBlock.RenderTransformProperty] = new Binding("Playback.RepeatMode")
+            {
+                Converter = new FuncValueConverter<RepeatMode, ITransform?>(mode =>
+                {
+                    return mode switch
+                    {
+                        RepeatMode.PlayOnce => new TranslateTransform(0, -3),
+                        RepeatMode.None => new TranslateTransform(0, -1),
+                        _ => null
+                    };
+                })
+            }
+        };
+        repeatModeButton[!ToggleButton.ForegroundProperty] = new Binding("Playback.RepeatMode")
+        {
+            Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.None ? theme.B_AccentColor : theme.B_SecondaryTextColor)
+        };
+        repeatModeButton[!ToggleButton.BorderBrushProperty] = new Binding("Playback.RepeatMode")
+        {
+            Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.None ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
+        };
+        repeatModeButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.IsRepeatActive"));
+        repeatModeButton.Bind(Button.CommandProperty, new Binding("Playback.CycleRepeatModeCommand"));
+        repeatModeButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
+
+        var combinedPlaybackButtonControlsPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 10,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0)
+        };
+
+        combinedPlaybackButtonControlsPanel.Children.Add(shuffleButton);
+        combinedPlaybackButtonControlsPanel.Children.Add(previousButton);
+        combinedPlaybackButtonControlsPanel.Children.Add(mainPlayPauseButton);
+        combinedPlaybackButtonControlsPanel.Children.Add(nextButton);
+        combinedPlaybackButtonControlsPanel.Children.Add(repeatModeButton);
+
+        return combinedPlaybackButtonControlsPanel;
+    }
+}
+</file>
+
+<file path="Source\Views\MainWindowControls\PlaybackTimeSliderPanel.cs">
+using System;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives; // For Thumb, Track
+using Avalonia.Controls.Templates;  // For FuncControlTemplate
+using Avalonia.Data;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Sonorize.Models; // For ThemeColors
+
+namespace Sonorize.Views.MainWindowControls;
+
+public static class PlaybackTimeSliderPanel
+{
+    public static Grid Create(ThemeColors theme)
+    {
+        // TextBlock for Current Time
+        var currentTimeTextBlock = new TextBlock
+        {
+            Foreground = theme.B_SecondaryTextColor,
+            FontSize = 11,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 5, 0),
+            MinWidth = 40,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        currentTimeTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentTimeDisplay"));
+        currentTimeTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
+
+        // TextBlock for Total Time
+        var totalTimeTextBlock = new TextBlock
+        {
+            Foreground = theme.B_SecondaryTextColor,
+            FontSize = 11,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(5, 0, 0, 0),
+            MinWidth = 40,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        totalTimeTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.TotalTimeDisplay"));
+        totalTimeTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
+
+        var mainPlaybackSlider = new Slider
+        {
+            Name = "MainPlaybackSliderInstance",
+            Minimum = 0,
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = theme.B_SecondaryTextColor, // Inactive part of the track
+            Foreground = theme.B_AccentColor,        // Active part of the track
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Height = 32,                             // Overall height of the slider control
+            MinHeight = 32,                          // Ensure it requests this minimum height
+            Padding = new Thickness(0),
+            CornerRadius = new CornerRadius(8),      // Rounded ends for the overall slider control
+            RenderTransform = new TranslateTransform(0, -3) // Shift slider up by 3 pixels
+        };
+
+        // Override the theme resource for track height specifically for this slider
+        mainPlaybackSlider.Resources["SliderTrackThemeHeight"] = 6.0;
+
+        // Slider Template - thumb invisible but interactive
+        mainPlaybackSlider.Template = new FuncControlTemplate<Slider>((slider, _) =>
+        {
+            var backgroundPart = new Border
+            {
+                Background = slider.Background,
+                CornerRadius = new CornerRadius(3),
+                VerticalAlignment = VerticalAlignment.Center,
+                Height = 8
+            };
+
+            var filledPart = new Border
+            {
+                Background = slider.Foreground,
+                CornerRadius = new CornerRadius(3),
+                VerticalAlignment = VerticalAlignment.Center,
+                Height = 8
+            };
+
+            var thumb = new Thumb
+            {
+                Width = 4,
+                Height = 6,
+                Opacity = 0,
+                IsHitTestVisible = true
+            };
+
+            var track = new Track
+            {
+                Name = "PART_Track",
+                Orientation = Orientation.Horizontal,
+                Thumb = thumb
+            };
+
+            track.Bind(Track.MinimumProperty, slider[!Slider.MinimumProperty]);
+            track.Bind(Track.MaximumProperty, slider[!Slider.MaximumProperty]);
+            track.Bind(Track.ValueProperty, slider[!Slider.ValueProperty]);
+
+            var container = new Grid
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                Height = 6,
+                Children =
+                {
+                    backgroundPart,
+                    new Grid
+                    {
+                        HorizontalAlignment = HorizontalAlignment.Left,
+                        Children = { filledPart }
+                    },
+                    track
+                }
+            };
+
+            // Bind filledPart.Width to proportional slider value
+            filledPart.Bind(Border.WidthProperty, new MultiBinding
+            {
+                Converter = new SliderFillWidthConverter(),
+                Bindings =
+                {
+                    slider[!Slider.ValueProperty],
+                    slider[!Slider.MaximumProperty],
+                    slider[!Slider.BoundsProperty]
+                }
+            });
+
+            return container;
+        });
+
+        // HERE IS THE CRUCIAL CHANGE:
+        // Handle PointerPressed on the slider itself (the whole clickable area)
+        mainPlaybackSlider.PointerPressed += (sender, e) =>
+        {
+            var s = (Slider)sender;
+            var pos = e.GetPosition(s);
+            var bounds = s.Bounds;
+
+            if (bounds.Width > 0)
+            {
+                // Calculate ratio (clamped 0 to 1)
+                double ratio = Math.Clamp(pos.X / bounds.Width, 0, 1);
+
+                // Calculate new slider value based on ratio
+                double newValue = s.Minimum + ratio * (s.Maximum - s.Minimum);
+
+                s.Value = newValue;
+                e.Handled = true;
+            }
+        };
+
+        mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("Playback.CurrentSongDurationSeconds"));
+        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("Playback.CurrentPositionSeconds", BindingMode.TwoWay));
+        mainPlaybackSlider.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
+
+        var timeSliderGrid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+            VerticalAlignment = VerticalAlignment.Center,
+            Height = 32,
+            MinWidth = 500,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            ClipToBounds = false
+        };
+
+        Grid.SetColumn(currentTimeTextBlock, 0);
+        Grid.SetColumn(mainPlaybackSlider, 1);
+        Grid.SetColumn(totalTimeTextBlock, 2);
+
+        timeSliderGrid.Children.Add(currentTimeTextBlock);
+        timeSliderGrid.Children.Add(mainPlaybackSlider);
+        timeSliderGrid.Children.Add(totalTimeTextBlock);
+
+        return timeSliderGrid;
+    }
+}
+
+// Converter for binding filled track width
+public class SliderFillWidthConverter : Avalonia.Data.Converters.IMultiValueConverter
+{
+    public object Convert(System.Collections.Generic.IList<object> values, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+    {
+        if (values.Count == 3 &&
+            values[0] is double value &&
+            values[1] is double max &&
+            values[2] is Rect bounds &&
+            max > 0)
+        {
+            return bounds.Width * (value / max);
+        }
+
+        return 0.0;
+    }
+
+    public object[] ConvertBack(object value, Type[] targetTypes, object parameter, System.Globalization.CultureInfo culture)
+    {
+        throw new NotSupportedException();
     }
 }
 </file>
@@ -5903,6 +6070,83 @@ namespace Sonorize.Views.MainWindowControls
             StackPanelItemsPanelTemplate = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel { Orientation = Orientation.Vertical });
             WrapPanelItemsPanelTemplate = new FuncTemplate<Panel?>(() => new WrapPanel { Orientation = Orientation.Horizontal });
         }
+    }
+}
+</file>
+
+<file path="Source\Views\MainWindowControls\SongInfoDisplayPanel.cs">
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Data;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging; // Required for BitmapInterpolationMode
+using Sonorize.Models; // For ThemeColors
+
+namespace Sonorize.Views.MainWindowControls;
+
+public static class SongInfoDisplayPanel
+{
+    public static StackPanel Create(ThemeColors theme)
+    {
+        var songInfoPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(10, 0, 0, 0),
+            Spacing = 8,
+        };
+        songInfoPanel.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
+
+        var thumbnailImage = new Image
+        {
+            Width = 64,
+            Height = 64,
+            Source = null, // Will be bound
+            Stretch = Stretch.UniformToFill,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        RenderOptions.SetBitmapInterpolationMode(thumbnailImage, BitmapInterpolationMode.HighQuality);
+        thumbnailImage.Bind(Image.SourceProperty, new Binding("Playback.CurrentSong.Thumbnail"));
+
+        var textStack = new StackPanel
+        {
+            Orientation = Orientation.Vertical,
+            VerticalAlignment = VerticalAlignment.Center,
+            Spacing = 1
+        };
+
+        var titleTextBlock = new TextBlock
+        {
+            Text = "Unknown Title", // Default, will be bound
+            FontSize = 14,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = theme.B_TextColor,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center,
+            MaxWidth = 200
+        };
+        titleTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentSong.Title"));
+
+        var artistTextBlock = new TextBlock
+        {
+            Text = "Unknown Artist", // Default, will be bound
+            FontSize = 11,
+            Foreground = theme.B_SecondaryTextColor,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center,
+            MaxWidth = 200
+        };
+        artistTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentSong.Artist"));
+
+        textStack.Children.Add(titleTextBlock);
+        textStack.Children.Add(artistTextBlock);
+
+        songInfoPanel.Children.Add(thumbnailImage);
+        songInfoPanel.Children.Add(textStack);
+
+        return songInfoPanel;
     }
 }
 </file>
