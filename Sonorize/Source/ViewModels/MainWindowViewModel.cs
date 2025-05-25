@@ -1,21 +1,15 @@
 ﻿using System;
-using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO; // Required for Path.GetFullPath, Directory.Exists
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Controls;
-using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Sonorize.Models;
 using Sonorize.Services;
-using Sonorize.Utils;
-using System.IO; // Required for Path.GetFullPath, Directory.Exists
-using System.Collections.Generic; // Required for List
-using System.Security.Cryptography; // Required for shuffle randomization
-using System.Runtime.InteropServices; // Required for Marshal.Copy
 
 namespace Sonorize.ViewModels;
 
@@ -26,7 +20,7 @@ public class MainWindowViewModel : ViewModelBase
     private readonly WaveformService _waveformService;
     private readonly LoopDataService _loopDataService;
     private readonly ScrobblingService _scrobblingService;
-    private readonly NextTrackSelectorService _nextTrackSelectorService; // Added
+    private readonly NextTrackSelectorService _nextTrackSelectorService;
 
     // Expose the Services directly for child VMs or public properties
     public PlaybackService PlaybackService { get; }
@@ -35,11 +29,11 @@ public class MainWindowViewModel : ViewModelBase
     // Expose the child ViewModels
     public LibraryViewModel Library { get; set; }
     public LoopEditorViewModel LoopEditor { get; }
-    public PlaybackViewModel Playback { get; } // Playback ViewModel
+    public PlaybackViewModel Playback { get; }
     public string StatusBarText { get => field; set => SetProperty(ref field, value); } = "Welcome to Sonorize!";
 
     // Property to control the selected tab index in the main TabControl
-    public int ActiveTabIndex { get => field; set => SetProperty(ref field, value); } = 0; // Default to Library tab (index 0)
+    public int ActiveTabIndex { get => field; set => SetProperty(ref field, value); } = 0;
 
 
     // IsLoadingLibrary is a proxy to Library's state
@@ -72,7 +66,7 @@ public class MainWindowViewModel : ViewModelBase
         _waveformService = waveformService;
         _loopDataService = loopDataService;
         _scrobblingService = scrobblingService;
-        _nextTrackSelectorService = new NextTrackSelectorService(_shuffleRandom); // Initialize NextTrackSelectorService
+        _nextTrackSelectorService = new NextTrackSelectorService(_shuffleRandom);
 
         Library = new LibraryViewModel(this, _settingsService, _musicLibraryService, _loopDataService);
         Playback = new PlaybackViewModel(PlaybackService, _waveformService);
@@ -145,7 +139,7 @@ public class MainWindowViewModel : ViewModelBase
                         Debug.WriteLine("[MainVM_LibChanged] Library.SelectedSong is null. No Play call needed here. PlaybackService.Stop might have been called.");
                     }
 
-                    RaiseAllCommandsCanExecuteChanged();
+                    RaiseAllCommandsCanExecuteChanged(); // Still relevant for commands MainWindowViewModel owns.
                     break;
                 case nameof(Library.IsLoadingLibrary):
                     OnPropertyChanged(nameof(IsLoadingLibrary));
@@ -250,8 +244,9 @@ public class MainWindowViewModel : ViewModelBase
         (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ToggleAdvancedPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
 
-        Library.RaiseLibraryCommandsCanExecuteChanged();
-        Library.RaiseNavigationCommandsCanExecuteChanged();
+        Library.RaiseLibraryCommandsCanExecuteChanged(); // For LibraryVM's own commands (e.g., SetDisplayMode)
+        // Navigation commands are handled by LibraryViewModel's TrackNavigationManager internally.
+        // No longer need: Library.RaiseNavigationCommandsCanExecuteChanged(); 
         Playback.RaisePlaybackCommandCanExecuteChanged();
         LoopEditor.RaiseLoopCommandCanExecuteChanged();
     }
@@ -352,7 +347,7 @@ public class MainWindowViewModel : ViewModelBase
 
             if (!themeActuallyChanged && !dirsActuallyChanged && !scrobbleSettingsActuallyChanged)
             {
-                UpdateStatusBarText(); // If only minor settings changed that don't require reload/restart/refresh
+                UpdateStatusBarText();
             }
         }
         else

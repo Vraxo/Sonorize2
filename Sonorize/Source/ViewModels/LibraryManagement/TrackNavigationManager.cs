@@ -87,7 +87,7 @@ public class TrackNavigationManager : ViewModelBase // Inherit for RelayCommand'
         }
         else
         {
-            Debug.WriteLine("[TrackNavManager] Selected song not found in filtered list.");
+             Debug.WriteLine("[TrackNavManager] Selected song not found in filtered list.");
         }
     }
 
