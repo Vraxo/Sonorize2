@@ -30,16 +30,15 @@ public class PlaybackFlowManagerService
         Debug.WriteLine("[PlaybackFlowManager] HandlePlaybackEndedNaturally called.");
 
         Song? currentSong = _libraryViewModel.SelectedSong;
-        List<Song> currentList = _libraryViewModel.FilteredSongs.ToList(); // Ensure we operate on a snapshot
+        List<Song> currentList = [.. _libraryViewModel.FilteredSongs];
         RepeatMode repeatMode = _playbackViewModel.RepeatMode;
         bool shuffleEnabled = _playbackViewModel.ShuffleEnabled;
 
         Song? nextSong = _nextTrackSelectorService.GetNextSong(currentSong, currentList, repeatMode, shuffleEnabled);
 
-        if (nextSong != null)
+        if (nextSong is not null)
         {
             Debug.WriteLine($"[PlaybackFlowManager] Next song determined: {nextSong.Title}. Setting Library.SelectedSong.");
-            // This will trigger MainWindowViewModel's logic to start playing the new song.
             _libraryViewModel.SelectedSong = nextSong;
         }
         else
@@ -47,6 +46,7 @@ public class PlaybackFlowManagerService
             Debug.WriteLine("[PlaybackFlowManager] No next song determined. Calling PlaybackService.Stop().");
             _playbackService.Stop();
         }
+
         Debug.WriteLine("[PlaybackFlowManager] HandlePlaybackEndedNaturally completed.");
     }
 }
