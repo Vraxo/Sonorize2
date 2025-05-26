@@ -6951,7 +6951,18 @@ namespace Sonorize.Views.MainWindowControls
                 image.Bind(Image.SourceProperty, new Binding(nameof(Song.Thumbnail)));
                 RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
 
-                var titleBlock = new TextBlock { FontSize = 12, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, MaxHeight = 30, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 3, 0, 0) };
+                var titleBlock = new TextBlock
+                {
+                    FontSize = 12,
+                    FontWeight = FontWeight.SemiBold,
+                    TextWrapping = TextWrapping.Wrap,
+                    Height = 32, // Adjusted height for two lines
+                    MaxLines = 2, // Explicitly set max lines
+                    TextAlignment = TextAlignment.Center,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 3, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Top
+                };
                 titleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Title)));
 
                 var artistBlock = new TextBlock { FontSize = 10, Foreground = _theme.B_SecondaryTextColor, TextWrapping = TextWrapping.Wrap, MaxHeight = 15, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 1, 0, 0) };
