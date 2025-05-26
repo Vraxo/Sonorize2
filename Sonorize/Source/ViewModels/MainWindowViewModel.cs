@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic; // Added for List<string>
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO; // Required for Path.GetFullPath, Directory.Exists
@@ -22,7 +23,9 @@ public class MainWindowViewModel : ViewModelBase
     private readonly LoopDataService _loopDataService;
     private readonly ScrobblingService _scrobblingService;
     private readonly NextTrackSelectorService _nextTrackSelectorService;
-    private readonly StatusBarTextProvider _statusBarTextProvider; // Added
+    private readonly StatusBarTextProvider _statusBarTextProvider;
+    private readonly SettingsChangeProcessorService _settingsChangeProcessorService;
+    private readonly PlaybackFlowManagerService _playbackFlowManagerService; // Added
 
     // Expose the Services directly for child VMs or public properties
     public PlaybackService PlaybackService { get; }
@@ -73,7 +76,9 @@ public class MainWindowViewModel : ViewModelBase
         Library = new LibraryViewModel(this, _settingsService, _musicLibraryService, _loopDataService);
         Playback = new PlaybackViewModel(PlaybackService, _waveformService);
         LoopEditor = new LoopEditorViewModel(PlaybackService, _loopDataService);
-        _statusBarTextProvider = new StatusBarTextProvider(Playback, LoopEditor, Library); // Instantiated
+        _statusBarTextProvider = new StatusBarTextProvider(Playback, LoopEditor, Library);
+        _settingsChangeProcessorService = new SettingsChangeProcessorService(Library, _scrobblingService);
+        _playbackFlowManagerService = new PlaybackFlowManagerService(Library, Playback, PlaybackService, _nextTrackSelectorService); // Instantiated
 
 
         Library.PropertyChanged += Library_PropertyChanged;
@@ -96,27 +101,9 @@ public class MainWindowViewModel : ViewModelBase
 
     private void PlaybackService_PlaybackEndedNaturally(object? sender, EventArgs e)
     {
-        Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally event received.");
-
-        var currentSong = Library.SelectedSong;
-        var currentList = Library.FilteredSongs.ToList();
-        var repeatMode = Playback.RepeatMode;
-        var shuffleEnabled = Playback.ShuffleEnabled;
-
-        Song? nextSong = _nextTrackSelectorService.GetNextSong(currentSong, currentList, repeatMode, shuffleEnabled);
-
-        if (nextSong != null)
-        {
-            Debug.WriteLine($"[MainVM] Next song determined by NextTrackSelectorService: {nextSong.Title}. Setting Library.SelectedSong.");
-            Library.SelectedSong = nextSong;
-        }
-        else
-        {
-            Debug.WriteLine("[MainVM] No next song determined by NextTrackSelectorService. Calling PlaybackService.Stop().");
-            PlaybackService.Stop();
-        }
-
-        Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally handler completed.");
+        Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally event received. Delegating to PlaybackFlowManagerService.");
+        _playbackFlowManagerService.HandlePlaybackEndedNaturally();
+        Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally handler completed after delegation.");
     }
 
     private void Library_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -278,52 +265,29 @@ public class MainWindowViewModel : ViewModelBase
 
         if (settingsVM.SettingsChanged)
         {
-            Debug.WriteLine("[MainVM] Settings changed detected after dialog closed.");
-            var newSettingsAfterDialog = _settingsService.LoadSettings();
-            bool dirsActuallyChanged = !currentSettingsBeforeDialog.MusicDirectories.SequenceEqual(newSettingsAfterDialog.MusicDirectories);
-            bool themeActuallyChanged = currentSettingsBeforeDialog.PreferredThemeFileName != newSettingsAfterDialog.PreferredThemeFileName;
-            bool scrobbleSettingsActuallyChanged =
-                currentSettingsBeforeDialog.LastfmScrobblingEnabled != newSettingsAfterDialog.LastfmScrobblingEnabled ||
-                currentSettingsBeforeDialog.LastfmUsername != newSettingsAfterDialog.LastfmUsername ||
-                currentSettingsBeforeDialog.LastfmPassword != newSettingsAfterDialog.LastfmPassword;
+            Debug.WriteLine("[MainVM] Settings changed detected after dialog closed. Processing changes...");
+            var newSettingsAfterDialog = _settingsService.LoadSettings(); // Get the latest saved settings
 
+            List<string> statusMessages = await _settingsChangeProcessorService.ProcessChangesAndGetStatus(
+                currentSettingsBeforeDialog,
+                newSettingsAfterDialog
+            );
 
-            if (dirsActuallyChanged)
+            if (statusMessages.Any())
             {
-                Debug.WriteLine("[MainVM] Music directories changed. Reloading library.");
-                await Library.LoadLibraryAsync();
+                StatusBarText = string.Join(" | ", statusMessages);
             }
-
-            if (themeActuallyChanged)
+            else
             {
-                Debug.WriteLine("[MainVM] Theme changed. Restart recommended.");
-                StatusBarText = "Theme changed. Please restart Sonorize for the changes to take full effect.";
-            }
-
-            if (scrobbleSettingsActuallyChanged)
-            {
-                Debug.WriteLine("[MainVM] Scrobbling settings changed. Refreshing ScrobblingService.");
-                _scrobblingService.RefreshSettings();
-                // Optionally, update status bar if scrobbling got enabled/disabled
-                if (newSettingsAfterDialog.LastfmScrobblingEnabled && !string.IsNullOrEmpty(newSettingsAfterDialog.LastfmUsername))
-                {
-                    if (StatusBarText.Contains("restart Sonorize")) {/* Append if needed */} else StatusBarText = "Scrobbling enabled.";
-                }
-                else if (!newSettingsAfterDialog.LastfmScrobblingEnabled && currentSettingsBeforeDialog.LastfmScrobblingEnabled)
-                {
-                    if (StatusBarText.Contains("restart Sonorize")) {/* Append if needed */} else StatusBarText = "Scrobbling disabled.";
-                }
-            }
-
-            if (!themeActuallyChanged && !dirsActuallyChanged && !scrobbleSettingsActuallyChanged)
-            {
+                // If processor had no specific messages (e.g., only dir changes which updates status via library load)
+                // then refresh status bar based on current app state.
                 UpdateStatusBarText();
             }
         }
         else
         {
             Debug.WriteLine("[MainVM] Settings dialog closed, no changes reported by SettingsViewModel.");
-            UpdateStatusBarText();
+            UpdateStatusBarText(); // Ensure status text is current
         }
     }
 
