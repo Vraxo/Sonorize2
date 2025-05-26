@@ -109,7 +109,7 @@ public class SettingsWindow : Window
             Foreground = _theme.B_TextColor,
             Margin = new Thickness(0, 0, 0, 10)
         };
-        scrobblingEnableCheckBox.Bind(ToggleButton.IsCheckedProperty, new Binding("LastfmScrobblingEnabled", BindingMode.TwoWay));
+        scrobblingEnableCheckBox.Bind(ToggleButton.IsCheckedProperty, new Binding("LastfmSettings.LastfmScrobblingEnabled", BindingMode.TwoWay));
 
         var usernameLabel = new TextBlock { Text = "Username:", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 5) };
         var usernameTextBox = new TextBox
@@ -120,7 +120,7 @@ public class SettingsWindow : Window
             Watermark = "Last.fm Username",
             Margin = new Thickness(0, 0, 0, 5)
         };
-        usernameTextBox.Bind(TextBox.TextProperty, new Binding("LastfmUsername", BindingMode.TwoWay));
+        usernameTextBox.Bind(TextBox.TextProperty, new Binding("LastfmSettings.LastfmUsername", BindingMode.TwoWay));
 
         var passwordLabel = new TextBlock { Text = "Password:", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
         var passwordTextBox = new TextBox
@@ -131,7 +131,7 @@ public class SettingsWindow : Window
             PasswordChar = '•',
             Watermark = "Last.fm Password"
         };
-        passwordTextBox.Bind(TextBox.TextProperty, new Binding("LastfmPassword", BindingMode.TwoWay));
+        passwordTextBox.Bind(TextBox.TextProperty, new Binding("LastfmSettings.LastfmPassword", BindingMode.TwoWay));
 
 
         var scrobblingGrid = new Grid
@@ -164,7 +164,7 @@ public class SettingsWindow : Window
             Foreground = _theme.B_TextColor,
             BorderBrush = _theme.B_SecondaryTextColor
         };
-        percentageUpDown.Bind(NumericUpDown.ValueProperty, new Binding("ScrobbleThresholdPercentage", BindingMode.TwoWay));
+        percentageUpDown.Bind(NumericUpDown.ValueProperty, new Binding("LastfmSettings.ScrobbleThresholdPercentage", BindingMode.TwoWay));
         var percentageUnitLabel = new TextBlock { Text = "% of duration", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
         percentagePanel.Children.Add(percentageLabel); percentagePanel.Children.Add(percentageUpDown); percentagePanel.Children.Add(percentageUnitLabel);
 
@@ -180,7 +180,7 @@ public class SettingsWindow : Window
             Foreground = _theme.B_TextColor,
             BorderBrush = _theme.B_SecondaryTextColor
         };
-        absoluteUpDown.Bind(NumericUpDown.ValueProperty, new Binding("ScrobbleThresholdAbsoluteSeconds", BindingMode.TwoWay));
+        absoluteUpDown.Bind(NumericUpDown.ValueProperty, new Binding("LastfmSettings.ScrobbleThresholdAbsoluteSeconds", BindingMode.TwoWay));
         var absoluteUnitLabel = new TextBlock { Text = "seconds", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
         absolutePanel.Children.Add(absoluteLabel); absolutePanel.Children.Add(absoluteUpDown); absolutePanel.Children.Add(absoluteUnitLabel);
 

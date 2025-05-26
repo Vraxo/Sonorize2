@@ -42,41 +42,8 @@ public class SettingsViewModel : ViewModelBase
         }
     }
 
-    // Last.fm Settings Properties
-    private bool _lastfmScrobblingEnabled;
-    public bool LastfmScrobblingEnabled
-    {
-        get => _lastfmScrobblingEnabled;
-        set { if (SetProperty(ref _lastfmScrobblingEnabled, value)) MarkSettingsChanged(); }
-    }
-
-    private string? _lastfmUsername;
-    public string? LastfmUsername
-    {
-        get => _lastfmUsername;
-        set { if (SetProperty(ref _lastfmUsername, value)) MarkSettingsChanged(); }
-    }
-
-    private string? _lastfmPassword;
-    public string? LastfmPassword
-    {
-        get => _lastfmPassword;
-        set { if (SetProperty(ref _lastfmPassword, value)) MarkSettingsChanged(); }
-    }
-
-    private int _scrobbleThresholdPercentage;
-    public int ScrobbleThresholdPercentage
-    {
-        get => _scrobbleThresholdPercentage;
-        set { if (SetProperty(ref _scrobbleThresholdPercentage, value)) MarkSettingsChanged(); }
-    }
-
-    private int _scrobbleThresholdAbsoluteSeconds;
-    public int ScrobbleThresholdAbsoluteSeconds
-    {
-        get => _scrobbleThresholdAbsoluteSeconds;
-        set { if (SetProperty(ref _scrobbleThresholdAbsoluteSeconds, value)) MarkSettingsChanged(); }
-    }
+    // Encapsulated Last.fm Settings
+    public LastfmSettingsViewModel LastfmSettings { get; }
 
 
     public bool SettingsChanged { get; private set; } = false;
@@ -90,7 +57,7 @@ public class SettingsViewModel : ViewModelBase
     public SettingsViewModel(SettingsService settingsService)
     {
         _settingsService = settingsService;
-        _themeService = new ThemeService(null);
+        _themeService = new ThemeService(null); // ThemeService used for GetAvailableThemeFiles
 
         var settings = _settingsService.LoadSettings();
         InitialMusicDirectories = new List<string>(settings.MusicDirectories);
@@ -111,15 +78,13 @@ public class SettingsViewModel : ViewModelBase
             SelectedThemeFile = AvailableThemes.First();
         }
 
-        // Load Last.fm settings
-        _lastfmScrobblingEnabled = settings.LastfmScrobblingEnabled;
-        _lastfmUsername = settings.LastfmUsername;
-        _lastfmPassword = settings.LastfmPassword;
-        _scrobbleThresholdPercentage = settings.ScrobbleThresholdPercentage;
-        _scrobbleThresholdAbsoluteSeconds = settings.ScrobbleThresholdAbsoluteSeconds;
+        // Initialize Last.fm settings module
+        LastfmSettings = new LastfmSettingsViewModel();
+        LastfmSettings.LoadFromSettings(settings);
+        LastfmSettings.PropertyChanged += (s, e) => MarkSettingsChanged();
 
 
-        SettingsChanged = false;
+        SettingsChanged = false; // Initial state is unchanged
 
         AddDirectoryCommand = new RelayCommand(async owner => await AddDirectory(owner as Window));
         RemoveDirectoryCommand = new RelayCommand(RemoveSelectedDirectory, _ => CanRemoveDirectory);
@@ -131,6 +96,7 @@ public class SettingsViewModel : ViewModelBase
             {
                 (RemoveDirectoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
             }
+            // Changes to SelectedThemeFile already call MarkSettingsChanged in their setter
         };
         MusicDirectories.CollectionChanged += (s, e) => MarkSettingsChanged();
     }
@@ -170,6 +136,7 @@ public class SettingsViewModel : ViewModelBase
             if (string.IsNullOrEmpty(path) || MusicDirectories.Contains(path)) return;
 
             MusicDirectories.Add(path);
+            // MarkSettingsChanged() is called by CollectionChanged handler
         }
     }
 
@@ -179,66 +146,80 @@ public class SettingsViewModel : ViewModelBase
 
         MusicDirectories.Remove(SelectedDirectory);
         SelectedDirectory = null;
+        // MarkSettingsChanged() is called by CollectionChanged handler
     }
 
     private void SaveSettings(object? parameter)
     {
-        AppSettings currentSettings = _settingsService.LoadSettings();
+        // Load the settings as they are currently on disk to compare against
+        AppSettings settingsOnDisk = _settingsService.LoadSettings();
+        // Create a new AppSettings object or clone to store the new state
+        AppSettings newSettingsToSave = new AppSettings
+        {
+            // Copy non-UI managed settings or settings that are not part of this VM directly
+            LibraryViewModePreference = settingsOnDisk.LibraryViewModePreference,
+            ArtistViewModePreference = settingsOnDisk.ArtistViewModePreference,
+            AlbumViewModePreference = settingsOnDisk.AlbumViewModePreference,
+            LastfmSessionKey = settingsOnDisk.LastfmSessionKey // Preserve session key
+        };
+
         bool actualChangesMade = false;
 
-        if (!InitialMusicDirectories.SequenceEqual(MusicDirectories))
+        // Music Directories
+        if (!InitialMusicDirectories.SequenceEqual(MusicDirectories) || // If they were initially different
+            !settingsOnDisk.MusicDirectories.SequenceEqual(MusicDirectories)) // Or different from current disk state
         {
-            currentSettings.MusicDirectories = new List<string>(MusicDirectories);
-            InitialMusicDirectories = new List<string>(MusicDirectories);
+            newSettingsToSave.MusicDirectories = new List<string>(MusicDirectories);
+            InitialMusicDirectories = new List<string>(MusicDirectories); // Update initial state for next open
             actualChangesMade = true;
-            Debug.WriteLine($"[SettingsVM] Saved directories count: {currentSettings.MusicDirectories.Count}");
-        }
-
-        if (currentSettings.PreferredThemeFileName != SelectedThemeFile)
-        {
-            currentSettings.PreferredThemeFileName = SelectedThemeFile;
-            actualChangesMade = true;
-            Debug.WriteLine($"[SettingsVM] Saved theme: {SelectedThemeFile}");
-        }
-
-        if (currentSettings.LastfmScrobblingEnabled != LastfmScrobblingEnabled)
-        {
-            currentSettings.LastfmScrobblingEnabled = LastfmScrobblingEnabled;
-            actualChangesMade = true;
-            Debug.WriteLine($"[SettingsVM] Saved LastfmScrobblingEnabled: {currentSettings.LastfmScrobblingEnabled}");
-        }
-        if (currentSettings.LastfmUsername != LastfmUsername)
-        {
-            currentSettings.LastfmUsername = LastfmUsername;
-            actualChangesMade = true;
-            Debug.WriteLine($"[SettingsVM] Saved LastfmUsername: {currentSettings.LastfmUsername}");
-        }
-        if (currentSettings.LastfmPassword != LastfmPassword)
-        {
-            currentSettings.LastfmPassword = LastfmPassword;
-            actualChangesMade = true;
-            Debug.WriteLine($"[SettingsVM] Saved LastfmPassword (length: {currentSettings.LastfmPassword?.Length ?? 0})");
-        }
-        if (currentSettings.ScrobbleThresholdPercentage != ScrobbleThresholdPercentage)
-        {
-            currentSettings.ScrobbleThresholdPercentage = ScrobbleThresholdPercentage;
-            actualChangesMade = true;
-            Debug.WriteLine($"[SettingsVM] Saved ScrobbleThresholdPercentage: {currentSettings.ScrobbleThresholdPercentage}");
-        }
-        if (currentSettings.ScrobbleThresholdAbsoluteSeconds != ScrobbleThresholdAbsoluteSeconds)
-        {
-            currentSettings.ScrobbleThresholdAbsoluteSeconds = ScrobbleThresholdAbsoluteSeconds;
-            actualChangesMade = true;
-            Debug.WriteLine($"[SettingsVM] Saved ScrobbleThresholdAbsoluteSeconds: {currentSettings.ScrobbleThresholdAbsoluteSeconds}");
-        }
-
-        if (actualChangesMade)
-        {
-            _settingsService.SaveSettings(currentSettings);
-            SettingsChanged = true;
+            Debug.WriteLine($"[SettingsVM] Saved directories count: {newSettingsToSave.MusicDirectories.Count}");
         }
         else
         {
+            newSettingsToSave.MusicDirectories = new List<string>(settingsOnDisk.MusicDirectories);
+        }
+
+        // Theme
+        if (settingsOnDisk.PreferredThemeFileName != SelectedThemeFile)
+        {
+            newSettingsToSave.PreferredThemeFileName = SelectedThemeFile;
+            actualChangesMade = true;
+            Debug.WriteLine($"[SettingsVM] Saved theme: {SelectedThemeFile}");
+        }
+        else
+        {
+            newSettingsToSave.PreferredThemeFileName = settingsOnDisk.PreferredThemeFileName;
+        }
+
+        // Last.fm Settings - Compare with disk state and apply LastfmSettings VM state
+        if (settingsOnDisk.LastfmScrobblingEnabled != LastfmSettings.LastfmScrobblingEnabled) { actualChangesMade = true; }
+        if (settingsOnDisk.LastfmUsername != LastfmSettings.LastfmUsername) { actualChangesMade = true; }
+        if (settingsOnDisk.LastfmPassword != LastfmSettings.LastfmPassword && !string.IsNullOrEmpty(LastfmSettings.LastfmPassword)) { actualChangesMade = true; }
+        if (settingsOnDisk.ScrobbleThresholdPercentage != LastfmSettings.ScrobbleThresholdPercentage) { actualChangesMade = true; }
+        if (settingsOnDisk.ScrobbleThresholdAbsoluteSeconds != LastfmSettings.ScrobbleThresholdAbsoluteSeconds) { actualChangesMade = true; }
+
+        // Apply changes from LastfmSettingsViewModel to newSettingsToSave
+        LastfmSettings.UpdateAppSettings(newSettingsToSave);
+        if (actualChangesMade)
+        {
+            Debug.WriteLine($"[SettingsVM] Last.fm settings updated: " +
+                           $"Scrobbling={newSettingsToSave.LastfmScrobblingEnabled}, " +
+                           $"User={newSettingsToSave.LastfmUsername}, " +
+                           $"PassLen={(newSettingsToSave.LastfmPassword?.Length ?? 0)}, " +
+                           $"Thresh%={newSettingsToSave.ScrobbleThresholdPercentage}, " +
+                           $"ThreshAbsSec={newSettingsToSave.ScrobbleThresholdAbsoluteSeconds}");
+        }
+
+
+        if (actualChangesMade)
+        {
+            _settingsService.SaveSettings(newSettingsToSave);
+            SettingsChanged = true; // This signals that persistent changes were made
+        }
+        else
+        {
+            // Even if MarkSettingsChanged was called (UI was touched), if the final state
+            // matches what's on disk, then no "actual change" for the purpose of post-save actions.
             SettingsChanged = false;
         }
     }
