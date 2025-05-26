@@ -38,22 +38,9 @@ public class App : Application
             // Delegate theme color application to the new service
             ThemeResourceApplicator.ApplyCustomColorsToResources(this, currentCustomTheme);
 
-            var lastfmAuthenticatorService = new LastfmAuthenticatorService(settingsService); // Create Authenticator
-            var scrobblingService = new ScrobblingService(settingsService, lastfmAuthenticatorService); // Pass Authenticator
-            var playbackService = new PlaybackService(scrobblingService);
-            var loopDataService = new LoopDataService();
-            var thumbnailService = new ThumbnailService();
-            var musicLibraryService = new MusicLibraryService(loopDataService, thumbnailService);
-            var waveformService = new WaveformService();
-
-            var mainWindowViewModel = new MainWindowViewModel(
-                settingsService,
-                musicLibraryService,
-                playbackService,
-                currentCustomTheme,
-                waveformService,
-                loopDataService,
-                scrobblingService);
+            // Use the bootstrapper to create services and the main ViewModel
+            var bootstrapper = new ApplicationServicesBootstrapper();
+            var mainWindowViewModel = bootstrapper.Bootstrap(settingsService, currentCustomTheme);
 
             desktop.MainWindow = new MainWindow(currentCustomTheme)
             {
