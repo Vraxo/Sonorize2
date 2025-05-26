@@ -38,11 +38,12 @@ public class App : Application
             // Delegate theme color application to the new service
             ThemeResourceApplicator.ApplyCustomColorsToResources(this, currentCustomTheme);
 
-            var scrobblingService = new ScrobblingService(settingsService); // Create ScrobblingService
-            var playbackService = new PlaybackService(scrobblingService); // Pass ScrobblingService
+            var lastfmAuthenticatorService = new LastfmAuthenticatorService(settingsService); // Create Authenticator
+            var scrobblingService = new ScrobblingService(settingsService, lastfmAuthenticatorService); // Pass Authenticator
+            var playbackService = new PlaybackService(scrobblingService);
             var loopDataService = new LoopDataService();
-            var thumbnailService = new ThumbnailService(); // Create ThumbnailService
-            var musicLibraryService = new MusicLibraryService(loopDataService, thumbnailService); // Pass ThumbnailService
+            var thumbnailService = new ThumbnailService();
+            var musicLibraryService = new MusicLibraryService(loopDataService, thumbnailService);
             var waveformService = new WaveformService();
 
             var mainWindowViewModel = new MainWindowViewModel(
@@ -52,7 +53,7 @@ public class App : Application
                 currentCustomTheme,
                 waveformService,
                 loopDataService,
-                scrobblingService); // Pass ScrobblingService
+                scrobblingService);
 
             desktop.MainWindow = new MainWindow(currentCustomTheme)
             {

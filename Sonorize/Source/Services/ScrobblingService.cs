@@ -10,110 +10,43 @@ namespace Sonorize.Services;
 public class ScrobblingService
 {
     private readonly SettingsService _settingsService;
+    private readonly LastfmAuthenticatorService _authenticatorService;
     private AppSettings _currentSettings;
 
-    // !!! IMPORTANT: Replace these with your actual API key and secret from Last.fm !!!
-    private const string LastfmApiKey = "d623e7a246a80c3bd60819e86c7b5ee1";
-    private const string LastfmApiSecret = "9414a77c9b7f8c361d96d4575ccd97f0";
     private const int MinTrackLengthForScrobbleSeconds = 30;
-
-    private string? _cachedSessionKey; // Cache session key for the current app session
 
     public bool IsScrobblingEnabled => _currentSettings.LastfmScrobblingEnabled;
 
-    // Credentials are now configured if we have a session key, or if we have username/password to attempt to get one.
-    public bool AreCredentialsEffectivelyConfigured => !string.IsNullOrEmpty(_cachedSessionKey) ||
-                                                      (!string.IsNullOrEmpty(_currentSettings.LastfmUsername) &&
-                                                       !string.IsNullOrEmpty(_currentSettings.LastfmPassword));
+    public bool AreCredentialsEffectivelyConfigured => _authenticatorService.AreCredentialsEffectivelyConfigured(_currentSettings);
 
-    public ScrobblingService(SettingsService settingsService)
+    public ScrobblingService(SettingsService settingsService, LastfmAuthenticatorService authenticatorService)
     {
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
-        RefreshSettings(); // Initial load of settings and session key
-        Debug.WriteLine($"[ScrobblingService] Initialized. Scrobbling Enabled: {IsScrobblingEnabled}, SessionKey Cached: {!string.IsNullOrEmpty(_cachedSessionKey)}");
+        _authenticatorService = authenticatorService ?? throw new ArgumentNullException(nameof(authenticatorService));
+        RefreshSettings(); // Initial load of settings
+        Debug.WriteLine($"[ScrobblingService] Initialized. Scrobbling Enabled: {IsScrobblingEnabled}, Credentials Configured: {AreCredentialsEffectivelyConfigured}");
     }
 
     public void RefreshSettings()
     {
         _currentSettings = _settingsService.LoadSettings();
-        _cachedSessionKey = _currentSettings.LastfmSessionKey; // Load session key from settings
-        Debug.WriteLine($"[ScrobblingService] Settings refreshed. Scrobbling Enabled: {IsScrobblingEnabled}, SessionKey Cached: {!string.IsNullOrEmpty(_cachedSessionKey)}, Thresholds: {_currentSettings.ScrobbleThresholdPercentage}% / {_currentSettings.ScrobbleThresholdAbsoluteSeconds}s");
+        // Session key is now managed by LastfmAuthenticatorService, no need to cache it here.
+        Debug.WriteLine($"[ScrobblingService] Settings refreshed. Scrobbling Enabled: {IsScrobblingEnabled}, Credentials Configured: {AreCredentialsEffectivelyConfigured}, Thresholds: {_currentSettings.ScrobbleThresholdPercentage}% / {_currentSettings.ScrobbleThresholdAbsoluteSeconds}s");
     }
 
-    private async Task<LastfmClient?> GetClientAsync()
+    private async Task<LastfmClient?> GetAuthenticatedClientAsync()
     {
-        if (string.IsNullOrEmpty(LastfmApiKey) || LastfmApiKey == "YOUR_LASTFM_API_KEY" ||
-            string.IsNullOrEmpty(LastfmApiSecret) || LastfmApiSecret == "YOUR_LASTFM_API_SECRET")
-        {
-            Debug.WriteLine("[ScrobblingService] CRITICAL: Last.fm API Key or Secret is not configured. Aborting.");
-            return null;
-        }
-
-        RefreshSettings(); // reload the latest settings from disk
-
-        if (!string.IsNullOrEmpty(_cachedSessionKey))
-        {
-            // We already have a valid session key from a previous run.
-            var auth = new LastAuth(LastfmApiKey, LastfmApiSecret);
-            // Tell LastAuth to “use” the saved session key:
-            auth.LoadSession(new LastUserSession { Token = _cachedSessionKey });
-            return new LastfmClient(auth);
-        }
-
-        // No cached session key—attempt to authenticate with username/password
-        if (!string.IsNullOrEmpty(_currentSettings.LastfmUsername) &&
-            !string.IsNullOrEmpty(_currentSettings.LastfmPassword))
-        {
-            Debug.WriteLine($"[ScrobblingService] No session key; attempting login for '{_currentSettings.LastfmUsername}'…");
-            var auth = new LastAuth(LastfmApiKey, LastfmApiSecret);
-
-            try
-            {
-                var response = await auth.GetSessionTokenAsync(
-                    _currentSettings.LastfmUsername,
-                    _currentSettings.LastfmPassword
-                );
-
-                if (response.Success && auth.Authenticated)
-                {
-                    // Pull the just-obtained session out of auth.Session:
-                    var session = auth.UserSession;           // UserSession
-                    _cachedSessionKey = session.Token;      // The actual session key string
-                    _currentSettings.LastfmSessionKey = session.Token;
-                    _settingsService.SaveSettings(_currentSettings);
-
-                    Debug.WriteLine($"[ScrobblingService] Successfully obtained session key for '{_currentSettings.LastfmUsername}'.");
-
-                    // Return a new client that’s now “logged in” with the session key
-                    var authenticatedAuth = new LastAuth(LastfmApiKey, LastfmApiSecret);
-                    authenticatedAuth.LoadSession(session);
-                    return new LastfmClient(authenticatedAuth);
-                }
-                else
-                {
-                    Debug.WriteLine($"[ScrobblingService] Authentication failed. " +
-                                    $"Success={response.Success}, HasAuthenticated={auth.Authenticated}.");
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[ScrobblingService] Exception during Last.fm login: {ex.Message}");
-            }
-        }
-        else
-        {
-            Debug.WriteLine("[ScrobblingService] Cannot login: username/password not set in settings.");
-        }
-
-        Debug.WriteLine("[ScrobblingService] GetClientAsync: Could not obtain a Last.fm client.");
-        return null;
+        // Refresh settings before attempting to get a client to ensure AppSettings used by authenticator are current
+        // This might be redundant if RefreshSettings() is called frequently elsewhere, but safe.
+        // No, _authenticatorService.GetAuthenticatedClientAsync() loads its own fresh copy of settings.
+        // So, RefreshSettings() here is mainly for _currentSettings used by IsScrobblingEnabled and ShouldScrobble.
+        RefreshSettings();
+        return await _authenticatorService.GetAuthenticatedClientAsync();
     }
-
-
 
     public bool ShouldScrobble(Song song, TimeSpan playedDuration)
     {
-        RefreshSettings();
+        RefreshSettings(); // Ensure _currentSettings is up-to-date for threshold values
 
         if (song == null || song.Duration.TotalSeconds <= MinTrackLengthForScrobbleSeconds)
         {
@@ -138,6 +71,8 @@ public class ScrobblingService
 
     public async Task UpdateNowPlayingAsync(Song song)
     {
+        // RefreshSettings() is called by GetAuthenticatedClientAsync() if needed,
+        // but also good to call here to check IsScrobblingEnabled with latest settings.
         RefreshSettings();
         if (!IsScrobblingEnabled || song == null)
         {
@@ -145,7 +80,7 @@ public class ScrobblingService
             return;
         }
 
-        var client = await GetClientAsync();
+        var client = await GetAuthenticatedClientAsync();
         if (client == null)
         {
             Debug.WriteLine("[ScrobblingService] UpdateNowPlayingAsync: No authenticated client. Skipping.");
@@ -156,7 +91,6 @@ public class ScrobblingService
         {
             Debug.WriteLine($"[ScrobblingService] Sending UpdateNowPlaying for: {song.Title} by {song.Artist}");
             var trackInfo = new LastTrack { Name = song.Title, ArtistName = song.Artist, AlbumName = song.Album };
-            // Duration should be provided if known
             if (song.Duration.TotalSeconds > 0)
             {
                 trackInfo.Duration = song.Duration;
@@ -182,8 +116,6 @@ public class ScrobblingService
 
     public async Task ScrobbleAsync(Song song, DateTime timePlayed)
     {
-        // ShouldScrobble check is done by PlaybackService before calling this.
-        // We still need to check IsScrobblingEnabled and if we can get a client.
         RefreshSettings();
         if (!IsScrobblingEnabled || song == null)
         {
@@ -191,7 +123,7 @@ public class ScrobblingService
             return;
         }
 
-        var client = await GetClientAsync();
+        var client = await GetAuthenticatedClientAsync();
         if (client == null)
         {
             Debug.WriteLine("[ScrobblingService] ScrobbleAsync: No authenticated client. Skipping.");
@@ -203,14 +135,6 @@ public class ScrobblingService
             Debug.WriteLine($"[ScrobblingService] Sending Scrobble for: {song.Title} by {song.Artist}, TimePlayed: {timePlayed}");
 
             var scrobble = new Scrobble(song.Artist, song.Album, song.Title, timePlayed);
-
-            if (song.Duration.TotalSeconds > 0)
-            {
-                // While Inflatable.Lastfm ScrobbleEntry doesn't directly take duration,
-                // it's good practice to have it if other libraries/APIs use it.
-                // The API itself determines duration from its metadata if not provided with now playing.
-            }
-
             var response = await client.Track.ScrobbleAsync(scrobble);
 
             if (response.Success)
