@@ -25,7 +25,8 @@ public class MainWindowViewModel : ViewModelBase
     private readonly NextTrackSelectorService _nextTrackSelectorService;
     private readonly StatusBarTextProvider _statusBarTextProvider;
     private readonly SettingsChangeProcessorService _settingsChangeProcessorService;
-    private readonly PlaybackFlowManagerService _playbackFlowManagerService; // Added
+    private readonly PlaybackFlowManagerService _playbackFlowManagerService;
+    private readonly ApplicationInteractionService _applicationInteractionService; // Added
 
     // Expose the Services directly for child VMs or public properties
     public PlaybackService PlaybackService { get; }
@@ -78,7 +79,11 @@ public class MainWindowViewModel : ViewModelBase
         LoopEditor = new LoopEditorViewModel(PlaybackService, _loopDataService);
         _statusBarTextProvider = new StatusBarTextProvider(Playback, LoopEditor, Library);
         _settingsChangeProcessorService = new SettingsChangeProcessorService(Library, _scrobblingService);
-        _playbackFlowManagerService = new PlaybackFlowManagerService(Library, Playback, PlaybackService, _nextTrackSelectorService); // Instantiated
+        _playbackFlowManagerService = new PlaybackFlowManagerService(Library, Playback, PlaybackService, _nextTrackSelectorService);
+        _applicationInteractionService = new ApplicationInteractionService(
+            _settingsService,
+            _settingsChangeProcessorService,
+            CurrentTheme); // Pass dependencies to the new service
 
 
         Library.PropertyChanged += Library_PropertyChanged;
@@ -87,9 +92,9 @@ public class MainWindowViewModel : ViewModelBase
         PlaybackService.PlaybackEndedNaturally += PlaybackService_PlaybackEndedNaturally;
 
         LoadInitialDataCommand = new RelayCommand(async _ => await Library.LoadLibraryAsync(), _ => !Library.IsLoadingLibrary);
-        OpenSettingsCommand = new RelayCommand(async owner => await OpenSettingsDialog(owner), _ => !Library.IsLoadingLibrary);
+        OpenSettingsCommand = new RelayCommand(async owner => await OpenSettingsDialogAsync(owner), _ => !Library.IsLoadingLibrary);
         ExitCommand = new RelayCommand(_ => Environment.Exit(0));
-        AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefresh(owner), _ => !Library.IsLoadingLibrary);
+        AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefreshAsync(owner), _ => !Library.IsLoadingLibrary);
 
         ToggleAdvancedPanelCommand = new RelayCommand(
             _ => IsAdvancedPanelVisible = !IsAdvancedPanelVisible,
@@ -247,97 +252,46 @@ public class MainWindowViewModel : ViewModelBase
         StatusBarText = _statusBarTextProvider.GetCurrentStatusText();
     }
 
-    private async Task LoadMusicLibrary()
-    {
-        await Library.LoadLibraryAsync();
-    }
-
-    private async Task OpenSettingsDialog(object? ownerWindow)
+    private async Task OpenSettingsDialogAsync(object? ownerWindow)
     {
         if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
         IsAdvancedPanelVisible = false;
 
-        var currentSettingsBeforeDialog = _settingsService.LoadSettings();
-        var settingsVM = new SettingsViewModel(_settingsService);
-        var settingsDialog = new Sonorize.Views.SettingsWindow(CurrentTheme) { DataContext = settingsVM };
+        var (statusMessages, settingsChanged) = await _applicationInteractionService.HandleOpenSettingsDialogAsync(owner);
 
-        await settingsDialog.ShowDialog(owner);
-
-        if (settingsVM.SettingsChanged)
+        if (settingsChanged) // Check if settings were actually processed (dialog might have been cancelled)
         {
-            Debug.WriteLine("[MainVM] Settings changed detected after dialog closed. Processing changes...");
-            var newSettingsAfterDialog = _settingsService.LoadSettings(); // Get the latest saved settings
-
-            List<string> statusMessages = await _settingsChangeProcessorService.ProcessChangesAndGetStatus(
-                currentSettingsBeforeDialog,
-                newSettingsAfterDialog
-            );
-
             if (statusMessages.Any())
             {
                 StatusBarText = string.Join(" | ", statusMessages);
             }
             else
             {
-                // If processor had no specific messages (e.g., only dir changes which updates status via library load)
-                // then refresh status bar based on current app state.
-                UpdateStatusBarText();
+                UpdateStatusBarText(); // Fallback to default status if no specific messages
             }
         }
         else
         {
-            Debug.WriteLine("[MainVM] Settings dialog closed, no changes reported by SettingsViewModel.");
-            UpdateStatusBarText(); // Ensure status text is current
+            UpdateStatusBarText(); // Ensure status text is current even if no changes
         }
     }
 
-    private async Task AddMusicDirectoryAndRefresh(object? ownerWindow)
+    private async Task AddMusicDirectoryAndRefreshAsync(object? ownerWindow)
     {
         if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
         IsAdvancedPanelVisible = false;
 
-        var result = await owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Select Music Directory", AllowMultiple = false });
+        var (directoryAdded, statusMessage) = await _applicationInteractionService.HandleAddMusicDirectoryAsync(owner);
 
-        if (result != null && result.Count > 0)
+        StatusBarText = statusMessage;
+
+        if (directoryAdded)
         {
-            string? folderPath = null;
-            try
-            {
-                folderPath = Path.GetFullPath(result[0].Path.LocalPath);
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[MainVM] Error getting full path for selected directory: {ex.Message}");
-                StatusBarText = "Error getting path for selected directory.";
-                return;
-            }
-
-            if (!string.IsNullOrEmpty(folderPath) && Directory.Exists(folderPath))
-            {
-                var settings = _settingsService.LoadSettings();
-                if (!settings.MusicDirectories.Any(d => string.Equals(d, folderPath, StringComparison.OrdinalIgnoreCase)))
-                {
-                    settings.MusicDirectories.Add(folderPath);
-                    _settingsService.SaveSettings(settings);
-                    Debug.WriteLine($"[MainVM] Added new directory: {folderPath}. Reloading library.");
-                    await Library.LoadLibraryAsync();
-                }
-                else
-                {
-                    Debug.WriteLine($"[MainVM] Directory already exists: {folderPath}");
-                    StatusBarText = "Directory already in library.";
-                }
-            }
-            else
-            {
-                Debug.WriteLine($"[MainVM] Selected directory path is invalid or does not exist: {folderPath}");
-                StatusBarText = "Invalid directory selected.";
-            }
+            await Library.LoadLibraryAsync(); // Library.LoadLibraryAsync will update its own status text
         }
         else
         {
-            Debug.WriteLine("[MainVM] Folder picker cancelled or returned no results.");
-            UpdateStatusBarText();
+            UpdateStatusBarText(); // If no directory added, ensure status bar reflects current state or message from service
         }
     }
 }
