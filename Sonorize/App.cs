@@ -64,7 +64,8 @@ public class App : Application
             var scrobblingService = new ScrobblingService(settingsService); // Create ScrobblingService
             var playbackService = new PlaybackService(scrobblingService); // Pass ScrobblingService
             var loopDataService = new LoopDataService();
-            var musicLibraryService = new MusicLibraryService(loopDataService);
+            var thumbnailService = new ThumbnailService(); // Create ThumbnailService
+            var musicLibraryService = new MusicLibraryService(loopDataService, thumbnailService); // Pass ThumbnailService
             var waveformService = new WaveformService();
 
             var mainWindowViewModel = new MainWindowViewModel(
