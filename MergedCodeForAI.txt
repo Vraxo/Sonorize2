@@ -1,15 +1,14 @@
 <file path="App.cs">
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Markup.Xaml.Styling;
+using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.Themes.Fluent;
+using Sonorize.Models;
+using Sonorize.Services;
 using Sonorize.ViewModels;
 using Sonorize.Views;
-using Sonorize.Services;
-using Sonorize.Models;
-using Avalonia.Themes.Fluent;
-using Avalonia.Media;
-using System.Diagnostics;
 
 namespace Sonorize;
 
@@ -110,8 +109,8 @@ public static class ColorExtensions
 </file>
 
 <file path="Program.cs">
-using Avalonia;
 using System;
+using Avalonia;
 using NAudio.MediaFoundation; // Required for MediaFoundationApi
 
 namespace Sonorize;
@@ -165,13 +164,13 @@ class Program
 </file>
 
 <file path="Source\Controls\WaveformDisplayControl.cs">
-using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Media;
-using Avalonia.Input;
 using System;
 using System.Collections.Generic;
 using System.Linq; // Required for Enumerable.Empty
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Media;
 using Sonorize.Models; // For LoopRegion
 using Sonorize.Services; // For WaveformPoint
 
@@ -341,8 +340,8 @@ public class WaveformDisplayControl : Control
 
 <file path="Source\Converters\BooleanToPlayPauseIconConverter.cs">
 using System;
-using Avalonia.Data.Converters;
 using System.Globalization;
+using Avalonia.Data.Converters;
 
 namespace Sonorize.Converters
 {
@@ -393,9 +392,9 @@ public class BooleanToPlayPauseTextConverter : IValueConverter
 
 <file path="Source\Converters\BooleanToShuffleIconConverter.cs">
 using System;
-using Avalonia.Data.Converters;
-using System.Globalization;
 using System.Diagnostics; // Added for Debug
+using System.Globalization;
+using Avalonia.Data.Converters;
 
 namespace Sonorize.Converters
 {
@@ -451,8 +450,8 @@ public class NotNullToBooleanConverter : IValueConverter
 </file>
 
 <file path="Source\Converters\SliderFillWidthConverter.cs">
-using Avalonia;
 using System;
+using Avalonia;
 
 namespace Sonorize.Converters;
 
@@ -513,10 +512,8 @@ using System.Runtime.CompilerServices;
 
 namespace Sonorize.Models;
 
-public class LoopRegion(TimeSpan start, TimeSpan end, string name = "Loop") : INotifyPropertyChanged
+public class LoopRegion : INotifyPropertyChanged
 {
-    private TimeSpan end = end;
-
     public string Name
     {
         get;
@@ -525,28 +522,31 @@ public class LoopRegion(TimeSpan start, TimeSpan end, string name = "Loop") : IN
         {
             SetProperty(ref field, value);
         }
-    } = name;
+    }
 
     public TimeSpan Start
     {
         get;
-        
+
         set
         {
             SetProperty(ref field, value);
         }
-    } = start;
-
-    public TimeSpan End
-    {
-        get => end;
-        set => end = value;
     }
+
+    public TimeSpan End { get; set; }
 
     public string DisplayText => $"({Start:mm\\:ss} - {End:mm\\:ss})";
 
     public event PropertyChangedEventHandler? PropertyChanged;
-    
+
+    public LoopRegion(TimeSpan start, TimeSpan end, string name = "Loop")
+    {
+        Name = name;
+        Start = start;
+        End = end;
+    }
+
     protected bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {
         if (EqualityComparer<T>.Default.Equals(field, value))
@@ -575,62 +575,79 @@ public record LoopStorageData(TimeSpan Start, TimeSpan End, bool IsActive);
 </file>
 
 <file path="Source\Models\Song.cs">
-using Avalonia.Media.Imaging;
-using Sonorize.ViewModels; // For ViewModelBase
 using System;
-using System.ComponentModel;
-using System.Diagnostics; // For INotifyPropertyChanged
+using System.Diagnostics;
+using Avalonia.Media.Imaging;
+using Sonorize.ViewModels;
 
 namespace Sonorize.Models;
 
 public class Song : ViewModelBase
 {
-    private string _filePath = string.Empty;
-    public string FilePath { get => _filePath; set => SetProperty(ref _filePath, value); }
-
-    private string _title = "Unknown Title";
-    public string Title { get => _title; set => SetProperty(ref _title, value); }
-
-    private string _artist = "Unknown Artist";
-    public string Artist { get => _artist; set => SetProperty(ref _artist, value); }
-
-    private string _album = "Unknown Album";
-    public string Album { get => _album; set => SetProperty(ref _album, value); }
-
-    private TimeSpan _duration;
-    public TimeSpan Duration { get => _duration; set => SetProperty(ref _duration, value); }
     public string DurationString => $"{Duration:mm\\:ss}";
 
-    private Bitmap? _thumbnail;
-    public Bitmap? Thumbnail { get => _thumbnail; set => SetProperty(ref _thumbnail, value); }
-
-    private LoopRegion? _savedLoop;
-    public LoopRegion? SavedLoop
+    public string FilePath
     {
-        get => _savedLoop;
-        set => SetProperty(ref _savedLoop, value);
+        get;
+        set => SetProperty(ref field, value);
+    } = string.Empty;
+    
+    public string Title
+    {
+        get;
+        set => SetProperty(ref field, value);
+    } = "Unknown Title";
+    
+    public string Artist
+    {
+        get;
+        set => SetProperty(ref field, value);
+    } = "Unknown Artist";
+    
+    public string Album 
+    { 
+        get; 
+        set => SetProperty(ref field, value); 
+    } = "Unknown Album";
+
+    public TimeSpan Duration
+    {
+        get;
+        set => SetProperty(ref field, value);
     }
 
-    private bool _isLoopActive;
+    public Bitmap? Thumbnail
+    {
+        get;
+        set => SetProperty(ref field, value);
+    }
+
+    public LoopRegion? SavedLoop
+    {
+        get;
+        set => SetProperty(ref field, value);
+    }
+
     public bool IsLoopActive
     {
-        get => _isLoopActive;
+        get;
+
         set
         {
-            // SetProperty handles OnPropertyChanged
-            if (SetProperty(ref _isLoopActive, value))
+            if (!SetProperty(ref field, value))
             {
-                // The ViewModel will observe this change and trigger persistence
-                Debug.WriteLine($"[SongModel] {Title} - IsLoopActive set to: {value}");
+                return;
             }
+
+            Debug.WriteLine($"[SongModel] {Title} - IsLoopActive set to: {value}");
         }
     }
 }
 </file>
 
 <file path="Source\Models\ThemeColors.cs">
-using Avalonia.Media;
 using System.Text.Json.Serialization;
+using Avalonia.Media;
 
 namespace Sonorize.Models;
 
@@ -677,12 +694,12 @@ public class ThemeColors
 
 <file path="Source\Services\LoopDataService.cs">
 // Path: Source/Services/LoopDataService.cs
-using Sonorize.Models;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
-using System.Diagnostics;
+using Sonorize.Models;
 
 namespace Sonorize.Services;
 
@@ -840,12 +857,6 @@ public class LoopDataService
 </file>
 
 <file path="Source\Services\MusicLibraryService.cs">
-using Avalonia;
-using Avalonia.Media;
-using Avalonia.Media.Imaging;
-using Avalonia.Platform;
-using Avalonia.Threading;
-using Sonorize.Models;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -855,6 +866,11 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
+using Sonorize.Models;
 using TagLib;
 
 namespace Sonorize.Services;
@@ -1130,7 +1146,7 @@ public class NextTrackSelectorService(Random shuffleRandom)
     private Song? GetNextSongShuffle(Song currentSong, List<Song> currentList, RepeatMode repeatMode)
     {
         Debug.WriteLine("[NextTrackSelector] Shuffle is Enabled.");
-        
+
         Song? nextSong = null;
 
         if (currentList.Count == 0)
@@ -1210,12 +1226,12 @@ public class NextTrackSelectorService(Random shuffleRandom)
 </file>
 
 <file path="Source\Services\ScrobblingService.cs">
-using Sonorize.Models;
+using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
-using System;
 using IF.Lastfm.Core.Api;
 using IF.Lastfm.Core.Objects; // Added for service classes like Track, Auth
+using Sonorize.Models;
 
 namespace Sonorize.Services;
 
@@ -1427,7 +1443,7 @@ public class ScrobblingService
 
             if (response.Success)
             {
-                //Debug.WriteLine($"[ScrobblingService] Scrobble successful for: {song.Title}. Accepted: {response.Scrobbles?.AcceptedCount}, Ignored: {response.Scrobbles?.IgnoredCount}");
+                Debug.WriteLine($"[ScrobblingService] Scrobble successful for: {song.Title}");
             }
             else
             {
@@ -1443,10 +1459,10 @@ public class ScrobblingService
 </file>
 
 <file path="Source\Services\SettingsService.cs">
-using Sonorize.Models;
 using System;
 using System.IO;
 using System.Text.Json;
+using Sonorize.Models;
 
 namespace Sonorize.Services;
 
@@ -1496,13 +1512,13 @@ public class SettingsService
 </file>
 
 <file path="Source\Services\ThemeService.cs">
-using Sonorize.Models;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using System.Diagnostics;
+using Sonorize.Models;
 
 namespace Sonorize.Services;
 
@@ -1625,13 +1641,13 @@ public class ThemeService
 </file>
 
 <file path="Source\Services\WaveFormService.cs">
-using NAudio.Wave;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using System.Diagnostics;
 using System.IO; // Required for Path.GetFileName
+using System.Linq;
+using System.Threading.Tasks;
+using NAudio.Wave;
 
 namespace Sonorize.Services;
 
@@ -1785,8 +1801,8 @@ public class AlbumArtistTupleComparer : IEqualityComparer<(string Album, string 
 </file>
 
 <file path="Source\ViewModels\AlbumViewModel.cs">
-using Avalonia.Media.Imaging;
 using System.Collections.Generic; // For List
+using Avalonia.Media.Imaging;
 // Removed System.Collections.ObjectModel as List is sufficient here and ViewModelBase handles INPC
 
 namespace Sonorize.ViewModels;
@@ -2100,7 +2116,8 @@ public class LibraryViewModel : ViewModelBase
         // or explicitly set to null here if we want to ensure it's cleared before loading.
         SelectedSong = null; // Explicitly clear selection before load
 
-        await Dispatcher.UIThread.InvokeAsync(() => {
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
             // SelectedSong already cleared
             _allSongs.Clear();
             FilteredSongs.Clear(); // TrackNavigationManager will see this change
@@ -2114,7 +2131,8 @@ public class LibraryViewModel : ViewModelBase
 
         await _libraryDataOrchestrator.LoadAndProcessLibraryDataAsync(statusUpdateCallback, songAddedCallback);
 
-        await Dispatcher.UIThread.InvokeAsync(() => {
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
             OnPropertyChanged(nameof(Artists));
             OnPropertyChanged(nameof(Albums));
             ApplyFilter();
@@ -2233,12 +2251,12 @@ public class LibraryViewModel : ViewModelBase
 </file>
 
 <file path="Source\ViewModels\LoopEditorViewModel.cs">
-using Sonorize.Models;
-using Sonorize.Services;
 using System;
 using System.Diagnostics;
 using System.Windows.Input;
 using Avalonia.Threading; // Required for Dispatcher
+using Sonorize.Models;
+using Sonorize.Services;
 
 namespace Sonorize.ViewModels;
 
@@ -2950,9 +2968,6 @@ public class MainWindowViewModel : ViewModelBase
 </file>
 
 <file path="Source\ViewModels\PlaybackViewModel.cs">
-using Avalonia.Threading;
-using Sonorize.Models;
-using Sonorize.Services; // This using directive makes PlaybackStateStatus from the Service available
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -2961,6 +2976,9 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using Avalonia.Threading;
+using Sonorize.Models;
+using Sonorize.Services; // This using directive makes PlaybackStateStatus from the Service available
 
 namespace Sonorize.ViewModels;
 
@@ -3011,10 +3029,10 @@ public class PlaybackViewModel : ViewModelBase
     public double PlaybackSpeed { get => _playbackSpeed; set { value = Math.Clamp(value, 0.5, 2.0); if (SetProperty(ref _playbackSpeed, value)) { PlaybackService.PlaybackRate = (float)value; OnPropertyChanged(nameof(PlaybackSpeedDisplay)); } } }
     public string PlaybackSpeedDisplay => $"{PlaybackSpeed:F2}x";
 
-    public double PlaybackPitch 
+    public double PlaybackPitch
     {
-        get; 
-        
+        get;
+
         set
         {
             value = double.Round(value * 2, MidpointRounding.AwayFromZero) / 2.0;
@@ -3135,7 +3153,8 @@ public class PlaybackViewModel : ViewModelBase
             _ => PlaybackService.CurrentSong != null && !IsWaveformLoading); // Can't control playback while waveform is loading
 
         SeekCommand = new RelayCommand(
-            positionSecondsObj => {
+            positionSecondsObj =>
+            {
                 if (positionSecondsObj is double seconds && PlaybackService.CurrentSongDuration.TotalSeconds > 0)
                 {
                     // This command is useful for explicit seek calls, although the slider two-way binding is primary.
@@ -3314,7 +3333,8 @@ public class PlaybackViewModel : ViewModelBase
             {
                 Debug.WriteLine($"[PlaybackVM] Waveform loaded for: {songToLoadWaveformFor.Title}, {points.Count} points. Updating UI.");
                 // Add points on the UI thread
-                await Dispatcher.UIThread.InvokeAsync(() => {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
                     foreach (var p in points) WaveformRenderData.Add(p);
                     OnPropertyChanged(nameof(WaveformRenderData)); // Notify UI
                 });
@@ -3331,14 +3351,16 @@ public class PlaybackViewModel : ViewModelBase
         catch (Exception ex)
         {
             Debug.WriteLine($"[PlaybackVM] CRITICAL Error loading waveform for {songToLoadWaveformFor.Title}: {ex.Message}");
-            await Dispatcher.UIThread.InvokeAsync(() => {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
                 WaveformRenderData.Clear(); OnPropertyChanged(nameof(WaveformRenderData));
                 // Optionally set a status text indicating waveform load failed
             });
         }
         finally
         {
-            await Dispatcher.UIThread.InvokeAsync(() => {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
                 IsWaveformLoading = false; // Internal setter is fine here
             });
         }
@@ -3417,8 +3439,8 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
-using Sonorize.Services;
 using Sonorize.Models; // Required for AppSettings type
+using Sonorize.Services;
 
 namespace Sonorize.ViewModels;
 
@@ -3536,7 +3558,8 @@ public class SettingsViewModel : ViewModelBase
         RemoveDirectoryCommand = new RelayCommand(RemoveSelectedDirectory, _ => CanRemoveDirectory);
         SaveAndCloseCommand = new RelayCommand(SaveSettings);
 
-        PropertyChanged += (s, e) => {
+        PropertyChanged += (s, e) =>
+        {
             if (e.PropertyName == nameof(SelectedDirectory))
             {
                 (RemoveDirectoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -3718,13 +3741,15 @@ public static class BrushExtensions
 </file>
 
 <file path="Source\Views\MainWindow.cs">
+using System; // For EventArgs
+using System.ComponentModel; // For PropertyChangedEventArgs
+using System.Diagnostics; // For Debug
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives; // For Thumb, ToggleButton
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
 using Avalonia.Layout;
-using Avalonia.Media;
+using Avalonia.Threading; // Required for Dispatcher
 // Removed: using Avalonia.Media.Imaging; 
 // Removed: using Avalonia.Styling;
 // Removed: using Sonorize.Controls;
@@ -3733,10 +3758,6 @@ using Sonorize.Models;
 // Removed: using Sonorize.Services;
 using Sonorize.ViewModels;
 using Sonorize.Views.MainWindowControls;
-using System; // For EventArgs
-using System.ComponentModel; // For PropertyChangedEventArgs
-using System.Diagnostics; // For Debug
-using Avalonia.Threading; // Required for Dispatcher
 
 namespace Sonorize.Views;
 public class MainWindow : Window
@@ -3880,13 +3901,13 @@ public class MainWindow : Window
 <file path="Source\Views\SettingsWindow.cs">
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives; // Required for Style
+using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Data;
+using Avalonia.Styling;
 using Sonorize.Models;
 using Sonorize.ViewModels;
-using Avalonia.Styling;
-using Avalonia.Controls.Primitives; // Required for Style
 
 namespace Sonorize.Views;
 
@@ -4121,11 +4142,11 @@ public class SettingsWindow : Window
 </file>
 
 <file path="Source\Services\Playback\NAudioEffectsProcessor.cs">
-using NAudio.Wave.SampleProviders;
-using NAudio.Wave;
-using SoundTouch.Net.NAudioSupport;
-using System.Diagnostics;
 using System;
+using System.Diagnostics;
+using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
+using SoundTouch.Net.NAudioSupport;
 
 namespace Sonorize.Services;
 
@@ -4262,10 +4283,10 @@ public class NAudioEffectsProcessor : IDisposable
 </file>
 
 <file path="Source\Services\Playback\NAudioPlaybackEngine.cs">
-using NAudio.Wave;
+using System;
 using System.Diagnostics;
 using System.IO;
-using System;
+using NAudio.Wave;
 
 namespace Sonorize.Services;
 
@@ -4531,10 +4552,9 @@ public class NAudioPlaybackEngine : IDisposable
 </file>
 
 <file path="Source\Services\Playback\PlaybackLoopHandler.cs">
-using Sonorize.Models;
-using Sonorize.Services;
-using System.Diagnostics;
 using System;
+using System.Diagnostics;
+using Sonorize.Models;
 
 namespace Sonorize.Services;
 
@@ -4711,14 +4731,14 @@ public class PlaybackLoopHandler : IDisposable // Implementing IDisposable for c
 </file>
 
 <file path="Source\Services\Playback\PlaybackService.cs">
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Threading;
 using Avalonia.Threading;
 using NAudio.Wave;
 using Sonorize.Models;
 using Sonorize.ViewModels;
-using System.Diagnostics;
-using System.Threading;
-using System;
-using System.IO;
 
 namespace Sonorize.Services;
 
@@ -4736,13 +4756,17 @@ public class PlaybackService : ViewModelBase, IDisposable
             {
                 Debug.WriteLine($"[PlaybackService] CurrentSong property set to: {value?.Title ?? "null"}");
                 OnPropertyChanged(nameof(HasCurrentSong));
-                CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-                IsPlaying = false;
-                CurrentPosition = TimeSpan.Zero;
-                CurrentSongDuration = TimeSpan.Zero;
-                StopUiUpdateTimer();
 
-                // Update the LoopHandler when the current song changes
+                if (value == null) // CurrentSong is being cleared
+                {
+                    Debug.WriteLine("[PlaybackService] CurrentSong set to null. Resetting playback state variables.");
+                    IsPlaying = false;
+                    CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
+                    CurrentPosition = TimeSpan.Zero;
+                    CurrentSongDuration = TimeSpan.Zero;
+                    StopUiUpdateTimer();
+                }
+
                 _loopHandler.UpdateCurrentSong(value);
             }
         }
@@ -4794,7 +4818,7 @@ public class PlaybackService : ViewModelBase, IDisposable
 
     private NAudioPlaybackEngine? _playbackEngine;
     private Timer? uiUpdateTimer;
-    private readonly PlaybackLoopHandler _loopHandler; // Instance of the new loop handler
+    private readonly PlaybackLoopHandler _loopHandler;
     private readonly ScrobblingService _scrobblingService;
 
 
@@ -4833,7 +4857,7 @@ public class PlaybackService : ViewModelBase, IDisposable
         Debug.WriteLine("[PlaybackService] Constructor called.");
         _scrobblingService = scrobblingService ?? throw new ArgumentNullException(nameof(scrobblingService));
         uiUpdateTimer = new Timer(UpdateUiCallback, null, Timeout.Infinite, Timeout.Infinite);
-        _loopHandler = new PlaybackLoopHandler(this); // Initialize the loop handler, injecting this service
+        _loopHandler = new PlaybackLoopHandler(this);
     }
 
     private void UpdateUiCallback(object? state)
@@ -4848,7 +4872,7 @@ public class PlaybackService : ViewModelBase, IDisposable
                 try
                 {
                     currentAudioTime = _playbackEngine.CurrentPosition;
-                    songDuration = _playbackEngine.CurrentSongDuration; // Get duration from engine
+                    songDuration = _playbackEngine.CurrentSongDuration;
                 }
                 catch (Exception ex)
                 {
@@ -4858,16 +4882,15 @@ public class PlaybackService : ViewModelBase, IDisposable
                 }
 
                 this.CurrentPosition = currentAudioTime;
-                this.CurrentSongDuration = songDuration; // Keep VM duration in sync with engine
+                this.CurrentSongDuration = songDuration;
 
-                // Delegate loop checking to the LoopHandler
                 _loopHandler.CheckForLoopSeek(currentAudioTime, songDuration);
             }
             else
             {
                 if (_playbackEngine == null || _playbackEngine.CurrentPlaybackStatus != PlaybackStateStatus.Playing)
                 {
-                    Debug.WriteLine($"[PlaybackService] Timer callback found engine state is not Playing ({_playbackEngine?.CurrentPlaybackStatus}). Stopping timer.");
+                    // Debug.WriteLine($"[PlaybackService] Timer callback found engine state is not Playing ({_playbackEngine?.CurrentPlaybackStatus}). Stopping timer.");
                     StopUiUpdateTimer();
                 }
             }
@@ -4876,7 +4899,8 @@ public class PlaybackService : ViewModelBase, IDisposable
 
     private async void TryScrobbleSong(Song? song, TimeSpan playedPosition)
     {
-        // Use ScrobblingService to check conditions based on current settings
+        if (song == null) return;
+        Debug.WriteLine($"[PlaybackService] TryScrobbleSong called for '{song.Title}' at {playedPosition}.");
         if (_scrobblingService.ShouldScrobble(song, playedPosition))
         {
             await _scrobblingService.ScrobbleAsync(song, DateTime.UtcNow);
@@ -4887,23 +4911,44 @@ public class PlaybackService : ViewModelBase, IDisposable
     {
         Debug.WriteLine($"[PlaybackService] Play requested for: {(song?.Title ?? "null song")}");
 
-        Song? oldSong = CurrentSong;
-        TimeSpan oldSongPlaybackPosition = _playbackEngine?.CurrentPosition ?? TimeSpan.Zero;
+        // --- Start: Handle interruption of the PREVIOUS song ---
+        Song? interruptedSong = null;
+        TimeSpan interruptedSongPosition = TimeSpan.Zero;
 
-        if (song == null || string.IsNullOrEmpty(song.FilePath) || !File.Exists(song.FilePath))
+        if (_playbackEngine != null && CurrentSong != null && CurrentSong != song) // An actual song is playing and is being interrupted by a DIFFERENT new song
         {
-            Debug.WriteLine("[PlaybackService] Play called with null/invalid/missing file song. Stopping.");
-            Stop();
-            return;
+            interruptedSong = CurrentSong; // Capture the song being interrupted
+            try
+            {
+                interruptedSongPosition = _playbackEngine.CurrentPosition; // Capture its position BEFORE stopping
+            }
+            catch (Exception ex) { Debug.WriteLine($"[PlaybackService] Error getting position of interrupted song '{interruptedSong.Title}': {ex.Message}"); }
+
+            _playbackEngine.Stop(); // Request stop
+            _playbackEngine.PlaybackStopped -= OnEnginePlaybackStopped; // Detach handler
+            _playbackEngine.Dispose();      // Dispose
+            _playbackEngine = null;         // Nullify reference
+            Debug.WriteLine($"[PlaybackService] Interrupted '{interruptedSong.Title}'. Old engine stopped & disposed.");
+
+            // Attempt to scrobble the interrupted song immediately
+            TryScrobbleSong(interruptedSong, interruptedSongPosition);
         }
-
-        if (_playbackEngine != null)
+        else if (_playbackEngine != null && CurrentSong == song) // Request to play the SAME song again (restart)
         {
+            Debug.WriteLine($"[PlaybackService] Restarting song '{song.Title}'. Old engine stopped & disposed.");
             _playbackEngine.Stop();
             _playbackEngine.PlaybackStopped -= OnEnginePlaybackStopped;
             _playbackEngine.Dispose();
             _playbackEngine = null;
-            Debug.WriteLine("[PlaybackService] Disposed existing playback engine.");
+        }
+        // --- End: Handle interruption of the PREVIOUS song ---
+
+        // --- Start: Validate and set up the NEW song ---
+        if (song == null || string.IsNullOrEmpty(song.FilePath) || !File.Exists(song.FilePath))
+        {
+            Debug.WriteLine("[PlaybackService] New song is null, path invalid, or file missing. Current playback will be fully stopped.");
+            CurrentSong = null; // Triggers UI state cleanup via its setter.
+            return;
         }
 
         CurrentSong = song;
@@ -4914,16 +4959,16 @@ public class PlaybackService : ViewModelBase, IDisposable
             _playbackEngine = new NAudioPlaybackEngine();
             _playbackEngine.PlaybackStopped += OnEnginePlaybackStopped;
 
-            _playbackEngine.PlaybackRate = PlaybackRate;
-            _playbackEngine.PitchSemitones = PitchSemitones;
+            _playbackEngine.PlaybackRate = this.PlaybackRate;
+            _playbackEngine.PitchSemitones = this.PitchSemitones;
 
             _playbackEngine.Load(song.FilePath);
 
             CurrentSongDuration = _playbackEngine.CurrentSongDuration;
             this.CurrentPosition = TimeSpan.Zero;
 
-            TimeSpan startPosition = _loopHandler.GetInitialPlaybackPosition(_playbackEngine.CurrentSongDuration);
-            if (startPosition != TimeSpan.Zero)
+            TimeSpan startPosition = _loopHandler.GetInitialPlaybackPosition(CurrentSongDuration);
+            if (startPosition > TimeSpan.Zero && startPosition < CurrentSongDuration)
             {
                 _playbackEngine.Seek(startPosition);
                 this.CurrentPosition = _playbackEngine.CurrentPosition;
@@ -4937,14 +4982,21 @@ public class PlaybackService : ViewModelBase, IDisposable
             Debug.WriteLine($"[PlaybackService] Playback started for: {CurrentSong.Title}. State: {CurrentPlaybackStatus}");
 
             _ = _scrobblingService.UpdateNowPlayingAsync(CurrentSong);
-
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[PlaybackService] CRITICAL ERROR during playback initiation for {Path.GetFileName(song.FilePath)}: {ex.ToString()}");
-            Stop();
+            Debug.WriteLine($"[PlaybackService] CRITICAL ERROR during playback initiation for '{CurrentSong?.FilePath ?? "UNKNOWN FILE"}': {ex.ToString()}");
+            if (_playbackEngine != null)
+            {
+                _playbackEngine.PlaybackStopped -= OnEnginePlaybackStopped;
+                _playbackEngine.Dispose();
+                _playbackEngine = null;
+            }
+            CurrentSong = null;
         }
+        // --- End: Validate and set up the NEW song ---
     }
+
 
     public void Pause()
     {
@@ -4980,6 +5032,7 @@ public class PlaybackService : ViewModelBase, IDisposable
         else if (_playbackEngine != null && CurrentPlaybackStatus == PlaybackStateStatus.Stopped)
         {
             Debug.WriteLine("[PlaybackService] Resume requested from Stopped state. Re-playing current song via engine.");
+            // Re-calling Play ensures the engine is freshly initialized if it was disposed.
             Play(CurrentSong);
         }
         else
@@ -4992,25 +5045,39 @@ public class PlaybackService : ViewModelBase, IDisposable
     {
         Debug.WriteLine("[PlaybackService] Public Stop() called.");
         _explicitStopRequested = true;
+
+        Song? songThatWasPlaying = CurrentSong;
+        TimeSpan positionOfStoppedSong = TimeSpan.Zero;
+
         if (_playbackEngine != null)
         {
+            try
+            {
+                // Capture position before stopping, as it might reset.
+                positionOfStoppedSong = _playbackEngine.CurrentPosition;
+            }
+            catch (Exception ex) { Debug.WriteLine($"[PlaybackService Stop] Error getting position before stop: {ex.Message}"); }
+
             _playbackEngine.Stop();
+            // OnEnginePlaybackStopped will handle the rest, including scrobbling and setting CurrentSong = null.
         }
         else
         {
-            Song? songToClear = CurrentSong;
-            TimeSpan lastKnownPosition = CurrentPosition;
+            Debug.WriteLine("[PlaybackService Stop] No playback engine. Performing direct cleanup.");
+            if (songThatWasPlaying != null) positionOfStoppedSong = this.CurrentPosition;
 
             IsPlaying = false;
             CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
             this.CurrentPosition = TimeSpan.Zero;
             CurrentSongDuration = TimeSpan.Zero;
-            CurrentSong = null;
-            _explicitStopRequested = false;
 
-            TryScrobbleSong(songToClear, lastKnownPosition);
+            TryScrobbleSong(songThatWasPlaying, positionOfStoppedSong);
+            CurrentSong = null;
+
+            _explicitStopRequested = false;
         }
     }
+
 
     public void Seek(TimeSpan requestedPosition)
     {
@@ -5036,7 +5103,7 @@ public class PlaybackService : ViewModelBase, IDisposable
             TimeSpan currentAudioTimeForToleranceCheck = _playbackEngine.CurrentPosition;
             if (Math.Abs(currentAudioTimeForToleranceCheck.TotalSeconds - targetPosition.TotalSeconds) < positionToleranceSeconds)
             {
-                Debug.WriteLine($"[PlaybackService] Seek target {targetPosition:mm\\:ss\\.ff} is very close to current position {currentAudioTimeForToleranceCheck:mm\\:ss\\.ff} (within {positionToleranceSeconds}s), ignoring seek.");
+                // Debug.WriteLine($"[PlaybackService] Seek target {targetPosition:mm\\:ss\\.ff} is very close to current position {currentAudioTimeForToleranceCheck:mm\\:ss\\.ff} (within {positionToleranceSeconds}s), ignoring seek.");
                 return;
             }
         }
@@ -5045,12 +5112,12 @@ public class PlaybackService : ViewModelBase, IDisposable
             Debug.WriteLine($"[PlaybackService] Error checking current position for seek tolerance: {ex.Message}. Proceeding with seek.");
         }
 
-        Debug.WriteLine($"[PlaybackService] Seeking engine to: {targetPosition:mm\\:ss\\.ff}");
+        // Debug.WriteLine($"[PlaybackService] Seeking engine to: {targetPosition:mm\\:ss\\.ff}");
         try
         {
             _playbackEngine.Seek(targetPosition);
-            this.CurrentPosition = _playbackEngine.CurrentPosition;
-            Debug.WriteLine($"[PlaybackService] Seek executed. Engine Time after seek: {_playbackEngine.CurrentPosition:mm\\:ss\\.ff}. VM Position: {this.CurrentPosition:mm\\:ss\\.ff}");
+            this.CurrentPosition = _playbackEngine.CurrentPosition; // Important to sync VM's position
+            // Debug.WriteLine($"[PlaybackService] Seek executed. Engine Time after seek: {_playbackEngine.CurrentPosition:mm\\:ss\\.ff}. VM Position: {this.CurrentPosition:mm\\:ss\\.ff}");
         }
         catch (Exception ex)
         {
@@ -5072,55 +5139,74 @@ public class PlaybackService : ViewModelBase, IDisposable
         Dispatcher.UIThread.InvokeAsync(() =>
         {
             Debug.WriteLine($"[PlaybackService] === OnEnginePlaybackStopped START === (UI Thread)");
-            Song? songThatStopped = CurrentSong;
-            TimeSpan stoppedPosition = _playbackEngine?.CurrentPosition ?? CurrentPosition;
-            TimeSpan stoppedSongDuration = _playbackEngine?.CurrentSongDuration ?? CurrentSongDuration;
+            Song? songThatJustStopped = CurrentSong;
+
+            TimeSpan stoppedPosition = TimeSpan.Zero;
+            TimeSpan stoppedSongDuration = TimeSpan.Zero;
+
+            // It's crucial that _playbackEngine here refers to the engine that *actually* stopped.
+            // If Play() creates a new engine and this event is from an old, disposed one, sender might not be _playbackEngine.
+            // However, we detach the handler from the old engine in Play(). So, this event should always be from the *current* _playbackEngine.
+            if (_playbackEngine != null && sender == _playbackEngine)
+            {
+                try { stoppedPosition = _playbackEngine.CurrentPosition; } catch (Exception ex) { Debug.WriteLine($"[PlaybackService OnEnginePlaybackStopped] Error getting position: {ex.Message}"); }
+                try { stoppedSongDuration = _playbackEngine.CurrentSongDuration; } catch (Exception ex) { Debug.WriteLine($"[PlaybackService OnEnginePlaybackStopped] Error getting duration: {ex.Message}"); }
+            }
+            else
+            {
+                Debug.WriteLine($"[PlaybackService OnEnginePlaybackStopped] Sender mismatch or _playbackEngine is null. Sender: {sender?.GetHashCode()}, _playbackEngine: {_playbackEngine?.GetHashCode()}. Using VM's last known values.");
+                stoppedPosition = this.CurrentPosition;
+                stoppedSongDuration = this.CurrentSongDuration;
+            }
 
             StopUiUpdateTimer();
+
+            // Detach from the engine that just stopped.
+            if (sender is NAudioPlaybackEngine engineInstance)
+            {
+                engineInstance.PlaybackStopped -= OnEnginePlaybackStopped;
+                Debug.WriteLine("[PlaybackService OnEnginePlaybackStopped] Detached handler from the stopping engine instance.");
+            }
+
 
             if (e.Exception != null)
             {
                 Debug.WriteLine($"[PlaybackService] Playback stopped due to error: {e.Exception.Message}. Finalizing state to Stopped.");
-                IsPlaying = false;
-                CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-                this.CurrentPosition = TimeSpan.Zero;
-                CurrentSongDuration = TimeSpan.Zero;
-                CurrentSong = null;
+                TryScrobbleSong(songThatJustStopped, stoppedPosition);
+                CurrentSong = null; // Setting to null resets other UI state via its setter
             }
             else
             {
-                bool isNearEndOfFile = stoppedPosition >= stoppedSongDuration - TimeSpan.FromMilliseconds(500);
-                Debug.WriteLine($"[PlaybackService] Clean Stop. ExplicitStop: {_explicitStopRequested}. NearEnd: {isNearEndOfFile}. Pos: {stoppedPosition:mm\\:ss\\.ff}, Dur: {stoppedSongDuration:mm\\:ss\\.ff}");
+                bool isNearEndOfFile = (stoppedSongDuration > TimeSpan.Zero) && (stoppedPosition >= stoppedSongDuration - TimeSpan.FromMilliseconds(500));
+                Debug.WriteLine($"[PlaybackService] Clean Stop. ExplicitStopReq: {_explicitStopRequested}. NearEnd: {isNearEndOfFile}. Pos: {stoppedPosition:mm\\:ss\\.ff}, Dur: {stoppedSongDuration:mm\\:ss\\.ff}");
 
                 if (_explicitStopRequested)
                 {
-                    Debug.WriteLine("[PlaybackService] Playback stopped by explicit user/app command (event). Finalizing state to Stopped.");
-                    TryScrobbleSong(songThatStopped, stoppedPosition);
-                    IsPlaying = false;
-                    CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-                    this.CurrentPosition = TimeSpan.Zero;
-                    CurrentSongDuration = TimeSpan.Zero;
+                    Debug.WriteLine("[PlaybackService] Playback stopped by explicit user/app command. Finalizing.");
+                    TryScrobbleSong(songThatJustStopped, stoppedPosition);
                     CurrentSong = null;
                 }
                 else if (isNearEndOfFile)
                 {
-                    Debug.WriteLine("[PlaybackService] Playback stopped naturally (event). Raising PlaybackEndedNaturally event.");
-                    TryScrobbleSong(songThatStopped, stoppedSongDuration);
-                    this.CurrentPosition = TimeSpan.Zero;
+                    Debug.WriteLine("[PlaybackService] Playback stopped naturally (end of file). Raising PlaybackEndedNaturally.");
+                    TryScrobbleSong(songThatJustStopped, stoppedSongDuration);
                     IsPlaying = false;
                     CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
+                    this.CurrentPosition = TimeSpan.Zero; // Reset position for UI, song remains "current" until next action.
                     PlaybackEndedNaturally?.Invoke(this, EventArgs.Empty);
                 }
                 else
                 {
-                    Debug.WriteLine("[PlaybackService] Playback interrupted (likely new song played). Scrobbling previous if conditions met.");
-                    TryScrobbleSong(songThatStopped, stoppedPosition);
-                    if (CurrentSong == songThatStopped)
-                    {
-                        IsPlaying = false;
-                        CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-                    }
+                    Debug.WriteLine("[PlaybackService] Playback stopped unexpectedly (not error, not explicit, not EOF). Scrobbling and stopping.");
+                    TryScrobbleSong(songThatJustStopped, stoppedPosition);
+                    CurrentSong = null;
                 }
+            }
+            // Ensure IsPlaying and CurrentPlaybackStatus are also set correctly if CurrentSong becomes null
+            if (CurrentSong == null)
+            {
+                IsPlaying = false;
+                CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
             }
             _explicitStopRequested = false;
             Debug.WriteLine($"[PlaybackService] OnEnginePlaybackStopped handler finishes. CurrentSong: {CurrentSong?.Title ?? "null"}");
@@ -5131,13 +5217,13 @@ public class PlaybackService : ViewModelBase, IDisposable
     private void StartUiUpdateTimer()
     {
         uiUpdateTimer?.Change(TimeSpan.Zero, TimeSpan.FromMilliseconds(100));
-        Debug.WriteLine("[PlaybackService] UI Update Timer Started.");
+        // Debug.WriteLine("[PlaybackService] UI Update Timer Started.");
     }
 
     private void StopUiUpdateTimer()
     {
         uiUpdateTimer?.Change(Timeout.Infinite, Timeout.Infinite);
-        Debug.WriteLine("[PlaybackService] UI Update Timer Stopped.");
+        // Debug.WriteLine("[PlaybackService] UI Update Timer Stopped.");
     }
 
     public void Dispose()
@@ -5147,25 +5233,34 @@ public class PlaybackService : ViewModelBase, IDisposable
         uiUpdateTimer = null;
 
         Song? songAtDispose = CurrentSong;
-        TimeSpan positionAtDispose = _playbackEngine?.CurrentPosition ?? CurrentPosition;
+        TimeSpan positionAtDispose = TimeSpan.Zero;
 
         if (_playbackEngine != null)
         {
+            try
+            {
+                positionAtDispose = _playbackEngine.CurrentPosition;
+            }
+            catch (Exception ex) { Debug.WriteLine($"[PlaybackService Dispose] Error getting position: {ex.Message}"); }
+
+            _playbackEngine.Stop();
             _playbackEngine.PlaybackStopped -= OnEnginePlaybackStopped;
             _playbackEngine.Dispose();
             _playbackEngine = null;
             Debug.WriteLine("[PlaybackService] Disposed playback engine during service dispose.");
         }
+        else
+        {
+            positionAtDispose = this.CurrentPosition;
+        }
 
-        TryScrobbleSong(songAtDispose, positionAtDispose);
-
+        if (songAtDispose != null)
+        {
+            TryScrobbleSong(songAtDispose, positionAtDispose);
+        }
 
         _explicitStopRequested = false;
         CurrentSong = null;
-        CurrentSongDuration = TimeSpan.Zero;
-        this.CurrentPosition = TimeSpan.Zero;
-        IsPlaying = false;
-        CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
 
         _loopHandler.Dispose();
 
@@ -5176,21 +5271,21 @@ public class PlaybackService : ViewModelBase, IDisposable
     ~PlaybackService()
     {
         Debug.WriteLine("[PlaybackService] Finalizer called for PlaybackService.");
-        Dispose();
+        Dispose(); // Call the same Dispose logic
         Debug.WriteLine("[PlaybackService] Finalizer completed for PlaybackService.");
     }
 }
 </file>
 
 <file path="Source\ViewModels\LibraryManagement\ArtistAlbumCollectionManager.cs">
-using Avalonia.Media.Imaging;
-using Sonorize.Models;
-using Sonorize.Services;
-using Sonorize.Utils; // For AlbumArtistTupleComparer
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using Avalonia.Media.Imaging;
+using Sonorize.Models;
+using Sonorize.Services;
+using Sonorize.Utils; // For AlbumArtistTupleComparer
 
 namespace Sonorize.ViewModels.LibraryManagement;
 
@@ -5325,15 +5420,14 @@ public class ArtistAlbumCollectionManager
 </file>
 
 <file path="Source\ViewModels\LibraryManagement\LibraryDataOrchestrator.cs">
-using Avalonia.Threading;
-using Sonorize.Models;
-using Sonorize.Services;
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel; // Required for ObservableCollection
 using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia.Threading;
+using Sonorize.Models;
+using Sonorize.Services;
 
 namespace Sonorize.ViewModels.LibraryManagement;
 
@@ -5404,9 +5498,9 @@ public class LibraryDataOrchestrator
 </file>
 
 <file path="Source\ViewModels\LibraryManagement\LibraryStatusTextGenerator.cs">
+using System.Linq;
 using Sonorize.Models;
 using Sonorize.Services; // For AppSettings in case it's needed indirectly
-using System.Linq;
 
 namespace Sonorize.ViewModels.LibraryManagement;
 
@@ -5467,11 +5561,10 @@ public class LibraryStatusTextGenerator
 </file>
 
 <file path="Source\ViewModels\LibraryManagement\SongFilteringService.cs">
-using Sonorize.Models;
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Linq;
+using Sonorize.Models;
 
 namespace Sonorize.ViewModels.LibraryManagement;
 
@@ -5524,13 +5617,12 @@ public class SongFilteringService
 </file>
 
 <file path="Source\ViewModels\LibraryManagement\TrackNavigationManager.cs">
-using Sonorize.Models;
 using System;
 using System.Collections.ObjectModel; // For ObservableCollection
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Windows.Input;
+using Sonorize.Models;
 
 namespace Sonorize.ViewModels.LibraryManagement;
 
@@ -5613,7 +5705,7 @@ public class TrackNavigationManager : ViewModelBase // Inherit for RelayCommand'
         }
         else
         {
-             Debug.WriteLine("[TrackNavManager] Selected song not found in filtered list.");
+            Debug.WriteLine("[TrackNavManager] Selected song not found in filtered list.");
         }
     }
 
@@ -5858,19 +5950,13 @@ public static class MainMenu
 </file>
 
 <file path="Source\Views\MainWindowControls\MainPlaybackControlsPanel.cs">
-using System.Diagnostics; // Added for Debug
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
 using Avalonia.Data;
 using Avalonia.Data.Converters; // Added required using directive for FuncValueConverter
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Media.Imaging; // Required for BitmapInterpolationMode
-using Avalonia.Styling;
-using Sonorize.Converters;
 using Sonorize.Models;
-using Sonorize.ViewModels; // Required for RepeatMode enum
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -5975,18 +6061,16 @@ public static class MainPlaybackControlsPanel
 </file>
 
 <file path="Source\Views\MainWindowControls\MainTabViewControls.cs">
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
-using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using Sonorize.Models;
 using Sonorize.ViewModels;
-using System.Diagnostics;
 
 namespace Sonorize.Views.MainWindowControls
 {
@@ -6200,7 +6284,6 @@ using Avalonia.Media;
 using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.ViewModels; // Required for RepeatMode enum
-using System.Diagnostics;
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -6564,7 +6647,6 @@ using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Styling;
 using Sonorize.Models; // For ThemeColors
-using Sonorize.ViewModels; // Required for Binding
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -6652,7 +6734,8 @@ namespace Sonorize.Views.MainWindowControls
         private void InitializeSongTemplates()
         {
             // Detailed Song Template
-            DetailedSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) => {
+            DetailedSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) =>
+            {
                 var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 5, 0), Stretch = Stretch.UniformToFill };
                 image.Bind(Image.SourceProperty, new Binding(nameof(Song.Thumbnail)));
                 RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
@@ -6673,7 +6756,8 @@ namespace Sonorize.Views.MainWindowControls
             }, supportsRecycling: true);
 
             // Compact Song Template
-            CompactSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) => {
+            CompactSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) =>
+            {
                 var titleBlock = new TextBlock { FontSize = 12, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
                 titleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Title)));
 
@@ -6693,7 +6777,8 @@ namespace Sonorize.Views.MainWindowControls
             }, supportsRecycling: true);
 
             // Grid Song Template
-            GridSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) => {
+            GridSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) =>
+            {
                 var image = new Image { Width = 80, Height = 80, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center };
                 image.Bind(Image.SourceProperty, new Binding(nameof(Song.Thumbnail)));
                 RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);

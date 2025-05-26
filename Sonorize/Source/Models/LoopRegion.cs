@@ -5,10 +5,8 @@ using System.Runtime.CompilerServices;
 
 namespace Sonorize.Models;
 
-public class LoopRegion(TimeSpan start, TimeSpan end, string name = "Loop") : INotifyPropertyChanged
+public class LoopRegion : INotifyPropertyChanged
 {
-    private TimeSpan end = end;
-
     public string Name
     {
         get;
@@ -17,28 +15,31 @@ public class LoopRegion(TimeSpan start, TimeSpan end, string name = "Loop") : IN
         {
             SetProperty(ref field, value);
         }
-    } = name;
+    }
 
     public TimeSpan Start
     {
         get;
-        
+
         set
         {
             SetProperty(ref field, value);
         }
-    } = start;
-
-    public TimeSpan End
-    {
-        get => end;
-        set => end = value;
     }
+
+    public TimeSpan End { get; set; }
 
     public string DisplayText => $"({Start:mm\\:ss} - {End:mm\\:ss})";
 
     public event PropertyChangedEventHandler? PropertyChanged;
-    
+
+    public LoopRegion(TimeSpan start, TimeSpan end, string name = "Loop")
+    {
+        Name = name;
+        Start = start;
+        End = end;
+    }
+
     protected bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {
         if (EqualityComparer<T>.Default.Equals(field, value))

@@ -6,8 +6,8 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
-using Sonorize.Services;
 using Sonorize.Models; // Required for AppSettings type
+using Sonorize.Services;
 
 namespace Sonorize.ViewModels;
 
@@ -125,7 +125,8 @@ public class SettingsViewModel : ViewModelBase
         RemoveDirectoryCommand = new RelayCommand(RemoveSelectedDirectory, _ => CanRemoveDirectory);
         SaveAndCloseCommand = new RelayCommand(SaveSettings);
 
-        PropertyChanged += (s, e) => {
+        PropertyChanged += (s, e) =>
+        {
             if (e.PropertyName == nameof(SelectedDirectory))
             {
                 (RemoveDirectoryCommand as RelayCommand)?.RaiseCanExecuteChanged();

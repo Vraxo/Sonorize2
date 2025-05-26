@@ -39,7 +39,7 @@ public class NextTrackSelectorService(Random shuffleRandom)
     private Song? GetNextSongShuffle(Song currentSong, List<Song> currentList, RepeatMode repeatMode)
     {
         Debug.WriteLine("[NextTrackSelector] Shuffle is Enabled.");
-        
+
         Song? nextSong = null;
 
         if (currentList.Count == 0)

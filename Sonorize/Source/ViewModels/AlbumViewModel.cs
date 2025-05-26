@@ -1,5 +1,5 @@
-﻿using Avalonia.Media.Imaging;
-using System.Collections.Generic; // For List
+﻿using System.Collections.Generic; // For List
+using Avalonia.Media.Imaging;
 // Removed System.Collections.ObjectModel as List is sufficient here and ViewModelBase handles INPC
 
 namespace Sonorize.ViewModels;

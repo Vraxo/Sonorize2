@@ -10,6 +10,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Sonorize.Models;
 using Sonorize.Services;
+using Sonorize.ViewModels.Status; // Added for StatusBarTextProvider
 
 namespace Sonorize.ViewModels;
 
@@ -21,6 +22,7 @@ public class MainWindowViewModel : ViewModelBase
     private readonly LoopDataService _loopDataService;
     private readonly ScrobblingService _scrobblingService;
     private readonly NextTrackSelectorService _nextTrackSelectorService;
+    private readonly StatusBarTextProvider _statusBarTextProvider; // Added
 
     // Expose the Services directly for child VMs or public properties
     public PlaybackService PlaybackService { get; }
@@ -71,6 +73,7 @@ public class MainWindowViewModel : ViewModelBase
         Library = new LibraryViewModel(this, _settingsService, _musicLibraryService, _loopDataService);
         Playback = new PlaybackViewModel(PlaybackService, _waveformService);
         LoopEditor = new LoopEditorViewModel(PlaybackService, _loopDataService);
+        _statusBarTextProvider = new StatusBarTextProvider(Playback, LoopEditor, Library); // Instantiated
 
 
         Library.PropertyChanged += Library_PropertyChanged;
@@ -254,40 +257,7 @@ public class MainWindowViewModel : ViewModelBase
 
     private void UpdateStatusBarText()
     {
-        string status;
-        if (Playback.HasCurrentSong)
-        {
-            string stateStr = Playback.CurrentPlaybackStatus switch { PlaybackStateStatus.Playing => "Playing", PlaybackStateStatus.Paused => "Paused", PlaybackStateStatus.Stopped => "Stopped", _ => "Idle" };
-            status = $"{stateStr}: {Playback.CurrentSong?.Title ?? "Unknown Song"}";
-            if (LoopEditor.IsCurrentLoopActiveUiBinding && Playback.CurrentSong?.SavedLoop != null)
-            {
-                status += $" (Loop Active)";
-            }
-
-            string modeStatus = "";
-            if (Playback.ShuffleEnabled)
-            {
-                modeStatus += " | Shuffle";
-            }
-            modeStatus += Playback.RepeatMode switch
-            {
-                RepeatMode.None => " | Do Nothing",
-                RepeatMode.PlayOnce => " | Play Once",
-                RepeatMode.RepeatOne => " | Repeat Song",
-                RepeatMode.RepeatAll => " | Repeat All",
-                _ => ""
-            };
-
-            if (!string.IsNullOrEmpty(modeStatus))
-            {
-                status += modeStatus;
-            }
-        }
-        else
-        {
-            status = Library.LibraryStatusText;
-        }
-        StatusBarText = status;
+        StatusBarText = _statusBarTextProvider.GetCurrentStatusText();
     }
 
     private async Task LoadMusicLibrary()

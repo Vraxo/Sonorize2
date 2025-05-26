@@ -1,12 +1,12 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives; // Required for Style
+using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Data;
+using Avalonia.Styling;
 using Sonorize.Models;
 using Sonorize.ViewModels;
-using Avalonia.Styling;
-using Avalonia.Controls.Primitives; // Required for Style
 
 namespace Sonorize.Views;
 

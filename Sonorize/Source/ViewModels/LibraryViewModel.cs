@@ -266,7 +266,8 @@ public class LibraryViewModel : ViewModelBase
         // or explicitly set to null here if we want to ensure it's cleared before loading.
         SelectedSong = null; // Explicitly clear selection before load
 
-        await Dispatcher.UIThread.InvokeAsync(() => {
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
             // SelectedSong already cleared
             _allSongs.Clear();
             FilteredSongs.Clear(); // TrackNavigationManager will see this change
@@ -280,7 +281,8 @@ public class LibraryViewModel : ViewModelBase
 
         await _libraryDataOrchestrator.LoadAndProcessLibraryDataAsync(statusUpdateCallback, songAddedCallback);
 
-        await Dispatcher.UIThread.InvokeAsync(() => {
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
             OnPropertyChanged(nameof(Artists));
             OnPropertyChanged(nameof(Albums));
             ApplyFilter();

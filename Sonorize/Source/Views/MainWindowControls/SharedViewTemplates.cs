@@ -47,7 +47,8 @@ namespace Sonorize.Views.MainWindowControls
         private void InitializeSongTemplates()
         {
             // Detailed Song Template
-            DetailedSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) => {
+            DetailedSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) =>
+            {
                 var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 5, 0), Stretch = Stretch.UniformToFill };
                 image.Bind(Image.SourceProperty, new Binding(nameof(Song.Thumbnail)));
                 RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
@@ -68,7 +69,8 @@ namespace Sonorize.Views.MainWindowControls
             }, supportsRecycling: true);
 
             // Compact Song Template
-            CompactSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) => {
+            CompactSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) =>
+            {
                 var titleBlock = new TextBlock { FontSize = 12, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
                 titleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Title)));
 
@@ -88,7 +90,8 @@ namespace Sonorize.Views.MainWindowControls
             }, supportsRecycling: true);
 
             // Grid Song Template
-            GridSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) => {
+            GridSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) =>
+            {
                 var image = new Image { Width = 80, Height = 80, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center };
                 image.Bind(Image.SourceProperty, new Binding(nameof(Song.Thumbnail)));
                 RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);

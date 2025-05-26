@@ -1,12 +1,11 @@
-﻿using Avalonia.Threading;
-using Sonorize.Models;
-using Sonorize.Services;
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel; // Required for ObservableCollection
 using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia.Threading;
+using Sonorize.Models;
+using Sonorize.Services;
 
 namespace Sonorize.ViewModels.LibraryManagement;
 

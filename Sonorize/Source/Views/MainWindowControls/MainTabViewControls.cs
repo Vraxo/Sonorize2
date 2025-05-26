@@ -1,15 +1,13 @@
-﻿using Avalonia;
+﻿using System.Diagnostics;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
-using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using Sonorize.Models;
 using Sonorize.ViewModels;
-using System.Diagnostics;
 
 namespace Sonorize.Views.MainWindowControls
 {

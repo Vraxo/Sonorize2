@@ -1,5 +1,5 @@
-﻿using Avalonia.Media;
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
+using Avalonia.Media;
 
 namespace Sonorize.Models;
 

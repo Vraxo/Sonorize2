@@ -1,9 +1,9 @@
-﻿using Sonorize.Models;
-using Sonorize.Services;
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Windows.Input;
 using Avalonia.Threading; // Required for Dispatcher
+using Sonorize.Models;
+using Sonorize.Services;
 
 namespace Sonorize.ViewModels;
 

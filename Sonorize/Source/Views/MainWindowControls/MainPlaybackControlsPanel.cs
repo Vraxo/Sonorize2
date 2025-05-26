@@ -1,16 +1,10 @@
-﻿using System.Diagnostics; // Added for Debug
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
 using Avalonia.Data;
 using Avalonia.Data.Converters; // Added required using directive for FuncValueConverter
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Media.Imaging; // Required for BitmapInterpolationMode
-using Avalonia.Styling;
-using Sonorize.Converters;
 using Sonorize.Models;
-using Sonorize.ViewModels; // Required for RepeatMode enum
 
 namespace Sonorize.Views.MainWindowControls;
 

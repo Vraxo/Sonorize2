@@ -1,8 +1,8 @@
-﻿using NAudio.Wave.SampleProviders;
-using NAudio.Wave;
-using SoundTouch.Net.NAudioSupport;
+﻿using System;
 using System.Diagnostics;
-using System;
+using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
+using SoundTouch.Net.NAudioSupport;
 
 namespace Sonorize.Services;
 

@@ -1,5 +1,5 @@
-﻿using Avalonia;
-using System;
+﻿using System;
+using Avalonia;
 using NAudio.MediaFoundation; // Required for MediaFoundationApi
 
 namespace Sonorize;

@@ -1,14 +1,13 @@
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Markup.Xaml.Styling;
+using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.Themes.Fluent;
+using Sonorize.Models;
+using Sonorize.Services;
 using Sonorize.ViewModels;
 using Sonorize.Views;
-using Sonorize.Services;
-using Sonorize.Models;
-using Avalonia.Themes.Fluent;
-using Avalonia.Media;
-using System.Diagnostics;
 
 namespace Sonorize;
 

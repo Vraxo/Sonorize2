@@ -1,7 +1,7 @@
 ﻿using System;
-using Avalonia.Data.Converters;
-using System.Globalization;
 using System.Diagnostics; // Added for Debug
+using System.Globalization;
+using Avalonia.Data.Converters;
 
 namespace Sonorize.Converters
 {

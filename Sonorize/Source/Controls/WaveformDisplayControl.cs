@@ -1,10 +1,10 @@
-﻿using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Media;
-using Avalonia.Input;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq; // Required for Enumerable.Empty
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Media;
 using Sonorize.Models; // For LoopRegion
 using Sonorize.Services; // For WaveformPoint
 

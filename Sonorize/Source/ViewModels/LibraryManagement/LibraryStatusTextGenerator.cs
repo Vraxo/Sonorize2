@@ -1,6 +1,6 @@
-﻿using Sonorize.Models;
+﻿using System.Linq;
+using Sonorize.Models;
 using Sonorize.Services; // For AppSettings in case it's needed indirectly
-using System.Linq;
 
 namespace Sonorize.ViewModels.LibraryManagement;
 

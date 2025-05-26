@@ -1,11 +1,11 @@
-﻿using Avalonia.Threading;
+﻿using System;
+using System.Diagnostics;
+using System.IO;
+using System.Threading;
+using Avalonia.Threading;
 using NAudio.Wave;
 using Sonorize.Models;
 using Sonorize.ViewModels;
-using System.Diagnostics;
-using System.Threading;
-using System;
-using System.IO;
 
 namespace Sonorize.Services;
 

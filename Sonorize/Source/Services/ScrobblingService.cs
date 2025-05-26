@@ -1,9 +1,9 @@
-﻿using Sonorize.Models;
+﻿using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
-using System;
 using IF.Lastfm.Core.Api;
 using IF.Lastfm.Core.Objects; // Added for service classes like Track, Auth
+using Sonorize.Models;
 
 namespace Sonorize.Services;
 

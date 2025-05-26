@@ -8,7 +8,6 @@ using Avalonia.Media;
 using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.ViewModels; // Required for RepeatMode enum
-using System.Diagnostics;
 
 namespace Sonorize.Views.MainWindowControls;
 

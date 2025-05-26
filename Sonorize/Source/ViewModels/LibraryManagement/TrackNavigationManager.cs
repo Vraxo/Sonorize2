@@ -1,10 +1,9 @@
-﻿using Sonorize.Models;
-using System;
+﻿using System;
 using System.Collections.ObjectModel; // For ObservableCollection
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Windows.Input;
+using Sonorize.Models;
 
 namespace Sonorize.ViewModels.LibraryManagement;
 
@@ -87,7 +86,7 @@ public class TrackNavigationManager : ViewModelBase // Inherit for RelayCommand'
         }
         else
         {
-             Debug.WriteLine("[TrackNavManager] Selected song not found in filtered list.");
+            Debug.WriteLine("[TrackNavManager] Selected song not found in filtered list.");
         }
     }
 

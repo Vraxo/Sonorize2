@@ -1,10 +1,10 @@
-﻿using NAudio.Wave;
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using System.Diagnostics;
 using System.IO; // Required for Path.GetFileName
+using System.Linq;
+using System.Threading.Tasks;
+using NAudio.Wave;
 
 namespace Sonorize.Services;
 

@@ -1,11 +1,11 @@
-﻿using Avalonia.Media.Imaging;
-using Sonorize.Models;
-using Sonorize.Services;
-using Sonorize.Utils; // For AlbumArtistTupleComparer
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using Avalonia.Media.Imaging;
+using Sonorize.Models;
+using Sonorize.Services;
+using Sonorize.Utils; // For AlbumArtistTupleComparer
 
 namespace Sonorize.ViewModels.LibraryManagement;
 

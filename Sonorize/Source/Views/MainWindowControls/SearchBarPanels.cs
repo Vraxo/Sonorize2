@@ -3,7 +3,6 @@ using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Styling;
 using Sonorize.Models; // For ThemeColors
-using Sonorize.ViewModels; // Required for Binding
 
 namespace Sonorize.Views.MainWindowControls;
 

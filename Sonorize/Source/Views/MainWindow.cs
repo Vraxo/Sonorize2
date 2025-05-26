@@ -1,10 +1,12 @@
-﻿using Avalonia;
+﻿using System; // For EventArgs
+using System.ComponentModel; // For PropertyChangedEventArgs
+using System.Diagnostics; // For Debug
+using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives; // For Thumb, ToggleButton
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
 using Avalonia.Layout;
-using Avalonia.Media;
+using Avalonia.Threading; // Required for Dispatcher
 // Removed: using Avalonia.Media.Imaging; 
 // Removed: using Avalonia.Styling;
 // Removed: using Sonorize.Controls;
@@ -13,10 +15,6 @@ using Sonorize.Models;
 // Removed: using Sonorize.Services;
 using Sonorize.ViewModels;
 using Sonorize.Views.MainWindowControls;
-using System; // For EventArgs
-using System.ComponentModel; // For PropertyChangedEventArgs
-using System.Diagnostics; // For Debug
-using Avalonia.Threading; // Required for Dispatcher
 
 namespace Sonorize.Views;
 public class MainWindow : Window

@@ -1,7 +1,4 @@
-﻿using Avalonia.Threading;
-using Sonorize.Models;
-using Sonorize.Services; // This using directive makes PlaybackStateStatus from the Service available
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -9,6 +6,9 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using Avalonia.Threading;
+using Sonorize.Models;
+using Sonorize.Services; // This using directive makes PlaybackStateStatus from the Service available
 
 namespace Sonorize.ViewModels;
 
@@ -59,10 +59,10 @@ public class PlaybackViewModel : ViewModelBase
     public double PlaybackSpeed { get => _playbackSpeed; set { value = Math.Clamp(value, 0.5, 2.0); if (SetProperty(ref _playbackSpeed, value)) { PlaybackService.PlaybackRate = (float)value; OnPropertyChanged(nameof(PlaybackSpeedDisplay)); } } }
     public string PlaybackSpeedDisplay => $"{PlaybackSpeed:F2}x";
 
-    public double PlaybackPitch 
+    public double PlaybackPitch
     {
-        get; 
-        
+        get;
+
         set
         {
             value = double.Round(value * 2, MidpointRounding.AwayFromZero) / 2.0;
@@ -183,7 +183,8 @@ public class PlaybackViewModel : ViewModelBase
             _ => PlaybackService.CurrentSong != null && !IsWaveformLoading); // Can't control playback while waveform is loading
 
         SeekCommand = new RelayCommand(
-            positionSecondsObj => {
+            positionSecondsObj =>
+            {
                 if (positionSecondsObj is double seconds && PlaybackService.CurrentSongDuration.TotalSeconds > 0)
                 {
                     // This command is useful for explicit seek calls, although the slider two-way binding is primary.
@@ -362,7 +363,8 @@ public class PlaybackViewModel : ViewModelBase
             {
                 Debug.WriteLine($"[PlaybackVM] Waveform loaded for: {songToLoadWaveformFor.Title}, {points.Count} points. Updating UI.");
                 // Add points on the UI thread
-                await Dispatcher.UIThread.InvokeAsync(() => {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
                     foreach (var p in points) WaveformRenderData.Add(p);
                     OnPropertyChanged(nameof(WaveformRenderData)); // Notify UI
                 });
@@ -379,14 +381,16 @@ public class PlaybackViewModel : ViewModelBase
         catch (Exception ex)
         {
             Debug.WriteLine($"[PlaybackVM] CRITICAL Error loading waveform for {songToLoadWaveformFor.Title}: {ex.Message}");
-            await Dispatcher.UIThread.InvokeAsync(() => {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
                 WaveformRenderData.Clear(); OnPropertyChanged(nameof(WaveformRenderData));
                 // Optionally set a status text indicating waveform load failed
             });
         }
         finally
         {
-            await Dispatcher.UIThread.InvokeAsync(() => {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
                 IsWaveformLoading = false; // Internal setter is fine here
             });
         }
