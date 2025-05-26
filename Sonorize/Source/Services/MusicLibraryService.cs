@@ -155,32 +155,19 @@ public class MusicLibraryService
 
             foreach (var file in filesInDir)
             {
-                string fullPath;
-                try
-                {
-                    fullPath = Path.GetFullPath(file);
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"[MusicLibService] Could not get full path for '{file}'. Error: {ex.Message}. Skipping song.");
-                    continue;
-                }
-
                 var song = new Song
                 {
-                    FilePath = fullPath, // Use the full, normalized path
-                    Title = Path.GetFileNameWithoutExtension(fullPath),
+                    FilePath = file,
+                    Title = Path.GetFileNameWithoutExtension(file),
                     Artist = "Unknown Artist",
                     Album = "Unknown Album",
                     Duration = TimeSpan.Zero,
                     Thumbnail = defaultIcon
                 };
-                Debug.WriteLine($"[MusicLibService] Created Song object. Normalized FilePath set to: '{song.FilePath}' for Title: '{song.Title}'");
-
 
                 try
                 {
-                    using var tagFile = TagLib.File.Create(song.FilePath); // Use song.FilePath which is now fullPath
+                    using var tagFile = TagLib.File.Create(file);
                     if (!string.IsNullOrWhiteSpace(tagFile.Tag.Title)) song.Title = tagFile.Tag.Title;
                     if (tagFile.Tag.Performers.Length > 0 && !string.IsNullOrWhiteSpace(tagFile.Tag.Performers[0]))
                         song.Artist = tagFile.Tag.Performers[0];
