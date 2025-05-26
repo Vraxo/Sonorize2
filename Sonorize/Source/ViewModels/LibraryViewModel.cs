@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Threading;
@@ -32,6 +34,8 @@ public class LibraryViewModel : ViewModelBase
     // Navigation commands are now exposed from TrackNavigationManager
     public ICommand PreviousTrackCommand => _trackNavigationManager.PreviousTrackCommand;
     public ICommand NextTrackCommand => _trackNavigationManager.NextTrackCommand;
+    public ICommand ViewSongInFileBrowserCommand { get; }
+
 
     public string SearchQuery
     {
@@ -234,6 +238,83 @@ public class LibraryViewModel : ViewModelBase
             _ => true
         );
 
+        ViewSongInFileBrowserCommand = new RelayCommand(
+            param =>
+            {
+                if (param is Song song && !string.IsNullOrEmpty(song.FilePath) && File.Exists(song.FilePath))
+                {
+                    try
+                    {
+                        string argument;
+                        string processToStart;
+
+                        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                        {
+                            processToStart = "explorer.exe";
+                            argument = $"/select,\"{song.FilePath}\"";
+                        }
+                        else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                        {
+                            processToStart = "open";
+                            argument = $"-R \"{song.FilePath}\"";
+                        }
+                        else // Assuming Linux or other Unix-like
+                        {
+                            string? directory = Path.GetDirectoryName(song.FilePath);
+                            if (!string.IsNullOrEmpty(directory))
+                            {
+                                processToStart = "xdg-open";
+                                argument = $"\"{directory}\""; // Open directory
+                            }
+                            else
+                            {
+                                Debug.WriteLine($"[LibraryVM Execute ViewSongInFileBrowser] Could not get directory for {song.FilePath}");
+                                return;
+                            }
+                        }
+                        Debug.WriteLine($"[LibraryVM Execute ViewSongInFileBrowser] Starting: {processToStart} {argument}");
+                        Process.Start(new ProcessStartInfo(processToStart, argument) { UseShellExecute = true });
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"[LibraryVM Execute ViewSongInFileBrowser] Error opening file browser for {song.FilePath}: {ex.Message}");
+                        // Optionally, update a status bar message or show a dialog
+                        // e.g., _parentViewModel.UpdateStatusBarText($"Error: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    Debug.WriteLine($"[LibraryVM Execute ViewSongInFileBrowser] Conditions not met. Param type: {param?.GetType().Name}, FilePath: {(param as Song)?.FilePath}, Exists: {((param as Song)?.FilePath != null && File.Exists((param as Song)!.FilePath))}");
+                }
+            },
+            param =>
+            {
+                if (param is Song song)
+                {
+                    bool isFilePathValid = !string.IsNullOrEmpty(song.FilePath);
+                    bool fileActuallyExists = false;
+                    if (isFilePathValid)
+                    {
+                        try
+                        {
+                            fileActuallyExists = File.Exists(song.FilePath);
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"[LibraryVM CanExecute ViewSongInFileBrowser] Error checking File.Exists for '{song.FilePath}': {ex.Message}");
+                            fileActuallyExists = false; // Assume not accessible if error
+                        }
+                    }
+                    bool canExecute = isFilePathValid && fileActuallyExists;
+                    Debug.WriteLine($"[LibraryVM CanExecute ViewSongInFileBrowser] Song: '{song.Title}', FilePath: '{song.FilePath}', IsPathValid: {isFilePathValid}, FileExists: {fileActuallyExists}, Result: {canExecute}");
+                    return canExecute;
+                }
+                Debug.WriteLine($"[LibraryVM CanExecute ViewSongInFileBrowser] Param is not Song or is null. Type: {param?.GetType().Name ?? "null"}. Result: false");
+                return false;
+            }
+        );
+
+
         // Previous/Next track commands are now handled by _trackNavigationManager
         // FilteredSongs.CollectionChanged still needs to inform TrackNavigationManager
         // This is handled inside TrackNavigationManager's constructor.
@@ -379,6 +460,7 @@ public class LibraryViewModel : ViewModelBase
     public void RaiseLibraryCommandsCanExecuteChanged()
     {
         (SetDisplayModeCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (ViewSongInFileBrowserCommand as RelayCommand)?.RaiseCanExecuteChanged();
         // Navigation commands are handled by TrackNavigationManager
     }
 

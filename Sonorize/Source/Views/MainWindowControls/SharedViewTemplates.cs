@@ -65,7 +65,26 @@ namespace Sonorize.Views.MainWindowControls
                 var textStack = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Children = { titleBlock, artistBlock } };
                 var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), VerticalAlignment = VerticalAlignment.Center, Children = { image, textStack, durationBlock } };
                 Grid.SetColumn(image, 0); Grid.SetColumn(textStack, 1); Grid.SetColumn(durationBlock, 2);
-                return new Border { Padding = new Thickness(10, 6, 10, 6), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
+
+                var border = new Border { Padding = new Thickness(10, 6, 10, 6), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
+
+                var contextMenu = new ContextMenu
+                {
+                    Background = _theme.B_ControlBackgroundColor,
+                    Foreground = _theme.B_TextColor,
+                    BorderBrush = _theme.B_SecondaryTextColor,
+                    BorderThickness = new Thickness(1)
+                };
+                var viewInBrowserMenuItem = new MenuItem { Header = "View in File Browser", Foreground = _theme.B_TextColor };
+                viewInBrowserMenuItem.Bind(MenuItem.CommandProperty, new Binding("DataContext.Library.ViewSongInFileBrowserCommand")
+                {
+                    RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(ListBox) }
+                });
+                viewInBrowserMenuItem.Bind(MenuItem.CommandParameterProperty, new Binding(".")); // DataContext is Song
+                contextMenu.Items.Add(viewInBrowserMenuItem);
+                border.ContextMenu = contextMenu;
+
+                return border;
             }, supportsRecycling: true);
 
             // Compact Song Template
@@ -86,7 +105,26 @@ namespace Sonorize.Views.MainWindowControls
                 var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), VerticalAlignment = VerticalAlignment.Center };
                 itemGrid.Children.Add(titleArtistPanel); itemGrid.Children.Add(durationBlock);
                 Grid.SetColumn(titleArtistPanel, 0); Grid.SetColumn(durationBlock, 1);
-                return new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = itemGrid };
+
+                var border = new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = itemGrid };
+
+                var contextMenu = new ContextMenu
+                {
+                    Background = _theme.B_ControlBackgroundColor,
+                    Foreground = _theme.B_TextColor,
+                    BorderBrush = _theme.B_SecondaryTextColor,
+                    BorderThickness = new Thickness(1)
+                };
+                var viewInBrowserMenuItem = new MenuItem { Header = "View in File Browser", Foreground = _theme.B_TextColor };
+                viewInBrowserMenuItem.Bind(MenuItem.CommandProperty, new Binding("DataContext.Library.ViewSongInFileBrowserCommand")
+                {
+                    RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(ListBox) }
+                });
+                viewInBrowserMenuItem.Bind(MenuItem.CommandParameterProperty, new Binding(".")); // DataContext is Song
+                contextMenu.Items.Add(viewInBrowserMenuItem);
+                border.ContextMenu = contextMenu;
+
+                return border;
             }, supportsRecycling: true);
 
             // Grid Song Template
@@ -114,7 +152,25 @@ namespace Sonorize.Views.MainWindowControls
                 artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
 
                 var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { image, titleBlock, artistBlock } };
-                return new Border { Width = 120, Height = 150, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+                var border = new Border { Width = 120, Height = 150, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+
+                var contextMenu = new ContextMenu
+                {
+                    Background = _theme.B_ControlBackgroundColor,
+                    Foreground = _theme.B_TextColor,
+                    BorderBrush = _theme.B_SecondaryTextColor,
+                    BorderThickness = new Thickness(1)
+                };
+                var viewInBrowserMenuItem = new MenuItem { Header = "View in File Browser", Foreground = _theme.B_TextColor };
+                viewInBrowserMenuItem.Bind(MenuItem.CommandProperty, new Binding("DataContext.Library.ViewSongInFileBrowserCommand")
+                {
+                    RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(ListBox) }
+                });
+                viewInBrowserMenuItem.Bind(MenuItem.CommandParameterProperty, new Binding(".")); // DataContext is Song
+                contextMenu.Items.Add(viewInBrowserMenuItem);
+                border.ContextMenu = contextMenu;
+
+                return border;
             }, supportsRecycling: true);
         }
 
