@@ -19,16 +19,18 @@ namespace Sonorize.Services;
 public class MusicLibraryService
 {
     private readonly LoopDataService _loopDataService;
-    private readonly ThumbnailService _thumbnailService; // Added dependency
+    private readonly ThumbnailService _thumbnailService;
+    private readonly SongFactory _songFactory; // Added SongFactory dependency
     private const int UI_UPDATE_BATCH_SIZE = 50;
 
     public event Action<Song>? SongThumbnailUpdated;
 
 
-    public MusicLibraryService(LoopDataService loopDataService, ThumbnailService thumbnailService) // Modified constructor
+    public MusicLibraryService(LoopDataService loopDataService, ThumbnailService thumbnailService, SongFactory songFactory) // Modified constructor
     {
         _loopDataService = loopDataService ?? throw new ArgumentNullException(nameof(loopDataService));
-        _thumbnailService = thumbnailService ?? throw new ArgumentNullException(nameof(thumbnailService)); // Store dependency
+        _thumbnailService = thumbnailService ?? throw new ArgumentNullException(nameof(thumbnailService));
+        _songFactory = songFactory ?? throw new ArgumentNullException(nameof(songFactory)); // Store dependency
         Debug.WriteLine("[MusicLibService] Constructor called.");
     }
 
@@ -43,7 +45,7 @@ public class MusicLibraryService
     {
         Debug.WriteLine("[MusicLibService] LoadMusicFromDirectoriesAsync");
         var supportedExtensions = new[] { ".mp3", ".wav", ".flac", ".m4a", ".ogg" };
-        Bitmap? defaultIcon = GetDefaultThumbnail(); // Use the method that delegates to ThumbnailService
+        Bitmap? defaultIcon = GetDefaultThumbnail();
         int filesProcessed = 0;
 
         foreach (var dir in directories)
@@ -73,35 +75,8 @@ public class MusicLibraryService
 
             foreach (var file in filesInDir)
             {
-                var song = new Song
-                {
-                    FilePath = file,
-                    Title = Path.GetFileNameWithoutExtension(file),
-                    Artist = "Unknown Artist",
-                    Album = "Unknown Album",
-                    Duration = TimeSpan.Zero,
-                    Thumbnail = defaultIcon // Set initial default thumbnail
-                };
-
-                try
-                {
-                    using var tagFile = TagLib.File.Create(file);
-                    if (!string.IsNullOrWhiteSpace(tagFile.Tag.Title)) song.Title = tagFile.Tag.Title;
-                    if (tagFile.Tag.Performers.Length > 0 && !string.IsNullOrWhiteSpace(tagFile.Tag.Performers[0]))
-                        song.Artist = tagFile.Tag.Performers[0];
-                    else if (tagFile.Tag.AlbumArtists.Length > 0 && !string.IsNullOrWhiteSpace(tagFile.Tag.AlbumArtists[0]))
-                        song.Artist = tagFile.Tag.AlbumArtists[0];
-                    if (!string.IsNullOrWhiteSpace(tagFile.Tag.Album)) song.Album = tagFile.Tag.Album;
-                    if (tagFile.Properties.Duration > TimeSpan.Zero) song.Duration = tagFile.Properties.Duration;
-                }
-                catch (Exception) { }
-
-                var storedLoopData = _loopDataService.GetLoop(song.FilePath);
-                if (storedLoopData != null)
-                {
-                    song.SavedLoop = new LoopRegion(storedLoopData.Start, storedLoopData.End);
-                    song.IsLoopActive = storedLoopData.IsActive;
-                }
+                // Use SongFactory to create and populate the song object
+                Song song = _songFactory.CreateSongFromFile(file, defaultIcon);
 
                 await Dispatcher.UIThread.InvokeAsync(() => songAddedCallback(song));
 

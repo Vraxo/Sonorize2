@@ -13,7 +13,8 @@ public class ApplicationServicesBootstrapper
         var playbackService = new PlaybackService(scrobblingService);
         var loopDataService = new LoopDataService();
         var thumbnailService = new ThumbnailService();
-        var musicLibraryService = new MusicLibraryService(loopDataService, thumbnailService);
+        var songFactory = new SongFactory(loopDataService); // Create SongFactory
+        var musicLibraryService = new MusicLibraryService(loopDataService, thumbnailService, songFactory); // Inject SongFactory
         var waveformService = new WaveformService();
 
         // Create MainWindowViewModel
