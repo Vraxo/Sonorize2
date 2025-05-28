@@ -8,31 +8,32 @@ namespace Sonorize.Services.Playback;
 
 public class PlaybackMonitor : IDisposable
 {
-    private readonly PlaybackService _playbackService;
-    private readonly NAudioEngineController _engineController; // Changed to NAudioEngineController
+    private readonly NAudioEngineController _engineController;
+    private readonly PlaybackLoopHandler _loopHandler;
     private Timer? _monitorTimer;
-    private PlaybackLoopHandler? _currentTargetLoopHandler;
     private Song? _songBeingMonitored;
+    private Action<TimeSpan, TimeSpan>? _positionUpdateAction;
 
     private const int MonitorIntervalMilliseconds = 100;
 
-    public PlaybackMonitor(PlaybackService playbackService, NAudioEngineController engineController)
+    public PlaybackMonitor(NAudioEngineController engineController, PlaybackLoopHandler loopHandler)
     {
-        _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
         _engineController = engineController ?? throw new ArgumentNullException(nameof(engineController));
+        _loopHandler = loopHandler ?? throw new ArgumentNullException(nameof(loopHandler));
         Debug.WriteLine("[PlaybackMonitor] Initialized.");
     }
 
-    public void Start(PlaybackLoopHandler loopHandler, Song? songToMonitor) // Removed NAudioPlaybackEngine engine
+    public void Start(Song? songToMonitor, Action<TimeSpan, TimeSpan> positionUpdateAction)
     {
         Stop();
 
-        _currentTargetLoopHandler = loopHandler ?? throw new ArgumentNullException(nameof(loopHandler));
         _songBeingMonitored = songToMonitor;
+        _positionUpdateAction = positionUpdateAction ?? throw new ArgumentNullException(nameof(positionUpdateAction));
 
         if (_songBeingMonitored is null)
         {
             Debug.WriteLine("[PlaybackMonitor] Start called, but songToMonitor is null. Monitoring will not proceed effectively.");
+            // It might still run the timer but the callback will likely stop it.
         }
 
         _monitorTimer = new Timer(MonitorCallback, null, TimeSpan.Zero, TimeSpan.FromMilliseconds(MonitorIntervalMilliseconds));
@@ -48,38 +49,41 @@ public class PlaybackMonitor : IDisposable
             _monitorTimer = null;
             Debug.WriteLine($"[PlaybackMonitor] Stopped monitoring for: {_songBeingMonitored?.Title ?? "Previously Monitored Song"}");
         }
-
-        _currentTargetLoopHandler = null;
-        _songBeingMonitored = null;
+        _songBeingMonitored = null; // Clear the song being monitored
+        _positionUpdateAction = null; // Clear the callback
     }
 
     private void MonitorCallback(object? state)
     {
-        PlaybackLoopHandler? loopHandler = _currentTargetLoopHandler;
-        Song? monitoredSong = _songBeingMonitored;
+        Song? localSongBeingMonitored = _songBeingMonitored; // Capture for thread safety
+        Action<TimeSpan, TimeSpan>? localPositionUpdateAction = _positionUpdateAction; // Capture for thread safety
 
-        if (loopHandler is null || monitoredSong is null || _playbackService.CurrentSong != monitoredSong)
+        if (localSongBeingMonitored is null || localPositionUpdateAction is null)
         {
-            Debug.WriteLineIf(loopHandler is null, "[PlaybackMonitor Callback] LoopHandler is null. Stopping.");
-            Debug.WriteLineIf(monitoredSong == null, "[PlaybackMonitor Callback] MonitoredSong is null. Stopping.");
-            Debug.WriteLineIf(_playbackService.CurrentSong != monitoredSong && monitoredSong is not null, $"[PlaybackMonitor Callback] Monitored song '{monitoredSong.Title}' differs from PlaybackService.CurrentSong ('{_playbackService.CurrentSong?.Title ?? "null"}'). Stopping.");
-
-            Dispatcher.UIThread.InvokeAsync(Stop);
+            Debug.WriteLine("[PlaybackMonitor Callback] Song or position update action is null. Stopping timer.");
+            Dispatcher.UIThread.InvokeAsync(Stop); // Stop on UI thread to ensure proper disposal if needed
             return;
         }
 
-        // Use _engineController for playback status
+        // This check should be done on the UI thread if it involves UI-bound properties like PlaybackService.CurrentSong
+        // However, here we are just checking against the _songBeingMonitored which was set at Start()
+        // The critical part is that the PlaybackEngineController is still for this song.
+        // PlaybackService's CurrentSong might change, causing this monitor to be stopped externally.
+
         if (_engineController.CurrentPlaybackStatus != PlaybackStateStatus.Playing)
         {
-            Debug.WriteLine($"[PlaybackMonitor Callback] Engine not playing (State: {_engineController.CurrentPlaybackStatus}). Stopping monitoring for '{monitoredSong.Title}'.");
+            // If not playing, stop the monitor.
+            Debug.WriteLine($"[PlaybackMonitor Callback] Engine not playing (State: {_engineController.CurrentPlaybackStatus}). Stopping monitoring for '{localSongBeingMonitored.Title}'.");
             Dispatcher.UIThread.InvokeAsync(Stop);
             return;
         }
 
         Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (_currentTargetLoopHandler != loopHandler || _playbackService.CurrentSong != monitoredSong || _engineController.CurrentPlaybackStatus != PlaybackStateStatus.Playing)
+            // Re-check conditions on UI thread before acting, in case state changed during invoke
+            if (_songBeingMonitored != localSongBeingMonitored || _positionUpdateAction != localPositionUpdateAction || _engineController.CurrentPlaybackStatus != PlaybackStateStatus.Playing)
             {
+                // If the song being monitored has changed since the callback was scheduled, or monitor was stopped.
                 return;
             }
 
@@ -93,20 +97,20 @@ public class PlaybackMonitor : IDisposable
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[PlaybackMonitor] Error getting EngineController.CurrentPosition/Duration in timer callback for '{monitoredSong.Title}': {ex.Message}. Stopping timer.");
-                Stop();
+                Debug.WriteLine($"[PlaybackMonitor] Error getting EngineController.CurrentPosition/Duration in timer callback for '{localSongBeingMonitored.Title}': {ex.Message}. Stopping timer.");
+                Stop(); // Stop self
                 return;
             }
 
-            _playbackService.UpdatePlaybackPositionAndDuration(currentAudioTime, songDuration);
-            loopHandler.CheckForLoopSeek(currentAudioTime, songDuration);
+            localPositionUpdateAction(currentAudioTime, songDuration);
+            _loopHandler.CheckForLoopSeek(currentAudioTime, songDuration);
         });
     }
 
     public void Dispose()
     {
         Debug.WriteLine("[PlaybackMonitor] Dispose called.");
-        Stop();
+        Stop(); // Ensure timer is stopped and disposed
         GC.SuppressFinalize(this);
         Debug.WriteLine("[PlaybackMonitor] Dispose finished.");
     }
@@ -114,6 +118,6 @@ public class PlaybackMonitor : IDisposable
     ~PlaybackMonitor()
     {
         Debug.WriteLine("[PlaybackMonitor] Finalizer called.");
-        Dispose();
+        Dispose(); // Call the same dispose logic
     }
 }

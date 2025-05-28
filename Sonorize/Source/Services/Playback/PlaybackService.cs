@@ -24,6 +24,7 @@ public class PlaybackService : ViewModelBase, IDisposable
             {
                 Debug.WriteLine($"[PlaybackService] CurrentSong property set to: {value?.Title ?? "null"}");
                 OnPropertyChanged(nameof(HasCurrentSong));
+                _playbackEngineCoordinator.SetSong(value);
 
                 if (value == null)
                 {
@@ -31,9 +32,8 @@ public class PlaybackService : ViewModelBase, IDisposable
                     IsPlaying = false;
                     CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
                     UpdatePlaybackPositionAndDuration(TimeSpan.Zero, TimeSpan.Zero);
-                    _playbackMonitor.Stop();
+                    // Coordinator's Stop method handles monitor stop.
                 }
-                _loopHandler.UpdateCurrentSong(value);
             }
         }
     }
@@ -82,12 +82,9 @@ public class PlaybackService : ViewModelBase, IDisposable
     }
     public double CurrentSongDurationSeconds => CurrentSongDuration.TotalSeconds > 0 ? CurrentSongDuration.TotalSeconds : 1.0;
 
-    private readonly NAudioEngineController _engineController; // Changed from NAudioPlaybackEngine
-    private readonly PlaybackLoopHandler _loopHandler;
+    private readonly PlaybackEngineCoordinator _playbackEngineCoordinator;
     private readonly ScrobblingService _scrobblingService;
     private readonly PlaybackCompletionHandler _completionHandler;
-    private readonly PlaybackMonitor _playbackMonitor;
-
 
     private volatile bool _explicitStopRequested = false;
 
@@ -99,7 +96,7 @@ public class PlaybackService : ViewModelBase, IDisposable
         {
             if (SetProperty(ref _playbackRate, value))
             {
-                _engineController.PlaybackRate = value;
+                _playbackEngineCoordinator.UpdateRateAndPitch(value, PitchSemitones);
             }
         }
     }
@@ -112,7 +109,7 @@ public class PlaybackService : ViewModelBase, IDisposable
         {
             if (SetProperty(ref _pitchSemitones, value))
             {
-                _engineController.PitchSemitones = value;
+                _playbackEngineCoordinator.UpdateRateAndPitch(PlaybackRate, value);
             }
         }
     }
@@ -123,11 +120,16 @@ public class PlaybackService : ViewModelBase, IDisposable
     {
         Debug.WriteLine("[PlaybackService] Constructor called.");
         _scrobblingService = scrobblingService ?? throw new ArgumentNullException(nameof(scrobblingService));
-        _engineController = new NAudioEngineController();
-        _engineController.PlaybackStopped += OnEngineControllerPlaybackStopped;
-        _loopHandler = new PlaybackLoopHandler(this);
+
+        var engineController = new NAudioEngineController();
+        var loopHandler = new PlaybackLoopHandler(this); // LoopHandler might still need PlaybackService for complex interactions or state.
+        var playbackMonitor = new PlaybackMonitor(engineController, loopHandler);
+
+        _playbackEngineCoordinator = new PlaybackEngineCoordinator(engineController, loopHandler, playbackMonitor);
+        _playbackEngineCoordinator.EnginePlaybackStopped += OnEngineCoordinatorPlaybackStopped;
+        _playbackEngineCoordinator.EnginePositionUpdated += OnEngineCoordinatorPositionUpdated;
+
         _completionHandler = new PlaybackCompletionHandler(this, _scrobblingService);
-        _playbackMonitor = new PlaybackMonitor(this, _engineController); // Pass engine controller
     }
 
     internal void UpdatePlaybackPositionAndDuration(TimeSpan position, TimeSpan duration)
@@ -149,7 +151,6 @@ public class PlaybackService : ViewModelBase, IDisposable
     public void Play(Song song)
     {
         Debug.WriteLine($"[PlaybackService] Play requested for: {(song?.Title ?? "null song")}");
-        _playbackMonitor.Stop();
 
         Song? interruptedSong = null;
         TimeSpan interruptedSongPosition = TimeSpan.Zero;
@@ -157,67 +158,59 @@ public class PlaybackService : ViewModelBase, IDisposable
         if (CurrentPlaybackStatus != PlaybackStateStatus.Stopped && CurrentSong != null && CurrentSong != song)
         {
             interruptedSong = CurrentSong;
-            interruptedSongPosition = _engineController.CurrentPosition;
+            interruptedSongPosition = _playbackEngineCoordinator.CurrentPosition; // Get position from coordinator
 
-            _engineController.Stop(); // This will trigger OnEngineControllerPlaybackStopped, which calls completion handler
-            Debug.WriteLine($"[PlaybackService] Interrupted '{interruptedSong.Title}'. Engine stop requested.");
-            // Scrobbling for interrupted song will be handled by completion handler if criteria met.
+            _playbackEngineCoordinator.Stop(); // This will trigger OnEngineCoordinatorPlaybackStopped
+            Debug.WriteLine($"[PlaybackService] Interrupted '{interruptedSong.Title}'. Coordinator stop requested.");
         }
         else if (CurrentPlaybackStatus != PlaybackStateStatus.Stopped && CurrentSong == song)
         {
-            Debug.WriteLine($"[PlaybackService] Restarting song '{song.Title}'. Engine stop requested.");
-            _engineController.Stop();
+            Debug.WriteLine($"[PlaybackService] Restarting song '{song.Title}'. Coordinator stop requested.");
+            _playbackEngineCoordinator.Stop();
         }
-
 
         if (song == null || string.IsNullOrEmpty(song.FilePath) || !File.Exists(song.FilePath))
         {
             Debug.WriteLine("[PlaybackService] New song is null, path invalid, or file missing. Current playback will be fully stopped.");
-            if (CurrentPlaybackStatus != PlaybackStateStatus.Stopped) _engineController.Stop(); // Ensure existing playback stops
-            SetCurrentSongInternal(null);
+            if (CurrentPlaybackStatus != PlaybackStateStatus.Stopped) _playbackEngineCoordinator.Stop();
+            CurrentSong = null; // Setter handles coordinator update and state reset
             return;
         }
 
-        SetCurrentSongInternal(song);
+        CurrentSong = song; // This sets the song in the coordinator too
         _explicitStopRequested = false;
 
         try
         {
-            _engineController.PlaybackRate = this.PlaybackRate;
-            _engineController.PitchSemitones = this.PitchSemitones;
-            _engineController.Load(song.FilePath);
-
-            UpdatePlaybackPositionAndDuration(TimeSpan.Zero, _engineController.CurrentSongDuration);
-
-            TimeSpan startPosition = _loopHandler.GetInitialPlaybackPosition(CurrentSongDuration);
-            if (startPosition > TimeSpan.Zero && startPosition < CurrentSongDuration)
+            if (!_playbackEngineCoordinator.Load(song.FilePath, PlaybackRate, PitchSemitones))
             {
-                _engineController.Seek(startPosition);
-                UpdatePlaybackPositionAndDuration(_engineController.CurrentPosition, CurrentSongDuration);
+                Debug.WriteLine($"[PlaybackService] PlaybackEngineCoordinator.Load failed for '{CurrentSong?.FilePath ?? "UNKNOWN FILE"}'.");
+                _playbackEngineCoordinator.Stop();
+                CurrentSong = null;
+                return;
             }
 
-            _engineController.Play();
+            UpdatePlaybackPositionAndDuration(TimeSpan.Zero, _playbackEngineCoordinator.CurrentSongDuration);
+
+            _playbackEngineCoordinator.Play(startMonitor: true); // Play and start monitor
             SetPlaybackStateInternal(true, PlaybackStateStatus.Playing);
-            _playbackMonitor.Start(_loopHandler, CurrentSong);
             Debug.WriteLine($"[PlaybackService] Playback started for: {CurrentSong.Title}. State: {CurrentPlaybackStatus}");
             _ = _scrobblingService.UpdateNowPlayingAsync(CurrentSong);
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"[PlaybackService] CRITICAL ERROR during playback initiation for '{CurrentSong?.FilePath ?? "UNKNOWN FILE"}': {ex.ToString()}");
-            _engineController.Stop(); // Ensure engine is stopped if loading failed partially
-            SetCurrentSongInternal(null);
+            _playbackEngineCoordinator.Stop();
+            CurrentSong = null;
         }
     }
-
 
     public void Pause()
     {
         Debug.WriteLine($"[PlaybackService] Pause requested. Current state: {CurrentPlaybackStatus}");
         if (IsPlaying)
         {
-            _playbackMonitor.Stop();
-            _engineController.Pause();
+            _playbackEngineCoordinator.Pause();
             SetPlaybackStateInternal(false, PlaybackStateStatus.Paused);
         }
     }
@@ -234,16 +227,15 @@ public class PlaybackService : ViewModelBase, IDisposable
 
         if (CurrentPlaybackStatus == PlaybackStateStatus.Paused)
         {
-            Debug.WriteLine("[PlaybackService] Resume requested from Paused state. Resuming engine.");
-            _engineController.Play();
+            Debug.WriteLine("[PlaybackService] Resume requested from Paused state. Resuming via coordinator.");
+            _playbackEngineCoordinator.Resume(startMonitor: true);
             SetPlaybackStateInternal(true, PlaybackStateStatus.Playing);
-            _playbackMonitor.Start(_loopHandler, CurrentSong);
             _ = _scrobblingService.UpdateNowPlayingAsync(CurrentSong);
         }
         else if (CurrentPlaybackStatus == PlaybackStateStatus.Stopped)
         {
             Debug.WriteLine("[PlaybackService] Resume requested from Stopped state. Re-playing current song.");
-            Play(CurrentSong); // Play will handle monitor start
+            Play(CurrentSong);
         }
         else
         {
@@ -255,21 +247,17 @@ public class PlaybackService : ViewModelBase, IDisposable
     {
         Debug.WriteLine("[PlaybackService] Public Stop() called.");
         _explicitStopRequested = true;
-        _playbackMonitor.Stop();
 
         if (CurrentPlaybackStatus != PlaybackStateStatus.Stopped)
         {
-            _engineController.Stop();
-            // OnEngineControllerPlaybackStopped (via _completionHandler) will handle the rest
+            _playbackEngineCoordinator.Stop(); // Will trigger OnEngineCoordinatorPlaybackStopped
         }
         else
         {
             Debug.WriteLine("[PlaybackService Stop] Already stopped. Performing direct cleanup via completion handler if needed.");
-            // If already stopped, the engine won't raise an event. Call completion handler directly.
             _completionHandler.Handle(new StoppedEventArgs(), CurrentSong, this.CurrentPosition, this.CurrentSongDuration, _explicitStopRequested);
         }
     }
-
 
     public void Seek(TimeSpan requestedPosition)
     {
@@ -278,48 +266,32 @@ public class PlaybackService : ViewModelBase, IDisposable
             Debug.WriteLine($"[PlaybackService] Seek ignored: No current song or duration is zero. Song: {CurrentSong != null}, Duration: {CurrentSongDuration}");
             return;
         }
-
-        TimeSpan targetPosition = _loopHandler.GetAdjustedSeekPosition(requestedPosition, CurrentSongDuration);
-
-        var totalMs = CurrentSongDuration.TotalMilliseconds;
-        var seekMarginMs = totalMs > 200 ? 100 : (totalMs > 0 ? Math.Min(totalMs / 2, 50) : 0);
-        var maxSeekablePosition = TimeSpan.FromMilliseconds(totalMs - seekMarginMs);
-        if (maxSeekablePosition < TimeSpan.Zero) maxSeekablePosition = TimeSpan.Zero;
-
-        targetPosition = TimeSpan.FromSeconds(Math.Clamp(targetPosition.TotalSeconds, 0, maxSeekablePosition.TotalSeconds));
-        double positionToleranceSeconds = 0.3;
-
-
-        TimeSpan currentAudioTimeForToleranceCheck = _engineController.CurrentPosition;
-        if (Math.Abs(currentAudioTimeForToleranceCheck.TotalSeconds - targetPosition.TotalSeconds) < positionToleranceSeconds)
-        {
-            return;
-        }
-
-        _engineController.Seek(targetPosition);
-        if (CurrentPlaybackStatus != PlaybackStateStatus.Playing)
-        {
-            UpdatePlaybackPositionAndDuration(_engineController.CurrentPosition, CurrentSongDuration);
-        }
+        _playbackEngineCoordinator.Seek(requestedPosition);
+        // Position update will come via OnEngineCoordinatorPositionUpdated if monitor isn't running
     }
 
-    private void OnEngineControllerPlaybackStopped(object? sender, StoppedEventArgs e)
+    private void OnEngineCoordinatorPositionUpdated(object? sender, PositionEventArgs e)
+    {
+        // This is called by the coordinator when the monitor updates position,
+        // or when Seek is called while not playing.
+        UpdatePlaybackPositionAndDuration(e.Position, e.Duration);
+    }
+
+    private void OnEngineCoordinatorPlaybackStopped(object? sender, StoppedEventArgs e)
     {
         Dispatcher.UIThread.InvokeAsync(() =>
         {
-            Debug.WriteLine($"[PlaybackService] === OnEngineControllerPlaybackStopped (UI Thread) Invoked. Delegating to CompletionHandler. ===");
-            _playbackMonitor.Stop();
+            Debug.WriteLine($"[PlaybackService] === OnEngineCoordinatorPlaybackStopped (UI Thread) Invoked. Delegating to CompletionHandler. ===");
             Song? songThatJustStopped = CurrentSong;
 
-            // Get final position/duration from controller as it's the source of truth for the stopped engine
-            TimeSpan actualStoppedPosition = _engineController.CurrentPosition;
-            TimeSpan actualStoppedSongDuration = _engineController.CurrentSongDuration;
+            // Get final position/duration from coordinator as it's the source of truth for the stopped engine
+            TimeSpan actualStoppedPosition = _playbackEngineCoordinator.CurrentPosition;
+            TimeSpan actualStoppedSongDuration = _playbackEngineCoordinator.CurrentSongDuration;
 
-            if (songThatJustStopped != null && actualStoppedSongDuration == TimeSpan.Zero) // If engine controller returns 0 for duration (e.g. after dispose)
+            if (songThatJustStopped != null && actualStoppedSongDuration == TimeSpan.Zero)
             {
-                actualStoppedSongDuration = songThatJustStopped.Duration; // Fallback to song's metadata duration
+                actualStoppedSongDuration = songThatJustStopped.Duration;
             }
-
 
             _completionHandler.Handle(
                 e,
@@ -332,8 +304,8 @@ public class PlaybackService : ViewModelBase, IDisposable
     }
 
     // Internal methods for PlaybackCompletionHandler
-    internal void StopUiUpdateTimerInternal() => _playbackMonitor.Stop();
-    internal void SetCurrentSongInternal(Song? song) => CurrentSong = song;
+    internal void StopUiUpdateTimerInternal() => _playbackEngineCoordinator.Stop(); // Monitor is part of coordinator
+    internal void SetCurrentSongInternal(Song? song) => CurrentSong = song; // This also updates coordinator's song
     internal Song? GetCurrentSongInternal() => CurrentSong;
     internal void SetPlaybackStateInternal(bool isPlaying, PlaybackStateStatus status)
     {
@@ -344,6 +316,7 @@ public class PlaybackService : ViewModelBase, IDisposable
     {
         IsPlaying = false;
         CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
+        // Position update might be handled by coordinator's stop or completion handler setting CurrentSong to null
         UpdatePlaybackPositionAndDuration(TimeSpan.Zero, CurrentSongDuration);
     }
     internal void InvokePlaybackEndedNaturallyInternal() => PlaybackEndedNaturally?.Invoke(this, EventArgs.Empty);
@@ -352,18 +325,17 @@ public class PlaybackService : ViewModelBase, IDisposable
     public void Dispose()
     {
         Debug.WriteLine("[PlaybackService] Dispose() called.");
-        _playbackMonitor.Dispose();
 
         Song? songAtDispose = CurrentSong;
-        TimeSpan positionAtDispose = this.CurrentPosition; // Get from property as controller might be gone
+        TimeSpan positionAtDispose = this.CurrentPosition;
 
-        if (_engineController != null)
+        if (_playbackEngineCoordinator != null)
         {
-            positionAtDispose = _engineController.CurrentPosition; // Get final position before disposing controller
-            _engineController.PlaybackStopped -= OnEngineControllerPlaybackStopped;
-            _engineController.Dispose();
-            // _engineController = null; // Not strictly necessary if service is being disposed
-            Debug.WriteLine("[PlaybackService] Disposed engine controller during service dispose.");
+            positionAtDispose = _playbackEngineCoordinator.CurrentPosition;
+            _playbackEngineCoordinator.EnginePlaybackStopped -= OnEngineCoordinatorPlaybackStopped;
+            _playbackEngineCoordinator.EnginePositionUpdated -= OnEngineCoordinatorPositionUpdated;
+            _playbackEngineCoordinator.Dispose();
+            Debug.WriteLine("[PlaybackService] Disposed playback engine coordinator during service dispose.");
         }
 
         if (songAtDispose != null)
@@ -372,9 +344,7 @@ public class PlaybackService : ViewModelBase, IDisposable
         }
 
         _explicitStopRequested = false;
-        CurrentSong = null;
-
-        _loopHandler.Dispose();
+        CurrentSong = null; // This will also clear the song in the coordinator
 
         GC.SuppressFinalize(this);
         Debug.WriteLine("[PlaybackService] Dispose() completed.");

@@ -16,27 +16,37 @@ public class NAudioEngineController : IDisposable
 
     public PlaybackStateStatus CurrentPlaybackStatus => _playbackEngine?.CurrentPlaybackStatus ?? PlaybackStateStatus.Stopped;
 
-    private float _playbackRate = 1.0f;
     public float PlaybackRate
     {
-        get => _playbackRate;
+        get;
         set
         {
-            _playbackRate = value;
-            if (_playbackEngine != null) _playbackEngine.PlaybackRate = value;
-        }
-    }
+            field = value;
 
-    private float _pitchSemitones = 0f;
+            if (_playbackEngine is null)
+            {
+                return;
+            }
+
+            _playbackEngine.PlaybackRate = value;
+        }
+    } = 1.0f;
+
     public float PitchSemitones
     {
-        get => _pitchSemitones;
+        get;
         set
         {
-            _pitchSemitones = value;
-            if (_playbackEngine != null) _playbackEngine.PitchSemitones = value;
+            field = value;
+
+            if (_playbackEngine is null)
+            {
+                return;
+            }
+
+            _playbackEngine.PitchSemitones = value;
         }
-    }
+    } = 0f;
 
     public NAudioEngineController()
     {
