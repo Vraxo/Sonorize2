@@ -37,22 +37,35 @@ public class AdvancedPanelViewModel : ViewModelBase
 
         _playbackViewModel.PropertyChanged += OnDependentViewModelPropertyChanged;
         _libraryViewModel.PropertyChanged += OnDependentViewModelPropertyChanged;
+        // Listen to IsWaveformLoading on the new WaveformDisplayViewModel
+        _playbackViewModel.WaveformDisplay.PropertyChanged += WaveformDisplay_PropertyChanged;
+    }
+
+    private void WaveformDisplay_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(WaveformDisplayViewModel.IsWaveformLoading))
+        {
+            // If any command in AdvancedPanelViewModel depends on IsWaveformLoading, update it here.
+            // For now, ToggleVisibilityCommand might not directly, but if it did:
+            (ToggleVisibilityCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        }
     }
 
     private bool CanToggleVisibility(object? parameter)
     {
-        return _playbackViewModel.HasCurrentSong && !_libraryViewModel.IsLoadingLibrary;
+        // Visibility can be toggled if a song is playing and library is not loading.
+        // Waveform loading state might also influence this if we want to prevent toggling during load.
+        return _playbackViewModel.HasCurrentSong &&
+               !_libraryViewModel.IsLoadingLibrary &&
+               !_playbackViewModel.WaveformDisplay.IsWaveformLoading; // Prevent toggling if waveform is loading
     }
 
     private void OnVisibilityChanged()
     {
-        (ToggleVisibilityCommand as RelayCommand)?.RaiseCanExecuteChanged(); // Visibility itself doesn't affect CanExecute, but good practice
-        if (IsVisible && _playbackViewModel.HasCurrentSong && !_playbackViewModel.WaveformRenderData.Any() && !_playbackViewModel.IsWaveformLoading)
-        {
-            // This logic was previously in MainWindowViewModel.OnAdvancedPanelVisibleChanged
-            System.Diagnostics.Debug.WriteLine("[AdvancedPanelVM] Panel visible, song playing, waveform not loaded/loading. Requesting waveform load.");
-            _ = _playbackViewModel.LoadWaveformForCurrentSongAsync();
-        }
+        (ToggleVisibilityCommand as RelayCommand)?.RaiseCanExecuteChanged();
+
+        // Inform the WaveformDisplayViewModel about the panel's visibility
+        _playbackViewModel.WaveformDisplay.SetPanelVisibility(IsVisible);
     }
 
     private void OnDependentViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -64,12 +77,13 @@ public class AdvancedPanelViewModel : ViewModelBase
         }
     }
 
-    // Consider adding a Dispose method if event subscriptions need to be cleaned up,
-    // though for ViewModels often tied to the main window lifetime, it might not be strictly necessary
-    // if the main window's closure disposes everything.
     public void Dispose()
     {
         _playbackViewModel.PropertyChanged -= OnDependentViewModelPropertyChanged;
         _libraryViewModel.PropertyChanged -= OnDependentViewModelPropertyChanged;
+        if (_playbackViewModel?.WaveformDisplay != null)
+        {
+            _playbackViewModel.WaveformDisplay.PropertyChanged -= WaveformDisplay_PropertyChanged;
+        }
     }
 }

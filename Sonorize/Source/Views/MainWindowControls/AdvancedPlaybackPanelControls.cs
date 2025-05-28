@@ -60,7 +60,7 @@ public static class AdvancedPlaybackPanelControls
             PositionMarkerBrush = Brushes.OrangeRed,
             LoopRegionBrush = new SolidColorBrush(accentColorForLoopRegion, 0.3)
         };
-        waveformDisplay.Bind(WaveformDisplayControl.WaveformPointsProperty, new Binding("Playback.WaveformRenderData"));
+        waveformDisplay.Bind(WaveformDisplayControl.WaveformPointsProperty, new Binding("Playback.WaveformDisplay.WaveformRenderData"));
         waveformDisplay.Bind(WaveformDisplayControl.CurrentPositionProperty, new Binding("Playback.CurrentPosition"));
         waveformDisplay.Bind(WaveformDisplayControl.DurationProperty, new Binding("Playback.CurrentSongDuration"));
         waveformDisplay.Bind(WaveformDisplayControl.ActiveLoopProperty, new Binding("Playback.PlaybackService.CurrentSong.SavedLoop"));
@@ -73,7 +73,7 @@ public static class AdvancedPlaybackPanelControls
         };
 
         var waveformLoadingIndicator = new ProgressBar { IsIndeterminate = true, Height = 5, Margin = new Thickness(0, -5, 0, 0), Foreground = theme.B_AccentColor, Background = Brushes.Transparent };
-        waveformLoadingIndicator.Bind(Visual.IsVisibleProperty, new Binding("Playback.IsWaveformLoading"));
+        waveformLoadingIndicator.Bind(Visual.IsVisibleProperty, new Binding("Playback.WaveformDisplay.IsWaveformLoading"));
         var waveformContainer = new Panel();
         waveformContainer.Children.Add(waveformDisplay); waveformContainer.Children.Add(waveformLoadingIndicator);
         mainStack.Children.Add(waveformContainer);

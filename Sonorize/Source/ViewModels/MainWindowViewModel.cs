@@ -107,6 +107,11 @@ public class MainWindowViewModel : ViewModelBase
 
         Library.PropertyChanged += Library_PropertyChanged;
         Playback.PropertyChanged += Playback_PropertyChanged;
+        // Listen to PropertyChanged on Playback.WaveformDisplay as well
+        if (Playback.WaveformDisplay != null)
+        {
+            Playback.WaveformDisplay.PropertyChanged += PlaybackWaveformDisplay_PropertyChanged;
+        }
         AdvancedPanel.PropertyChanged += AdvancedPanel_PropertyChanged; // Listen to changes from AdvancedPanelVM
 
         PlaybackService.PlaybackEndedNaturally += PlaybackService_PlaybackEndedNaturally;
@@ -118,6 +123,18 @@ public class MainWindowViewModel : ViewModelBase
 
         UpdateAllUIDependentStates();
     }
+
+    private void PlaybackWaveformDisplay_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(WaveformDisplayViewModel.IsWaveformLoading))
+        {
+            // If IsWaveformLoading changes, it can affect CanExecute of ToggleAdvancedPanelCommand
+            RaiseAllCommandsCanExecuteChanged();
+        }
+        // If UI needs to be notified about Playback.WaveformDisplay.WaveformRenderData changes from MainWindowViewModel,
+        // handle it here. However, direct binding to Playback.WaveformDisplay.WaveformRenderData is preferred.
+    }
+
 
     private void AdvancedPanel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -191,14 +208,6 @@ public class MainWindowViewModel : ViewModelBase
                         Debug.WriteLine("[MainVM_PlaybackChanged] PlaybackService has no current song. Clearing Library selection.");
                         Library.SelectedSong = null;
                     }
-
-                    // Logic for loading waveform is now in AdvancedPanelViewModel's OnVisibilityChanged
-                    // if (Playback.CurrentSong != null && IsAdvancedPanelVisible)
-                    // {
-                    //     Debug.WriteLine("[MainVM_PlaybackChanged] Playback has current song, advanced panel is visible. Requesting waveform load.");
-                    //     _ = Playback.LoadWaveformForCurrentSongAsync();
-                    // }
-
                     UpdateStatusBarText();
                     OnPropertyChanged(nameof(Playback.CurrentTimeDisplay));
                     OnPropertyChanged(nameof(Playback.TotalTimeDisplay));
@@ -222,12 +231,8 @@ public class MainWindowViewModel : ViewModelBase
                     OnPropertyChanged(nameof(Playback.TotalTimeDisplay));
                     RaiseAllCommandsCanExecuteChanged();
                     break;
-                case nameof(PlaybackViewModel.IsWaveformLoading):
-                    OnPropertyChanged(nameof(Playback.IsWaveformLoading));
-                    break;
-                case nameof(PlaybackViewModel.WaveformRenderData):
-                    OnPropertyChanged(nameof(Playback.WaveformRenderData));
-                    break;
+                // IsWaveformLoading and WaveformRenderData are now on Playback.WaveformDisplay
+                // Handled by PlaybackWaveformDisplay_PropertyChanged
                 case nameof(PlaybackViewModel.ShuffleEnabled):
                 case nameof(PlaybackViewModel.RepeatMode):
                     Playback.RaisePlaybackCommandCanExecuteChanged();
@@ -255,18 +260,11 @@ public class MainWindowViewModel : ViewModelBase
         (OpenSettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ExitCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        // ToggleAdvancedPanelCommand is now a pass-through to AdvancedPanel.ToggleVisibilityCommand,
-        // which handles its own CanExecute. But other MainVM commands might depend on IsAdvancedPanelVisible.
-        // AdvancedPanel.ToggleVisibilityCommand's CanExecute will be re-evaluated by AdvancedPanelViewModel.
-        // If any commands *in MainWindowViewModel* depend on IsAdvancedPanelVisible, they'd need manual update here.
-        // For simplicity, RelayCommand itself doesn't auto-update on property changes typically.
-        // However, the ToggleAdvancedPanelCommand reference points to the one in AdvancedPanelViewModel.
-        // Let's assume the current structure is okay.
 
         Library.RaiseLibraryCommandsCanExecuteChanged();
         Playback.RaisePlaybackCommandCanExecuteChanged();
         LoopEditor.RaiseLoopCommandCanExecuteChanged();
-        (AdvancedPanel.ToggleVisibilityCommand as RelayCommand)?.RaiseCanExecuteChanged(); // Ensure this is also raised.
+        (AdvancedPanel.ToggleVisibilityCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
 
