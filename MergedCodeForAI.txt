@@ -2513,6 +2513,90 @@ public class ArtistViewModel : ViewModelBase // Inherit from ViewModelBase
 }
 </file>
 
+<file path="Source\ViewModels\LastfmSettingsViewModel.cs">
+using Sonorize.Models; // Required for AppSettings
+
+namespace Sonorize.ViewModels;
+
+public class LastfmSettingsViewModel : ViewModelBase
+{
+    public bool LastfmScrobblingEnabled
+    {
+        get;
+
+        set
+        {
+            SetProperty(ref field, value);
+        }
+    }
+    
+    public string? LastfmUsername
+    {
+        get;
+
+        set
+        {
+            SetProperty(ref field, value);
+        }
+    }
+    
+    public string? LastfmPassword
+    {
+        get;
+
+        set
+        {
+            SetProperty(ref field, value);
+        }
+    }
+    
+    public int ScrobbleThresholdPercentage
+    {
+        get;
+
+        set
+        {
+            SetProperty(ref field, value);
+        }
+    }
+    
+    public int ScrobbleThresholdAbsoluteSeconds
+    {
+        get;
+
+        set
+        {
+            SetProperty(ref field, value);
+        }
+    }
+
+    public LastfmSettingsViewModel() { }
+
+    public void LoadFromSettings(AppSettings settings)
+    {
+        LastfmScrobblingEnabled = settings.LastfmScrobblingEnabled;
+        LastfmUsername = settings.LastfmUsername;
+        LastfmPassword = settings.LastfmPassword;
+        ScrobbleThresholdPercentage = settings.ScrobbleThresholdPercentage;
+        ScrobbleThresholdAbsoluteSeconds = settings.ScrobbleThresholdAbsoluteSeconds;
+    }
+
+    public void UpdateAppSettings(AppSettings settings)
+    {
+        settings.LastfmScrobblingEnabled = LastfmScrobblingEnabled;
+        settings.LastfmUsername = LastfmUsername;
+        
+        if (LastfmPassword is not null)
+        {
+            settings.LastfmPassword = LastfmPassword;
+        }
+        
+        settings.ScrobbleThresholdPercentage = ScrobbleThresholdPercentage;
+        settings.ScrobbleThresholdAbsoluteSeconds = ScrobbleThresholdAbsoluteSeconds;
+    }
+}
+</file>
+
 <file path="Source\ViewModels\LibraryViewModel.cs">
 using System;
 using System.Collections.ObjectModel;
@@ -4053,41 +4137,8 @@ public class SettingsViewModel : ViewModelBase
         }
     }
 
-    // Last.fm Settings Properties
-    private bool _lastfmScrobblingEnabled;
-    public bool LastfmScrobblingEnabled
-    {
-        get => _lastfmScrobblingEnabled;
-        set { if (SetProperty(ref _lastfmScrobblingEnabled, value)) MarkSettingsChanged(); }
-    }
-
-    private string? _lastfmUsername;
-    public string? LastfmUsername
-    {
-        get => _lastfmUsername;
-        set { if (SetProperty(ref _lastfmUsername, value)) MarkSettingsChanged(); }
-    }
-
-    private string? _lastfmPassword;
-    public string? LastfmPassword
-    {
-        get => _lastfmPassword;
-        set { if (SetProperty(ref _lastfmPassword, value)) MarkSettingsChanged(); }
-    }
-
-    private int _scrobbleThresholdPercentage;
-    public int ScrobbleThresholdPercentage
-    {
-        get => _scrobbleThresholdPercentage;
-        set { if (SetProperty(ref _scrobbleThresholdPercentage, value)) MarkSettingsChanged(); }
-    }
-
-    private int _scrobbleThresholdAbsoluteSeconds;
-    public int ScrobbleThresholdAbsoluteSeconds
-    {
-        get => _scrobbleThresholdAbsoluteSeconds;
-        set { if (SetProperty(ref _scrobbleThresholdAbsoluteSeconds, value)) MarkSettingsChanged(); }
-    }
+    // Encapsulated Last.fm Settings
+    public LastfmSettingsViewModel LastfmSettings { get; }
 
 
     public bool SettingsChanged { get; private set; } = false;
@@ -4101,7 +4152,7 @@ public class SettingsViewModel : ViewModelBase
     public SettingsViewModel(SettingsService settingsService)
     {
         _settingsService = settingsService;
-        _themeService = new ThemeService(null);
+        _themeService = new ThemeService(null); // ThemeService used for GetAvailableThemeFiles
 
         var settings = _settingsService.LoadSettings();
         InitialMusicDirectories = new List<string>(settings.MusicDirectories);
@@ -4122,15 +4173,13 @@ public class SettingsViewModel : ViewModelBase
             SelectedThemeFile = AvailableThemes.First();
         }
 
-        // Load Last.fm settings
-        _lastfmScrobblingEnabled = settings.LastfmScrobblingEnabled;
-        _lastfmUsername = settings.LastfmUsername;
-        _lastfmPassword = settings.LastfmPassword;
-        _scrobbleThresholdPercentage = settings.ScrobbleThresholdPercentage;
-        _scrobbleThresholdAbsoluteSeconds = settings.ScrobbleThresholdAbsoluteSeconds;
+        // Initialize Last.fm settings module
+        LastfmSettings = new LastfmSettingsViewModel();
+        LastfmSettings.LoadFromSettings(settings);
+        LastfmSettings.PropertyChanged += (s, e) => MarkSettingsChanged();
 
 
-        SettingsChanged = false;
+        SettingsChanged = false; // Initial state is unchanged
 
         AddDirectoryCommand = new RelayCommand(async owner => await AddDirectory(owner as Window));
         RemoveDirectoryCommand = new RelayCommand(RemoveSelectedDirectory, _ => CanRemoveDirectory);
@@ -4142,6 +4191,7 @@ public class SettingsViewModel : ViewModelBase
             {
                 (RemoveDirectoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
             }
+            // Changes to SelectedThemeFile already call MarkSettingsChanged in their setter
         };
         MusicDirectories.CollectionChanged += (s, e) => MarkSettingsChanged();
     }
@@ -4181,6 +4231,7 @@ public class SettingsViewModel : ViewModelBase
             if (string.IsNullOrEmpty(path) || MusicDirectories.Contains(path)) return;
 
             MusicDirectories.Add(path);
+            // MarkSettingsChanged() is called by CollectionChanged handler
         }
     }
 
@@ -4190,66 +4241,80 @@ public class SettingsViewModel : ViewModelBase
 
         MusicDirectories.Remove(SelectedDirectory);
         SelectedDirectory = null;
+        // MarkSettingsChanged() is called by CollectionChanged handler
     }
 
     private void SaveSettings(object? parameter)
     {
-        AppSettings currentSettings = _settingsService.LoadSettings();
+        // Load the settings as they are currently on disk to compare against
+        AppSettings settingsOnDisk = _settingsService.LoadSettings();
+        // Create a new AppSettings object or clone to store the new state
+        AppSettings newSettingsToSave = new AppSettings
+        {
+            // Copy non-UI managed settings or settings that are not part of this VM directly
+            LibraryViewModePreference = settingsOnDisk.LibraryViewModePreference,
+            ArtistViewModePreference = settingsOnDisk.ArtistViewModePreference,
+            AlbumViewModePreference = settingsOnDisk.AlbumViewModePreference,
+            LastfmSessionKey = settingsOnDisk.LastfmSessionKey // Preserve session key
+        };
+
         bool actualChangesMade = false;
 
-        if (!InitialMusicDirectories.SequenceEqual(MusicDirectories))
+        // Music Directories
+        if (!InitialMusicDirectories.SequenceEqual(MusicDirectories) || // If they were initially different
+            !settingsOnDisk.MusicDirectories.SequenceEqual(MusicDirectories)) // Or different from current disk state
         {
-            currentSettings.MusicDirectories = new List<string>(MusicDirectories);
-            InitialMusicDirectories = new List<string>(MusicDirectories);
+            newSettingsToSave.MusicDirectories = new List<string>(MusicDirectories);
+            InitialMusicDirectories = new List<string>(MusicDirectories); // Update initial state for next open
             actualChangesMade = true;
-            Debug.WriteLine($"[SettingsVM] Saved directories count: {currentSettings.MusicDirectories.Count}");
-        }
-
-        if (currentSettings.PreferredThemeFileName != SelectedThemeFile)
-        {
-            currentSettings.PreferredThemeFileName = SelectedThemeFile;
-            actualChangesMade = true;
-            Debug.WriteLine($"[SettingsVM] Saved theme: {SelectedThemeFile}");
-        }
-
-        if (currentSettings.LastfmScrobblingEnabled != LastfmScrobblingEnabled)
-        {
-            currentSettings.LastfmScrobblingEnabled = LastfmScrobblingEnabled;
-            actualChangesMade = true;
-            Debug.WriteLine($"[SettingsVM] Saved LastfmScrobblingEnabled: {currentSettings.LastfmScrobblingEnabled}");
-        }
-        if (currentSettings.LastfmUsername != LastfmUsername)
-        {
-            currentSettings.LastfmUsername = LastfmUsername;
-            actualChangesMade = true;
-            Debug.WriteLine($"[SettingsVM] Saved LastfmUsername: {currentSettings.LastfmUsername}");
-        }
-        if (currentSettings.LastfmPassword != LastfmPassword)
-        {
-            currentSettings.LastfmPassword = LastfmPassword;
-            actualChangesMade = true;
-            Debug.WriteLine($"[SettingsVM] Saved LastfmPassword (length: {currentSettings.LastfmPassword?.Length ?? 0})");
-        }
-        if (currentSettings.ScrobbleThresholdPercentage != ScrobbleThresholdPercentage)
-        {
-            currentSettings.ScrobbleThresholdPercentage = ScrobbleThresholdPercentage;
-            actualChangesMade = true;
-            Debug.WriteLine($"[SettingsVM] Saved ScrobbleThresholdPercentage: {currentSettings.ScrobbleThresholdPercentage}");
-        }
-        if (currentSettings.ScrobbleThresholdAbsoluteSeconds != ScrobbleThresholdAbsoluteSeconds)
-        {
-            currentSettings.ScrobbleThresholdAbsoluteSeconds = ScrobbleThresholdAbsoluteSeconds;
-            actualChangesMade = true;
-            Debug.WriteLine($"[SettingsVM] Saved ScrobbleThresholdAbsoluteSeconds: {currentSettings.ScrobbleThresholdAbsoluteSeconds}");
-        }
-
-        if (actualChangesMade)
-        {
-            _settingsService.SaveSettings(currentSettings);
-            SettingsChanged = true;
+            Debug.WriteLine($"[SettingsVM] Saved directories count: {newSettingsToSave.MusicDirectories.Count}");
         }
         else
         {
+            newSettingsToSave.MusicDirectories = new List<string>(settingsOnDisk.MusicDirectories);
+        }
+
+        // Theme
+        if (settingsOnDisk.PreferredThemeFileName != SelectedThemeFile)
+        {
+            newSettingsToSave.PreferredThemeFileName = SelectedThemeFile;
+            actualChangesMade = true;
+            Debug.WriteLine($"[SettingsVM] Saved theme: {SelectedThemeFile}");
+        }
+        else
+        {
+            newSettingsToSave.PreferredThemeFileName = settingsOnDisk.PreferredThemeFileName;
+        }
+
+        // Last.fm Settings - Compare with disk state and apply LastfmSettings VM state
+        if (settingsOnDisk.LastfmScrobblingEnabled != LastfmSettings.LastfmScrobblingEnabled) { actualChangesMade = true; }
+        if (settingsOnDisk.LastfmUsername != LastfmSettings.LastfmUsername) { actualChangesMade = true; }
+        if (settingsOnDisk.LastfmPassword != LastfmSettings.LastfmPassword && !string.IsNullOrEmpty(LastfmSettings.LastfmPassword)) { actualChangesMade = true; }
+        if (settingsOnDisk.ScrobbleThresholdPercentage != LastfmSettings.ScrobbleThresholdPercentage) { actualChangesMade = true; }
+        if (settingsOnDisk.ScrobbleThresholdAbsoluteSeconds != LastfmSettings.ScrobbleThresholdAbsoluteSeconds) { actualChangesMade = true; }
+
+        // Apply changes from LastfmSettingsViewModel to newSettingsToSave
+        LastfmSettings.UpdateAppSettings(newSettingsToSave);
+        if (actualChangesMade)
+        {
+            Debug.WriteLine($"[SettingsVM] Last.fm settings updated: " +
+                           $"Scrobbling={newSettingsToSave.LastfmScrobblingEnabled}, " +
+                           $"User={newSettingsToSave.LastfmUsername}, " +
+                           $"PassLen={(newSettingsToSave.LastfmPassword?.Length ?? 0)}, " +
+                           $"Thresh%={newSettingsToSave.ScrobbleThresholdPercentage}, " +
+                           $"ThreshAbsSec={newSettingsToSave.ScrobbleThresholdAbsoluteSeconds}");
+        }
+
+
+        if (actualChangesMade)
+        {
+            _settingsService.SaveSettings(newSettingsToSave);
+            SettingsChanged = true; // This signals that persistent changes were made
+        }
+        else
+        {
+            // Even if MarkSettingsChanged was called (UI was touched), if the final state
+            // matches what's on disk, then no "actual change" for the purpose of post-save actions.
             SettingsChanged = false;
         }
     }
@@ -4657,7 +4722,7 @@ public class SettingsWindow : Window
             Foreground = _theme.B_TextColor,
             Margin = new Thickness(0, 0, 0, 10)
         };
-        scrobblingEnableCheckBox.Bind(ToggleButton.IsCheckedProperty, new Binding("LastfmScrobblingEnabled", BindingMode.TwoWay));
+        scrobblingEnableCheckBox.Bind(ToggleButton.IsCheckedProperty, new Binding("LastfmSettings.LastfmScrobblingEnabled", BindingMode.TwoWay));
 
         var usernameLabel = new TextBlock { Text = "Username:", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 5) };
         var usernameTextBox = new TextBox
@@ -4668,7 +4733,7 @@ public class SettingsWindow : Window
             Watermark = "Last.fm Username",
             Margin = new Thickness(0, 0, 0, 5)
         };
-        usernameTextBox.Bind(TextBox.TextProperty, new Binding("LastfmUsername", BindingMode.TwoWay));
+        usernameTextBox.Bind(TextBox.TextProperty, new Binding("LastfmSettings.LastfmUsername", BindingMode.TwoWay));
 
         var passwordLabel = new TextBlock { Text = "Password:", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
         var passwordTextBox = new TextBox
@@ -4679,7 +4744,7 @@ public class SettingsWindow : Window
             PasswordChar = '•',
             Watermark = "Last.fm Password"
         };
-        passwordTextBox.Bind(TextBox.TextProperty, new Binding("LastfmPassword", BindingMode.TwoWay));
+        passwordTextBox.Bind(TextBox.TextProperty, new Binding("LastfmSettings.LastfmPassword", BindingMode.TwoWay));
 
 
         var scrobblingGrid = new Grid
@@ -4712,7 +4777,7 @@ public class SettingsWindow : Window
             Foreground = _theme.B_TextColor,
             BorderBrush = _theme.B_SecondaryTextColor
         };
-        percentageUpDown.Bind(NumericUpDown.ValueProperty, new Binding("ScrobbleThresholdPercentage", BindingMode.TwoWay));
+        percentageUpDown.Bind(NumericUpDown.ValueProperty, new Binding("LastfmSettings.ScrobbleThresholdPercentage", BindingMode.TwoWay));
         var percentageUnitLabel = new TextBlock { Text = "% of duration", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
         percentagePanel.Children.Add(percentageLabel); percentagePanel.Children.Add(percentageUpDown); percentagePanel.Children.Add(percentageUnitLabel);
 
@@ -4728,7 +4793,7 @@ public class SettingsWindow : Window
             Foreground = _theme.B_TextColor,
             BorderBrush = _theme.B_SecondaryTextColor
         };
-        absoluteUpDown.Bind(NumericUpDown.ValueProperty, new Binding("ScrobbleThresholdAbsoluteSeconds", BindingMode.TwoWay));
+        absoluteUpDown.Bind(NumericUpDown.ValueProperty, new Binding("LastfmSettings.ScrobbleThresholdAbsoluteSeconds", BindingMode.TwoWay));
         var absoluteUnitLabel = new TextBlock { Text = "seconds", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
         absolutePanel.Children.Add(absoluteLabel); absolutePanel.Children.Add(absoluteUpDown); absolutePanel.Children.Add(absoluteUnitLabel);
 
@@ -5377,6 +5442,143 @@ public class PlaybackLoopHandler : IDisposable // Implementing IDisposable for c
 }
 </file>
 
+<file path="Source\Services\Playback\PlaybackMonitor.cs">
+using System;
+using System.Diagnostics;
+using System.Threading;
+using Avalonia.Threading;
+using Sonorize.Models;
+
+namespace Sonorize.Services.Playback;
+
+public class PlaybackMonitor : IDisposable
+{
+    private readonly PlaybackService _playbackService;
+    private Timer? _monitorTimer;
+    private NAudioPlaybackEngine? _currentTargetEngine;
+    private PlaybackLoopHandler? _currentTargetLoopHandler;
+    private Song? _songBeingMonitored;
+
+    private const int MonitorIntervalMilliseconds = 100;
+
+    public PlaybackMonitor(PlaybackService playbackService)
+    {
+        _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
+        Debug.WriteLine("[PlaybackMonitor] Initialized.");
+    }
+
+    public void Start(NAudioPlaybackEngine engine, PlaybackLoopHandler loopHandler, Song? songToMonitor)
+    {
+        Stop(); // Ensure any previous monitoring is stopped
+
+        _currentTargetEngine = engine ?? throw new ArgumentNullException(nameof(engine));
+        _currentTargetLoopHandler = loopHandler ?? throw new ArgumentNullException(nameof(loopHandler));
+        _songBeingMonitored = songToMonitor; // Can be null if playback is attempted with no song
+
+        if (_songBeingMonitored is null)
+        {
+            Debug.WriteLine("[PlaybackMonitor] Start called, but songToMonitor is null. Monitoring will not proceed effectively.");
+            // The timer callback will likely stop itself if song is null.
+        }
+
+        _monitorTimer = new Timer(MonitorCallback, null, TimeSpan.Zero, TimeSpan.FromMilliseconds(MonitorIntervalMilliseconds));
+        Debug.WriteLine($"[PlaybackMonitor] Started monitoring for: {_songBeingMonitored?.Title ?? "No Song"}");
+    }
+
+    public void Stop()
+    {
+        if (_monitorTimer is not null)
+        {
+            _monitorTimer.Change(Timeout.Infinite, Timeout.Infinite);
+            _monitorTimer.Dispose();
+            _monitorTimer = null;
+            Debug.WriteLine($"[PlaybackMonitor] Stopped monitoring for: {_songBeingMonitored?.Title ?? "Previously Monitored Song"}");
+        }
+
+        _currentTargetEngine = null;
+        _currentTargetLoopHandler = null;
+        _songBeingMonitored = null;
+    }
+
+    private void MonitorCallback(object? state)
+    {
+        // Capture references to avoid issues if Stop() is called concurrently
+        NAudioPlaybackEngine? engine = _currentTargetEngine;
+        PlaybackLoopHandler? loopHandler = _currentTargetLoopHandler;
+        Song? monitoredSong = _songBeingMonitored; // The song instance when monitoring started
+
+        // Ensure that the song currently playing in PlaybackService is the one we started monitoring.
+        // This prevents updates if the song changed rapidly.
+        if (engine is null || loopHandler is null || monitoredSong is null || _playbackService.CurrentSong != monitoredSong)
+        {
+            // Mismatch or invalid state, stop monitoring.
+            // This can happen if PlaybackService.CurrentSong changed since Start() was called, or if engine becomes null.
+            Debug.WriteLineIf(engine is null, "[PlaybackMonitor Callback] Engine is null. Stopping.");
+            Debug.WriteLineIf(loopHandler is null, "[PlaybackMonitor Callback] LoopHandler is null. Stopping.");
+            Debug.WriteLineIf(monitoredSong == null, "[PlaybackMonitor Callback] MonitoredSong is null. Stopping.");
+            Debug.WriteLineIf(_playbackService.CurrentSong != monitoredSong && monitoredSong is not null, $"[PlaybackMonitor Callback] Monitored song '{monitoredSong.Title}' differs from PlaybackService.CurrentSong ('{_playbackService.CurrentSong?.Title ?? "null"}'). Stopping.");
+
+            // Dispatch stop to UI thread to avoid race conditions with timer disposal
+            Dispatcher.UIThread.InvokeAsync(Stop);
+            return;
+        }
+
+        if (engine.CurrentPlaybackStatus != PlaybackStateStatus.Playing)
+        {
+            // If not playing, stop the monitor. PlaybackService state change should handle UI.
+            Debug.WriteLine($"[PlaybackMonitor Callback] Engine not playing (State: {engine.CurrentPlaybackStatus}). Stopping monitoring for '{monitoredSong.Title}'.");
+            Dispatcher.UIThread.InvokeAsync(Stop);
+            return;
+        }
+
+        Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            // Double check references again on UI thread, in case they were nulled out by Stop() from another thread
+            if (_currentTargetEngine != engine || _currentTargetLoopHandler != loopHandler || _playbackService.CurrentSong != monitoredSong || engine.CurrentPlaybackStatus != PlaybackStateStatus.Playing)
+            {
+                // State changed between thread hop, abort update for this tick.
+                // If Stop() was called, _currentTargetEngine/LoopHandler would be null.
+                // If song changed, _playbackService.CurrentSong would differ.
+                // If playback stopped, CurrentPlaybackStatus would differ.
+                return;
+            }
+
+            var currentAudioTime = TimeSpan.Zero;
+            var songDuration = TimeSpan.Zero;
+
+            try
+            {
+                currentAudioTime = engine.CurrentPosition;
+                songDuration = engine.CurrentSongDuration;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[PlaybackMonitor] Error getting Engine.CurrentPosition/Duration in timer callback for '{monitoredSong.Title}': {ex.Message}. Stopping timer.");
+                Stop();
+                return;
+            }
+
+            _playbackService.UpdatePlaybackPositionAndDuration(currentAudioTime, songDuration);
+            loopHandler.CheckForLoopSeek(currentAudioTime, songDuration);
+        });
+    }
+
+    public void Dispose()
+    {
+        Debug.WriteLine("[PlaybackMonitor] Dispose called.");
+        Stop();
+        GC.SuppressFinalize(this);
+        Debug.WriteLine("[PlaybackMonitor] Dispose finished.");
+    }
+
+    ~PlaybackMonitor()
+    {
+        Debug.WriteLine("[PlaybackMonitor] Finalizer called.");
+        Dispose();
+    }
+}
+</file>
+
 <file path="Source\Services\Playback\PlaybackService.cs">
 using System;
 using System.Diagnostics;
@@ -5385,7 +5587,7 @@ using System.Threading;
 using Avalonia.Threading;
 using NAudio.Wave;
 using Sonorize.Models;
-using Sonorize.Services.Playback; // Added for PlaybackCompletionHandler
+using Sonorize.Services.Playback; // Added for PlaybackCompletionHandler and PlaybackMonitor
 using Sonorize.ViewModels;
 
 namespace Sonorize.Services;
@@ -5410,9 +5612,8 @@ public class PlaybackService : ViewModelBase, IDisposable
                     Debug.WriteLine("[PlaybackService] CurrentSong set to null. Resetting playback state variables.");
                     IsPlaying = false;
                     CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-                    CurrentPosition = TimeSpan.Zero;
-                    CurrentSongDuration = TimeSpan.Zero;
-                    StopUiUpdateTimerInternal();
+                    UpdatePlaybackPositionAndDuration(TimeSpan.Zero, TimeSpan.Zero); // Use new method
+                    _playbackMonitor.Stop();
                 }
                 // Update loop handler regardless of null or not
                 _loopHandler.UpdateCurrentSong(value);
@@ -5440,7 +5641,7 @@ public class PlaybackService : ViewModelBase, IDisposable
     public TimeSpan CurrentPosition
     {
         get => _currentPosition;
-        private set
+        internal set // Changed to internal for PlaybackMonitor
         {
             if (SetProperty(ref _currentPosition, value))
             {
@@ -5454,7 +5655,7 @@ public class PlaybackService : ViewModelBase, IDisposable
     public TimeSpan CurrentSongDuration
     {
         get => _currentSongDuration;
-        private set
+        internal set // Changed to internal for PlaybackMonitor
         {
             if (SetProperty(ref _currentSongDuration, value))
             {
@@ -5465,10 +5666,10 @@ public class PlaybackService : ViewModelBase, IDisposable
     public double CurrentSongDurationSeconds => CurrentSongDuration.TotalSeconds > 0 ? CurrentSongDuration.TotalSeconds : 1.0;
 
     private NAudioPlaybackEngine? _playbackEngine;
-    private Timer? uiUpdateTimer;
     private readonly PlaybackLoopHandler _loopHandler;
     private readonly ScrobblingService _scrobblingService;
     private readonly PlaybackCompletionHandler _completionHandler;
+    private readonly PlaybackMonitor _playbackMonitor;
 
 
     private volatile bool _explicitStopRequested = false;
@@ -5505,45 +5706,15 @@ public class PlaybackService : ViewModelBase, IDisposable
     {
         Debug.WriteLine("[PlaybackService] Constructor called.");
         _scrobblingService = scrobblingService ?? throw new ArgumentNullException(nameof(scrobblingService));
-        uiUpdateTimer = new Timer(UpdateUiCallback, null, Timeout.Infinite, Timeout.Infinite);
         _loopHandler = new PlaybackLoopHandler(this);
         _completionHandler = new PlaybackCompletionHandler(this, _scrobblingService);
+        _playbackMonitor = new PlaybackMonitor(this);
     }
 
-    private void UpdateUiCallback(object? state)
+    internal void UpdatePlaybackPositionAndDuration(TimeSpan position, TimeSpan duration)
     {
-        Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            if (_playbackEngine != null && _playbackEngine.CurrentPlaybackStatus == PlaybackStateStatus.Playing && CurrentSong != null)
-            {
-                TimeSpan currentAudioTime = TimeSpan.Zero;
-                TimeSpan songDuration = TimeSpan.Zero;
-
-                try
-                {
-                    currentAudioTime = _playbackEngine.CurrentPosition;
-                    songDuration = _playbackEngine.CurrentSongDuration;
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"[PlaybackService] Error getting Engine.CurrentPosition/Duration in timer callback: {ex.Message}. Stopping timer.");
-                    StopUiUpdateTimerInternal();
-                    return;
-                }
-
-                this.CurrentPosition = currentAudioTime;
-                this.CurrentSongDuration = songDuration;
-
-                _loopHandler.CheckForLoopSeek(currentAudioTime, songDuration);
-            }
-            else
-            {
-                if (_playbackEngine == null || _playbackEngine.CurrentPlaybackStatus != PlaybackStateStatus.Playing)
-                {
-                    StopUiUpdateTimerInternal();
-                }
-            }
-        });
+        this.CurrentPosition = position;
+        this.CurrentSongDuration = duration;
     }
 
     private async void TryScrobbleSong(Song? song, TimeSpan playedPosition)
@@ -5559,6 +5730,7 @@ public class PlaybackService : ViewModelBase, IDisposable
     public void Play(Song song)
     {
         Debug.WriteLine($"[PlaybackService] Play requested for: {(song?.Title ?? "null song")}");
+        _playbackMonitor.Stop(); // Stop monitoring previous song, if any
 
         Song? interruptedSong = null;
         TimeSpan interruptedSongPosition = TimeSpan.Zero;
@@ -5587,7 +5759,7 @@ public class PlaybackService : ViewModelBase, IDisposable
         if (song == null || string.IsNullOrEmpty(song.FilePath) || !File.Exists(song.FilePath))
         {
             Debug.WriteLine("[PlaybackService] New song is null, path invalid, or file missing. Current playback will be fully stopped.");
-            SetCurrentSongInternal(null);
+            SetCurrentSongInternal(null); // This will also stop monitor via its setter logic
             return;
         }
 
@@ -5602,19 +5774,21 @@ public class PlaybackService : ViewModelBase, IDisposable
             _playbackEngine.PitchSemitones = this.PitchSemitones;
             _playbackEngine.Load(song.FilePath);
 
-            CurrentSongDuration = _playbackEngine.CurrentSongDuration;
-            this.CurrentPosition = TimeSpan.Zero;
+            UpdatePlaybackPositionAndDuration(TimeSpan.Zero, _playbackEngine.CurrentSongDuration);
 
             TimeSpan startPosition = _loopHandler.GetInitialPlaybackPosition(CurrentSongDuration);
             if (startPosition > TimeSpan.Zero && startPosition < CurrentSongDuration)
             {
                 _playbackEngine.Seek(startPosition);
-                this.CurrentPosition = _playbackEngine.CurrentPosition;
+                UpdatePlaybackPositionAndDuration(_playbackEngine.CurrentPosition, CurrentSongDuration);
             }
 
             _playbackEngine.Play();
             SetPlaybackStateInternal(true, PlaybackStateStatus.Playing);
-            StartUiUpdateTimer();
+            if (_playbackEngine != null) // Ensure engine is still valid
+            {
+                _playbackMonitor.Start(_playbackEngine, _loopHandler, CurrentSong);
+            }
             Debug.WriteLine($"[PlaybackService] Playback started for: {CurrentSong.Title}. State: {CurrentPlaybackStatus}");
             _ = _scrobblingService.UpdateNowPlayingAsync(CurrentSong);
         }
@@ -5627,7 +5801,7 @@ public class PlaybackService : ViewModelBase, IDisposable
                 _playbackEngine.Dispose();
                 _playbackEngine = null;
             }
-            SetCurrentSongInternal(null);
+            SetCurrentSongInternal(null); // This will also stop monitor
         }
     }
 
@@ -5637,9 +5811,9 @@ public class PlaybackService : ViewModelBase, IDisposable
         Debug.WriteLine($"[PlaybackService] Pause requested. Current state: {CurrentPlaybackStatus}");
         if (_playbackEngine != null && IsPlaying)
         {
+            _playbackMonitor.Stop();
             _playbackEngine.Pause();
             SetPlaybackStateInternal(false, PlaybackStateStatus.Paused);
-            StopUiUpdateTimerInternal();
         }
     }
 
@@ -5658,12 +5832,13 @@ public class PlaybackService : ViewModelBase, IDisposable
             Debug.WriteLine("[PlaybackService] Resume requested from Paused state. Resuming engine.");
             _playbackEngine.Play();
             SetPlaybackStateInternal(true, PlaybackStateStatus.Playing);
-            StartUiUpdateTimer();
+            _playbackMonitor.Start(_playbackEngine, _loopHandler, CurrentSong);
             _ = _scrobblingService.UpdateNowPlayingAsync(CurrentSong);
         }
         else if (_playbackEngine != null && CurrentPlaybackStatus == PlaybackStateStatus.Stopped)
         {
             Debug.WriteLine("[PlaybackService] Resume requested from Stopped state. Re-playing current song via engine.");
+            // Play already handles stopping monitor and starting new one
             Play(CurrentSong);
         }
         else
@@ -5676,6 +5851,7 @@ public class PlaybackService : ViewModelBase, IDisposable
     {
         Debug.WriteLine("[PlaybackService] Public Stop() called.");
         _explicitStopRequested = true;
+        _playbackMonitor.Stop(); // Stop monitoring immediately
 
         if (_playbackEngine != null)
         {
@@ -5725,13 +5901,21 @@ public class PlaybackService : ViewModelBase, IDisposable
         try
         {
             _playbackEngine.Seek(targetPosition);
-            this.CurrentPosition = _playbackEngine.CurrentPosition;
+            // Position update will come from PlaybackMonitor, or manually update if not playing
+            if (CurrentPlaybackStatus != PlaybackStateStatus.Playing)
+            {
+                UpdatePlaybackPositionAndDuration(_playbackEngine.CurrentPosition, CurrentSongDuration);
+            }
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"[PlaybackService] CRITICAL Error during Engine Seek to {targetPosition:mm\\:ss\\.ff}: {ex.Message}");
-            if (_playbackEngine != null) { try { this.CurrentPosition = _playbackEngine.CurrentPosition; } catch { /* ignore */ } }
-            else { this.CurrentPosition = TimeSpan.Zero; }
+            try
+            {
+                if (_playbackEngine != null) UpdatePlaybackPositionAndDuration(_playbackEngine.CurrentPosition, CurrentSongDuration);
+                else UpdatePlaybackPositionAndDuration(TimeSpan.Zero, CurrentSongDuration);
+            }
+            catch { /* ignore */ }
         }
     }
 
@@ -5740,6 +5924,7 @@ public class PlaybackService : ViewModelBase, IDisposable
         Dispatcher.UIThread.InvokeAsync(() =>
         {
             Debug.WriteLine($"[PlaybackService] === OnEnginePlaybackStopped (UI Thread) Invoked. Delegating to CompletionHandler. ===");
+            _playbackMonitor.Stop(); // Ensure monitor is stopped
             Song? songThatJustStopped = CurrentSong;
 
             TimeSpan actualStoppedPosition = this.CurrentPosition;
@@ -5768,7 +5953,7 @@ public class PlaybackService : ViewModelBase, IDisposable
     }
 
     // Internal methods for PlaybackCompletionHandler
-    internal void StopUiUpdateTimerInternal() => StopUiUpdateTimer();
+    internal void StopUiUpdateTimerInternal() => _playbackMonitor.Stop(); // Delegate to monitor
     internal EventHandler<StoppedEventArgs> GetEnginePlaybackStoppedHandler() => OnEnginePlaybackStopped;
     internal void SetCurrentSongInternal(Song? song) => CurrentSong = song; // Leverages existing private setter logic
     internal Song? GetCurrentSongInternal() => CurrentSong;
@@ -5781,27 +5966,17 @@ public class PlaybackService : ViewModelBase, IDisposable
     {
         IsPlaying = false;
         CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-        CurrentPosition = TimeSpan.Zero; // Reset position for UI, song remains "current" until next logic decides.
+        // Reset position for UI, song remains "current" until next logic decides.
+        // The CurrentPosition property setter will notify UI.
+        UpdatePlaybackPositionAndDuration(TimeSpan.Zero, CurrentSongDuration);
     }
     internal void InvokePlaybackEndedNaturallyInternal() => PlaybackEndedNaturally?.Invoke(this, EventArgs.Empty);
     internal void ResetExplicitStopRequestInternal() => _explicitStopRequested = false;
 
-
-    private void StartUiUpdateTimer()
-    {
-        uiUpdateTimer?.Change(TimeSpan.Zero, TimeSpan.FromMilliseconds(100));
-    }
-
-    private void StopUiUpdateTimer()
-    {
-        uiUpdateTimer?.Change(Timeout.Infinite, Timeout.Infinite);
-    }
-
     public void Dispose()
     {
         Debug.WriteLine("[PlaybackService] Dispose() called.");
-        uiUpdateTimer?.Dispose();
-        uiUpdateTimer = null;
+        _playbackMonitor.Dispose();
 
         Song? songAtDispose = CurrentSong;
         TimeSpan positionAtDispose = this.CurrentPosition; // Get from property as engine might be gone
@@ -5834,7 +6009,7 @@ public class PlaybackService : ViewModelBase, IDisposable
     ~PlaybackService()
     {
         Debug.WriteLine("[PlaybackService] Finalizer called for PlaybackService.");
-        Dispose();
+        Dispose(); // Calls _playbackMonitor.Dispose()
         Debug.WriteLine("[PlaybackService] Finalizer completed for PlaybackService.");
     }
 }

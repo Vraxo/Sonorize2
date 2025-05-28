@@ -17,8 +17,7 @@ public class PlaybackCompletionHandler
     }
 
     public void Handle(
-        NAudioPlaybackEngine? engine,
-        StoppedEventArgs eventArgs,
+        StoppedEventArgs eventArgs, // Removed NAudioPlaybackEngine? engine parameter
         Song? songThatJustStopped,
         TimeSpan actualStoppedPosition,
         TimeSpan actualStoppedSongDuration,
@@ -28,11 +27,13 @@ public class PlaybackCompletionHandler
 
         _playbackService.StopUiUpdateTimerInternal();
 
-        if (engine != null)
-        {
-            engine.PlaybackStopped -= _playbackService.GetEnginePlaybackStoppedHandler();
-            Debug.WriteLine("[PlaybackCompletionHandler] Detached handler from the stopping engine instance.");
-        }
+        // Detachment of handler from engine is now managed by NAudioEngineController itself or PlaybackService's disposal of it.
+        // No need to do it here.
+        // if (engine != null)
+        // {
+        //     engine.PlaybackStopped -= _playbackService.GetEnginePlaybackStoppedHandler();
+        //     Debug.WriteLine("[PlaybackCompletionHandler] Detached handler from the stopping engine instance.");
+        // }
 
         if (eventArgs.Exception != null)
         {
@@ -71,8 +72,6 @@ public class PlaybackCompletionHandler
             }
         }
 
-        // Ensure IsPlaying and CurrentPlaybackStatus are also set correctly if CurrentSong becomes null
-        // This is typically handled by SetCurrentSongInternal's chain reaction, but good to be mindful.
         if (_playbackService.GetCurrentSongInternal() == null)
         {
             _playbackService.SetPlaybackStateInternal(false, PlaybackStateStatus.Stopped);
@@ -88,8 +87,6 @@ public class PlaybackCompletionHandler
         Debug.WriteLine($"[PlaybackCompletionHandler] TryScrobble called for '{song.Title}' at {playedPosition}.");
         if (_scrobblingService.ShouldScrobble(song, playedPosition))
         {
-            // Ensure ScrobbleAsync is awaited if it's truly async and we need to wait for it,
-            // or fire-and-forget if that's acceptable.
             await _scrobblingService.ScrobbleAsync(song, DateTime.UtcNow).ConfigureAwait(false);
         }
     }
