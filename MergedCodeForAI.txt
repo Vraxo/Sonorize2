@@ -1331,6 +1331,157 @@ public class NextTrackSelectorService(Random shuffleRandom)
 }
 </file>
 
+<file path="Source\Services\PlaybackCompletionHandler.cs">
+using System;
+using System.Diagnostics;
+using Sonorize.Models;
+using NAudio.Wave; // Required for StoppedEventArgs
+
+namespace Sonorize.Services.Playback;
+
+public class PlaybackCompletionHandler
+{
+    private readonly PlaybackService _playbackService;
+    private readonly ScrobblingService _scrobblingService;
+
+    public PlaybackCompletionHandler(PlaybackService playbackService, ScrobblingService scrobblingService)
+    {
+        _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
+        _scrobblingService = scrobblingService ?? throw new ArgumentNullException(nameof(scrobblingService));
+    }
+
+    public void Handle(
+        StoppedEventArgs eventArgs, // Removed NAudioPlaybackEngine? engine parameter
+        Song? songThatJustStopped,
+        TimeSpan actualStoppedPosition,
+        TimeSpan actualStoppedSongDuration,
+        bool wasExplicitlyStopped)
+    {
+        Debug.WriteLine($"[PlaybackCompletionHandler] Handling playback stop for: {songThatJustStopped?.Title ?? "No Song"}. ExplicitStop: {wasExplicitlyStopped}, Error: {eventArgs.Exception != null}");
+
+        _playbackService.StopUiUpdateTimerInternal();
+
+        // Detachment of handler from engine is now managed by NAudioEngineController itself or PlaybackService's disposal of it.
+        // No need to do it here.
+        // if (engine != null)
+        // {
+        //     engine.PlaybackStopped -= _playbackService.GetEnginePlaybackStoppedHandler();
+        //     Debug.WriteLine("[PlaybackCompletionHandler] Detached handler from the stopping engine instance.");
+        // }
+
+        if (eventArgs.Exception != null)
+        {
+            Debug.WriteLine($"[PlaybackCompletionHandler] Playback stopped due to error: {eventArgs.Exception.Message}. Finalizing state to Stopped.");
+            TryScrobble(songThatJustStopped, actualStoppedPosition);
+            _playbackService.SetCurrentSongInternal(null); // This will also update IsPlaying and Status via its setter chain
+        }
+        else
+        {
+            // isNearEndOfFile should use the duration of the song that actually played.
+            bool isNearEndOfFile = (actualStoppedSongDuration > TimeSpan.Zero) &&
+                                   (actualStoppedPosition >= actualStoppedSongDuration - TimeSpan.FromMilliseconds(500));
+
+            Debug.WriteLine($"[PlaybackCompletionHandler] Clean Stop. ExplicitStopReq: {wasExplicitlyStopped}. NearEnd: {isNearEndOfFile}. Pos: {actualStoppedPosition:mm\\:ss\\.ff}, Dur: {actualStoppedSongDuration:mm\\:ss\\.ff}");
+
+            if (wasExplicitlyStopped)
+            {
+                Debug.WriteLine("[PlaybackCompletionHandler] Playback stopped by explicit user/app command. Finalizing.");
+                TryScrobble(songThatJustStopped, actualStoppedPosition);
+                _playbackService.SetCurrentSongInternal(null);
+            }
+            else if (isNearEndOfFile)
+            {
+                Debug.WriteLine("[PlaybackCompletionHandler] Playback stopped naturally (end of file).");
+                TryScrobble(songThatJustStopped, actualStoppedSongDuration); // Scrobble with full duration for natural end
+                _playbackService.UpdateStateForNaturalPlaybackEndInternal();
+                _playbackService.InvokePlaybackEndedNaturallyInternal();
+            }
+            else
+            {
+                // This case might occur if the engine stops for an unknown reason not classified as an error
+                // or if the "near end of file" logic isn't perfectly aligned with engine behavior.
+                Debug.WriteLine("[PlaybackCompletionHandler] Playback stopped (not error, not explicit, not EOF). Scrobbling and stopping.");
+                TryScrobble(songThatJustStopped, actualStoppedPosition);
+                _playbackService.SetCurrentSongInternal(null);
+            }
+        }
+
+        if (_playbackService.GetCurrentSongInternal() == null)
+        {
+            _playbackService.SetPlaybackStateInternal(false, PlaybackStateStatus.Stopped);
+        }
+
+        _playbackService.ResetExplicitStopRequestInternal();
+        Debug.WriteLine($"[PlaybackCompletionHandler] Handle finishes. CurrentSong after handling: {_playbackService.GetCurrentSongInternal()?.Title ?? "null"}");
+    }
+
+    private async void TryScrobble(Song? song, TimeSpan playedPosition)
+    {
+        if (song == null) return;
+        Debug.WriteLine($"[PlaybackCompletionHandler] TryScrobble called for '{song.Title}' at {playedPosition}.");
+        if (_scrobblingService.ShouldScrobble(song, playedPosition))
+        {
+            await _scrobblingService.ScrobbleAsync(song, DateTime.UtcNow).ConfigureAwait(false);
+        }
+    }
+}
+</file>
+
+<file path="Source\Services\PlaybackFlowManagerService.cs">
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using Sonorize.Models;
+using Sonorize.ViewModels;
+
+namespace Sonorize.Services;
+
+public class PlaybackFlowManagerService
+{
+    private readonly LibraryViewModel _libraryViewModel;
+    private readonly PlaybackViewModel _playbackViewModel;
+    private readonly PlaybackService _playbackService;
+    private readonly NextTrackSelectorService _nextTrackSelectorService;
+
+    public PlaybackFlowManagerService(
+        LibraryViewModel libraryViewModel,
+        PlaybackViewModel playbackViewModel,
+        PlaybackService playbackService,
+        NextTrackSelectorService nextTrackSelectorService)
+    {
+        _libraryViewModel = libraryViewModel ?? throw new System.ArgumentNullException(nameof(libraryViewModel));
+        _playbackViewModel = playbackViewModel ?? throw new System.ArgumentNullException(nameof(playbackViewModel));
+        _playbackService = playbackService ?? throw new System.ArgumentNullException(nameof(playbackService));
+        _nextTrackSelectorService = nextTrackSelectorService ?? throw new System.ArgumentNullException(nameof(nextTrackSelectorService));
+    }
+
+    public void HandlePlaybackEndedNaturally()
+    {
+        Debug.WriteLine("[PlaybackFlowManager] HandlePlaybackEndedNaturally called.");
+
+        Song? currentSong = _libraryViewModel.SelectedSong;
+        List<Song> currentList = [.. _libraryViewModel.FilteredSongs];
+        RepeatMode repeatMode = _playbackViewModel.RepeatMode;
+        bool shuffleEnabled = _playbackViewModel.ShuffleEnabled;
+
+        Song? nextSong = _nextTrackSelectorService.GetNextSong(currentSong, currentList, repeatMode, shuffleEnabled);
+
+        if (nextSong is not null)
+        {
+            Debug.WriteLine($"[PlaybackFlowManager] Next song determined: {nextSong.Title}. Setting Library.SelectedSong.");
+            _libraryViewModel.SelectedSong = nextSong;
+        }
+        else
+        {
+            Debug.WriteLine("[PlaybackFlowManager] No next song determined. Calling PlaybackService.Stop().");
+            _playbackService.Stop();
+        }
+
+        Debug.WriteLine("[PlaybackFlowManager] HandlePlaybackEndedNaturally completed.");
+    }
+}
+</file>
+
 <file path="Source\Services\ScrobblingService.cs">
 using System;
 using System.Diagnostics;
@@ -5273,92 +5424,6 @@ public class NAudioPlaybackEngine : IDisposable
 }
 </file>
 
-<file path="Source\Services\Playback\PlaybackCompletionHandler.cs">
-using System;
-using System.Diagnostics;
-using Sonorize.Models;
-using NAudio.Wave; // Required for StoppedEventArgs
-
-namespace Sonorize.Services.Playback; // Corrected namespace
-
-public class PlaybackCompletionHandler
-{
-    private readonly PlaybackService _playbackService; // Used to call the "internal" methods
-    private readonly ScrobblingService _scrobblingService;
-
-    public PlaybackCompletionHandler(PlaybackService playbackService, ScrobblingService scrobblingService)
-    {
-        _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
-        _scrobblingService = scrobblingService ?? throw new ArgumentNullException(nameof(scrobblingService));
-    }
-
-    public void Handle(
-        StoppedEventArgs eventArgs,
-        Song? songThatJustStopped,
-        TimeSpan actualStoppedPosition,
-        TimeSpan actualStoppedSongDuration,
-        bool wasExplicitlyStopped)
-    {
-        Debug.WriteLine($"[PlaybackCompletionHandler] Handling playback stop for: {songThatJustStopped?.Title ?? "No Song"}. ExplicitStop: {wasExplicitlyStopped}, Error: {eventArgs.Exception != null}");
-
-        _playbackService.StopUiUpdateTimerInternal(); // Calls SessionManager's method
-
-        if (eventArgs.Exception != null)
-        {
-            Debug.WriteLine($"[PlaybackCompletionHandler] Playback stopped due to error: {eventArgs.Exception.Message}. Finalizing state to Stopped.");
-            TryScrobble(songThatJustStopped, actualStoppedPosition);
-            _playbackService.SetCurrentSongInternal(null); // Calls SessionManager's method
-        }
-        else
-        {
-            bool isNearEndOfFile = (actualStoppedSongDuration > TimeSpan.Zero) &&
-                                   (actualStoppedPosition >= actualStoppedSongDuration - TimeSpan.FromMilliseconds(500));
-
-            Debug.WriteLine($"[PlaybackCompletionHandler] Clean Stop. ExplicitStopReq: {wasExplicitlyStopped}. NearEnd: {isNearEndOfFile}. Pos: {actualStoppedPosition:mm\\:ss\\.ff}, Dur: {actualStoppedSongDuration:mm\\:ss\\.ff}");
-
-            if (wasExplicitlyStopped)
-            {
-                Debug.WriteLine("[PlaybackCompletionHandler] Playback stopped by explicit user/app command. Finalizing.");
-                TryScrobble(songThatJustStopped, actualStoppedPosition);
-                _playbackService.SetCurrentSongInternal(null); // Calls SessionManager's method
-            }
-            else if (isNearEndOfFile)
-            {
-                Debug.WriteLine("[PlaybackCompletionHandler] Playback stopped naturally (end of file).");
-                TryScrobble(songThatJustStopped, actualStoppedSongDuration);
-                _playbackService.UpdateStateForNaturalPlaybackEndInternal(); // Calls SessionManager's method
-                _playbackService.InvokePlaybackEndedNaturallyInternal();    // Calls SessionManager's method
-            }
-            else
-            {
-                Debug.WriteLine("[PlaybackCompletionHandler] Playback stopped (not error, not explicit, not EOF). Scrobbling and stopping.");
-                TryScrobble(songThatJustStopped, actualStoppedPosition);
-                _playbackService.SetCurrentSongInternal(null); // Calls SessionManager's method
-            }
-        }
-
-        // Ensure playback state is updated if song is now null
-        if (_playbackService.GetCurrentSongInternal() == null) // Calls SessionManager's method
-        {
-            _playbackService.SetPlaybackStateInternal(false, PlaybackStateStatus.Stopped); // Calls SessionManager's method
-        }
-
-        _playbackService.ResetExplicitStopRequestInternal(); // Calls SessionManager's method
-        Debug.WriteLine($"[PlaybackCompletionHandler] Handle finishes. CurrentSong after handling: {_playbackService.GetCurrentSongInternal()?.Title ?? "null"}");
-    }
-
-    private async void TryScrobble(Song? song, TimeSpan playedPosition)
-    {
-        if (song == null) return;
-        Debug.WriteLine($"[PlaybackCompletionHandler] TryScrobble called for '{song.Title}' at {playedPosition}.");
-        if (_scrobblingService.ShouldScrobble(song, playedPosition))
-        {
-            await _scrobblingService.ScrobbleAsync(song, DateTime.UtcNow).ConfigureAwait(false);
-        }
-    }
-}
-</file>
-
 <file path="Source\Services\Playback\PlaybackEngineCoordinator.cs">
 using System;
 using System.Diagnostics;
@@ -5530,61 +5595,6 @@ public class PositionEventArgs(TimeSpan position, TimeSpan duration) : EventArgs
 {
     public TimeSpan Position { get; } = position;
     public TimeSpan Duration { get; } = duration;
-}
-</file>
-
-<file path="Source\Services\Playback\PlaybackFlowManagerService.cs">
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using Sonorize.Models;
-using Sonorize.ViewModels;
-
-namespace Sonorize.Services;
-
-public class PlaybackFlowManagerService
-{
-    private readonly LibraryViewModel _libraryViewModel;
-    private readonly PlaybackViewModel _playbackViewModel;
-    private readonly PlaybackService _playbackService;
-    private readonly NextTrackSelectorService _nextTrackSelectorService;
-
-    public PlaybackFlowManagerService(
-        LibraryViewModel libraryViewModel,
-        PlaybackViewModel playbackViewModel,
-        PlaybackService playbackService,
-        NextTrackSelectorService nextTrackSelectorService)
-    {
-        _libraryViewModel = libraryViewModel ?? throw new System.ArgumentNullException(nameof(libraryViewModel));
-        _playbackViewModel = playbackViewModel ?? throw new System.ArgumentNullException(nameof(playbackViewModel));
-        _playbackService = playbackService ?? throw new System.ArgumentNullException(nameof(playbackService));
-        _nextTrackSelectorService = nextTrackSelectorService ?? throw new System.ArgumentNullException(nameof(nextTrackSelectorService));
-    }
-
-    public void HandlePlaybackEndedNaturally()
-    {
-        Debug.WriteLine("[PlaybackFlowManager] HandlePlaybackEndedNaturally called.");
-
-        Song? currentSong = _libraryViewModel.SelectedSong;
-        List<Song> currentList = [.. _libraryViewModel.FilteredSongs];
-        RepeatMode repeatMode = _playbackViewModel.RepeatMode;
-        bool shuffleEnabled = _playbackViewModel.ShuffleEnabled;
-
-        Song? nextSong = _nextTrackSelectorService.GetNextSong(currentSong, currentList, repeatMode, shuffleEnabled);
-
-        if (nextSong is not null)
-        {
-            Debug.WriteLine($"[PlaybackFlowManager] Next song determined: {nextSong.Title}. Setting Library.SelectedSong.");
-            _libraryViewModel.SelectedSong = nextSong;
-        }
-        else
-        {
-            Debug.WriteLine("[PlaybackFlowManager] No next song determined. Calling PlaybackService.Stop().");
-            _playbackService.Stop();
-        }
-
-        Debug.WriteLine("[PlaybackFlowManager] HandlePlaybackEndedNaturally completed.");
-    }
 }
 </file>
 
@@ -6251,341 +6261,6 @@ public class PlaybackService : ViewModelBase, IDisposable
         Debug.WriteLine("[PlaybackService] Finalizer called for PlaybackService.");
         Dispose();
         Debug.WriteLine("[PlaybackService] Finalizer completed for PlaybackService.");
-    }
-}
-</file>
-
-<file path="Source\Services\Playback\PlaybackSessionManager.cs">
-using System;
-using System.ComponentModel;
-using System.Diagnostics;
-using System.IO;
-using NAudio.Wave; // For StoppedEventArgs
-using Sonorize.Models;
-
-namespace Sonorize.Services.Playback;
-
-public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
-{
-    private readonly PlaybackEngineCoordinator _playbackEngineCoordinator;
-    private readonly PlaybackCompletionHandler _completionHandler;
-    private readonly ScrobblingService _scrobblingService; // For scrobbling on completion
-
-    public Song? CurrentSong
-    {
-        get;
-        private set
-        {
-            if (field != value)
-            {
-                field = value;
-                OnPropertyChanged(nameof(CurrentSong));
-                OnPropertyChanged(nameof(HasCurrentSong));
-                _playbackEngineCoordinator.SetSong(value);
-
-                if (value == null)
-                {
-                    IsPlaying = false;
-                    CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
-                    UpdatePlaybackPositionAndDuration(TimeSpan.Zero, TimeSpan.Zero);
-                }
-            }
-        }
-    }
-
-    public bool HasCurrentSong => CurrentSong != null;
-
-    public bool IsPlaying
-    {
-        get;
-        private set
-        {
-            if (field != value)
-            {
-                field = value;
-                OnPropertyChanged(nameof(IsPlaying));
-            }
-        }
-    }
-
-    public PlaybackStateStatus CurrentPlaybackStatus
-    {
-        get;
-        private set
-        {
-            if (field != value)
-            {
-                field = value;
-                OnPropertyChanged(nameof(CurrentPlaybackStatus));
-            }
-        }
-    } = PlaybackStateStatus.Stopped;
-
-    public TimeSpan CurrentPosition
-    {
-        get;
-        private set
-        {
-            if (field != value)
-            {
-                field = value;
-                OnPropertyChanged(nameof(CurrentPosition));
-                OnPropertyChanged(nameof(CurrentPositionSeconds));
-            }
-        }
-    }
-    public double CurrentPositionSeconds => CurrentPosition.TotalSeconds;
-
-    public TimeSpan CurrentSongDuration
-    {
-        get;
-        private set
-        {
-            if (field != value)
-            {
-                field = value;
-                OnPropertyChanged(nameof(CurrentSongDuration));
-                OnPropertyChanged(nameof(CurrentSongDurationSeconds));
-            }
-        }
-    }
-    public double CurrentSongDurationSeconds => CurrentSongDuration.TotalSeconds > 0 ? CurrentSongDuration.TotalSeconds : 1.0;
-
-    public float PlaybackRate
-    {
-        get;
-        set
-        {
-            if (field != value)
-            {
-                field = value;
-                _playbackEngineCoordinator.UpdateRateAndPitch(value, PitchSemitones);
-                OnPropertyChanged(nameof(PlaybackRate));
-            }
-        }
-    } = 1.0f;
-
-    public float PitchSemitones
-    {
-        get;
-        set
-        {
-            if (field != value)
-            {
-                field = value;
-                _playbackEngineCoordinator.UpdateRateAndPitch(PlaybackRate, value);
-                OnPropertyChanged(nameof(PitchSemitones));
-            }
-        }
-    } = 0f;
-
-    private volatile bool _explicitStopRequested = false;
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-    public event EventHandler? SessionEndedNaturally;
-
-    // Reference to PlaybackService is needed for PlaybackCompletionHandler
-    // This is a bit circular, ideally PlaybackCompletionHandler would take callbacks
-    // or PlaybackSessionManager would own more of the state updates.
-    // For this refactor, we pass PlaybackService.
-    private readonly PlaybackService _playbackServiceReference;
-
-
-    public PlaybackSessionManager(
-        PlaybackEngineCoordinator playbackEngineCoordinator,
-        ScrobblingService scrobblingService,
-        PlaybackService playbackServiceReference) // Pass PlaybackService for CompletionHandler
-    {
-        _playbackEngineCoordinator = playbackEngineCoordinator ?? throw new ArgumentNullException(nameof(playbackEngineCoordinator));
-        _scrobblingService = scrobblingService ?? throw new ArgumentNullException(nameof(scrobblingService));
-        _playbackServiceReference = playbackServiceReference ?? throw new ArgumentNullException(nameof(playbackServiceReference));
-
-        _completionHandler = new PlaybackCompletionHandler(_playbackServiceReference, _scrobblingService);
-
-        _playbackEngineCoordinator.EnginePlaybackStopped += OnEngineCoordinatorPlaybackStopped;
-        _playbackEngineCoordinator.EnginePositionUpdated += OnEngineCoordinatorPositionUpdated;
-    }
-
-    private void OnPropertyChanged(string propertyName)
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
-
-    private void UpdatePlaybackPositionAndDuration(TimeSpan position, TimeSpan duration)
-    {
-        this.CurrentPosition = position;
-        this.CurrentSongDuration = duration;
-    }
-
-    public bool StartNewSession(Song song)
-    {
-        Debug.WriteLine($"[SessionManager] StartNewSession requested for: {(song?.Title ?? "null song")}");
-
-        if (CurrentPlaybackStatus != PlaybackStateStatus.Stopped && CurrentSong != null && CurrentSong != song)
-        {
-            _playbackEngineCoordinator.Stop(); // Stop current, will trigger OnEngineCoordinatorPlaybackStopped
-        }
-        else if (CurrentPlaybackStatus != PlaybackStateStatus.Stopped && CurrentSong == song)
-        {
-            _playbackEngineCoordinator.Stop(); // Restart same song
-        }
-
-        if (song == null || string.IsNullOrEmpty(song.FilePath) || !File.Exists(song.FilePath))
-        {
-            Debug.WriteLine("[SessionManager] New song is null or invalid. Stopping current playback if any.");
-            if (CurrentPlaybackStatus != PlaybackStateStatus.Stopped) _playbackEngineCoordinator.Stop();
-            CurrentSong = null;
-            return false;
-        }
-
-        CurrentSong = song;
-        _explicitStopRequested = false;
-
-        try
-        {
-            if (!_playbackEngineCoordinator.Load(song.FilePath, PlaybackRate, PitchSemitones))
-            {
-                CurrentSong = null;
-                return false;
-            }
-            UpdatePlaybackPositionAndDuration(TimeSpan.Zero, _playbackEngineCoordinator.CurrentSongDuration);
-            _playbackEngineCoordinator.Play(startMonitor: true);
-            SetPlaybackState(true, PlaybackStateStatus.Playing);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"[SessionManager] Error starting new session for '{CurrentSong?.FilePath}': {ex}");
-            if (CurrentSong != null) _playbackEngineCoordinator.Stop(); // Ensure cleanup
-            CurrentSong = null;
-            return false;
-        }
-    }
-
-    public void PauseSession()
-    {
-        if (IsPlaying)
-        {
-            _playbackEngineCoordinator.Pause();
-            SetPlaybackState(false, PlaybackStateStatus.Paused);
-        }
-    }
-
-    public void ResumeSession()
-    {
-        if (CurrentSong == null) return;
-
-        if (CurrentPlaybackStatus == PlaybackStateStatus.Paused)
-        {
-            _playbackEngineCoordinator.Resume(startMonitor: true);
-            SetPlaybackState(true, PlaybackStateStatus.Playing);
-        }
-        else if (CurrentPlaybackStatus == PlaybackStateStatus.Stopped)
-        {
-            StartNewSession(CurrentSong); // Effectively re-plays
-        }
-    }
-
-    public void StopSession(bool isExplicit)
-    {
-        _explicitStopRequested = isExplicit;
-        if (CurrentPlaybackStatus != PlaybackStateStatus.Stopped)
-        {
-            _playbackEngineCoordinator.Stop(); // Will trigger OnEngineCoordinatorPlaybackStopped
-        }
-        else if (isExplicit) // If already stopped but an explicit request comes, process it
-        {
-            _completionHandler.Handle(
-               new StoppedEventArgs(),
-               CurrentSong,
-               this.CurrentPosition, // Use SessionManager's state
-               this.CurrentSongDuration, // Use SessionManager's state
-               _explicitStopRequested
-           );
-        }
-    }
-
-    public void SeekSession(TimeSpan requestedPosition)
-    {
-        if (CurrentSong == null || CurrentSongDuration == TimeSpan.Zero) return;
-        _playbackEngineCoordinator.Seek(requestedPosition);
-        // Position update comes via OnEngineCoordinatorPositionUpdated if monitor is not running
-    }
-
-    private void OnEngineCoordinatorPositionUpdated(object? sender, PositionEventArgs e)
-    {
-        UpdatePlaybackPositionAndDuration(e.Position, e.Duration);
-    }
-
-    private void OnEngineCoordinatorPlaybackStopped(object? sender, StoppedEventArgs e)
-    {
-        Song? songThatJustStopped = CurrentSong;
-        TimeSpan actualStoppedPosition = _playbackEngineCoordinator.CurrentPosition;
-        TimeSpan actualStoppedSongDuration = _playbackEngineCoordinator.CurrentSongDuration;
-
-        if (songThatJustStopped != null && actualStoppedSongDuration == TimeSpan.Zero)
-        {
-            actualStoppedSongDuration = songThatJustStopped.Duration; // Fallback to metadata duration
-        }
-
-        // Important: completion handler will call back into PlaybackService's "internal" methods.
-        _completionHandler.Handle(
-            e,
-            songThatJustStopped,
-            actualStoppedPosition,
-            actualStoppedSongDuration,
-            _explicitStopRequested
-        );
-    }
-
-    // Methods for PlaybackCompletionHandler to call (public on SessionManager)
-    public void StopUiUpdateMonitor() => _playbackEngineCoordinator.Stop(); // Monitor is part of coordinator
-
-    public void UpdateStateForNaturalPlaybackEnd()
-    {
-        SetPlaybackState(false, PlaybackStateStatus.Stopped);
-        UpdatePlaybackPositionAndDuration(TimeSpan.Zero, CurrentSongDuration); // Reset position, keep duration
-    }
-
-    public void FinalizeCurrentSong(Song? song)
-    {
-        CurrentSong = song; // Usually sets to null after stop
-    }
-
-    public Song? GetCurrentSongForCompletion() => CurrentSong;
-
-
-    public void SetPlaybackState(bool isPlaying, PlaybackStateStatus status)
-    {
-        IsPlaying = isPlaying;
-        CurrentPlaybackStatus = status;
-    }
-
-    public void TriggerSessionEndedNaturally()
-    {
-        SessionEndedNaturally?.Invoke(this, EventArgs.Empty);
-    }
-
-    public void ResetExplicitStopFlag()
-    {
-        _explicitStopRequested = false;
-    }
-
-
-    public void Dispose()
-    {
-        if (_playbackEngineCoordinator != null)
-        {
-            _playbackEngineCoordinator.EnginePlaybackStopped -= OnEngineCoordinatorPlaybackStopped;
-            _playbackEngineCoordinator.EnginePositionUpdated -= OnEngineCoordinatorPositionUpdated;
-            // _playbackEngineCoordinator is disposed by PlaybackService, which owns it.
-        }
-        GC.SuppressFinalize(this);
-    }
-
-    ~PlaybackSessionManager()
-    {
-        Dispose();
     }
 }
 </file>
