@@ -29,10 +29,11 @@ public class LibraryDataOrchestrator
         Action<string> statusUpdateCallback,
         Action<Song> songAddedToRawListCallback)
     {
-        var rawSongs = new List<Song>(); // Temporary list to gather songs from MusicLibraryService
+        List<Song> rawSongs = []; // Temporary list to gather songs from MusicLibraryService
 
         AppSettings settings = _settingsService.LoadSettings();
-        if (!settings.MusicDirectories.Any())
+        
+        if (settings.MusicDirectories.Count == 0)
         {
             await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback("No music directories configured."));
             return rawSongs; // Return empty list
@@ -69,7 +70,7 @@ public class LibraryDataOrchestrator
         {
             Debug.WriteLine($"[LibraryDataOrchestrator] Error loading and processing library data: {ex}");
             await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback("Error loading music library."));
-            return new List<Song>(); // Return empty list on error
+            return []; // Return empty list on error
         }
     }
 }

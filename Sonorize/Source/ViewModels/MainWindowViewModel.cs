@@ -15,36 +15,28 @@ using Sonorize.ViewModels.Status; // Added for StatusBarTextProvider
 
 namespace Sonorize.ViewModels;
 
-public class MainWindowViewModel : ViewModelBase
+public class MainWindowViewModel : ViewModelBase, IDisposable
 {
-    private readonly SettingsService _settingsService;
-    private readonly MusicLibraryService _musicLibraryService;
-    private readonly WaveformService _waveformService;
-    private readonly LoopDataService _loopDataService;
-    private readonly ScrobblingService _scrobblingService;
-    private readonly NextTrackSelectorService _nextTrackSelectorService;
-    private readonly StatusBarTextProvider _statusBarTextProvider;
-    private readonly SettingsChangeProcessorService _settingsChangeProcessorService;
-    private readonly PlaybackFlowManagerService _playbackFlowManagerService;
-    private readonly ApplicationInteractionService _applicationInteractionService; // Added
+    private readonly ApplicationOrchestrator _orchestrator;
 
-    // Expose the Services directly for child VMs or public properties
-    public PlaybackService PlaybackService { get; }
-    public ThemeColors CurrentTheme { get; }
+    // Expose the child ViewModels via the orchestrator
+    public LibraryViewModel Library => _orchestrator.Library;
+    public PlaybackViewModel Playback => _orchestrator.Playback;
+    public LoopEditorViewModel LoopEditor => _orchestrator.LoopEditor;
+    public AdvancedPanelViewModel AdvancedPanel => _orchestrator.AdvancedPanel;
+    public PlaybackService PlaybackService => _orchestrator.PlaybackService;
+    public ThemeColors CurrentTheme => _orchestrator.CurrentTheme;
 
-    // Expose the child ViewModels
-    public LibraryViewModel Library { get; set; }
-    public LoopEditorViewModel LoopEditor { get; }
-    public PlaybackViewModel Playback { get; }
-    public AdvancedPanelViewModel AdvancedPanel { get; } // New ViewModel for Advanced Panel
-    public string StatusBarText { get => field; set => SetProperty(ref field, value); } = "Welcome to Sonorize!";
 
-    // Property to control the selected tab index in the main TabControl
-    public int ActiveTabIndex { get => field; set => SetProperty(ref field, value); } = 0;
+    private string _statusBarText = "Welcome to Sonorize!";
+    public string StatusBarText { get => _statusBarText; set => SetProperty(ref _statusBarText, value); }
+
+    private int _activeTabIndex = 0;
+    public int ActiveTabIndex { get => _activeTabIndex; set => SetProperty(ref _activeTabIndex, value); }
 
 
     // IsLoadingLibrary is a proxy to Library's state
-    public bool IsLoadingLibrary { get => Library.IsLoadingLibrary; }
+    public bool IsLoadingLibrary => Library.IsLoadingLibrary;
 
     // Pass-through properties for view bindings to AdvancedPanelViewModel
     public bool IsAdvancedPanelVisible
@@ -55,10 +47,7 @@ public class MainWindowViewModel : ViewModelBase
             if (AdvancedPanel.IsVisible != value)
             {
                 AdvancedPanel.IsVisible = value;
-                // Notify that MainWindowViewModel's property changed, even if it's a pass-through
-                OnPropertyChanged();
-                // The AdvancedPanelViewModel's setter will handle its own OnPropertyChanged for its IsVisible
-                // and trigger OnVisibilityChanged logic.
+                // OnPropertyChanged(); // ApplicationOrchestrator will call RaiseInternalPropertyChanged
             }
         }
     }
@@ -71,9 +60,6 @@ public class MainWindowViewModel : ViewModelBase
     public ICommand ExitCommand { get; }
     public ICommand AddDirectoryAndRefreshCommand { get; }
 
-
-    private readonly Random _shuffleRandom = new();
-
     public MainWindowViewModel(
         SettingsService settingsService,
         MusicLibraryService musicLibraryService,
@@ -83,172 +69,56 @@ public class MainWindowViewModel : ViewModelBase
         LoopDataService loopDataService,
         ScrobblingService scrobblingService)
     {
-        _settingsService = settingsService;
-        _musicLibraryService = musicLibraryService;
-        PlaybackService = playbackService;
-        CurrentTheme = theme;
-        _waveformService = waveformService;
-        _loopDataService = loopDataService;
-        _scrobblingService = scrobblingService;
-        _nextTrackSelectorService = new NextTrackSelectorService(_shuffleRandom);
+        var nextTrackSelectorService = new NextTrackSelectorService(new Random());
 
-        Library = new LibraryViewModel(this, _settingsService, _musicLibraryService, _loopDataService);
-        Playback = new PlaybackViewModel(PlaybackService, _waveformService);
-        LoopEditor = new LoopEditorViewModel(PlaybackService, _loopDataService);
-        AdvancedPanel = new AdvancedPanelViewModel(Playback, Library); // Instantiate new VM
+        _orchestrator = new ApplicationOrchestrator(
+            this,
+            settingsService,
+            musicLibraryService,
+            playbackService,
+            theme,
+            waveformService,
+            loopDataService,
+            scrobblingService,
+            nextTrackSelectorService);
 
-        _statusBarTextProvider = new StatusBarTextProvider(Playback, LoopEditor, Library);
-        _settingsChangeProcessorService = new SettingsChangeProcessorService(Library, _scrobblingService);
-        _playbackFlowManagerService = new PlaybackFlowManagerService(Library, Playback, PlaybackService, _nextTrackSelectorService);
-        _applicationInteractionService = new ApplicationInteractionService(
-            _settingsService,
-            _settingsChangeProcessorService,
-            CurrentTheme); // Pass dependencies to the new service
-
-
-        Library.PropertyChanged += Library_PropertyChanged;
-        Playback.PropertyChanged += Playback_PropertyChanged;
-        AdvancedPanel.PropertyChanged += AdvancedPanel_PropertyChanged; // Listen to changes from AdvancedPanelVM
-
-        PlaybackService.PlaybackEndedNaturally += PlaybackService_PlaybackEndedNaturally;
-
-        LoadInitialDataCommand = new RelayCommand(async _ => await Library.LoadLibraryAsync(), _ => !Library.IsLoadingLibrary);
+        LoadInitialDataCommand = new RelayCommand(async _ => await _orchestrator.LoadInitialLibraryDataAsync(), _ => !Library.IsLoadingLibrary);
         OpenSettingsCommand = new RelayCommand(async owner => await OpenSettingsDialogAsync(owner), _ => !Library.IsLoadingLibrary);
         ExitCommand = new RelayCommand(_ => Environment.Exit(0));
         AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefreshAsync(owner), _ => !Library.IsLoadingLibrary);
 
-        UpdateAllUIDependentStates();
+        _orchestrator.InitializeUIDependentStates();
     }
 
-    private void AdvancedPanel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    internal void RaiseInternalPropertyChanged(string propertyName)
     {
-        if (e.PropertyName == nameof(AdvancedPanelViewModel.IsVisible))
+        OnPropertyChanged(propertyName);
+    }
+
+    // Called by Orchestrator when PlaybackViewModel properties change
+    internal void HandlePlaybackViewModelChange(string? propertyName)
+    {
+        // This method is called by ApplicationOrchestrator when a property on PlaybackViewModel changes.
+        // MainWindowViewModel might need to:
+        // 1. Update its own properties that depend on PlaybackViewModel's state (if any).
+        // 2. Raise CanExecuteChanged for its commands.
+        // UI bindings to PlaybackViewModel's properties (e.g., Playback.CurrentSong) are handled by PlaybackViewModel's INPC.
+
+        switch (propertyName)
         {
-            // Propagate the change to the pass-through property if direct binding to AdvancedPanel.IsVisible isn't used everywhere
-            OnPropertyChanged(nameof(IsAdvancedPanelVisible));
-            // Command CanExecute for ToggleAdvancedPanelCommand is handled within AdvancedPanelViewModel
-            // but if MainWindowViewModel had other commands depending on IsAdvancedPanelVisible, they'd be updated here.
-            RaiseAllCommandsCanExecuteChanged(); // For safety, as it might affect other command states indirectly
+            case nameof(PlaybackViewModel.CurrentSong):
+            case nameof(PlaybackViewModel.HasCurrentSong):
+            case nameof(PlaybackViewModel.CurrentPlaybackStatus):
+            case nameof(PlaybackViewModel.IsPlaying):
+            case nameof(PlaybackViewModel.CurrentSongDuration):
+            case nameof(PlaybackViewModel.CurrentSongDurationSeconds):
+                RaiseAllCommandsCanExecuteChanged();
+                break;
+                // Other properties of PlaybackViewModel usually don't affect MainWindowViewModel's command states directly,
+                // but if they did, they would be handled here or RaiseAllCommandsCanExecuteChanged would be called more broadly.
         }
     }
 
-    private void PlaybackService_PlaybackEndedNaturally(object? sender, EventArgs e)
-    {
-        Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally event received. Delegating to PlaybackFlowManagerService.");
-        _playbackFlowManagerService.HandlePlaybackEndedNaturally();
-        Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally handler completed after delegation.");
-    }
-
-    private void Library_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            switch (e.PropertyName)
-            {
-                case nameof(Library.SelectedSong):
-                    Debug.WriteLine($"[MainVM_LibChanged] Library.SelectedSong changed to: {Library.SelectedSong?.Title ?? "null"}. Instance: {Library.SelectedSong?.GetHashCode() ?? 0}");
-
-                    if (Library.SelectedSong != null && PlaybackService.CurrentSong != Library.SelectedSong)
-                    {
-                        Debug.WriteLine($"[MainVM_LibChanged] Library.SelectedSong changed to a *different* song ({Library.SelectedSong.Title}) than PlaybackService.CurrentSong ({PlaybackService.CurrentSong?.Title ?? "null"}). Calling PlaybackService.Play().");
-                        PlaybackService.Play(Library.SelectedSong);
-                    }
-                    else if (Library.SelectedSong != null && PlaybackService.CurrentSong == Library.SelectedSong)
-                    {
-                        Debug.WriteLine($"[MainVM_LibChanged] Library.SelectedSong changed but is the SAME song instance as PlaybackService.CurrentSong ({Library.SelectedSong.Title}). Assuming RepeatOne handled it or user re-clicked already playing song. No Play call needed here.");
-                    }
-                    else if (Library.SelectedSong == null)
-                    {
-                        Debug.WriteLine("[MainVM_LibChanged] Library.SelectedSong is null. No Play call needed here. PlaybackService.Stop might have been called.");
-                    }
-
-                    RaiseAllCommandsCanExecuteChanged(); // Still relevant for commands MainWindowViewModel owns.
-                    break;
-                case nameof(Library.IsLoadingLibrary):
-                    OnPropertyChanged(nameof(IsLoadingLibrary));
-                    RaiseAllCommandsCanExecuteChanged();
-                    UpdateStatusBarText();
-                    break;
-                case nameof(Library.LibraryStatusText):
-                    UpdateStatusBarText();
-                    break;
-            }
-        });
-    }
-
-    private void Playback_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            switch (e.PropertyName)
-            {
-                case nameof(PlaybackViewModel.CurrentSong):
-                    OnPropertyChanged(nameof(Playback.CurrentSong));
-                    OnPropertyChanged(nameof(Playback.HasCurrentSong));
-                    RaiseAllCommandsCanExecuteChanged();
-
-                    if (!Playback.HasCurrentSong && Library.SelectedSong != null)
-                    {
-                        Debug.WriteLine("[MainVM_PlaybackChanged] PlaybackService has no current song. Clearing Library selection.");
-                        Library.SelectedSong = null;
-                    }
-
-                    // Logic for loading waveform is now in AdvancedPanelViewModel's OnVisibilityChanged
-                    // if (Playback.CurrentSong != null && IsAdvancedPanelVisible)
-                    // {
-                    //     Debug.WriteLine("[MainVM_PlaybackChanged] Playback has current song, advanced panel is visible. Requesting waveform load.");
-                    //     _ = Playback.LoadWaveformForCurrentSongAsync();
-                    // }
-
-                    UpdateStatusBarText();
-                    OnPropertyChanged(nameof(Playback.CurrentTimeDisplay));
-                    OnPropertyChanged(nameof(Playback.TotalTimeDisplay));
-                    RaiseAllCommandsCanExecuteChanged();
-
-                    break;
-                case nameof(PlaybackViewModel.CurrentPlaybackStatus):
-                    OnPropertyChanged(nameof(Playback.CurrentPlaybackStatus));
-                    OnPropertyChanged(nameof(Playback.IsPlaying));
-                    UpdateStatusBarText();
-                    RaiseAllCommandsCanExecuteChanged();
-                    break;
-                case nameof(PlaybackViewModel.CurrentPosition):
-                    OnPropertyChanged(nameof(Playback.CurrentPosition));
-                    OnPropertyChanged(nameof(Playback.CurrentPositionSeconds));
-                    OnPropertyChanged(nameof(Playback.CurrentTimeDisplay));
-                    break;
-                case nameof(PlaybackViewModel.CurrentSongDuration):
-                    OnPropertyChanged(nameof(Playback.CurrentSongDuration));
-                    OnPropertyChanged(nameof(Playback.CurrentSongDurationSeconds));
-                    OnPropertyChanged(nameof(Playback.TotalTimeDisplay));
-                    RaiseAllCommandsCanExecuteChanged();
-                    break;
-                case nameof(PlaybackViewModel.IsWaveformLoading):
-                    OnPropertyChanged(nameof(Playback.IsWaveformLoading));
-                    break;
-                case nameof(PlaybackViewModel.WaveformRenderData):
-                    OnPropertyChanged(nameof(Playback.WaveformRenderData));
-                    break;
-                case nameof(PlaybackViewModel.ShuffleEnabled):
-                case nameof(PlaybackViewModel.RepeatMode):
-                    Playback.RaisePlaybackCommandCanExecuteChanged();
-                    UpdateStatusBarText();
-                    break;
-            }
-        });
-    }
-
-    private void UpdateAllUIDependentStates()
-    {
-        OnPropertyChanged(nameof(IsLoadingLibrary));
-        OnPropertyChanged(nameof(Playback.CurrentSong));
-        OnPropertyChanged(nameof(Playback.HasCurrentSong));
-        OnPropertyChanged(nameof(IsAdvancedPanelVisible)); // Relies on AdvancedPanel.IsVisible
-        OnPropertyChanged(nameof(ActiveTabIndex));
-
-        UpdateStatusBarText();
-        RaiseAllCommandsCanExecuteChanged();
-    }
 
     public void RaiseAllCommandsCanExecuteChanged()
     {
@@ -256,32 +126,26 @@ public class MainWindowViewModel : ViewModelBase
         (OpenSettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ExitCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        // ToggleAdvancedPanelCommand is now a pass-through to AdvancedPanel.ToggleVisibilityCommand,
-        // which handles its own CanExecute. But other MainVM commands might depend on IsAdvancedPanelVisible.
-        // AdvancedPanel.ToggleVisibilityCommand's CanExecute will be re-evaluated by AdvancedPanelViewModel.
-        // If any commands *in MainWindowViewModel* depend on IsAdvancedPanelVisible, they'd need manual update here.
-        // For simplicity, RelayCommand itself doesn't auto-update on property changes typically.
-        // However, the ToggleAdvancedPanelCommand reference points to the one in AdvancedPanelViewModel.
-        // Let's assume the current structure is okay.
 
         Library.RaiseLibraryCommandsCanExecuteChanged();
         Playback.RaisePlaybackCommandCanExecuteChanged();
         LoopEditor.RaiseLoopCommandCanExecuteChanged();
-        (AdvancedPanel.ToggleVisibilityCommand as RelayCommand)?.RaiseCanExecuteChanged(); // Ensure this is also raised.
-    }
-
-
-    private void UpdateStatusBarText()
-    {
-        StatusBarText = _statusBarTextProvider.GetCurrentStatusText();
+        (AdvancedPanel.ToggleVisibilityCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
     private async Task OpenSettingsDialogAsync(object? ownerWindow)
     {
         if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
-        IsAdvancedPanelVisible = false; // Close advanced panel when opening settings
 
-        var (statusMessages, settingsChanged) = await _applicationInteractionService.HandleOpenSettingsDialogAsync(owner);
+        // Logic to set IsAdvancedPanelVisible to false before opening settings
+        // This might involve direct property set or via a command if preferred.
+        if (IsAdvancedPanelVisible) // Check current state
+        {
+            IsAdvancedPanelVisible = false; // Directly set the property; orchestrator will be notified if setter logic is kept
+        }
+
+
+        var (statusMessages, settingsChanged) = await _orchestrator.ApplicationInteraction.HandleOpenSettingsDialogAsync(owner);
 
         if (settingsChanged)
         {
@@ -291,21 +155,25 @@ public class MainWindowViewModel : ViewModelBase
             }
             else
             {
-                UpdateStatusBarText();
+                _orchestrator.UpdateStatusBarText();
             }
         }
         else
         {
-            UpdateStatusBarText();
+            _orchestrator.UpdateStatusBarText();
         }
     }
 
     private async Task AddMusicDirectoryAndRefreshAsync(object? ownerWindow)
     {
         if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
-        IsAdvancedPanelVisible = false; // Close advanced panel
 
-        var (directoryAdded, statusMessage) = await _applicationInteractionService.HandleAddMusicDirectoryAsync(owner);
+        if (IsAdvancedPanelVisible)
+        {
+            IsAdvancedPanelVisible = false;
+        }
+
+        var (directoryAdded, statusMessage) = await _orchestrator.ApplicationInteraction.HandleAddMusicDirectoryAsync(owner);
 
         StatusBarText = statusMessage;
 
@@ -315,7 +183,12 @@ public class MainWindowViewModel : ViewModelBase
         }
         else
         {
-            UpdateStatusBarText();
+            _orchestrator.UpdateStatusBarText();
         }
+    }
+
+    public void Dispose()
+    {
+        _orchestrator.Dispose();
     }
 }
