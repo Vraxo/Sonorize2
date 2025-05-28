@@ -42,7 +42,6 @@ public class MainWindowViewModel : ViewModelBase
     // Property to control the selected tab index in the main TabControl
     public int ActiveTabIndex { get => field; set => SetProperty(ref field, value); } = 0;
 
-
     // IsLoadingLibrary is a proxy to Library's state
     public bool IsLoadingLibrary { get => Library.IsLoadingLibrary; }
 
