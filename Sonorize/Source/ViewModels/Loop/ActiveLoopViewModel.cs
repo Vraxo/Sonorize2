@@ -27,13 +27,12 @@ public class ActiveLoopViewModel : ViewModelBase, IDisposable
         get => _isLoopActive;
         set
         {
-            if (SetProperty(ref _isLoopActive, value))
+            if (!SetProperty(ref _isLoopActive, value) || _currentSongInternal == null)
             {
-                if (_currentSongInternal != null)
-                {
-                    _songLoopService.SetLoopActiveState(_currentSongInternal, value);
-                }
+                return;
             }
+
+            _songLoopService.SetLoopActiveState(_currentSongInternal, value);
         }
     }
 
