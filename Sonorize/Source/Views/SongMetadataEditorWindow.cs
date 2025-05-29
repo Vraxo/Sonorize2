@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Imaging; // Required for BitmapInterpolationMode
 using Sonorize.Models; // For ThemeColors
 using Sonorize.ViewModels; // For SongMetadataEditorViewModel
 
@@ -22,13 +23,12 @@ public class SongMetadataEditorWindow : Window
     {
         Title = "Edit Song Metadata";
         Width = 450; MinWidth = 400;
-        Height = 300; MinHeight = 250;
+        Height = 430; MinHeight = 380; // Increased height for thumbnail
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         CanResize = true;
         Background = _theme.B_SlightlyLighterBackground;
         Foreground = _theme.B_TextColor;
 
-        // Ensure DataContext allows CloseWindowAction to be set
         this.DataContextChanged += (sender, args) =>
         {
             if (DataContext is SongMetadataEditorViewModel vm)
@@ -38,6 +38,44 @@ public class SongMetadataEditorWindow : Window
         };
 
         var mainPanel = new StackPanel { Margin = new Thickness(15), Spacing = 10 };
+
+        // Thumbnail Display and Change Button
+        var thumbnailImage = new Image
+        {
+            Width = 100,
+            Height = 100,
+            Stretch = Stretch.UniformToFill
+            // Removed Background property from Image
+        };
+        thumbnailImage.Bind(Image.SourceProperty, new Binding("CurrentDisplayThumbnail"));
+        RenderOptions.SetBitmapInterpolationMode(thumbnailImage, BitmapInterpolationMode.HighQuality);
+
+        var thumbnailBorder = new Border // Wrap Image in a Border
+        {
+            Width = 100,
+            Height = 100,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, 5),
+            Background = _theme.B_ControlBackgroundColor, // Set Background on the Border
+            Child = thumbnailImage
+        };
+        mainPanel.Children.Add(thumbnailBorder);
+
+
+        var changeCoverButton = new Button
+        {
+            Content = "Change Cover",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Background = _theme.B_ControlBackgroundColor,
+            Foreground = _theme.B_TextColor,
+            Padding = new Thickness(10, 5),
+            Margin = new Thickness(0, 0, 0, 10)
+        };
+        changeCoverButton.Bind(Button.CommandProperty, new Binding("ChangeThumbnailCommand"));
+        // Pass the window itself as the command parameter for StorageProvider access
+        changeCoverButton.CommandParameter = this;
+        mainPanel.Children.Add(changeCoverButton);
+
 
         // Title
         mainPanel.Children.Add(new TextBlock { Text = "Title:", Foreground = _theme.B_TextColor });
