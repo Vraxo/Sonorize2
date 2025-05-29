@@ -12,6 +12,8 @@ namespace Sonorize.Controls;
 
 public class WaveformDisplayControl : Control
 {
+    private readonly WaveformRenderer _renderer = new();
+
     // Background Property
     public static readonly StyledProperty<IBrush?> BackgroundProperty =
         Border.BackgroundProperty.AddOwner<WaveformDisplayControl>();
@@ -106,67 +108,9 @@ public class WaveformDisplayControl : Control
 
         if (width <= 0 || height <= 0) return;
 
-        // Draw Background
-        if (Background != null)
-        {
-            context.FillRectangle(Background, Bounds);
-        }
-
-        var waveformPen = new Pen(WaveformBrush, 1);
-        var positionPen = new Pen(PositionMarkerBrush, 1.5);
-
-        // WaveformPoints is now IEnumerable<WaveformPoint>
-        if (WaveformPoints != null && WaveformPoints.Any()) // Use .Any() for IEnumerable
-        {
-            // If we need Count or indexed access, we might need to ToList() it here,
-            // but for simple iteration, this is fine.
-            // For performance with potentially large IEnumerable, if Count is needed multiple times,
-            // convert to List once.
-            var pointsList = WaveformPoints as List<WaveformPoint> ?? WaveformPoints.ToList();
-            if (pointsList.Count > 1)
-            {
-                for (int i = 0; i < pointsList.Count; i++)
-                {
-                    var point = pointsList[i];
-                    var x = point.X * width;
-                    var yPeakValue = point.YPeak * (height / 2);
-                    context.DrawLine(waveformPen, new Point(x, height / 2 - yPeakValue), new Point(x, height / 2 + yPeakValue));
-                }
-            }
-            else if (pointsList.Count == 1) // Draw a small vertical line for a single point
-            {
-                var point = pointsList[0];
-                var x = point.X * width;
-                var yPeakValue = point.YPeak * (height / 2);
-                context.DrawLine(waveformPen, new Point(x, height / 2 - yPeakValue), new Point(x, height / 2 + yPeakValue));
-            }
-            else // No points but not null (e.g., empty collection)
-            {
-                context.DrawLine(waveformPen, new Point(0, height / 2), new Point(width, height / 2));
-            }
-        }
-        else // WaveformPoints is null or empty
-        {
-            context.DrawLine(waveformPen, new Point(0, height / 2), new Point(width, height / 2));
-        }
-
-        if (ActiveLoop != null && Duration.TotalSeconds > 0)
-        {
-            var loopStartRatio = ActiveLoop.Start.TotalSeconds / Duration.TotalSeconds;
-            var loopEndRatio = ActiveLoop.End.TotalSeconds / Duration.TotalSeconds;
-            var loopStartX = loopStartRatio * width;
-            var loopEndX = loopEndRatio * width;
-            if (loopEndX > loopStartX)
-            {
-                context.FillRectangle(LoopRegionBrush, new Rect(loopStartX, 0, loopEndX - loopStartX, height));
-            }
-        }
-
-        if (Duration.TotalSeconds > 0)
-        {
-            var currentX = (CurrentPosition.TotalSeconds / Duration.TotalSeconds) * width;
-            currentX = Math.Clamp(currentX, 0, width);
-            context.DrawLine(positionPen, new Point(currentX, 0), new Point(currentX, height));
-        }
+        _renderer.DrawBackground(context, Bounds, Background);
+        _renderer.DrawWaveform(context, Bounds, WaveformPoints, WaveformBrush);
+        _renderer.DrawLoopRegion(context, Bounds, ActiveLoop, Duration, LoopRegionBrush);
+        _renderer.DrawPositionMarker(context, Bounds, CurrentPosition, Duration, PositionMarkerBrush);
     }
 }
