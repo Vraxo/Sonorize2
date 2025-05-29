@@ -10,17 +10,17 @@ public class ApplicationServicesBootstrapper
     {
         // Create all services
         var lastfmAuthenticatorService = new LastfmAuthenticatorService(settingsService);
-        var scrobbleEligibilityService = new ScrobbleEligibilityService(); // New
-        var scrobblingService = new ScrobblingService(settingsService, lastfmAuthenticatorService, scrobbleEligibilityService); // Modified
-        var playbackService = new PlaybackService(scrobblingService); // PlaybackService creates its SessionManager
+        var scrobbleEligibilityService = new ScrobbleEligibilityService();
+        var scrobblingService = new ScrobblingService(settingsService, lastfmAuthenticatorService, scrobbleEligibilityService);
+        var playbackService = new PlaybackService(scrobblingService);
         var loopDataService = new LoopDataService();
         var thumbnailService = new ThumbnailService();
         var songFactory = new SongFactory(loopDataService);
         var musicLibraryService = new MusicLibraryService(loopDataService, thumbnailService, songFactory);
         var waveformService = new WaveformService();
         var songMetadataService = new SongMetadataService();
+        var songLoopService = new SongLoopService(loopDataService); // New service
 
-        // Create PlaybackResourceInterlockService, requires PlaybackSessionManager from PlaybackService
         var playbackResourceInterlockService = new PlaybackResourceInterlockService(playbackService.SessionManager);
 
         var songEditInteractionService = new SongEditInteractionService(playbackResourceInterlockService, songMetadataService, currentCustomTheme);
@@ -35,7 +35,8 @@ public class ApplicationServicesBootstrapper
             loopDataService,
             scrobblingService,
             songMetadataService,
-            songEditInteractionService);
+            songEditInteractionService,
+            songLoopService); // Pass new service
 
         return mainWindowViewModel;
     }

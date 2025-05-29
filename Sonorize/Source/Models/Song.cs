@@ -14,23 +14,23 @@ public class Song : ViewModelBase
         get;
         set => SetProperty(ref field, value);
     } = string.Empty;
-    
+
     public string Title
     {
         get;
         set => SetProperty(ref field, value);
     } = "Unknown Title";
-    
+
     public string Artist
     {
         get;
         set => SetProperty(ref field, value);
     } = "Unknown Artist";
-    
-    public string Album 
-    { 
-        get; 
-        set => SetProperty(ref field, value); 
+
+    public string Album
+    {
+        get;
+        set => SetProperty(ref field, value);
     } = "Unknown Album";
 
     public TimeSpan Duration
@@ -57,6 +57,8 @@ public class Song : ViewModelBase
 
         set
         {
+            // Setter is now a standard property setter.
+            // Persistence is handled by SongLoopService.
             if (!SetProperty(ref field, value))
             {
                 return;

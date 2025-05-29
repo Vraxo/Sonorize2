@@ -26,11 +26,12 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private readonly ScrobblingService _scrobblingService;
     private readonly SongMetadataService _songMetadataService;
     private readonly SongEditInteractionService _songEditInteractionService;
+    private readonly SongLoopService _songLoopService; // New service
 
     private readonly MainWindowViewModelOrchestrator _orchestrator;
     private readonly ApplicationWorkflowManager _workflowManager;
     private readonly LibraryDisplayModeService _libraryDisplayModeService;
-    private readonly MainWindowInteractionCoordinator _interactionCoordinator; // New
+    private readonly MainWindowInteractionCoordinator _interactionCoordinator;
 
     private Window? _ownerView;
 
@@ -81,7 +82,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         LoopDataService loopDataService,
         ScrobblingService scrobblingService,
         SongMetadataService songMetadataService,
-        SongEditInteractionService songEditInteractionService)
+        SongEditInteractionService songEditInteractionService,
+        SongLoopService songLoopService) // Added songLoopService
     {
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
@@ -92,11 +94,12 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         _scrobblingService = scrobblingService;
         _songMetadataService = songMetadataService;
         _songEditInteractionService = songEditInteractionService;
+        _songLoopService = songLoopService; // Store new service
 
         _libraryDisplayModeService = new LibraryDisplayModeService(_settingsService);
         Library = new LibraryViewModel(this, _settingsService, _musicLibraryService, _loopDataService, _libraryDisplayModeService);
         Playback = new PlaybackViewModel(PlaybackService, _waveformService);
-        LoopEditor = new LoopEditorViewModel(PlaybackService, _loopDataService);
+        LoopEditor = new LoopEditorViewModel(PlaybackService, _loopDataService, _songLoopService); // Pass new service
         AdvancedPanel = new AdvancedPanelViewModel(Playback, Library);
 
         _workflowManager = new ApplicationWorkflowManager(
@@ -106,7 +109,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             Library,
             Playback,
             PlaybackService,
-            _loopDataService); // Corrected: _songMetadataService removed
+            _loopDataService);
 
         _interactionCoordinator = new MainWindowInteractionCoordinator(
             () => _ownerView,
@@ -202,7 +205,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
         else
         {
-            UpdateStatusBarText(); // Default update if no specific message from coordinator
+            UpdateStatusBarText();
         }
     }
 
@@ -213,9 +216,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         if (refreshNeeded)
         {
-            await Library.LoadLibraryAsync(); // Library loading itself updates status text
+            await Library.LoadLibraryAsync();
         }
-        else if (string.IsNullOrEmpty(statusMessage)) // If no specific message and no refresh, update general status
+        else if (string.IsNullOrEmpty(statusMessage))
         {
             UpdateStatusBarText();
         }
@@ -225,7 +228,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     {
         string statusMessage = await _interactionCoordinator.CoordinateEditSongMetadataAsync(songObject as Song);
         StatusBarText = statusMessage;
-        if (string.IsNullOrEmpty(statusMessage)) // Default status if none provided by service on non-save
+        if (string.IsNullOrEmpty(statusMessage))
         {
             UpdateStatusBarText();
         }
