@@ -106,8 +106,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             Library,
             Playback,
             PlaybackService,
-            _loopDataService,
-            _songMetadataService);
+            _loopDataService); // Corrected: _songMetadataService removed
 
         _interactionCoordinator = new MainWindowInteractionCoordinator(
             () => _ownerView,

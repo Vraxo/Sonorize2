@@ -23,7 +23,7 @@ public class ApplicationWorkflowManager : IDisposable
     private readonly PlaybackFlowManagerService _playbackFlowManagerService;
     private readonly ApplicationInteractionService _applicationInteractionService;
     private readonly LibraryPlaybackLinkService _libraryPlaybackLinkService;
-    private readonly SongMetadataService _songMetadataService; // Added
+    // Removed: private readonly SongMetadataService _songMetadataService; 
 
 
     private readonly Random _shuffleRandom = new();
@@ -35,8 +35,7 @@ public class ApplicationWorkflowManager : IDisposable
         LibraryViewModel libraryViewModel,
         PlaybackViewModel playbackViewModel,
         PlaybackService playbackService,
-        LoopDataService loopDataService,
-        SongMetadataService songMetadataService) // Added SongMetadataService
+        LoopDataService loopDataService)
     {
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
         _scrobblingService = scrobblingService ?? throw new ArgumentNullException(nameof(scrobblingService));
@@ -44,7 +43,7 @@ public class ApplicationWorkflowManager : IDisposable
         _libraryViewModel = libraryViewModel ?? throw new ArgumentNullException(nameof(libraryViewModel));
         _playbackViewModel = playbackViewModel ?? throw new ArgumentNullException(nameof(playbackViewModel));
         _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
-        _songMetadataService = songMetadataService ?? throw new ArgumentNullException(nameof(songMetadataService)); // Added
+        // Removed: _songMetadataService = songMetadataService ?? throw new ArgumentNullException(nameof(songMetadataService)); 
 
         // Create internal services
         _nextTrackSelectorService = new NextTrackSelectorService(_shuffleRandom);
@@ -56,8 +55,7 @@ public class ApplicationWorkflowManager : IDisposable
         _applicationInteractionService = new ApplicationInteractionService(
             _settingsService,
             _settingsChangeProcessorService,
-            _currentTheme,
-            _songMetadataService); // Pass SongMetadataService
+            _currentTheme); // Removed _songMetadataService from instantiation
 
         _libraryPlaybackLinkService = new LibraryPlaybackLinkService(_libraryViewModel, _playbackService, _playbackViewModel);
     }
@@ -70,11 +68,6 @@ public class ApplicationWorkflowManager : IDisposable
     public async Task<(bool directoryAddedAndLibraryRefreshNeeded, string statusMessage)> HandleAddMusicDirectoryAsync(Window owner)
     {
         return await _applicationInteractionService.HandleAddMusicDirectoryAsync(owner);
-    }
-
-    public async Task<bool> HandleEditSongMetadataDialogAsync(Song song, Window owner)
-    {
-        return await _applicationInteractionService.HandleEditSongMetadataDialogAsync(song, owner);
     }
 
     public void HandlePlaybackEndedNaturally()

@@ -16,18 +16,15 @@ public class ApplicationInteractionService
     private readonly SettingsService _settingsService;
     private readonly SettingsChangeProcessorService _settingsChangeProcessorService;
     private readonly ThemeColors _currentTheme;
-    private readonly SongMetadataService _songMetadataService; // Added
 
     public ApplicationInteractionService(
         SettingsService settingsService,
         SettingsChangeProcessorService settingsChangeProcessorService,
-        ThemeColors currentTheme,
-        SongMetadataService songMetadataService) // Added
+        ThemeColors currentTheme)
     {
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
         _settingsChangeProcessorService = settingsChangeProcessorService ?? throw new ArgumentNullException(nameof(settingsChangeProcessorService));
         _currentTheme = currentTheme ?? throw new ArgumentNullException(nameof(currentTheme));
-        _songMetadataService = songMetadataService ?? throw new ArgumentNullException(nameof(songMetadataService)); // Added
     }
 
     public async Task<(List<string> statusMessages, bool settingsChanged)> HandleOpenSettingsDialogAsync(Window owner)
@@ -99,45 +96,5 @@ public class ApplicationInteractionService
             Debug.WriteLine($"[AppInteractionService] Directory already exists: {folderPath}");
             return (false, "Directory already in library.");
         }
-    }
-
-    public async Task<bool> HandleEditSongMetadataDialogAsync(Song song, Window owner)
-    {
-        if (song == null)
-        {
-            Debug.WriteLine("[AppInteractionService] HandleEditSongMetadataDialogAsync: Song is null.");
-            return false;
-        }
-
-        var editorViewModel = new SongMetadataEditorViewModel(song);
-        var editorDialog = new Sonorize.Views.SongMetadataEditorWindow(_currentTheme)
-        {
-            DataContext = editorViewModel
-        };
-
-        await editorDialog.ShowDialog(owner);
-
-        if (editorViewModel.DialogResult) // True if "Save" was clicked
-        {
-            Debug.WriteLine($"[AppInteractionService] Metadata editor closed with Save. Attempting to save metadata for {song.Title}.");
-            bool success = await _songMetadataService.SaveMetadataAsync(song);
-            if (success)
-            {
-                // The song object's properties (Title, Artist, Album) were already updated
-                // by the two-way binding in SongMetadataEditorViewModel.
-                // These changes will be reflected in the UI because Song is a ViewModelBase.
-                Debug.WriteLine($"[AppInteractionService] Metadata for {song.Title} saved to file successfully.");
-                // Note: If Artist/Album names change, Artists/Albums collections in LibraryVM are not auto-updated here.
-                // This would require more complex logic or a library re-scan for full consistency.
-            }
-            else
-            {
-                Debug.WriteLine($"[AppInteractionService] Failed to save metadata for {song.Title} to file.");
-            }
-            return success;
-        }
-
-        Debug.WriteLine($"[AppInteractionService] Metadata editor for {song.Title} closed without saving (Cancelled or closed).");
-        return false;
     }
 }
