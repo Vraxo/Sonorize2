@@ -13,7 +13,7 @@ public class DefaultIconGenerator
     private const int IconDimension = 96;
     private const double DpiValue = 96.0;
     private const string MusicalNoteCharacter = "♫";
-    private const double FontSizeFactor = 0.5; // Relative to icon dimension
+    private const double FontSizeFactor = 0.5;
 
     public static Bitmap? CreateMusicalNoteIcon()
     {

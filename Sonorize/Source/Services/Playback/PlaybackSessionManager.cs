@@ -9,7 +9,8 @@ namespace Sonorize.Services.Playback;
 
 public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
 {
-    private readonly PlaybackEngineCoordinator _playbackEngineCoordinator;
+    private readonly PlaybackInfrastructureProvider _infrastructureProvider;
+    private readonly PlaybackEngineCoordinator _playbackEngineCoordinator; // Now from provider
     private readonly PlaybackCompletionHandler _completionHandler;
     private readonly ScrobblingService _scrobblingService;
     private readonly PlaybackSessionState _sessionState;
@@ -62,8 +63,9 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
         _sessionState = new PlaybackSessionState();
         _sessionState.PropertyChanged += SessionState_PropertyChanged;
 
-        var engineController = new NAudioEngineController();
-        _playbackEngineCoordinator = new PlaybackEngineCoordinator(engineController, loopHandler, new PlaybackMonitor(engineController, loopHandler));
+        _infrastructureProvider = new PlaybackInfrastructureProvider(loopHandler);
+        _playbackEngineCoordinator = _infrastructureProvider.Coordinator;
+
         _completionHandler = new PlaybackCompletionHandler(this, _scrobblingService);
         _sessionLoader = new PlaybackSessionLoader(_playbackEngineCoordinator, _sessionState, _scrobblingService);
 
@@ -252,8 +254,9 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
         {
             _playbackEngineCoordinator.EnginePlaybackStopped -= OnEngineCoordinatorPlaybackStopped;
             _playbackEngineCoordinator.EnginePositionUpdated -= OnEngineCoordinatorPositionUpdated;
-            _playbackEngineCoordinator.Dispose();
+            // _playbackEngineCoordinator disposal is handled by _infrastructureProvider
         }
+        _infrastructureProvider?.Dispose();
         GC.SuppressFinalize(this);
         Debug.WriteLine("[PlaybackSessionManager] Dispose completed.");
     }

@@ -12,6 +12,7 @@ public class PlaybackEngineCoordinator : IDisposable
     private readonly PlaybackLoopHandler _loopHandler;
     private readonly PlaybackMonitor _playbackMonitor;
     private Song? _currentSong;
+    private bool _disposed = false;
 
     public event EventHandler<StoppedEventArgs>? EnginePlaybackStopped;
     public event EventHandler<PositionEventArgs>? EnginePositionUpdated;
@@ -152,21 +153,33 @@ public class PlaybackEngineCoordinator : IDisposable
 
     public void Dispose()
     {
-        Debug.WriteLine("[PlaybackEngineCoordinator] Dispose called.");
-        _playbackMonitor.Dispose();
-        if (_engineController != null)
-        {
-            _engineController.PlaybackStopped -= OnEngineControllerPlaybackStoppedRelay;
-            _engineController.Dispose();
-        }
-        _loopHandler.Dispose(); // LoopHandler is IDisposable
+        Dispose(true);
         GC.SuppressFinalize(this);
-        Debug.WriteLine("[PlaybackEngineCoordinator] Dispose completed.");
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed) return;
+
+        if (disposing)
+        {
+            Debug.WriteLine("[PlaybackEngineCoordinator] Dispose called.");
+            _playbackMonitor?.Dispose();
+            if (_engineController != null)
+            {
+                _engineController.PlaybackStopped -= OnEngineControllerPlaybackStoppedRelay;
+                _engineController.Dispose();
+            }
+            // _loopHandler is not owned by PlaybackEngineCoordinator, so it's not disposed here.
+            // Its lifecycle is managed by PlaybackService.
+            Debug.WriteLine("[PlaybackEngineCoordinator] Dispose completed.");
+        }
+        _disposed = true;
     }
 
     ~PlaybackEngineCoordinator()
     {
-        Dispose();
+        Dispose(false);
     }
 }
 
