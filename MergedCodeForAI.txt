@@ -1492,22 +1492,23 @@ using System.Diagnostics;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Sonorize.Models;
+using Sonorize.Services.Playback; // For PlaybackResourceInterlockService
 using Sonorize.ViewModels; // For SongMetadataEditorViewModel
 
 namespace Sonorize.Services;
 
 public class SongEditInteractionService
 {
-    private readonly PlaybackService _playbackService;
+    private readonly PlaybackResourceInterlockService _playbackResourceInterlock;
     private readonly SongMetadataService _songMetadataService;
     private readonly ThemeColors _currentTheme;
 
     public SongEditInteractionService(
-        PlaybackService playbackService,
+        PlaybackResourceInterlockService playbackResourceInterlock,
         SongMetadataService songMetadataService,
         ThemeColors currentTheme)
     {
-        _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
+        _playbackResourceInterlock = playbackResourceInterlock ?? throw new ArgumentNullException(nameof(playbackResourceInterlock));
         _songMetadataService = songMetadataService ?? throw new ArgumentNullException(nameof(songMetadataService));
         _currentTheme = currentTheme ?? throw new ArgumentNullException(nameof(currentTheme));
         Debug.WriteLine("[SongEditInteractionService] Initialized.");
@@ -1528,16 +1529,26 @@ public class SongEditInteractionService
         }
 
         (bool WasPlaying, TimeSpan Position)? previousPlaybackState = null;
-        if (_playbackService.CurrentSong == songToEdit)
+
+        // Use PlaybackResourceInterlockService to prepare for editing
+        previousPlaybackState = _playbackResourceInterlock.PrepareForExternalOperation(songToEdit);
+
+        if (previousPlaybackState == null && _playbackResourceInterlock.PrepareForExternalOperation(songToEdit) != null) // Check if the song was the one playing
         {
-            previousPlaybackState = _playbackService.StopAndReleaseFileResourcesForSong(songToEdit);
-            if (previousPlaybackState == null)
-            {
-                Debug.WriteLine($"[SongEditInteractionService] Failed to release file for {songToEdit.Title}. Aborting metadata edit.");
-                return (false, $"Error: Could not prepare '{songToEdit.Title}' for editing.");
-            }
-            Debug.WriteLine($"[SongEditInteractionService] Playback for {songToEdit.Title} stopped and file released. WasPlaying: {previousPlaybackState.Value.WasPlaying}, Position: {previousPlaybackState.Value.Position}");
+            // This case implies the song *was* current, but PrepareForExternalOperation failed to return state (should not happen if song matches)
+            // Or, more likely, if the songToEdit was NOT the current song, previousPlaybackState would be null.
+            // The logic of PrepareForExternalOperation already handles if the song is not current.
+            // If previousPlaybackState is null it means either the song wasn't current, or an issue occurred.
+            // If it was current and an issue occurred, _playbackResourceInterlock.PrepareForExternalOperation might log it.
+            // For this method, if previousPlaybackState is null after call, it means we couldn't (or didn't need to) get its state.
+            // If it *was* the current song but something went wrong in Prepare, we should not proceed.
+            // The check inside PrepareForExternalOperation `if (_sessionManager.CurrentSong != song)` handles non-current songs returning null.
+            // So, if it's null here, it was either not the current song, or songToEdit was null (already checked).
+            // If it *was* the current song and PrepareForExternalOperation returned null due to an *internal error* in Prepare,
+            // that's an issue for PrepareForExternalOperation to log.
+            // From this method's perspective, if previousPlaybackState is not null, it means the song was current and resources were released.
         }
+
 
         bool metadataSaved = false;
         string finalStatusMessage = string.Empty;
@@ -1551,7 +1562,7 @@ public class SongEditInteractionService
             };
             await editorDialog.ShowDialog(ownerWindow);
 
-            if (editorViewModel.DialogResult) // True if "Save" was clicked
+            if (editorViewModel.DialogResult)
             {
                 Debug.WriteLine($"[SongEditInteractionService] Metadata editor for {songToEdit.Title} closed with Save. Attempting to save to file.");
                 metadataSaved = await _songMetadataService.SaveMetadataAsync(songToEdit);
@@ -1576,18 +1587,18 @@ public class SongEditInteractionService
         {
             Debug.WriteLine($"[SongEditInteractionService] Exception during metadata edit/save for {songToEdit.Title}: {ex.Message}");
             finalStatusMessage = $"Error during metadata edit for '{songToEdit.Title}'.";
-            metadataSaved = false; // Ensure this is false on exception
+            metadataSaved = false;
         }
         finally
         {
             if (previousPlaybackState.HasValue)
             {
                 Debug.WriteLine($"[SongEditInteractionService] Reinitializing playback for {songToEdit.Title} to WasPlaying: {previousPlaybackState.Value.WasPlaying}, Position: {previousPlaybackState.Value.Position}");
-                bool reinitSuccess = _playbackService.ReinitializePlaybackForSong(songToEdit, previousPlaybackState.Value.Position, previousPlaybackState.Value.WasPlaying);
+                // Use PlaybackResourceInterlockService to resume playback
+                bool reinitSuccess = _playbackResourceInterlock.ResumeAfterExternalOperation(songToEdit, previousPlaybackState.Value.Position, previousPlaybackState.Value.WasPlaying);
                 if (!reinitSuccess)
                 {
                     Debug.WriteLine($"[SongEditInteractionService] Failed to reinitialize playback for {songToEdit.Title}.");
-                    // Append to status message or overwrite if more critical
                     finalStatusMessage = string.IsNullOrEmpty(finalStatusMessage) || finalStatusMessage.StartsWith("Error") ?
                                          $"Playback error after editing '{songToEdit.Title}'." :
                                          finalStatusMessage + $" (Playback error after edit)";
@@ -4334,6 +4345,7 @@ public class ApplicationInteractionService
 
 <file path="Source\Services\Application\ApplicationServicesBootstrapper.cs">
 using Sonorize.Models;
+using Sonorize.Services.Playback; // Required for PlaybackResourceInterlockService
 using Sonorize.ViewModels;
 
 namespace Sonorize.Services;
@@ -4345,14 +4357,18 @@ public class ApplicationServicesBootstrapper
         // Create all services
         var lastfmAuthenticatorService = new LastfmAuthenticatorService(settingsService);
         var scrobblingService = new ScrobblingService(settingsService, lastfmAuthenticatorService);
-        var playbackService = new PlaybackService(scrobblingService);
+        var playbackService = new PlaybackService(scrobblingService); // PlaybackService creates its SessionManager
         var loopDataService = new LoopDataService();
         var thumbnailService = new ThumbnailService();
-        var songFactory = new SongFactory(loopDataService); // Create SongFactory
-        var musicLibraryService = new MusicLibraryService(loopDataService, thumbnailService, songFactory); // Inject SongFactory
+        var songFactory = new SongFactory(loopDataService);
+        var musicLibraryService = new MusicLibraryService(loopDataService, thumbnailService, songFactory);
         var waveformService = new WaveformService();
-        var songMetadataService = new SongMetadataService(); // Create SongMetadataService
-        var songEditInteractionService = new SongEditInteractionService(playbackService, songMetadataService, currentCustomTheme); // Create new service
+        var songMetadataService = new SongMetadataService();
+
+        // Create PlaybackResourceInterlockService, requires PlaybackSessionManager from PlaybackService
+        var playbackResourceInterlockService = new PlaybackResourceInterlockService(playbackService.SessionManager);
+
+        var songEditInteractionService = new SongEditInteractionService(playbackResourceInterlockService, songMetadataService, currentCustomTheme);
 
         // Create MainWindowViewModel
         var mainWindowViewModel = new MainWindowViewModel(
@@ -4364,7 +4380,7 @@ public class ApplicationServicesBootstrapper
             loopDataService,
             scrobblingService,
             songMetadataService,
-            songEditInteractionService); // Pass new service
+            songEditInteractionService);
 
         return mainWindowViewModel;
     }
@@ -5580,6 +5596,60 @@ public class PlaybackMonitor : IDisposable
 }
 </file>
 
+<file path="Source\Services\Playback\PlaybackResourceInterlockService.cs">
+using System;
+using System.Diagnostics;
+using Sonorize.Models;
+
+namespace Sonorize.Services.Playback;
+
+public class PlaybackResourceInterlockService
+{
+    private readonly PlaybackSessionManager _sessionManager;
+
+    public PlaybackResourceInterlockService(PlaybackSessionManager sessionManager)
+    {
+        _sessionManager = sessionManager ?? throw new ArgumentNullException(nameof(sessionManager));
+        Debug.WriteLine("[PlaybackResourceInterlockService] Initialized.");
+    }
+
+    public (bool WasPlaying, TimeSpan Position)? PrepareForExternalOperation(Song song)
+    {
+        if (song is null)
+        {
+            Debug.WriteLine("[InterlockService] PrepareForExternalOperation: Song is null. No action.");
+            return null;
+        }
+
+        if (_sessionManager.CurrentSong != song)
+        {
+            Debug.WriteLine($"[InterlockService] PrepareForExternalOperation: Song '{song.Title}' is not the current song ('{_sessionManager.CurrentSong?.Title}'). No action taken.");
+            return null;
+        }
+
+        bool wasPlaying = _sessionManager.IsPlaying;
+        TimeSpan position = _sessionManager.CurrentPosition;
+
+        Debug.WriteLine($"[InterlockService] Preparing for external operation on '{song.Title}'. WasPlaying: {wasPlaying}, Position: {position}. Forcing engine release.");
+        _sessionManager.ForceReleaseEngineForCurrentSong();
+
+        return (wasPlaying, position);
+    }
+
+    public bool ResumeAfterExternalOperation(Song song, TimeSpan position, bool play)
+    {
+        if (song is null)
+        {
+            Debug.WriteLine("[InterlockService] ResumeAfterExternalOperation: Song is null. Cannot resume.");
+            return false;
+        }
+
+        Debug.WriteLine($"[InterlockService] Resuming after external operation for '{song.Title}'. Position: {position}, Play: {play}. Forcing reload.");
+        return _sessionManager.ForceReloadAndPlayEngine(song, position, play);
+    }
+}
+</file>
+
 <file path="Source\Services\Playback\PlaybackService.cs">
 using System;
 using System.ComponentModel;
@@ -5625,21 +5695,23 @@ public class PlaybackService : ViewModelBase, IDisposable
         remove => _sessionManager.SessionEndedNaturally -= value;
     }
 
+    // Expose PlaybackSessionManager for PlaybackResourceInterlockService
+    internal PlaybackSessionManager SessionManager => _sessionManager;
+
+
     public PlaybackService(ScrobblingService scrobblingService)
     {
         Debug.WriteLine("[PlaybackService] Constructor called.");
-        _loopHandler = new PlaybackLoopHandler(this); // LoopHandler now takes this simplified PlaybackService
+        _loopHandler = new PlaybackLoopHandler(this);
         _sessionManager = new PlaybackSessionManager(scrobblingService, _loopHandler);
         _sessionManager.PropertyChanged += SessionManager_PropertyChanged;
     }
 
     private void SessionManager_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        // Forward property changes from SessionManager to this service's listeners
         OnPropertyChanged(e.PropertyName);
         if (e.PropertyName == nameof(PlaybackSessionManager.CurrentSong))
         {
-            // Explicitly notify HasCurrentSong if CurrentSong changes
             OnPropertyChanged(nameof(HasCurrentSong));
         }
     }
@@ -5677,27 +5749,6 @@ public class PlaybackService : ViewModelBase, IDisposable
         }
         _sessionManager.SeekSession(requestedPosition);
     }
-
-    public (bool WasPlaying, TimeSpan Position)? StopAndReleaseFileResourcesForSong(Song song)
-    {
-        if (song == null || _sessionManager.CurrentSong != song)
-        {
-            Debug.WriteLine($"[PlaybackService] StopAndReleaseFileResourcesForSong: Song '{song?.Title}' is not the current playing/loaded song ('{_sessionManager.CurrentSong?.Title}'). No action taken.");
-            return null;
-        }
-        return _sessionManager.StopAndReleaseFileResources();
-    }
-
-    public bool ReinitializePlaybackForSong(Song song, TimeSpan position, bool play)
-    {
-        if (song == null)
-        {
-            Debug.WriteLine("[PlaybackService] ReinitializePlaybackForSong: Song is null. Cannot reinitialize.");
-            return false;
-        }
-        return _sessionManager.ReinitializePlayback(song, position, play);
-    }
-
 
     internal void PerformSeekInternal(TimeSpan position)
     {
@@ -5847,7 +5898,7 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
     private readonly PlaybackCompletionHandler _completionHandler;
     private readonly ScrobblingService _scrobblingService;
     private readonly PlaybackSessionState _sessionState;
-    private readonly PlaybackSessionLoader _sessionLoader; // New helper
+    private readonly PlaybackSessionLoader _sessionLoader;
 
     // Delegated Properties to PlaybackSessionState
     public Song? CurrentSong => _sessionState.CurrentSong;
@@ -5886,7 +5937,6 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
     }
 
     private volatile bool _explicitStopRequested = false;
-    private bool _isEngineReleaseExpected = false;
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? SessionEndedNaturally;
@@ -5900,7 +5950,7 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
         var engineController = new NAudioEngineController();
         _playbackEngineCoordinator = new PlaybackEngineCoordinator(engineController, loopHandler, new PlaybackMonitor(engineController, loopHandler));
         _completionHandler = new PlaybackCompletionHandler(this, _scrobblingService);
-        _sessionLoader = new PlaybackSessionLoader(_playbackEngineCoordinator, _sessionState, _scrobblingService); // Initialize new helper
+        _sessionLoader = new PlaybackSessionLoader(_playbackEngineCoordinator, _sessionState, _scrobblingService);
 
 
         _playbackEngineCoordinator.EnginePlaybackStopped += OnEngineCoordinatorPlaybackStopped;
@@ -5920,8 +5970,6 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
 
     private void UpdatePlaybackPositionAndDuration(TimeSpan position, TimeSpan duration)
     {
-        // This logic is now primarily handled by PlaybackSessionLoader post-load
-        // and by this method for runtime updates.
         _sessionState.CurrentPosition = position;
         _sessionState.CurrentSongDuration = duration;
     }
@@ -5932,11 +5980,11 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
 
         if (CurrentPlaybackStatus != PlaybackStateStatus.Stopped && CurrentSong != null && CurrentSong != song)
         {
-            _playbackEngineCoordinator.Stop(); // Stop previous different song
+            _playbackEngineCoordinator.Stop();
         }
         else if (CurrentPlaybackStatus != PlaybackStateStatus.Stopped && CurrentSong == song)
         {
-            _playbackEngineCoordinator.Stop(); // Stop and restart same song
+            _playbackEngineCoordinator.Stop();
         }
 
         if (song == null || string.IsNullOrEmpty(song.FilePath) || !File.Exists(song.FilePath))
@@ -5950,22 +5998,6 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
 
         _explicitStopRequested = false;
         return _sessionLoader.LoadNewSession(song);
-    }
-
-    public bool ReinitializePlayback(Song song, TimeSpan position, bool shouldBePlaying)
-    {
-        Debug.WriteLine($"[SessionManager] ReinitializePlayback for: {song.Title}, Position: {position}, ShouldPlay: {shouldBePlaying}");
-        _explicitStopRequested = false;
-
-        // Ensure any previous engine state is cleared if it was for a different song or needs full reload
-        // This might be implicitly handled by PlaybackEngineCoordinator.Load if it disposes previous
-        // For safety, if the song is different, ensure a full stop.
-        if (CurrentSong != song && CurrentPlaybackStatus != PlaybackStateStatus.Stopped)
-        {
-            _playbackEngineCoordinator.Stop();
-        }
-
-        return _sessionLoader.ReloadSession(song, position, shouldBePlaying);
     }
 
     public void PauseSession()
@@ -5989,7 +6021,6 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
         }
         else if (CurrentPlaybackStatus == PlaybackStateStatus.Stopped)
         {
-            // ReinitializePlayback handles loading, seeking, and starting play
             _sessionLoader.ReloadSession(CurrentSong, CurrentPosition, true);
         }
     }
@@ -5999,42 +6030,18 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
         _explicitStopRequested = isExplicit;
         if (CurrentPlaybackStatus != PlaybackStateStatus.Stopped)
         {
-            _playbackEngineCoordinator.Stop(); // This will trigger OnEngineCoordinatorPlaybackStopped
+            _playbackEngineCoordinator.Stop();
         }
-        else if (isExplicit) // If already stopped but an explicit stop is requested
+        else if (isExplicit)
         {
             _completionHandler.Handle(
-              new StoppedEventArgs(), // Empty args as it's an artificial stop event
+              new StoppedEventArgs(),
               CurrentSong,
-              this.CurrentPosition, // Use current state's position/duration
+              this.CurrentPosition,
               this.CurrentSongDuration,
               _explicitStopRequested
           );
         }
-    }
-
-    public (bool WasPlaying, TimeSpan Position)? StopAndReleaseFileResources()
-    {
-        if (CurrentSong == null)
-        {
-            Debug.WriteLine("[SessionManager] StopAndReleaseFileResources: No current song. Nothing to release.");
-            return null;
-        }
-
-        Debug.WriteLine($"[SessionManager] StopAndReleaseFileResources for: {CurrentSong.Title}");
-        bool wasPlaying = IsPlaying;
-        TimeSpan position = CurrentPosition;
-
-        _isEngineReleaseExpected = true; // Signal that the upcoming PlaybackStopped event is expected
-        _playbackEngineCoordinator.DisposeCurrentEngineInternals();
-        _isEngineReleaseExpected = false;
-
-        // Manually update state as the engine is gone and won't report stopped.
-        SetPlaybackState(false, PlaybackStateStatus.Stopped);
-        // _sessionState.CurrentPosition remains as it was, which is correct.
-
-        Debug.WriteLine($"[SessionManager] File resources released for {CurrentSong.Title}. WasPlaying: {wasPlaying}, Position: {position}");
-        return (wasPlaying, position);
     }
 
     public void SeekSession(TimeSpan requestedPosition)
@@ -6043,6 +6050,27 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
         _playbackEngineCoordinator.Seek(requestedPosition);
     }
 
+    internal void ForceReleaseEngineForCurrentSong()
+    {
+        if (CurrentSong == null)
+        {
+            Debug.WriteLine("[SessionManager] ForceReleaseEngineForCurrentSong: No current song. Nothing to release.");
+            return;
+        }
+        Debug.WriteLine($"[SessionManager] ForceReleaseEngineForCurrentSong for: {CurrentSong.Title}");
+        _playbackEngineCoordinator.DisposeCurrentEngineInternals();
+        SetPlaybackState(false, PlaybackStateStatus.Stopped); // Position remains, state is stopped
+        Debug.WriteLine($"[SessionManager] Engine resources released for {CurrentSong.Title}. State set to Stopped.");
+    }
+
+    internal bool ForceReloadAndPlayEngine(Song song, TimeSpan position, bool shouldBePlaying)
+    {
+        Debug.WriteLine($"[SessionManager] ForceReloadAndPlayEngine for: {song.Title}, Position: {position}, ShouldPlay: {shouldBePlaying}");
+        _explicitStopRequested = false;
+        return _sessionLoader.ReloadSession(song, position, shouldBePlaying);
+    }
+
+
     private void OnEngineCoordinatorPositionUpdated(object? sender, PositionEventArgs e)
     {
         UpdatePlaybackPositionAndDuration(e.Position, e.Duration);
@@ -6050,17 +6078,10 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
 
     private void OnEngineCoordinatorPlaybackStopped(object? sender, StoppedEventArgs e)
     {
-        if (_isEngineReleaseExpected)
-        {
-            Debug.WriteLine("[SessionManager] OnEngineCoordinatorPlaybackStopped: Event ignored as engine release was expected.");
-            return; // Don't process if we explicitly disposed the engine
-        }
-
         Song? songThatJustStopped = CurrentSong;
-        TimeSpan actualStoppedPosition = _playbackEngineCoordinator.CurrentPosition; // Get final position from engine
+        TimeSpan actualStoppedPosition = _playbackEngineCoordinator.CurrentPosition;
         TimeSpan actualStoppedSongDuration = _playbackEngineCoordinator.CurrentSongDuration;
 
-        // If duration from engine is zero (e.g., error before full load), use song's metadata duration
         if (songThatJustStopped != null && actualStoppedSongDuration == TimeSpan.Zero)
         {
             actualStoppedSongDuration = songThatJustStopped.Duration;
@@ -6076,21 +6097,19 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
     }
 
     // Methods called by PlaybackCompletionHandler
-    internal void StopUiUpdateMonitor() => _playbackEngineCoordinator.Stop(); // This might be too aggressive; monitor stops itself. Consider if this is needed.
+    internal void StopUiUpdateMonitor() => _playbackEngineCoordinator.Stop();
     internal void UpdateStateForNaturalPlaybackEnd()
     {
         SetPlaybackState(false, PlaybackStateStatus.Stopped);
-        // Position should remain at end of song or be reset by PlaybackSessionState.ResetToDefault
-        // _sessionState.CurrentPosition = _sessionState.CurrentSongDuration; // or _sessionState.ResetToDefault();
     }
     internal void FinalizeCurrentSong(Song? song)
     {
-        _sessionState.CurrentSong = song; // This will trigger HasCurrentSong update
+        _sessionState.CurrentSong = song;
         if (song == null)
         {
             _sessionState.ResetToDefault();
         }
-        _playbackEngineCoordinator.SetSong(song); // Keep coordinator in sync
+        _playbackEngineCoordinator.SetSong(song);
     }
     internal Song? GetCurrentSongForCompletion() => CurrentSong;
     internal void SetPlaybackState(bool isPlaying, PlaybackStateStatus status)
@@ -6120,8 +6139,6 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
             _playbackEngineCoordinator.EnginePositionUpdated -= OnEngineCoordinatorPositionUpdated;
             _playbackEngineCoordinator.Dispose();
         }
-        // _completionHandler does not currently implement IDisposable
-        // _sessionLoader does not currently implement IDisposable
         GC.SuppressFinalize(this);
         Debug.WriteLine("[PlaybackSessionManager] Dispose completed.");
     }

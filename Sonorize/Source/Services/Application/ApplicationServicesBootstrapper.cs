@@ -10,7 +10,8 @@ public class ApplicationServicesBootstrapper
     {
         // Create all services
         var lastfmAuthenticatorService = new LastfmAuthenticatorService(settingsService);
-        var scrobblingService = new ScrobblingService(settingsService, lastfmAuthenticatorService);
+        var scrobbleEligibilityService = new ScrobbleEligibilityService(); // New
+        var scrobblingService = new ScrobblingService(settingsService, lastfmAuthenticatorService, scrobbleEligibilityService); // Modified
         var playbackService = new PlaybackService(scrobblingService); // PlaybackService creates its SessionManager
         var loopDataService = new LoopDataService();
         var thumbnailService = new ThumbnailService();

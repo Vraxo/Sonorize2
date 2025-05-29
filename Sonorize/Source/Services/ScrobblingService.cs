@@ -11,18 +11,21 @@ public class ScrobblingService
 {
     private readonly SettingsService _settingsService;
     private readonly LastfmAuthenticatorService _authenticatorService;
+    private readonly ScrobbleEligibilityService _eligibilityService; // New dependency
     private AppSettings _currentSettings;
-
-    private const int MinTrackLengthForScrobbleSeconds = 30;
 
     public bool IsScrobblingEnabled => _currentSettings.LastfmScrobblingEnabled;
 
     public bool AreCredentialsEffectivelyConfigured => _authenticatorService.AreCredentialsEffectivelyConfigured(_currentSettings);
 
-    public ScrobblingService(SettingsService settingsService, LastfmAuthenticatorService authenticatorService)
+    public ScrobblingService(
+        SettingsService settingsService,
+        LastfmAuthenticatorService authenticatorService,
+        ScrobbleEligibilityService eligibilityService) // Added eligibilityService
     {
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
         _authenticatorService = authenticatorService ?? throw new ArgumentNullException(nameof(authenticatorService));
+        _eligibilityService = eligibilityService ?? throw new ArgumentNullException(nameof(eligibilityService)); // Store new dependency
         RefreshSettings(); // Initial load of settings
         Debug.WriteLine($"[ScrobblingService] Initialized. Scrobbling Enabled: {IsScrobblingEnabled}, Credentials Configured: {AreCredentialsEffectivelyConfigured}");
     }
@@ -30,16 +33,11 @@ public class ScrobblingService
     public void RefreshSettings()
     {
         _currentSettings = _settingsService.LoadSettings();
-        // Session key is now managed by LastfmAuthenticatorService, no need to cache it here.
         Debug.WriteLine($"[ScrobblingService] Settings refreshed. Scrobbling Enabled: {IsScrobblingEnabled}, Credentials Configured: {AreCredentialsEffectivelyConfigured}, Thresholds: {_currentSettings.ScrobbleThresholdPercentage}% / {_currentSettings.ScrobbleThresholdAbsoluteSeconds}s");
     }
 
     private async Task<LastfmClient?> GetAuthenticatedClientAsync()
     {
-        // Refresh settings before attempting to get a client to ensure AppSettings used by authenticator are current
-        // This might be redundant if RefreshSettings() is called frequently elsewhere, but safe.
-        // No, _authenticatorService.GetAuthenticatedClientAsync() loads its own fresh copy of settings.
-        // So, RefreshSettings() here is mainly for _currentSettings used by IsScrobblingEnabled and ShouldScrobble.
         RefreshSettings();
         return await _authenticatorService.GetAuthenticatedClientAsync();
     }
@@ -48,31 +46,16 @@ public class ScrobblingService
     {
         RefreshSettings(); // Ensure _currentSettings is up-to-date for threshold values
 
-        if (song == null || song.Duration.TotalSeconds <= MinTrackLengthForScrobbleSeconds)
-        {
-            Debug.WriteLine($"[ScrobblingService] ShouldScrobble: Song '{song?.Title ?? "null"}' is null or too short ({song?.Duration.TotalSeconds ?? 0}s). Min required: {MinTrackLengthForScrobbleSeconds}s. Returning false.");
-            return false;
-        }
+        var thresholds = new ScrobbleThresholds(
+            _currentSettings.ScrobbleThresholdPercentage,
+            _currentSettings.ScrobbleThresholdAbsoluteSeconds);
 
-        double percentagePlayed = (playedDuration.TotalSeconds / song.Duration.TotalSeconds) * 100.0;
-        double requiredPlaybackFromPercentage = song.Duration.TotalSeconds * (_currentSettings.ScrobbleThresholdPercentage / 100.0);
-        double requiredPlaybackAbsolute = _currentSettings.ScrobbleThresholdAbsoluteSeconds;
-        double effectiveRequiredSeconds = Math.Min(requiredPlaybackFromPercentage, requiredPlaybackAbsolute);
-        bool conditionMet = playedDuration.TotalSeconds >= effectiveRequiredSeconds;
-
-        Debug.WriteLine($"[ScrobblingService] ShouldScrobble for '{song.Title}': " +
-                        $"Played: {playedDuration.TotalSeconds:F1}s ({percentagePlayed:F1}%), " +
-                        $"Song Duration: {song.Duration.TotalSeconds:F1}s. " +
-                        $"Configured Thresholds: {_currentSettings.ScrobbleThresholdPercentage}% (gives {requiredPlaybackFromPercentage:F1}s) OR {_currentSettings.ScrobbleThresholdAbsoluteSeconds}s. " +
-                        $"Effective Threshold: {effectiveRequiredSeconds:F1}s. Met: {conditionMet}");
-        return conditionMet;
+        return ScrobbleEligibilityService.ShouldScrobble(song, playedDuration, thresholds);
     }
 
 
     public async Task UpdateNowPlayingAsync(Song song)
     {
-        // RefreshSettings() is called by GetAuthenticatedClientAsync() if needed,
-        // but also good to call here to check IsScrobblingEnabled with latest settings.
         RefreshSettings();
         if (!IsScrobblingEnabled || song == null)
         {
