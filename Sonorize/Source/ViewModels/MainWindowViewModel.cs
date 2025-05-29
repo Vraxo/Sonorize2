@@ -29,7 +29,8 @@ public class MainWindowViewModel : ViewModelBase
     private readonly PlaybackFlowManagerService _playbackFlowManagerService;
     private readonly ApplicationInteractionService _applicationInteractionService;
     private readonly LibraryPlaybackLinkService _libraryPlaybackLinkService;
-    private readonly LibraryDisplayModeService _libraryDisplayModeService; // Added service instance
+    private readonly LibraryDisplayModeService _libraryDisplayModeService;
+    private readonly MainWindowViewModelOrchestrator _orchestrator; // New orchestrator
 
     // Expose the Services directly for child VMs or public properties
     public PlaybackService PlaybackService { get; }
@@ -54,7 +55,7 @@ public class MainWindowViewModel : ViewModelBase
             if (AdvancedPanel.IsVisible != value)
             {
                 AdvancedPanel.IsVisible = value;
-                OnPropertyChanged();
+                OnPropertyChanged(); // PropertyChanged handled by orchestrator if it sets this
             }
         }
     }
@@ -87,12 +88,8 @@ public class MainWindowViewModel : ViewModelBase
         _scrobblingService = scrobblingService;
         _nextTrackSelectorService = new NextTrackSelectorService(_shuffleRandom);
 
-        // Instantiate the new service
         _libraryDisplayModeService = new LibraryDisplayModeService(_settingsService);
-
-        // Pass the new service to LibraryViewModel
         Library = new LibraryViewModel(this, _settingsService, _musicLibraryService, _loopDataService, _libraryDisplayModeService);
-
         Playback = new PlaybackViewModel(PlaybackService, _waveformService);
         LoopEditor = new LoopEditorViewModel(PlaybackService, _loopDataService);
         AdvancedPanel = new AdvancedPanelViewModel(Playback, Library);
@@ -106,43 +103,25 @@ public class MainWindowViewModel : ViewModelBase
             CurrentTheme);
         _libraryPlaybackLinkService = new LibraryPlaybackLinkService(Library, PlaybackService, Playback);
 
-
-        Library.PropertyChanged += Library_PropertyChanged;
-        Playback.PropertyChanged += Playback_PropertyChanged;
-        Playback.ModeControls.PropertyChanged += PlaybackModeControls_PropertyChanged;
-
-        if (Playback.WaveformDisplay != null)
-        {
-            Playback.WaveformDisplay.PropertyChanged += PlaybackWaveformDisplay_PropertyChanged;
-        }
-        AdvancedPanel.PropertyChanged += AdvancedPanel_PropertyChanged;
+        // Instantiate and set up the orchestrator
+        _orchestrator = new MainWindowViewModelOrchestrator(
+            Library,
+            Playback,
+            AdvancedPanel,
+            RaiseAllCommandsCanExecuteChanged,
+            UpdateStatusBarText,
+            (propertyName) => OnPropertyChanged(propertyName)
+        );
 
         PlaybackService.PlaybackEndedNaturally += PlaybackService_PlaybackEndedNaturally;
 
-        LoadInitialDataCommand = new RelayCommand(async _ => await Library.LoadLibraryAsync(), _ => !Library.IsLoadingLibrary);
-        OpenSettingsCommand = new RelayCommand(async owner => await OpenSettingsDialogAsync(owner), _ => !Library.IsLoadingLibrary);
+        LoadInitialDataCommand = new RelayCommand(async _ => await Library.LoadLibraryAsync(), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
+        OpenSettingsCommand = new RelayCommand(async owner => await OpenSettingsDialogAsync(owner), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
         ExitCommand = new RelayCommand(_ => Environment.Exit(0));
-        AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefreshAsync(owner), _ => !Library.IsLoadingLibrary);
+        AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefreshAsync(owner), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
 
-        UpdateAllUIDependentStates();
-    }
-
-    private void PlaybackWaveformDisplay_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(WaveformDisplayViewModel.IsWaveformLoading))
-        {
-            RaiseAllCommandsCanExecuteChanged();
-        }
-    }
-
-
-    private void AdvancedPanel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(AdvancedPanelViewModel.IsVisible))
-        {
-            OnPropertyChanged(nameof(IsAdvancedPanelVisible));
-            RaiseAllCommandsCanExecuteChanged();
-        }
+        // Initial UI state update
+        Dispatcher.UIThread.InvokeAsync(UpdateAllUIDependentStates);
     }
 
     private void PlaybackService_PlaybackEndedNaturally(object? sender, EventArgs e)
@@ -152,107 +131,48 @@ public class MainWindowViewModel : ViewModelBase
         Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally handler completed after delegation.");
     }
 
-    private void Library_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            switch (e.PropertyName)
-            {
-                case nameof(Library.SelectedSong):
-                    RaiseAllCommandsCanExecuteChanged();
-                    break;
-                case nameof(Library.IsLoadingLibrary):
-                    OnPropertyChanged(nameof(IsLoadingLibrary));
-                    RaiseAllCommandsCanExecuteChanged();
-                    UpdateStatusBarText();
-                    break;
-                case nameof(Library.LibraryStatusText):
-                    UpdateStatusBarText();
-                    break;
-            }
-        });
-    }
-
-    private void Playback_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            switch (e.PropertyName)
-            {
-                case nameof(PlaybackViewModel.CurrentSong):
-                    OnPropertyChanged(nameof(Playback.CurrentSong));
-                    OnPropertyChanged(nameof(Playback.HasCurrentSong));
-                    RaiseAllCommandsCanExecuteChanged();
-                    UpdateStatusBarText();
-                    OnPropertyChanged(nameof(Playback.CurrentTimeDisplay));
-                    OnPropertyChanged(nameof(Playback.TotalTimeDisplay));
-                    break;
-                case nameof(PlaybackViewModel.CurrentPlaybackStatus):
-                    OnPropertyChanged(nameof(Playback.CurrentPlaybackStatus));
-                    OnPropertyChanged(nameof(Playback.IsPlaying));
-                    UpdateStatusBarText();
-                    RaiseAllCommandsCanExecuteChanged();
-                    break;
-                case nameof(PlaybackViewModel.CurrentPosition):
-                    OnPropertyChanged(nameof(Playback.CurrentPosition));
-                    OnPropertyChanged(nameof(Playback.CurrentPositionSeconds));
-                    OnPropertyChanged(nameof(Playback.CurrentTimeDisplay));
-                    break;
-                case nameof(PlaybackViewModel.CurrentSongDuration):
-                    OnPropertyChanged(nameof(Playback.CurrentSongDuration));
-                    OnPropertyChanged(nameof(Playback.CurrentSongDurationSeconds));
-                    OnPropertyChanged(nameof(Playback.TotalTimeDisplay));
-                    RaiseAllCommandsCanExecuteChanged();
-                    break;
-            }
-        });
-    }
-
-    private void PlaybackModeControls_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            switch (e.PropertyName)
-            {
-                case nameof(PlaybackModeViewModel.ShuffleEnabled):
-                case nameof(PlaybackModeViewModel.RepeatMode):
-                    Playback.RaisePlaybackCommandCanExecuteChanged();
-                    UpdateStatusBarText();
-                    break;
-            }
-        });
-    }
-
+    // Removed individual PropertyChanged handlers; logic is now in _orchestrator
 
     private void UpdateAllUIDependentStates()
     {
+        // These ensure that the UI reflects the initial state correctly,
+        // especially for properties managed or affected by the orchestrator.
         OnPropertyChanged(nameof(IsLoadingLibrary));
-        OnPropertyChanged(nameof(Playback.CurrentSong));
+        OnPropertyChanged(nameof(Playback.CurrentSong)); // Trigger updates for all Playback related derived properties
         OnPropertyChanged(nameof(Playback.HasCurrentSong));
+        OnPropertyChanged(nameof(Playback.CurrentPlaybackStatus));
+        OnPropertyChanged(nameof(Playback.IsPlaying));
+        OnPropertyChanged(nameof(Playback.CurrentTimeDisplay));
+        OnPropertyChanged(nameof(Playback.TotalTimeDisplay));
         OnPropertyChanged(nameof(IsAdvancedPanelVisible));
         OnPropertyChanged(nameof(ActiveTabIndex));
 
-        UpdateStatusBarText();
-        RaiseAllCommandsCanExecuteChanged();
+        UpdateStatusBarText(); // Initial status bar text
+        RaiseAllCommandsCanExecuteChanged(); // Initial command states
     }
 
     public void RaiseAllCommandsCanExecuteChanged()
     {
-        (LoadInitialDataCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        (OpenSettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        (ExitCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        Dispatcher.UIThread.InvokeAsync(() => // Ensure runs on UI thread
+        {
+            (LoadInitialDataCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (OpenSettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (ExitCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
 
-        Library.RaiseLibraryCommandsCanExecuteChanged();
-        Playback.RaisePlaybackCommandCanExecuteChanged();
-        LoopEditor.RaiseLoopCommandCanExecuteChanged();
-        (AdvancedPanel.ToggleVisibilityCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            Library.RaiseLibraryCommandsCanExecuteChanged();
+            Playback.RaisePlaybackCommandCanExecuteChanged();
+            LoopEditor.RaiseLoopCommandCanExecuteChanged();
+            (AdvancedPanel.ToggleVisibilityCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        });
     }
-
 
     private void UpdateStatusBarText()
     {
-        StatusBarText = _statusBarTextProvider.GetCurrentStatusText();
+        Dispatcher.UIThread.InvokeAsync(() => // Ensure runs on UI thread
+        {
+            StatusBarText = _statusBarTextProvider.GetCurrentStatusText();
+        });
     }
 
     private async Task OpenSettingsDialogAsync(object? ownerWindow)
@@ -270,13 +190,15 @@ public class MainWindowViewModel : ViewModelBase
             }
             else
             {
-                UpdateStatusBarText();
+                UpdateStatusBarText(); // Fallback to default status text logic
             }
         }
         else
         {
-            UpdateStatusBarText();
+            UpdateStatusBarText(); // Update status if no changes or no specific messages
         }
+        // Re-evaluate commands as settings changes might affect them (e.g., scrobbling related UI)
+        RaiseAllCommandsCanExecuteChanged();
     }
 
     private async Task AddMusicDirectoryAndRefreshAsync(object? ownerWindow)
@@ -286,15 +208,29 @@ public class MainWindowViewModel : ViewModelBase
 
         var (directoryAdded, statusMessage) = await _applicationInteractionService.HandleAddMusicDirectoryAsync(owner);
 
-        StatusBarText = statusMessage;
+        StatusBarText = statusMessage; // Display immediate feedback
 
         if (directoryAdded)
         {
-            await Library.LoadLibraryAsync();
+            await Library.LoadLibraryAsync(); // This will update status text further during/after loading
         }
         else
         {
-            UpdateStatusBarText();
+            UpdateStatusBarText(); // Revert to standard status text if dir not added
         }
+        RaiseAllCommandsCanExecuteChanged();
+    }
+
+    public void Dispose() // Ensure orchestrator is disposed
+    {
+        if (PlaybackService != null)
+        {
+            PlaybackService.PlaybackEndedNaturally -= PlaybackService_PlaybackEndedNaturally;
+        }
+        _orchestrator?.Dispose();
+        _libraryPlaybackLinkService?.Dispose();
+        Library?.Dispose();
+        Playback?.Dispose();
+        AdvancedPanel?.Dispose();
     }
 }
