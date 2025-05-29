@@ -38,7 +38,7 @@ public class ThumbnailService : IDisposable
 
     public Bitmap? GetDefaultThumbnail()
     {
-        _defaultThumbnail ??= _defaultIconGenerator.CreateMusicalNoteIcon();
+        _defaultThumbnail ??= DefaultIconGenerator.CreateMusicalNoteIcon();
         return _defaultThumbnail;
     }
 
