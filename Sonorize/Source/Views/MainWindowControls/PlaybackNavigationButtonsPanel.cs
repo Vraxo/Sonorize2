@@ -91,9 +91,9 @@ public static class PlaybackNavigationButtonsPanel
             HorizontalAlignment = HorizontalAlignment.Center,
             FontSize = 18,
             FontFamily = new FontFamily("Segoe UI Symbol, Arial"),
-            [!TextBlock.TextProperty] = new Binding("Playback.ShuffleEnabled") { Converter = BooleanToShuffleIconConverter.Instance }
+            [!TextBlock.TextProperty] = new Binding("Playback.ModeControls.ShuffleEnabled") { Converter = BooleanToShuffleIconConverter.Instance } // Updated path
         };
-        shuffleButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.ShuffleEnabled", BindingMode.TwoWay));
+        shuffleButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.ModeControls.ShuffleEnabled", BindingMode.TwoWay)); // Updated path
         shuffleButton[!ToggleButton.ForegroundProperty] = new Binding("IsChecked")
         {
             Source = shuffleButton,
@@ -130,7 +130,7 @@ public static class PlaybackNavigationButtonsPanel
             FontSize = 18,
             FontFamily = new FontFamily("Segoe UI Symbol, Arial"),
             RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
-            [!TextBlock.TextProperty] = new Binding("Playback.RepeatMode")
+            [!TextBlock.TextProperty] = new Binding("Playback.ModeControls.RepeatMode") // Updated path
             {
                 Converter = new FuncValueConverter<RepeatMode, string>(mode => mode switch
                 {
@@ -141,7 +141,7 @@ public static class PlaybackNavigationButtonsPanel
                     _ => "?"
                 })
             },
-            [!TextBlock.RenderTransformProperty] = new Binding("Playback.RepeatMode")
+            [!TextBlock.RenderTransformProperty] = new Binding("Playback.ModeControls.RepeatMode") // Updated path
             {
                 Converter = new FuncValueConverter<RepeatMode, ITransform?>(mode =>
                 {
@@ -154,16 +154,16 @@ public static class PlaybackNavigationButtonsPanel
                 })
             }
         };
-        repeatModeButton[!ToggleButton.ForegroundProperty] = new Binding("Playback.RepeatMode")
+        repeatModeButton[!ToggleButton.ForegroundProperty] = new Binding("Playback.ModeControls.RepeatMode") // Updated path
         {
             Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.None ? theme.B_AccentColor : theme.B_SecondaryTextColor)
         };
-        repeatModeButton[!ToggleButton.BorderBrushProperty] = new Binding("Playback.RepeatMode")
+        repeatModeButton[!ToggleButton.BorderBrushProperty] = new Binding("Playback.ModeControls.RepeatMode") // Updated path
         {
             Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.None ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
         };
-        repeatModeButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.IsRepeatActive"));
-        repeatModeButton.Bind(Button.CommandProperty, new Binding("Playback.CycleRepeatModeCommand"));
+        repeatModeButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.ModeControls.IsRepeatActive")); // Updated path
+        repeatModeButton.Bind(Button.CommandProperty, new Binding("Playback.ModeControls.CycleRepeatModeCommand")); // Updated path
         repeatModeButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
         var combinedPlaybackButtonControlsPanel = new StackPanel
