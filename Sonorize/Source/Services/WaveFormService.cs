@@ -1,19 +1,16 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO; // Required for Path.GetFileName
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-// Removed: using NAudio.Wave; // No longer directly used here
 
 namespace Sonorize.Services;
 
-// Represents a simplified data point for the waveform
 public record WaveformPoint(double X, double YPeak);
 
 public class WaveformService
 {
-    // Cache for waveform data to avoid reprocessing
     private readonly Dictionary<string, List<WaveformPoint>> _waveformCache = new();
     private readonly NAudioWaveformPointGenerator _pointGenerator;
 
@@ -38,9 +35,10 @@ public class WaveformService
 
         Debug.WriteLine($"[WaveformService] Requesting waveform generation for \"{Path.GetFileName(filePath)}\". Target points: {targetPoints}.");
 
-        List<WaveformPoint> points = await Task.Run(() => _pointGenerator.Generate(filePath, targetPoints));
+        List<WaveformPoint> points = await Task.Run(() 
+            => _pointGenerator.Generate(filePath, targetPoints));
 
-        if (points.Any())
+        if (points.Count != 0)
         {
             _waveformCache[filePath] = points;
             Debug.WriteLine($"[WaveformService] Waveform generated and cached for \"{Path.GetFileName(filePath)}\", {points.Count} points. First point YPeak: {points[0].YPeak:F4}. Approx mid point YPeak: {points[points.Count / 2].YPeak:F4}. Last point YPeak: {points.Last().YPeak:F4}");
