@@ -27,6 +27,7 @@ public class MainWindowViewModel : ViewModelBase
     private readonly SettingsChangeProcessorService _settingsChangeProcessorService;
     private readonly PlaybackFlowManagerService _playbackFlowManagerService;
     private readonly ApplicationInteractionService _applicationInteractionService; // Added
+    private readonly LibraryPlaybackLinkService _libraryPlaybackLinkService; // Added
 
     // Expose the Services directly for child VMs or public properties
     public PlaybackService PlaybackService { get; }
@@ -103,6 +104,7 @@ public class MainWindowViewModel : ViewModelBase
             _settingsService,
             _settingsChangeProcessorService,
             CurrentTheme); // Pass dependencies to the new service
+        _libraryPlaybackLinkService = new LibraryPlaybackLinkService(Library, PlaybackService, Playback);
 
 
         Library.PropertyChanged += Library_PropertyChanged;
@@ -162,23 +164,8 @@ public class MainWindowViewModel : ViewModelBase
             switch (e.PropertyName)
             {
                 case nameof(Library.SelectedSong):
-                    Debug.WriteLine($"[MainVM_LibChanged] Library.SelectedSong changed to: {Library.SelectedSong?.Title ?? "null"}. Instance: {Library.SelectedSong?.GetHashCode() ?? 0}");
-
-                    if (Library.SelectedSong != null && PlaybackService.CurrentSong != Library.SelectedSong)
-                    {
-                        Debug.WriteLine($"[MainVM_LibChanged] Library.SelectedSong changed to a *different* song ({Library.SelectedSong.Title}) than PlaybackService.CurrentSong ({PlaybackService.CurrentSong?.Title ?? "null"}). Calling PlaybackService.Play().");
-                        PlaybackService.Play(Library.SelectedSong);
-                    }
-                    else if (Library.SelectedSong != null && PlaybackService.CurrentSong == Library.SelectedSong)
-                    {
-                        Debug.WriteLine($"[MainVM_LibChanged] Library.SelectedSong changed but is the SAME song instance as PlaybackService.CurrentSong ({Library.SelectedSong.Title}). Assuming RepeatOne handled it or user re-clicked already playing song. No Play call needed here.");
-                    }
-                    else if (Library.SelectedSong == null)
-                    {
-                        Debug.WriteLine("[MainVM_LibChanged] Library.SelectedSong is null. No Play call needed here. PlaybackService.Stop might have been called.");
-                    }
-
-                    RaiseAllCommandsCanExecuteChanged(); // Still relevant for commands MainWindowViewModel owns.
+                    // Logic for playing selected song is now handled by LibraryPlaybackLinkService
+                    RaiseAllCommandsCanExecuteChanged();
                     break;
                 case nameof(Library.IsLoadingLibrary):
                     OnPropertyChanged(nameof(IsLoadingLibrary));
@@ -198,21 +185,14 @@ public class MainWindowViewModel : ViewModelBase
         {
             switch (e.PropertyName)
             {
-                case nameof(PlaybackViewModel.CurrentSong):
-                    OnPropertyChanged(nameof(Playback.CurrentSong));
+                case nameof(PlaybackViewModel.CurrentSong): // Property on PlaybackViewModel
+                    OnPropertyChanged(nameof(Playback.CurrentSong)); // Notify MainWindowViewModel listeners if any
                     OnPropertyChanged(nameof(Playback.HasCurrentSong));
+                    // Logic for clearing Library.SelectedSong is now handled by LibraryPlaybackLinkService
                     RaiseAllCommandsCanExecuteChanged();
-
-                    if (!Playback.HasCurrentSong && Library.SelectedSong != null)
-                    {
-                        Debug.WriteLine("[MainVM_PlaybackChanged] PlaybackService has no current song. Clearing Library selection.");
-                        Library.SelectedSong = null;
-                    }
                     UpdateStatusBarText();
                     OnPropertyChanged(nameof(Playback.CurrentTimeDisplay));
                     OnPropertyChanged(nameof(Playback.TotalTimeDisplay));
-                    RaiseAllCommandsCanExecuteChanged();
-
                     break;
                 case nameof(PlaybackViewModel.CurrentPlaybackStatus):
                     OnPropertyChanged(nameof(Playback.CurrentPlaybackStatus));
@@ -231,11 +211,9 @@ public class MainWindowViewModel : ViewModelBase
                     OnPropertyChanged(nameof(Playback.TotalTimeDisplay));
                     RaiseAllCommandsCanExecuteChanged();
                     break;
-                // IsWaveformLoading and WaveformRenderData are now on Playback.WaveformDisplay
-                // Handled by PlaybackWaveformDisplay_PropertyChanged
                 case nameof(PlaybackViewModel.ShuffleEnabled):
                 case nameof(PlaybackViewModel.RepeatMode):
-                    Playback.RaisePlaybackCommandCanExecuteChanged();
+                    Playback.RaisePlaybackCommandCanExecuteChanged(); // PlaybackVM commands might depend on these
                     UpdateStatusBarText();
                     break;
             }

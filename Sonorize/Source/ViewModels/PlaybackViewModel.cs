@@ -18,16 +18,14 @@ public class PlaybackViewModel : ViewModelBase
 {
     public PlaybackService PlaybackService { get; } // Keep reference to the service
 
-    // New ViewModel for Waveform Display
     public WaveformDisplayViewModel WaveformDisplay { get; }
 
-
-    // Properties related to playback state, directly from service or derived
-    // Public getter for PlaybackService.CurrentSong property
     public Song? CurrentSong => PlaybackService.CurrentSong;
+    
     public bool HasCurrentSong => PlaybackService.CurrentSong != null;
 
     public TimeSpan CurrentPosition => PlaybackService.CurrentPosition;
+    
     public double CurrentPositionSeconds
     {
         get => PlaybackService.CurrentPositionSeconds;
@@ -51,15 +49,15 @@ public class PlaybackViewModel : ViewModelBase
     }
 
     public TimeSpan CurrentSongDuration => PlaybackService.CurrentSongDuration;
+    
     public double CurrentSongDurationSeconds => PlaybackService.CurrentSongDurationSeconds;
 
-    // Use PlaybackStateStatus from Sonorize.Services via the using directive
     public PlaybackStateStatus CurrentPlaybackStatus => PlaybackService.CurrentPlaybackStatus;
+    
     public bool IsPlaying => PlaybackService.IsPlaying;
 
-    // Properties for playback controls (Speed/Pitch)
-    private double _playbackSpeed = 1.0;
-    public double PlaybackSpeed { get => _playbackSpeed; set { value = Math.Clamp(value, 0.5, 2.0); if (SetProperty(ref _playbackSpeed, value)) { PlaybackService.PlaybackRate = (float)value; OnPropertyChanged(nameof(PlaybackSpeedDisplay)); } } }
+    public double PlaybackSpeed { get; set { value = Math.Clamp(value, 0.5, 2.0); if (SetProperty(ref field, value)) { PlaybackService.PlaybackRate = (float)value; OnPropertyChanged(nameof(PlaybackSpeedDisplay)); } } } = 1.0;
+    
     public string PlaybackSpeedDisplay => $"{PlaybackSpeed:F2}x";
 
     public double PlaybackPitch
@@ -118,16 +116,15 @@ public class PlaybackViewModel : ViewModelBase
 
     // Helper properties for UI bindings (e.g., RadioButtons or toggling states) - Renamed
     public bool IsRepeatOne { get => RepeatMode == RepeatMode.RepeatOne; set { if (value) RepeatMode = RepeatMode.RepeatOne; } }
+    
     public bool IsRepeatAll { get => RepeatMode == RepeatMode.RepeatAll; set { if (value) RepeatMode = RepeatMode.RepeatAll; } }
     // Helper for the ToggleButton IsChecked state (active if not None)
     public bool IsRepeatActive => RepeatMode != RepeatMode.None;
-
 
     // Commands for UI controls for modes
     public ICommand ToggleShuffleCommand { get; }
     // Renamed command to reflect cycling through repeat modes
     public ICommand CycleRepeatModeCommand { get; } // Cycles through None -> PlayOnce -> RepeatOne -> RepeatAll -> None
-
 
     // Derived properties for UI display (Split time display)
     public string CurrentTimeDisplay
@@ -154,11 +151,10 @@ public class PlaybackViewModel : ViewModelBase
         }
     }
 
-
     // Commands owned by PlaybackViewModel
     public ICommand PlayPauseResumeCommand { get; } // Renamed from simple Click handler
+    
     public ICommand SeekCommand { get; } // Command for slider/waveform seeking
-
 
     public PlaybackViewModel(PlaybackService playbackService, WaveformService waveformService)
     {
@@ -244,7 +240,6 @@ public class PlaybackViewModel : ViewModelBase
         }
     }
 
-    // Renamed handler and updated cycle logic
     private void CycleRepeatMode()
     {
         RepeatMode = RepeatMode switch
@@ -322,9 +317,6 @@ public class PlaybackViewModel : ViewModelBase
         }
     }
 
-    /// <summary>
-    /// Raises CanExecuteChanged for commands owned by this ViewModel.
-    /// </summary>
     public void RaisePlaybackCommandCanExecuteChanged()
     {
         //Debug.WriteLine("[PlaybackVM] Raising playback command CanExecute changed.");

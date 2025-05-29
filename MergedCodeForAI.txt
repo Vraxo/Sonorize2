@@ -2327,22 +2327,35 @@ public class AdvancedPanelViewModel : ViewModelBase
 
         _playbackViewModel.PropertyChanged += OnDependentViewModelPropertyChanged;
         _libraryViewModel.PropertyChanged += OnDependentViewModelPropertyChanged;
+        // Listen to IsWaveformLoading on the new WaveformDisplayViewModel
+        _playbackViewModel.WaveformDisplay.PropertyChanged += WaveformDisplay_PropertyChanged;
+    }
+
+    private void WaveformDisplay_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(WaveformDisplayViewModel.IsWaveformLoading))
+        {
+            // If any command in AdvancedPanelViewModel depends on IsWaveformLoading, update it here.
+            // For now, ToggleVisibilityCommand might not directly, but if it did:
+            (ToggleVisibilityCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        }
     }
 
     private bool CanToggleVisibility(object? parameter)
     {
-        return _playbackViewModel.HasCurrentSong && !_libraryViewModel.IsLoadingLibrary;
+        // Visibility can be toggled if a song is playing and library is not loading.
+        // Waveform loading state might also influence this if we want to prevent toggling during load.
+        return _playbackViewModel.HasCurrentSong &&
+               !_libraryViewModel.IsLoadingLibrary &&
+               !_playbackViewModel.WaveformDisplay.IsWaveformLoading; // Prevent toggling if waveform is loading
     }
 
     private void OnVisibilityChanged()
     {
-        (ToggleVisibilityCommand as RelayCommand)?.RaiseCanExecuteChanged(); // Visibility itself doesn't affect CanExecute, but good practice
-        if (IsVisible && _playbackViewModel.HasCurrentSong && !_playbackViewModel.WaveformRenderData.Any() && !_playbackViewModel.IsWaveformLoading)
-        {
-            // This logic was previously in MainWindowViewModel.OnAdvancedPanelVisibleChanged
-            System.Diagnostics.Debug.WriteLine("[AdvancedPanelVM] Panel visible, song playing, waveform not loaded/loading. Requesting waveform load.");
-            _ = _playbackViewModel.LoadWaveformForCurrentSongAsync();
-        }
+        (ToggleVisibilityCommand as RelayCommand)?.RaiseCanExecuteChanged();
+
+        // Inform the WaveformDisplayViewModel about the panel's visibility
+        _playbackViewModel.WaveformDisplay.SetPanelVisibility(IsVisible);
     }
 
     private void OnDependentViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -2354,13 +2367,14 @@ public class AdvancedPanelViewModel : ViewModelBase
         }
     }
 
-    // Consider adding a Dispose method if event subscriptions need to be cleaned up,
-    // though for ViewModels often tied to the main window lifetime, it might not be strictly necessary
-    // if the main window's closure disposes everything.
     public void Dispose()
     {
         _playbackViewModel.PropertyChanged -= OnDependentViewModelPropertyChanged;
         _libraryViewModel.PropertyChanged -= OnDependentViewModelPropertyChanged;
+        if (_playbackViewModel?.WaveformDisplay != null)
+        {
+            _playbackViewModel.WaveformDisplay.PropertyChanged -= WaveformDisplay_PropertyChanged;
+        }
     }
 }
 </file>
@@ -3314,6 +3328,11 @@ public class MainWindowViewModel : ViewModelBase
 
         Library.PropertyChanged += Library_PropertyChanged;
         Playback.PropertyChanged += Playback_PropertyChanged;
+        // Listen to PropertyChanged on Playback.WaveformDisplay as well
+        if (Playback.WaveformDisplay != null)
+        {
+            Playback.WaveformDisplay.PropertyChanged += PlaybackWaveformDisplay_PropertyChanged;
+        }
         AdvancedPanel.PropertyChanged += AdvancedPanel_PropertyChanged; // Listen to changes from AdvancedPanelVM
 
         PlaybackService.PlaybackEndedNaturally += PlaybackService_PlaybackEndedNaturally;
@@ -3325,6 +3344,18 @@ public class MainWindowViewModel : ViewModelBase
 
         UpdateAllUIDependentStates();
     }
+
+    private void PlaybackWaveformDisplay_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(WaveformDisplayViewModel.IsWaveformLoading))
+        {
+            // If IsWaveformLoading changes, it can affect CanExecute of ToggleAdvancedPanelCommand
+            RaiseAllCommandsCanExecuteChanged();
+        }
+        // If UI needs to be notified about Playback.WaveformDisplay.WaveformRenderData changes from MainWindowViewModel,
+        // handle it here. However, direct binding to Playback.WaveformDisplay.WaveformRenderData is preferred.
+    }
+
 
     private void AdvancedPanel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -3398,14 +3429,6 @@ public class MainWindowViewModel : ViewModelBase
                         Debug.WriteLine("[MainVM_PlaybackChanged] PlaybackService has no current song. Clearing Library selection.");
                         Library.SelectedSong = null;
                     }
-
-                    // Logic for loading waveform is now in AdvancedPanelViewModel's OnVisibilityChanged
-                    // if (Playback.CurrentSong != null && IsAdvancedPanelVisible)
-                    // {
-                    //     Debug.WriteLine("[MainVM_PlaybackChanged] Playback has current song, advanced panel is visible. Requesting waveform load.");
-                    //     _ = Playback.LoadWaveformForCurrentSongAsync();
-                    // }
-
                     UpdateStatusBarText();
                     OnPropertyChanged(nameof(Playback.CurrentTimeDisplay));
                     OnPropertyChanged(nameof(Playback.TotalTimeDisplay));
@@ -3429,12 +3452,8 @@ public class MainWindowViewModel : ViewModelBase
                     OnPropertyChanged(nameof(Playback.TotalTimeDisplay));
                     RaiseAllCommandsCanExecuteChanged();
                     break;
-                case nameof(PlaybackViewModel.IsWaveformLoading):
-                    OnPropertyChanged(nameof(Playback.IsWaveformLoading));
-                    break;
-                case nameof(PlaybackViewModel.WaveformRenderData):
-                    OnPropertyChanged(nameof(Playback.WaveformRenderData));
-                    break;
+                // IsWaveformLoading and WaveformRenderData are now on Playback.WaveformDisplay
+                // Handled by PlaybackWaveformDisplay_PropertyChanged
                 case nameof(PlaybackViewModel.ShuffleEnabled):
                 case nameof(PlaybackViewModel.RepeatMode):
                     Playback.RaisePlaybackCommandCanExecuteChanged();
@@ -3462,18 +3481,11 @@ public class MainWindowViewModel : ViewModelBase
         (OpenSettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ExitCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        // ToggleAdvancedPanelCommand is now a pass-through to AdvancedPanel.ToggleVisibilityCommand,
-        // which handles its own CanExecute. But other MainVM commands might depend on IsAdvancedPanelVisible.
-        // AdvancedPanel.ToggleVisibilityCommand's CanExecute will be re-evaluated by AdvancedPanelViewModel.
-        // If any commands *in MainWindowViewModel* depend on IsAdvancedPanelVisible, they'd need manual update here.
-        // For simplicity, RelayCommand itself doesn't auto-update on property changes typically.
-        // However, the ToggleAdvancedPanelCommand reference points to the one in AdvancedPanelViewModel.
-        // Let's assume the current structure is okay.
 
         Library.RaiseLibraryCommandsCanExecuteChanged();
         Playback.RaisePlaybackCommandCanExecuteChanged();
         LoopEditor.RaiseLoopCommandCanExecuteChanged();
-        (AdvancedPanel.ToggleVisibilityCommand as RelayCommand)?.RaiseCanExecuteChanged(); // Ensure this is also raised.
+        (AdvancedPanel.ToggleVisibilityCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
 
@@ -3547,14 +3559,15 @@ public enum RepeatMode { None, PlayOnce, RepeatOne, RepeatAll }
 public class PlaybackViewModel : ViewModelBase
 {
     public PlaybackService PlaybackService { get; } // Keep reference to the service
-    private readonly WaveformService _waveformService; // Need waveform service here
 
-    // Properties related to playback state, directly from service or derived
-    // Public getter for PlaybackService.CurrentSong property
+    public WaveformDisplayViewModel WaveformDisplay { get; }
+
     public Song? CurrentSong => PlaybackService.CurrentSong;
+    
     public bool HasCurrentSong => PlaybackService.CurrentSong != null;
 
     public TimeSpan CurrentPosition => PlaybackService.CurrentPosition;
+    
     public double CurrentPositionSeconds
     {
         get => PlaybackService.CurrentPositionSeconds;
@@ -3578,15 +3591,15 @@ public class PlaybackViewModel : ViewModelBase
     }
 
     public TimeSpan CurrentSongDuration => PlaybackService.CurrentSongDuration;
+    
     public double CurrentSongDurationSeconds => PlaybackService.CurrentSongDurationSeconds;
 
-    // Use PlaybackStateStatus from Sonorize.Services via the using directive
     public PlaybackStateStatus CurrentPlaybackStatus => PlaybackService.CurrentPlaybackStatus;
+    
     public bool IsPlaying => PlaybackService.IsPlaying;
 
-    // Properties for playback controls (Speed/Pitch)
-    private double _playbackSpeed = 1.0;
-    public double PlaybackSpeed { get => _playbackSpeed; set { value = Math.Clamp(value, 0.5, 2.0); if (SetProperty(ref _playbackSpeed, value)) { PlaybackService.PlaybackRate = (float)value; OnPropertyChanged(nameof(PlaybackSpeedDisplay)); } } }
+    public double PlaybackSpeed { get; set { value = Math.Clamp(value, 0.5, 2.0); if (SetProperty(ref field, value)) { PlaybackService.PlaybackRate = (float)value; OnPropertyChanged(nameof(PlaybackSpeedDisplay)); } } } = 1.0;
+    
     public string PlaybackSpeedDisplay => $"{PlaybackSpeed:F2}x";
 
     public double PlaybackPitch
@@ -3645,22 +3658,15 @@ public class PlaybackViewModel : ViewModelBase
 
     // Helper properties for UI bindings (e.g., RadioButtons or toggling states) - Renamed
     public bool IsRepeatOne { get => RepeatMode == RepeatMode.RepeatOne; set { if (value) RepeatMode = RepeatMode.RepeatOne; } }
+    
     public bool IsRepeatAll { get => RepeatMode == RepeatMode.RepeatAll; set { if (value) RepeatMode = RepeatMode.RepeatAll; } }
     // Helper for the ToggleButton IsChecked state (active if not None)
     public bool IsRepeatActive => RepeatMode != RepeatMode.None;
-
 
     // Commands for UI controls for modes
     public ICommand ToggleShuffleCommand { get; }
     // Renamed command to reflect cycling through repeat modes
     public ICommand CycleRepeatModeCommand { get; } // Cycles through None -> PlayOnce -> RepeatOne -> RepeatAll -> None
-
-
-    // Waveform data
-    public ObservableCollection<WaveformPoint> WaveformRenderData { get; } = new();
-    private bool _isWaveformLoading = false;
-    // Changed setter to private to enforce internal state management
-    public bool IsWaveformLoading { get => _isWaveformLoading; private set => SetProperty(ref _isWaveformLoading, value); }
 
     // Derived properties for UI display (Split time display)
     public string CurrentTimeDisplay
@@ -3687,16 +3693,16 @@ public class PlaybackViewModel : ViewModelBase
         }
     }
 
-
     // Commands owned by PlaybackViewModel
     public ICommand PlayPauseResumeCommand { get; } // Renamed from simple Click handler
+    
     public ICommand SeekCommand { get; } // Command for slider/waveform seeking
-
 
     public PlaybackViewModel(PlaybackService playbackService, WaveformService waveformService)
     {
         PlaybackService = playbackService;
-        _waveformService = waveformService;
+        WaveformDisplay = new WaveformDisplayViewModel(playbackService, waveformService);
+
 
         // Initialize playback controls (Speed/Pitch)
         PlaybackSpeed = 1.0; // Sets service value and raises property changed
@@ -3710,7 +3716,7 @@ public class PlaybackViewModel : ViewModelBase
         // Initialize commands
         PlayPauseResumeCommand = new RelayCommand(
             _ => TogglePlayPauseResume(),
-            _ => PlaybackService.CurrentSong != null && !IsWaveformLoading); // Can't control playback while waveform is loading
+            _ => PlaybackService.CurrentSong != null && !WaveformDisplay.IsWaveformLoading); // Can't control playback while waveform is loading
 
         SeekCommand = new RelayCommand(
             positionSecondsObj =>
@@ -3721,7 +3727,7 @@ public class PlaybackViewModel : ViewModelBase
                     PlaybackService.Seek(TimeSpan.FromSeconds(seconds));
                 }
             },
-             _ => PlaybackService.CurrentSong != null && PlaybackService.CurrentSongDuration.TotalSeconds > 0 && !IsWaveformLoading);
+             _ => PlaybackService.CurrentSong != null && PlaybackService.CurrentSongDuration.TotalSeconds > 0 && !WaveformDisplay.IsWaveformLoading);
 
         ToggleShuffleCommand = new RelayCommand(
             _ => ShuffleEnabled = !ShuffleEnabled,
@@ -3742,6 +3748,15 @@ public class PlaybackViewModel : ViewModelBase
         // ShuffleEnabled, RepeatMode, IsWaveformLoading affect command states.
         // CurrentPosition, CurrentSongDuration affect seek command CanExecute (handled by PS_PropertyChanged)
         PropertyChanged += PlaybackViewModel_PropertyChanged;
+        WaveformDisplay.PropertyChanged += WaveformDisplay_PropertyChanged;
+    }
+
+    private void WaveformDisplay_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(WaveformDisplayViewModel.IsWaveformLoading))
+        {
+            RaisePlaybackCommandCanExecuteChanged(); // PlayPauseResumeCommand and SeekCommand depend on this
+        }
     }
 
     private void TogglePlayPauseResume()
@@ -3767,7 +3782,6 @@ public class PlaybackViewModel : ViewModelBase
         }
     }
 
-    // Renamed handler and updated cycle logic
     private void CycleRepeatMode()
     {
         RepeatMode = RepeatMode switch
@@ -3793,13 +3807,7 @@ public class PlaybackViewModel : ViewModelBase
                     OnPropertyChanged(nameof(HasCurrentSong));
                     // Duration, Position, State will also change, let's handle those explicitly or rely on other cases
 
-                    // If the song becomes null (e.g., after Stop), clear waveform data and loading state
-                    if (PlaybackService.CurrentSong == null)
-                    {
-                        Debug.WriteLine("[PlaybackVM] PlaybackService.CurrentSong is null. Clearing waveform data.");
-                        WaveformRenderData.Clear(); OnPropertyChanged(nameof(WaveformRenderData));
-                        IsWaveformLoading = false; // Internal setter is fine
-                    }
+                    // Waveform loading logic is now handled by WaveformDisplayViewModel based on CurrentSong change.
 
                     // Update time displays when song changes
                     OnPropertyChanged(nameof(CurrentTimeDisplay));
@@ -3837,7 +3845,7 @@ public class PlaybackViewModel : ViewModelBase
         // Listen to properties *on this ViewModel* that affect command CanExecute
         switch (e.PropertyName)
         {
-            case nameof(IsWaveformLoading):
+            // IsWaveformLoading is now on WaveformDisplayViewModel, handled by WaveformDisplay_PropertyChanged
             case nameof(ShuffleEnabled): // Commands might be enabled/disabled based on modes
             case nameof(RepeatMode): // Commands might be enabled/disabled based on modes
                 RaisePlaybackCommandCanExecuteChanged();
@@ -3851,84 +3859,6 @@ public class PlaybackViewModel : ViewModelBase
         }
     }
 
-
-    /// <summary>
-    /// Loads the waveform data for the currently playing song. Designed to be called by MainWindowViewModel.
-    /// </summary>
-    public async Task LoadWaveformForCurrentSongAsync()
-    {
-        var songToLoadWaveformFor = PlaybackService.CurrentSong;
-        if (songToLoadWaveformFor == null || string.IsNullOrEmpty(songToLoadWaveformFor.FilePath))
-        {
-            Debug.WriteLine("[PlaybackVM] LoadWaveformForCurrentSongAsync skipped: No current song or invalid path.");
-            // Clearing waveform data and setting loading state to false is handled by PlaybackService_PropertyChanged when CurrentSong becomes null
-            return;
-        }
-
-        // Check if waveform is already loaded for this song OR currently loading
-        // A simple check if there are any points is a rough indicator.
-        // A more robust approach would be to store the file path associated with WaveformRenderData.
-        // For simplicity, for now, if it has points OR is loading, assume it's for the current song.
-        if (WaveformRenderData.Any() || IsWaveformLoading)
-        {
-            Debug.WriteLine($"[PlaybackVM] Waveform already loaded ({WaveformRenderData.Count} points) or loading ({IsWaveformLoading}) for {songToLoadWaveformFor.Title}. Skipping load.");
-            return;
-        }
-
-
-        // Clear existing waveform data immediately to show loading state
-        Debug.WriteLine($"[PlaybackVM] Clearing previous waveform data ({WaveformRenderData.Count} points).");
-        WaveformRenderData.Clear(); OnPropertyChanged(nameof(WaveformRenderData));
-        IsWaveformLoading = true; // Internal setter is fine here
-
-        try
-        {
-            Debug.WriteLine($"[PlaybackVM] Requesting waveform for: {songToLoadWaveformFor.Title}");
-            // Target points should probably be based on control width or a fixed resolution
-            // For a fixed 80px height control, 1000 points is likely sufficient detail.
-            List<WaveformPoint> points = await _waveformService.GetWaveformAsync(songToLoadWaveformFor.FilePath, 1000);
-
-            // Check if the song is still the same AFTER the async operation before updating the UI
-            if (PlaybackService.CurrentSong == songToLoadWaveformFor)
-            {
-                Debug.WriteLine($"[PlaybackVM] Waveform loaded for: {songToLoadWaveformFor.Title}, {points.Count} points. Updating UI.");
-                // Add points on the UI thread
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    foreach (var p in points) WaveformRenderData.Add(p);
-                    OnPropertyChanged(nameof(WaveformRenderData)); // Notify UI
-                });
-                // _currentWaveformFilePath = songToLoadWaveformFor.FilePath; // Store the file path of the loaded waveform
-
-            }
-            else
-            {
-                // Song changed during waveform generation, discard the result for the old song.
-                Debug.WriteLine($"[PlaybackVM] Waveform for {songToLoadWaveformFor.Title} loaded, but current song is now {PlaybackService.CurrentSong?.Title ?? "null"}. Discarding.");
-                // No need to clear WaveformRenderData here; the handler for the new song or null song will handle it.
-            }
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"[PlaybackVM] CRITICAL Error loading waveform for {songToLoadWaveformFor.Title}: {ex.Message}");
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                WaveformRenderData.Clear(); OnPropertyChanged(nameof(WaveformRenderData));
-                // Optionally set a status text indicating waveform load failed
-            });
-        }
-        finally
-        {
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                IsWaveformLoading = false; // Internal setter is fine here
-            });
-        }
-    }
-
-    /// <summary>
-    /// Raises CanExecuteChanged for commands owned by this ViewModel.
-    /// </summary>
     public void RaisePlaybackCommandCanExecuteChanged()
     {
         //Debug.WriteLine("[PlaybackVM] Raising playback command CanExecute changed.");
@@ -4325,6 +4255,179 @@ public class ViewModelBase : INotifyPropertyChanged
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+}
+</file>
+
+<file path="Source\ViewModels\WaveformDisplayViewModel.cs">
+using System;
+using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading.Tasks;
+using Avalonia.Threading;
+using Sonorize.Models;
+using Sonorize.Services;
+
+namespace Sonorize.ViewModels;
+
+public class WaveformDisplayViewModel : ViewModelBase
+{
+    private readonly PlaybackService _playbackService;
+    private readonly WaveformService _waveformService;
+    private Song? _currentSongForWaveform;
+    private bool _isPanelVisible;
+
+    public ObservableCollection<WaveformPoint> WaveformRenderData { get; } = new();
+    
+    public bool IsWaveformLoading
+    {
+        get;
+        private set => SetProperty(ref field, value);
+    }
+
+    public WaveformDisplayViewModel(PlaybackService playbackService, WaveformService waveformService)
+    {
+        _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
+        _waveformService = waveformService ?? throw new ArgumentNullException(nameof(waveformService));
+
+        _playbackService.PropertyChanged += PlaybackService_PropertyChanged;
+        UpdateCurrentSongForWaveform(_playbackService.CurrentSong);
+    }
+
+    private async void PlaybackService_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(PlaybackService.CurrentSong))
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                UpdateCurrentSongForWaveform(_playbackService.CurrentSong);
+            });
+        }
+    }
+
+    private void UpdateCurrentSongForWaveform(Song? newSong)
+    {
+        if (_currentSongForWaveform == newSong)
+        {
+            // If the song is the same, and panel is visible, ensure waveform is loaded if not already
+            if (_isPanelVisible && newSong != null && !WaveformRenderData.Any() && !IsWaveformLoading)
+            {
+                Debug.WriteLine($"[WaveformDisplayVM] Panel visible for same song '{newSong.Title}', but no waveform. Triggering load.");
+                _ = LoadWaveformInternalAsync(newSong);
+            }
+            return;
+        }
+
+        _currentSongForWaveform = newSong;
+        WaveformRenderData.Clear(); // Clear data for the old song
+        OnPropertyChanged(nameof(WaveformRenderData));
+
+        if (_currentSongForWaveform != null && _isPanelVisible)
+        {
+            Debug.WriteLine($"[WaveformDisplayVM] Current song changed to '{_currentSongForWaveform.Title}' and panel is visible. Triggering load.");
+            _ = LoadWaveformInternalAsync(_currentSongForWaveform);
+        }
+        else if (_currentSongForWaveform == null)
+        {
+            IsWaveformLoading = false; // Ensure loading stops if song becomes null
+            Debug.WriteLine("[WaveformDisplayVM] Current song is null. Cleared waveform and loading state.");
+        }
+        else
+        {
+            Debug.WriteLine($"[WaveformDisplayVM] Current song changed to '{_currentSongForWaveform.Title}', but panel not visible. Load deferred.");
+        }
+    }
+
+    public void SetPanelVisibility(bool isVisible)
+    {
+        _isPanelVisible = isVisible;
+        Debug.WriteLine($"[WaveformDisplayVM] Panel visibility set to: {isVisible}");
+        if (_isPanelVisible && _currentSongForWaveform != null && !WaveformRenderData.Any() && !IsWaveformLoading)
+        {
+            Debug.WriteLine($"[WaveformDisplayVM] Panel now visible for song '{_currentSongForWaveform.Title}'. Triggering waveform load.");
+            _ = LoadWaveformInternalAsync(_currentSongForWaveform);
+        }
+        else if (!_isPanelVisible)
+        {
+            // Optionally, clear waveform data or cancel loading when panel is hidden
+            // WaveformRenderData.Clear();
+            // OnPropertyChanged(nameof(WaveformRenderData));
+            // IsWaveformLoading = false; // If a load was in progress, it will complete but not update UI if song changes.
+            // For now, just stop triggering new loads.
+            Debug.WriteLine($"[WaveformDisplayVM] Panel hidden. Waveform loading deferred if song changes or panel re-opens.");
+        }
+    }
+
+    private async Task LoadWaveformInternalAsync(Song songToLoad)
+    {
+        if (string.IsNullOrEmpty(songToLoad.FilePath))
+        {
+            Debug.WriteLine($"[WaveformDisplayVM] LoadWaveformInternalAsync skipped: Invalid path for song '{songToLoad.Title}'.");
+            return;
+        }
+
+        // Defensive check: If already loading for this exact song instance, don't restart.
+        // This might happen if SetPanelVisibility and CurrentSong change rapidly.
+        if (IsWaveformLoading && _currentSongForWaveform == songToLoad)
+        {
+            Debug.WriteLine($"[WaveformDisplayVM] Already loading waveform for '{songToLoad.Title}'. Skipping redundant load request.");
+            return;
+        }
+
+        IsWaveformLoading = true;
+        WaveformRenderData.Clear(); // Clear previous data before loading new
+        OnPropertyChanged(nameof(WaveformRenderData));
+
+        try
+        {
+            Debug.WriteLine($"[WaveformDisplayVM] Requesting waveform from service for: {songToLoad.Title}");
+            // Target points for the waveform control
+            int targetPoints = 1000;
+            var points = await _waveformService.GetWaveformAsync(songToLoad.FilePath, targetPoints);
+
+            // Critical check: Ensure the song context hasn't changed *during* the async load
+            // and that the panel is still meant to be visible.
+            if (_currentSongForWaveform == songToLoad && _isPanelVisible)
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    WaveformRenderData.Clear(); // Ensure it's empty before adding new points
+                    foreach (var p in points)
+                    {
+                        WaveformRenderData.Add(p);
+                    }
+                    OnPropertyChanged(nameof(WaveformRenderData));
+                    Debug.WriteLine($"[WaveformDisplayVM] Waveform loaded and UI updated for: {songToLoad.Title}, {points.Count} points.");
+                });
+            }
+            else
+            {
+                Debug.WriteLine($"[WaveformDisplayVM] Waveform for '{songToLoad.Title}' loaded, but context changed (current song: '{_currentSongForWaveform?.Title}', panel visible: {_isPanelVisible}). Discarding result.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[WaveformDisplayVM] CRITICAL Error loading waveform for '{songToLoad.Title}': {ex.Message}");
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                WaveformRenderData.Clear(); // Clear on error
+                OnPropertyChanged(nameof(WaveformRenderData));
+            });
+        }
+        finally
+        {
+            // Ensure IsWaveformLoading is set to false only if this load operation was for the *still current* song
+            // or if no song is current anymore.
+            if (_currentSongForWaveform == songToLoad || _currentSongForWaveform == null)
+            {
+                IsWaveformLoading = false;
+            }
+            else
+            {
+                Debug.WriteLine($"[WaveformDisplayVM] Waveform load finished for '{songToLoad.Title}', but current song is '{_currentSongForWaveform?.Title}'. IsWaveformLoading might be true due to a new load.");
+            }
+        }
     }
 }
 </file>
@@ -6913,7 +7016,7 @@ public static class AdvancedPlaybackPanelControls
             PositionMarkerBrush = Brushes.OrangeRed,
             LoopRegionBrush = new SolidColorBrush(accentColorForLoopRegion, 0.3)
         };
-        waveformDisplay.Bind(WaveformDisplayControl.WaveformPointsProperty, new Binding("Playback.WaveformRenderData"));
+        waveformDisplay.Bind(WaveformDisplayControl.WaveformPointsProperty, new Binding("Playback.WaveformDisplay.WaveformRenderData"));
         waveformDisplay.Bind(WaveformDisplayControl.CurrentPositionProperty, new Binding("Playback.CurrentPosition"));
         waveformDisplay.Bind(WaveformDisplayControl.DurationProperty, new Binding("Playback.CurrentSongDuration"));
         waveformDisplay.Bind(WaveformDisplayControl.ActiveLoopProperty, new Binding("Playback.PlaybackService.CurrentSong.SavedLoop"));
@@ -6926,7 +7029,7 @@ public static class AdvancedPlaybackPanelControls
         };
 
         var waveformLoadingIndicator = new ProgressBar { IsIndeterminate = true, Height = 5, Margin = new Thickness(0, -5, 0, 0), Foreground = theme.B_AccentColor, Background = Brushes.Transparent };
-        waveformLoadingIndicator.Bind(Visual.IsVisibleProperty, new Binding("Playback.IsWaveformLoading"));
+        waveformLoadingIndicator.Bind(Visual.IsVisibleProperty, new Binding("Playback.WaveformDisplay.IsWaveformLoading"));
         var waveformContainer = new Panel();
         waveformContainer.Children.Add(waveformDisplay); waveformContainer.Children.Add(waveformLoadingIndicator);
         mainStack.Children.Add(waveformContainer);

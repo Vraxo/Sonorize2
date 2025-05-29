@@ -17,12 +17,11 @@ public class WaveformDisplayViewModel : ViewModelBase
     private bool _isPanelVisible;
 
     public ObservableCollection<WaveformPoint> WaveformRenderData { get; } = new();
-
-    private bool _isWaveformLoading;
+    
     public bool IsWaveformLoading
     {
-        get => _isWaveformLoading;
-        private set => SetProperty(ref _isWaveformLoading, value);
+        get;
+        private set => SetProperty(ref field, value);
     }
 
     public WaveformDisplayViewModel(PlaybackService playbackService, WaveformService waveformService)
