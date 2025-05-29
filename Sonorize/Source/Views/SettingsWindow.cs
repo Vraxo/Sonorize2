@@ -35,7 +35,7 @@ public class SettingsWindow : Window
                 new Setter(TextBox.BorderThicknessProperty, new Thickness(0)),
                 new Setter(TextBox.VerticalContentAlignmentProperty, VerticalAlignment.Center),
                 new Setter(TextBox.HorizontalContentAlignmentProperty, HorizontalAlignment.Center),
-                new Setter(TextBox.PaddingProperty, new Thickness(2,0))
+                new Setter(TextBox.PaddingProperty, new Thickness(10,0)) // Increased horizontal padding
             }
         });
 

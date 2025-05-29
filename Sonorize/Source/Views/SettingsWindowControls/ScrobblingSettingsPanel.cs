@@ -73,14 +73,14 @@ public static class ScrobblingSettingsPanel
         var criteriaPanel = new StackPanel { Orientation = Orientation.Vertical, Spacing = 8, Margin = new Thickness(0, 10, 0, 5) };
         var percentagePanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
         var percentageLabel = new TextBlock { Text = "Scrobble if played for at least ", Foreground = theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
-        var percentageUpDown = new NumericUpDown { Minimum = 1, Maximum = 100, Increment = 1, Width = 90, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor, BorderBrush = theme.B_SecondaryTextColor };
+        var percentageUpDown = new NumericUpDown { Minimum = 1, Maximum = 100, Increment = 1, Width = 120, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor, BorderBrush = theme.B_SecondaryTextColor }; // Increased width
         percentageUpDown.Bind(NumericUpDown.ValueProperty, new Binding("LastfmSettings.ScrobbleThresholdPercentage", BindingMode.TwoWay));
         var percentageUnitLabel = new TextBlock { Text = "% of duration", Foreground = theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
         percentagePanel.Children.Add(percentageLabel); percentagePanel.Children.Add(percentageUpDown); percentagePanel.Children.Add(percentageUnitLabel);
 
         var absolutePanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
         var absoluteLabel = new TextBlock { Text = "OR Scrobble if played for at least ", Foreground = theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
-        var absoluteUpDown = new NumericUpDown { Minimum = 10, Maximum = 600, Increment = 10, Width = 100, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor, BorderBrush = theme.B_SecondaryTextColor };
+        var absoluteUpDown = new NumericUpDown { Minimum = 10, Maximum = 600, Increment = 10, Width = 130, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor, BorderBrush = theme.B_SecondaryTextColor }; // Increased width
         absoluteUpDown.Bind(NumericUpDown.ValueProperty, new Binding("LastfmSettings.ScrobbleThresholdAbsoluteSeconds", BindingMode.TwoWay));
         var absoluteUnitLabel = new TextBlock { Text = "seconds", Foreground = theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
         absolutePanel.Children.Add(absoluteLabel); absolutePanel.Children.Add(absoluteUpDown); absolutePanel.Children.Add(absoluteUnitLabel);
