@@ -162,7 +162,8 @@ public class MainWindowViewModel : ViewModelBase
 
             Library.RaiseLibraryCommandsCanExecuteChanged();
             Playback.RaisePlaybackCommandCanExecuteChanged();
-            LoopEditor.RaiseLoopCommandCanExecuteChanged();
+            LoopEditor.RaiseMainLoopCommandsCanExecuteChanged(); // Corrected method name
+            LoopEditor.CandidateLoop.RaiseCaptureCommandsCanExecuteChanged(); // Ensure candidate commands are also updated
             (AdvancedPanel.ToggleVisibilityCommand as RelayCommand)?.RaiseCanExecuteChanged();
         });
     }
@@ -232,5 +233,6 @@ public class MainWindowViewModel : ViewModelBase
         Library?.Dispose();
         Playback?.Dispose();
         AdvancedPanel?.Dispose();
+        LoopEditor?.Dispose(); // Dispose LoopEditorViewModel
     }
 }
