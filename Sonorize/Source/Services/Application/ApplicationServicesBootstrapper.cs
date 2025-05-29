@@ -17,6 +17,7 @@ public class ApplicationServicesBootstrapper
         var musicLibraryService = new MusicLibraryService(loopDataService, thumbnailService, songFactory); // Inject SongFactory
         var waveformService = new WaveformService();
         var songMetadataService = new SongMetadataService(); // Create SongMetadataService
+        var songEditInteractionService = new SongEditInteractionService(playbackService, songMetadataService, currentCustomTheme); // Create new service
 
         // Create MainWindowViewModel
         var mainWindowViewModel = new MainWindowViewModel(
@@ -27,7 +28,8 @@ public class ApplicationServicesBootstrapper
             waveformService,
             loopDataService,
             scrobblingService,
-            songMetadataService); // Pass SongMetadataService
+            songMetadataService,
+            songEditInteractionService); // Pass new service
 
         return mainWindowViewModel;
     }

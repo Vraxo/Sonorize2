@@ -24,6 +24,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private readonly LoopDataService _loopDataService;
     private readonly ScrobblingService _scrobblingService;
     private readonly SongMetadataService _songMetadataService;
+    private readonly SongEditInteractionService _songEditInteractionService; // New service
 
     private readonly MainWindowViewModelOrchestrator _orchestrator;
     private readonly ApplicationWorkflowManager _workflowManager;
@@ -77,7 +78,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         WaveformService waveformService,
         LoopDataService loopDataService,
         ScrobblingService scrobblingService,
-        SongMetadataService songMetadataService)
+        SongMetadataService songMetadataService,
+        SongEditInteractionService songEditInteractionService) // Added new service dependency
     {
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
@@ -87,6 +89,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         _loopDataService = loopDataService;
         _scrobblingService = scrobblingService;
         _songMetadataService = songMetadataService;
+        _songEditInteractionService = songEditInteractionService; // Store new service
 
         _libraryDisplayModeService = new LibraryDisplayModeService(_settingsService);
         Library = new LibraryViewModel(this, _settingsService, _musicLibraryService, _loopDataService, _libraryDisplayModeService);
@@ -119,7 +122,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         OpenSettingsCommand = new RelayCommand(async owner => await OpenSettingsDialogAsync(owner), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
         ExitCommand = new RelayCommand(_ => Environment.Exit(0));
         AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefreshAsync(owner), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
-        OpenEditSongMetadataDialogCommand = new RelayCommand(async song => await OpenEditSongMetadataDialogAsync(song), CanOpenEditSongMetadataDialog);
+        OpenEditSongMetadataDialogCommand = new RelayCommand(async song => await HandleOpenEditSongMetadataDialogAsync(song), CanOpenEditSongMetadataDialog);
 
 
         Dispatcher.UIThread.InvokeAsync(UpdateAllUIDependentStates);
@@ -220,97 +223,36 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
         else
         {
-            UpdateStatusBarText();
+            UpdateStatusBarText(); // Ensure status bar reflects non-refresh outcome
         }
         RaiseAllCommandsCanExecuteChanged();
     }
 
-    private async Task OpenEditSongMetadataDialogAsync(object? songObject)
+    private async Task HandleOpenEditSongMetadataDialogAsync(object? songObject)
     {
         if (songObject is not Song songToEdit)
         {
-            Debug.WriteLine("[MainVM] OpenEditSongMetadataDialogAsync: songObject is not a Song.");
+            Debug.WriteLine("[MainVM] HandleOpenEditSongMetadataDialogAsync: songObject is not a Song.");
             return;
         }
 
         Window? ownerWindow = _ownerView;
-
         if (ownerWindow == null)
         {
-            Debug.WriteLine("[MainVM] OpenEditSongMetadataDialogAsync: Owner window is not set.");
+            Debug.WriteLine("[MainVM] HandleOpenEditSongMetadataDialogAsync: Owner window is not set. Cannot proceed.");
+            StatusBarText = "Error: Cannot open editor, main window context lost.";
             return;
         }
 
-        IsAdvancedPanelVisible = false;
+        IsAdvancedPanelVisible = false; // Hide advanced panel during dialog interaction
 
-        // Store playback state if the song being edited is the current one
-        (bool WasPlaying, TimeSpan Position)? previousPlaybackState = null;
-        if (PlaybackService.CurrentSong == songToEdit)
-        {
-            previousPlaybackState = PlaybackService.StopAndReleaseFileResourcesForSong(songToEdit);
-            if (previousPlaybackState == null)
-            {
-                Debug.WriteLine($"[MainVM] Failed to release file for {songToEdit.Title}. Aborting metadata edit.");
-                // Optionally show an error to the user
-                StatusBarText = $"Error: Could not prepare '{songToEdit.Title}' for editing.";
-                return;
-            }
-            Debug.WriteLine($"[MainVM] Playback for {songToEdit.Title} stopped and file released. WasPlaying: {previousPlaybackState.Value.WasPlaying}, Position: {previousPlaybackState.Value.Position}");
-        }
+        var (metadataSaved, statusMessage) = await _songEditInteractionService.HandleEditSongMetadataAsync(songToEdit, ownerWindow);
 
-        bool metadataSaved = false;
-        try
-        {
-            // Show the dialog (this part is synchronous within this async method after await)
-            // The dialog itself is modal (await ShowDialog)
-            var editorViewModel = new SongMetadataEditorViewModel(songToEdit);
-            var editorDialog = new Sonorize.Views.SongMetadataEditorWindow(CurrentTheme)
-            {
-                DataContext = editorViewModel
-            };
-            await editorDialog.ShowDialog(ownerWindow); // This makes the dialog modal
+        StatusBarText = statusMessage;
 
-            if (editorViewModel.DialogResult) // True if "Save" was clicked in dialog
-            {
-                Debug.WriteLine($"[MainVM] Metadata editor for {songToEdit.Title} closed with Save. Attempting to save to file.");
-                metadataSaved = await _songMetadataService.SaveMetadataAsync(songToEdit); // Pass the Song object which now has the new thumbnail from ViewModel
-                if (metadataSaved)
-                {
-                    Debug.WriteLine($"[MainVM] Metadata (and thumbnail) for {songToEdit.Title} saved to file successfully.");
-                    StatusBarText = $"Metadata for '{songToEdit.Title}' updated.";
-                    // The Song object's properties are already updated due to binding in SongMetadataEditorViewModel
-                    // This will reflect in UI. Artist/Album list might be stale if names changed.
-                }
-                else
-                {
-                    Debug.WriteLine($"[MainVM] Failed to save metadata for {songToEdit.Title} to file.");
-                    StatusBarText = $"Error saving metadata for '{songToEdit.Title}'.";
-                }
-            }
-            else
-            {
-                Debug.WriteLine($"[MainVM] Metadata editor for {songToEdit.Title} closed without saving (Cancelled or closed).");
-                UpdateStatusBarText();
-            }
-        }
-        catch (Exception ex)
+        if (!metadataSaved && string.IsNullOrEmpty(statusMessage)) // Default status if none provided by service on non-save
         {
-            Debug.WriteLine($"[MainVM] Exception during metadata edit/save for {songToEdit.Title}: {ex.Message}");
-            StatusBarText = $"Error during metadata edit for '{songToEdit.Title}'.";
-        }
-        finally
-        {
-            // Restore playback state if it was affected
-            if (previousPlaybackState.HasValue)
-            {
-                Debug.WriteLine($"[MainVM] Reinitializing playback for {songToEdit.Title} to WasPlaying: {previousPlaybackState.Value.WasPlaying}, Position: {previousPlaybackState.Value.Position}");
-                bool reinitSuccess = PlaybackService.ReinitializePlaybackForSong(songToEdit, previousPlaybackState.Value.Position, previousPlaybackState.Value.WasPlaying);
-                if (!reinitSuccess)
-                {
-                    Debug.WriteLine($"[MainVM] Failed to reinitialize playback for {songToEdit.Title}.");
-                    StatusBarText = $"Playback error after editing '{songToEdit.Title}'.";
-                }
-            }
+            UpdateStatusBarText(); // Revert to default status if edit was cancelled without a specific message
         }
 
         RaiseAllCommandsCanExecuteChanged();

@@ -2572,6 +2572,7 @@ public class LibraryViewModel : ViewModelBase
     private readonly LibraryDataOrchestrator _libraryDataOrchestrator;
     private readonly TrackNavigationManager _trackNavigationManager;
     private readonly LibraryDisplayModeService _displayModeService; // New dependency
+    private readonly LibraryFilterStateManager _filterStateManager; // New dependency
 
     private readonly ObservableCollection<Song> _allSongs = [];
 
@@ -2579,26 +2580,15 @@ public class LibraryViewModel : ViewModelBase
     public ObservableCollection<ArtistViewModel> Artists { get; } = [];
     public ObservableCollection<AlbumViewModel> Albums { get; } = [];
 
+    // Expose FilterStateManager for binding
+    public LibraryFilterStateManager FilterState => _filterStateManager;
+
+
     // Display mode command is now proxied from LibraryDisplayModeService
     public ICommand SetDisplayModeCommand => _displayModeService.SetDisplayModeCommand;
     public ICommand PreviousTrackCommand => _trackNavigationManager.PreviousTrackCommand;
     public ICommand NextTrackCommand => _trackNavigationManager.NextTrackCommand;
     public ICommand EditSongMetadataCommand { get; }
-
-
-    public string SearchQuery
-    {
-        get;
-
-        set
-        {
-            if (!SetProperty(ref field, value))
-            {
-                return;
-            }
-            ApplyFilter();
-        }
-    } = string.Empty;
 
     public Song? SelectedSong
     {
@@ -2614,50 +2604,6 @@ public class LibraryViewModel : ViewModelBase
             Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"}");
             _trackNavigationManager.UpdateSelectedSong(value);
             (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged(); // Update CanExecute for Edit
-        }
-    }
-
-    public ArtistViewModel? SelectedArtist
-    {
-        get;
-
-        set
-        {
-            if (!SetProperty(ref field, value))
-            {
-                return;
-            }
-
-            if (value != null)
-            {
-                OnArtistSelected(value);
-            }
-            else
-            {
-                ApplyFilter();
-            }
-        }
-    }
-
-    public AlbumViewModel? SelectedAlbum
-    {
-        get;
-
-        set
-        {
-            if (!SetProperty(ref field, value))
-            {
-                return;
-            }
-
-            if (value != null)
-            {
-                OnAlbumSelected(value);
-            }
-            else
-            {
-                ApplyFilter();
-            }
         }
     }
 
@@ -2694,13 +2640,18 @@ public class LibraryViewModel : ViewModelBase
         SettingsService settingsService,
         MusicLibraryService musicLibraryService,
         LoopDataService loopDataService,
-        LibraryDisplayModeService displayModeService) // Added LibraryDisplayModeService
+        LibraryDisplayModeService displayModeService)
     {
         _parentViewModel = parentViewModel ?? throw new ArgumentNullException(nameof(parentViewModel));
-        _settingsService = settingsService; // Still needed for status text generator
+        _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
         _loopDataService = loopDataService;
         _displayModeService = displayModeService ?? throw new ArgumentNullException(nameof(displayModeService));
+
+        _filterStateManager = new LibraryFilterStateManager();
+        _filterStateManager.FilterCriteriaChanged += (s, e) => ApplyFilter();
+        _filterStateManager.RequestTabSwitchToLibrary += (s, e) => _parentViewModel.ActiveTabIndex = 0;
+
 
         // Subscribe to PropertyChanged on _displayModeService to update proxied properties
         _displayModeService.PropertyChanged += DisplayModeService_PropertyChanged;
@@ -2756,9 +2707,7 @@ public class LibraryViewModel : ViewModelBase
         }
 
         IsLoadingLibrary = true;
-        SearchQuery = string.Empty;
-        SelectedArtist = null;
-        SelectedAlbum = null;
+        _filterStateManager.ClearSelectionsAndSearch(); // Resets SearchQuery, SelectedArtist, SelectedAlbum
         SelectedSong = null;
 
         await Dispatcher.UIThread.InvokeAsync(() =>
@@ -2786,44 +2735,17 @@ public class LibraryViewModel : ViewModelBase
         UpdateStatusBarText();
     }
 
-    private void OnArtistSelected(ArtistViewModel artist)
-    {
-        if (artist?.Name is null)
-        {
-            return;
-        }
-
-        Debug.WriteLine($"[LibraryVM] Artist selected: {artist.Name}");
-
-        SelectedAlbum = null;
-        OnPropertyChanged(nameof(SelectedAlbum));
-        SearchQuery = artist.Name;
-
-        _parentViewModel.ActiveTabIndex = 0;
-    }
-
-    private void OnAlbumSelected(AlbumViewModel album)
-    {
-        if (album?.Title == null || album.Artist == null)
-        {
-            return;
-        }
-
-        Debug.WriteLine($"[LibraryVM] Album selected: {album.Title} by {album.Artist}");
-
-        SelectedArtist = null;
-        OnPropertyChanged(nameof(SelectedArtist));
-        SearchQuery = album.Title;
-
-        _parentViewModel.ActiveTabIndex = 0;
-    }
-
     private void ApplyFilter()
     {
         var currentSelectedSongBeforeFilter = SelectedSong;
 
         FilteredSongs.Clear();
-        var filtered = _songFilteringService.ApplyFilter(_allSongs, SearchQuery, SelectedArtist, SelectedAlbum);
+        var filtered = _songFilteringService.ApplyFilter(
+            _allSongs,
+            _filterStateManager.SearchQuery,
+            _filterStateManager.SelectedArtist,
+            _filterStateManager.SelectedAlbum);
+
         foreach (var song in filtered)
         {
             FilteredSongs.Add(song);
@@ -2854,9 +2776,9 @@ public class LibraryViewModel : ViewModelBase
                 IsLoadingLibrary,
                 _allSongs.Count,
                 FilteredSongs.Count,
-                SelectedArtist,
-                SelectedAlbum,
-                SearchQuery,
+                _filterStateManager.SelectedArtist,
+                _filterStateManager.SelectedAlbum,
+                _filterStateManager.SearchQuery,
                 _settingsService
             );
         }
@@ -2899,10 +2821,12 @@ public class LibraryViewModel : ViewModelBase
             _displayModeService.PropertyChanged -= DisplayModeService_PropertyChanged;
             // If LibraryDisplayModeService becomes IDisposable, dispose it here.
         }
-        if (_parentViewModel != null && EditSongMetadataCommand != null)
+        if (_filterStateManager != null)
         {
-            // Clean up if necessary, though RelayCommand doesn't typically need explicit disposal
+            _filterStateManager.FilterCriteriaChanged -= (s, e) => ApplyFilter();
+            _filterStateManager.RequestTabSwitchToLibrary -= (s, e) => _parentViewModel.ActiveTabIndex = 0;
         }
+        // Clean up if necessary, though RelayCommand doesn't typically need explicit disposal
     }
 }
 </file>
@@ -6670,6 +6594,92 @@ public class LibraryDisplayModeService : ViewModelBase
 }
 </file>
 
+<file path="Source\ViewModels\LibraryManagement\LibraryFilterStateManager.cs">
+using System;
+using Sonorize.Models; // For ArtistViewModel, AlbumViewModel
+
+namespace Sonorize.ViewModels.LibraryManagement;
+
+public class LibraryFilterStateManager : ViewModelBase
+{
+    private string _searchQuery = string.Empty;
+    public string SearchQuery
+    {
+        get => _searchQuery;
+        set
+        {
+            if (SetProperty(ref _searchQuery, value))
+            {
+                // Direct search query input might clear artist/album selections
+                // or this can be handled by LibraryViewModel reacting to this change.
+                // For now, assume direct search query changes don't auto-clear selected artist/album.
+                // LibraryViewModel's ApplyFilter logic will decide precedence.
+                FilterCriteriaChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+    }
+
+    private ArtistViewModel? _selectedArtist;
+    public ArtistViewModel? SelectedArtist
+    {
+        get => _selectedArtist;
+        set
+        {
+            if (SetProperty(ref _selectedArtist, value))
+            {
+                if (_selectedArtist != null)
+                {
+                    // When an artist is selected, update SearchQuery and clear SelectedAlbum
+                    _searchQuery = _selectedArtist.Name ?? string.Empty; // Avoid raising SearchQuery's own event storm
+                    OnPropertyChanged(nameof(SearchQuery)); // Manually notify SearchQuery changed
+                    SelectedAlbum = null; // This will trigger its own PropertyChanged and subsequently FilterCriteriaChanged
+                    RequestTabSwitchToLibrary?.Invoke(this, EventArgs.Empty);
+                }
+                FilterCriteriaChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+    }
+
+    private AlbumViewModel? _selectedAlbum;
+    public AlbumViewModel? SelectedAlbum
+    {
+        get => _selectedAlbum;
+        set
+        {
+            if (SetProperty(ref _selectedAlbum, value))
+            {
+                if (_selectedAlbum != null)
+                {
+                    // When an album is selected, update SearchQuery and clear SelectedArtist
+                    _searchQuery = _selectedAlbum.Title ?? string.Empty; // Avoid raising SearchQuery's own event storm
+                    OnPropertyChanged(nameof(SearchQuery)); // Manually notify SearchQuery changed
+                    SelectedArtist = null; // This will trigger its own PropertyChanged and subsequently FilterCriteriaChanged
+                    RequestTabSwitchToLibrary?.Invoke(this, EventArgs.Empty);
+                }
+                FilterCriteriaChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+    }
+
+    public event EventHandler? FilterCriteriaChanged;
+    public event EventHandler? RequestTabSwitchToLibrary;
+
+    public void ClearSelectionsAndSearch()
+    {
+        // Suppress individual notifications if setting multiple properties
+        bool changed = false;
+        if (_selectedArtist != null) { _selectedArtist = null; OnPropertyChanged(nameof(SelectedArtist)); changed = true; }
+        if (_selectedAlbum != null) { _selectedAlbum = null; OnPropertyChanged(nameof(SelectedAlbum)); changed = true; }
+        if (!string.IsNullOrEmpty(_searchQuery)) { _searchQuery = string.Empty; OnPropertyChanged(nameof(SearchQuery)); changed = true; }
+
+        if (changed)
+        {
+            FilterCriteriaChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+}
+</file>
+
 <file path="Source\ViewModels\LibraryManagement\LibraryStatusTextGenerator.cs">
 using System.Linq;
 using Sonorize.Models;
@@ -8522,7 +8532,7 @@ namespace Sonorize.Views.MainWindowControls
             ApplyListBoxItemStyles(_artistsListBoxInstance);
 
             _artistsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Artists"));
-            _artistsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.SelectedArtist", BindingMode.TwoWay));
+            _artistsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.FilterState.SelectedArtist", BindingMode.TwoWay));
 
             _artistsListBoxInstance.ItemTemplate = _sharedViewTemplates.DetailedArtistTemplate;
             _artistsListBoxInstance.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
@@ -8542,7 +8552,7 @@ namespace Sonorize.Views.MainWindowControls
             ApplyListBoxItemStyles(_albumsListBoxInstance);
 
             _albumsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Albums"));
-            _albumsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.SelectedAlbum", BindingMode.TwoWay));
+            _albumsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.FilterState.SelectedAlbum", BindingMode.TwoWay));
 
             _albumsListBoxInstance.ItemTemplate = _sharedViewTemplates.DetailedAlbumTemplate;
             _albumsListBoxInstance.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
@@ -9006,8 +9016,8 @@ public static class SearchBarPanel
             CornerRadius = new CornerRadius(4),
             FontSize = 14
         };
-        // Bind to Library.SearchQuery
-        searchBox.Bind(TextBox.TextProperty, new Binding("Library.SearchQuery", BindingMode.TwoWay));
+        // Bind to Library.FilterState.SearchQuery
+        searchBox.Bind(TextBox.TextProperty, new Binding("Library.FilterState.SearchQuery", BindingMode.TwoWay));
 
         searchBox.Styles.Add(new Style(s => s.Is<TextBox>().Class(":focus"))
         {
