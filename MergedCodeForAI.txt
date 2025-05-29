@@ -672,8 +672,6 @@ public class Song : ViewModelBase
 
         set
         {
-            // Setter is now a standard property setter.
-            // Persistence is handled by SongLoopService.
             if (!SetProperty(ref field, value))
             {
                 return;
@@ -810,7 +808,7 @@ public class DefaultIconGenerator
     private const int IconDimension = 96;
     private const double DpiValue = 96.0;
     private const string MusicalNoteCharacter = "♫";
-    private const double FontSizeFactor = 0.5; // Relative to icon dimension
+    private const double FontSizeFactor = 0.5;
 
     public static Bitmap? CreateMusicalNoteIcon()
     {
@@ -1074,6 +1072,115 @@ public class LibraryPlaybackLinkService : IDisposable
 }
 </file>
 
+<file path="Source\Services\LoopDataMigrator.cs">
+using System;
+using System.Diagnostics;
+using System.IO; // Required for Path.GetFileName
+using System.Text.Json;
+using Sonorize.Models;
+
+namespace Sonorize.Services;
+
+public class LoopDataMigrator
+{
+    public static bool TryProcessEntry(string filePathKey, JsonElement jsonData, out LoopStorageData? loopData)
+    {
+        loopData = null;
+        try
+        {
+            if (TryDeserializeCurrentFormat(jsonData, out loopData))
+            {
+                return true;
+            }
+
+            // If current format deserialization fails (or returns null and JsonException wasn't thrown for some reason, though unlikely for Deserialize<T>),
+            // it will fall through to the catch block for JsonException if that's the cause,
+            // or proceed to old format migration if Deserialize<T> just returned null without exception.
+        }
+        catch (JsonException)
+        {
+            // Deserialization to LoopStorageData failed, explicitly try migrating from old format
+            if (TryMigrateOldFormat(filePathKey, jsonData, out loopData))
+            {
+                return true;
+            }
+        }
+        catch (Exception exGeneral)
+        {
+            Debug.WriteLine($"[LoopDataMigrator] General error processing loop entry for {Path.GetFileName(filePathKey)}: {exGeneral.Message}");
+            return false;
+        }
+
+        // If loopData is still null here, it means it couldn't be processed as new or old format properly
+        // or an unhandled scenario where Deserialize<T> returned null without throwing JsonException.
+        if (loopData == null)
+        {
+            Debug.WriteLine($"[LoopDataMigrator] Could not deserialize or migrate loop entry for {Path.GetFileName(filePathKey)} into a known format.");
+        }
+        return loopData != null;
+    }
+
+    private static bool TryDeserializeCurrentFormat(JsonElement jsonData, out LoopStorageData? loopData)
+    {
+        // This method specifically attempts deserialization to the current format.
+        // It's expected to throw JsonException if the structure doesn't match,
+        // which will be caught by the caller (TryProcessEntry).
+        // If Deserialize<T> can return null without an exception for certain inputs,
+        // that case would also result in `loopData` being null.
+        loopData = jsonData.Deserialize<LoopStorageData>();
+        if (loopData != null)
+        {
+            // Successfully deserialized to current format
+            return true;
+        }
+        return false; // Indicates null was returned without exception, or that current format failed.
+    }
+
+    private static bool TryMigrateOldFormat(string filePathKey, JsonElement jsonData, out LoopStorageData? loopData)
+    {
+        loopData = null;
+        try
+        {
+            if (jsonData.TryGetProperty("Start", out JsonElement startElement) &&
+                jsonData.TryGetProperty("End", out JsonElement endElement))
+            {
+                TimeSpan start = JsonSerializer.Deserialize<TimeSpan>(startElement.GetRawText());
+                TimeSpan end = JsonSerializer.Deserialize<TimeSpan>(endElement.GetRawText());
+
+                // Check if "IsActive" property exists, if not, it's the old format
+                if (!jsonData.TryGetProperty("IsActive", out _))
+                {
+                    loopData = new LoopStorageData(start, end, false); // Default IsActive to false for old data
+                    Debug.WriteLine($"[LoopDataMigrator] Migrated old loop format for {Path.GetFileName(filePathKey)} to Start={loopData.Start}, End={loopData.End}, IsActive={loopData.IsActive}");
+                    return true;
+                }
+                else
+                {
+                    // This case implies "Start", "End", and "IsActive" exist, which should have been caught by TryDeserializeCurrentFormat.
+                    // However, if TryDeserializeCurrentFormat failed for some other reason (e.g. type mismatch on IsActive),
+                    // this path might be hit. We treat it as "not the old format we're trying to migrate from here".
+                    Debug.WriteLine($"[LoopDataMigrator] Data for {Path.GetFileName(filePathKey)} has Start, End, and IsActive but failed current format deserialization. Not an old format target for this method.");
+                    return false;
+                }
+            }
+            else
+            {
+                Debug.WriteLine($"[LoopDataMigrator] Old format migration for {Path.GetFileName(filePathKey)} failed: 'Start' or 'End' property not found.");
+            }
+        }
+        catch (JsonException jsonEx)
+        {
+            Debug.WriteLine($"[LoopDataMigrator] JSON error during old format migration for {Path.GetFileName(filePathKey)}: {jsonEx.Message}");
+        }
+        catch (Exception exMigrate)
+        {
+            Debug.WriteLine($"[LoopDataMigrator] Failed to migrate loop for {Path.GetFileName(filePathKey)} from old format: {exMigrate.Message}");
+        }
+        return false;
+    }
+}
+</file>
+
 <file path="Source\Services\LoopDataService.cs">
 // Path: Source/Services/LoopDataService.cs
 using System;
@@ -1090,6 +1197,7 @@ public class LoopDataService
     private readonly string _loopDataFilePath;
     private Dictionary<string, LoopStorageData> _loopDataStore = new();
     private readonly object _lock = new object();
+    private readonly LoopDataMigrator _loopDataMigrator;
 
     public LoopDataService()
     {
@@ -1097,6 +1205,7 @@ public class LoopDataService
         var sonorizeAppDataPath = Path.Combine(appDataPath, "Sonorize");
         Directory.CreateDirectory(sonorizeAppDataPath);
         _loopDataFilePath = Path.Combine(sonorizeAppDataPath, "loopdata.json");
+        _loopDataMigrator = new LoopDataMigrator(); // Instantiate the migrator
         LoadLoopData();
         Debug.WriteLine($"[LoopDataService] Initialized. Data loaded from: {_loopDataFilePath}");
     }
@@ -1110,42 +1219,34 @@ public class LoopDataService
                 if (File.Exists(_loopDataFilePath))
                 {
                     var json = File.ReadAllText(_loopDataFilePath);
-                    // Handle potential old format without IsActive gracefully
                     var tempStore = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
                     _loopDataStore = new Dictionary<string, LoopStorageData>();
+
                     if (tempStore != null)
                     {
                         foreach (var kvp in tempStore)
                         {
-                            try
+                            if (LoopDataMigrator.TryProcessEntry(kvp.Key, kvp.Value, out LoopStorageData? processedData) && processedData != null)
                             {
-                                // Try to deserialize to the new record type
-                                _loopDataStore[kvp.Key] = kvp.Value.Deserialize<LoopStorageData>()!;
+                                _loopDataStore[kvp.Key] = processedData;
                             }
-                            catch (JsonException) // If it fails, it might be the old format
+                            else
                             {
-                                try
-                                {
-                                    // Old format: record LoopStorageData(TimeSpan Start, TimeSpan End);
-                                    var oldLoop = kvp.Value.Deserialize<OldLoopStorageDataTemp>();
-                                    if (oldLoop != null)
-                                    {
-                                        _loopDataStore[kvp.Key] = new LoopStorageData(oldLoop.Start, oldLoop.End, false); // Default IsActive to false for old data
-                                        Debug.WriteLine($"[LoopDataService] Migrated old loop format for {Path.GetFileName(kvp.Key)}");
-                                    }
-                                }
-                                catch (Exception exMigrate)
-                                {
-                                    Debug.WriteLine($"[LoopDataService] Failed to migrate or deserialize loop for {Path.GetFileName(kvp.Key)}: {exMigrate.Message}");
-                                }
+                                Debug.WriteLine($"[LoopDataService] Failed to process or migrate loop entry for {Path.GetFileName(kvp.Key)}, entry skipped.");
                             }
                         }
+                        Debug.WriteLine($"[LoopDataService] Successfully loaded/migrated {_loopDataStore.Count} loop entries using LoopDataMigrator.");
                     }
-                    Debug.WriteLine($"[LoopDataService] Successfully loaded/migrated {_loopDataStore.Count} loop entries.");
+                    else
+                    {
+                        _loopDataStore = new Dictionary<string, LoopStorageData>();
+                        Debug.WriteLine($"[LoopDataService] Loop data file was empty or malformed (tempStore is null).");
+                    }
                 }
                 else
                 {
                     _loopDataStore = new Dictionary<string, LoopStorageData>();
+                    Debug.WriteLine($"[LoopDataService] Loop data file not found. Initialized with empty store.");
                 }
             }
             catch (Exception ex)
@@ -1155,8 +1256,8 @@ public class LoopDataService
             }
         }
     }
-    // Temporary record for migration from old format
-    private record OldLoopStorageDataTemp(TimeSpan Start, TimeSpan End);
+
+    // OldLoopStorageDataTemp record is removed from here, as it's now in LoopDataMigrator
 
 
     private void SaveLoopData()
@@ -5365,6 +5466,7 @@ public class PlaybackEngineCoordinator : IDisposable
     private readonly PlaybackLoopHandler _loopHandler;
     private readonly PlaybackMonitor _playbackMonitor;
     private Song? _currentSong;
+    private bool _disposed = false;
 
     public event EventHandler<StoppedEventArgs>? EnginePlaybackStopped;
     public event EventHandler<PositionEventArgs>? EnginePositionUpdated;
@@ -5505,21 +5607,33 @@ public class PlaybackEngineCoordinator : IDisposable
 
     public void Dispose()
     {
-        Debug.WriteLine("[PlaybackEngineCoordinator] Dispose called.");
-        _playbackMonitor.Dispose();
-        if (_engineController != null)
-        {
-            _engineController.PlaybackStopped -= OnEngineControllerPlaybackStoppedRelay;
-            _engineController.Dispose();
-        }
-        _loopHandler.Dispose(); // LoopHandler is IDisposable
+        Dispose(true);
         GC.SuppressFinalize(this);
-        Debug.WriteLine("[PlaybackEngineCoordinator] Dispose completed.");
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed) return;
+
+        if (disposing)
+        {
+            Debug.WriteLine("[PlaybackEngineCoordinator] Dispose called.");
+            _playbackMonitor?.Dispose();
+            if (_engineController != null)
+            {
+                _engineController.PlaybackStopped -= OnEngineControllerPlaybackStoppedRelay;
+                _engineController.Dispose();
+            }
+            // _loopHandler is not owned by PlaybackEngineCoordinator, so it's not disposed here.
+            // Its lifecycle is managed by PlaybackService.
+            Debug.WriteLine("[PlaybackEngineCoordinator] Dispose completed.");
+        }
+        _disposed = true;
     }
 
     ~PlaybackEngineCoordinator()
     {
-        Dispose();
+        Dispose(false);
     }
 }
 
@@ -5582,6 +5696,62 @@ public class PlaybackFlowManagerService
         }
 
         Debug.WriteLine("[PlaybackFlowManager] HandlePlaybackEndedNaturally completed.");
+    }
+}
+</file>
+
+<file path="Source\Services\Playback\PlaybackInfrastructureProvider.cs">
+using System;
+using System.Diagnostics;
+
+namespace Sonorize.Services.Playback;
+
+public class PlaybackInfrastructureProvider : IDisposable
+{
+    public NAudioEngineController EngineController { get; }
+    public PlaybackMonitor Monitor { get; }
+    public PlaybackEngineCoordinator Coordinator { get; }
+
+    private bool _disposed = false;
+
+    public PlaybackInfrastructureProvider(PlaybackLoopHandler loopHandler)
+    {
+        ArgumentNullException.ThrowIfNull(loopHandler);
+
+        EngineController = new NAudioEngineController();
+        Monitor = new PlaybackMonitor(EngineController, loopHandler);
+        Coordinator = new PlaybackEngineCoordinator(EngineController, loopHandler, Monitor);
+        
+        Debug.WriteLine("[PlaybackInfrastructureProvider] Initialized and components created.");
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (disposing)
+        {
+            Debug.WriteLine("[PlaybackInfrastructureProvider] Disposing components.");
+            Coordinator?.Dispose();
+        }
+
+        _disposed = true;
+
+        Debug.WriteLine("[PlaybackInfrastructureProvider] Dispose finished.");
+    }
+
+    ~PlaybackInfrastructureProvider()
+    {
+        Dispose(false);
     }
 }
 </file>
@@ -6189,7 +6359,8 @@ namespace Sonorize.Services.Playback;
 
 public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
 {
-    private readonly PlaybackEngineCoordinator _playbackEngineCoordinator;
+    private readonly PlaybackInfrastructureProvider _infrastructureProvider;
+    private readonly PlaybackEngineCoordinator _playbackEngineCoordinator; // Now from provider
     private readonly PlaybackCompletionHandler _completionHandler;
     private readonly ScrobblingService _scrobblingService;
     private readonly PlaybackSessionState _sessionState;
@@ -6242,8 +6413,9 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
         _sessionState = new PlaybackSessionState();
         _sessionState.PropertyChanged += SessionState_PropertyChanged;
 
-        var engineController = new NAudioEngineController();
-        _playbackEngineCoordinator = new PlaybackEngineCoordinator(engineController, loopHandler, new PlaybackMonitor(engineController, loopHandler));
+        _infrastructureProvider = new PlaybackInfrastructureProvider(loopHandler);
+        _playbackEngineCoordinator = _infrastructureProvider.Coordinator;
+
         _completionHandler = new PlaybackCompletionHandler(this, _scrobblingService);
         _sessionLoader = new PlaybackSessionLoader(_playbackEngineCoordinator, _sessionState, _scrobblingService);
 
@@ -6432,8 +6604,9 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
         {
             _playbackEngineCoordinator.EnginePlaybackStopped -= OnEngineCoordinatorPlaybackStopped;
             _playbackEngineCoordinator.EnginePositionUpdated -= OnEngineCoordinatorPositionUpdated;
-            _playbackEngineCoordinator.Dispose();
+            // _playbackEngineCoordinator disposal is handled by _infrastructureProvider
         }
+        _infrastructureProvider?.Dispose();
         GC.SuppressFinalize(this);
         Debug.WriteLine("[PlaybackSessionManager] Dispose completed.");
     }
@@ -8619,32 +8792,33 @@ public class MainWindowComponentsManager : IDisposable
 {
     // Keep direct service references if they are passed to multiple components
     // or if MainWindowViewModel needs them directly (though preferably through properties here)
-    private readonly SettingsService _settingsService;
-    private readonly MusicLibraryService _musicLibraryService;
-    // PlaybackService is now a property for MainWindowViewModel to expose
+    // private readonly SettingsService _settingsService; // No longer needed directly if factory handles it
+    // private readonly MusicLibraryService _musicLibraryService; // No longer needed directly
     public PlaybackService PlaybackServiceProperty { get; }
-    private readonly ThemeColors _currentTheme;
-    private readonly WaveformService _waveformService;
-    private readonly LoopDataService _loopDataService;
-    private readonly ScrobblingService _scrobblingService;
-    private readonly SongMetadataService _songMetadataService;
-    private readonly SongEditInteractionService _songEditInteractionService;
-    private readonly SongLoopService _songLoopService;
+    // private readonly ThemeColors _currentTheme; // No longer needed directly
+    // private readonly WaveformService _waveformService; // No longer needed directly
+    // private readonly LoopDataService _loopDataService; // No longer needed directly
+    // private readonly ScrobblingService _scrobblingService; // No longer needed directly
+    // private readonly SongMetadataService _songMetadataService; // No longer needed directly
+    // private readonly SongEditInteractionService _songEditInteractionService; // No longer needed directly
+    // private readonly SongLoopService _songLoopService; // No longer needed directly
 
-    public LibraryViewModel Library { get; }
-    public PlaybackViewModel Playback { get; }
-    public LoopEditorViewModel LoopEditor { get; }
-    public AdvancedPanelViewModel AdvancedPanel { get; }
-    public LibraryDisplayModeService LibraryDisplayModeService { get; }
-    public ApplicationWorkflowManager WorkflowManager { get; }
-    public MainWindowInteractionCoordinator InteractionCoordinator { get; }
-    public MainWindowViewModelOrchestrator ViewModelOrchestrator { get; }
+    private readonly MainWindowViewModelSubComponentsFactory _subComponentsFactory;
+
+    public LibraryViewModel Library => _subComponentsFactory.Library;
+    public PlaybackViewModel Playback => _subComponentsFactory.Playback;
+    public LoopEditorViewModel LoopEditor => _subComponentsFactory.LoopEditor;
+    public AdvancedPanelViewModel AdvancedPanel => _subComponentsFactory.AdvancedPanel;
+    public LibraryDisplayModeService LibraryDisplayModeService => _subComponentsFactory.LibraryDisplayModeService;
+    public ApplicationWorkflowManager WorkflowManager => _subComponentsFactory.WorkflowManager;
+    public MainWindowInteractionCoordinator InteractionCoordinator => _subComponentsFactory.InteractionCoordinator;
+    public MainWindowViewModelOrchestrator ViewModelOrchestrator => _subComponentsFactory.ViewModelOrchestrator;
 
     public MainWindowComponentsManager(
         MainWindowViewModel parentMainWindowViewModel,
         SettingsService settingsService,
         MusicLibraryService musicLibraryService,
-        PlaybackService playbackService, // Renamed for clarity from _playbackService
+        PlaybackService playbackService,
         ThemeColors currentTheme,
         WaveformService waveformService,
         LoopDataService loopDataService,
@@ -8657,46 +8831,20 @@ public class MainWindowComponentsManager : IDisposable
         Action updateStatusBarTextCallback,
         Action<string> notifyMainWindowVMPropertyChangedCallback)
     {
-        _settingsService = settingsService;
-        _musicLibraryService = musicLibraryService;
-        PlaybackServiceProperty = playbackService; // Store the passed service
-        _currentTheme = currentTheme;
-        _waveformService = waveformService;
-        _loopDataService = loopDataService;
-        _scrobblingService = scrobblingService;
-        _songMetadataService = songMetadataService;
-        _songEditInteractionService = songEditInteractionService;
-        _songLoopService = songLoopService;
+        PlaybackServiceProperty = playbackService;
 
-        LibraryDisplayModeService = new LibraryDisplayModeService(_settingsService);
-        // Pass parentMainWindowViewModel to LibraryViewModel as per its constructor
-        Library = new LibraryViewModel(parentMainWindowViewModel, _settingsService, _musicLibraryService, _loopDataService, LibraryDisplayModeService);
-        Playback = new PlaybackViewModel(PlaybackServiceProperty, _waveformService); // Use the stored PlaybackService
-        LoopEditor = new LoopEditorViewModel(PlaybackServiceProperty, _loopDataService, _songLoopService); // Use stored PlaybackService
-        AdvancedPanel = new AdvancedPanelViewModel(Playback, Library);
-
-        WorkflowManager = new ApplicationWorkflowManager(
-            _settingsService,
-            _scrobblingService,
-            _currentTheme,
-            Library,
-            Playback,
-            PlaybackServiceProperty, // Use stored PlaybackService
-            _loopDataService);
-
-        InteractionCoordinator = new MainWindowInteractionCoordinator(
+        _subComponentsFactory = new MainWindowViewModelSubComponentsFactory(
+            parentMainWindowViewModel,
+            settingsService,
+            musicLibraryService,
+            playbackService,
+            currentTheme,
+            waveformService,
+            loopDataService,
+            scrobblingService,
+            songEditInteractionService,
+            songLoopService,
             getOwnerViewFunc,
-            Library,
-            AdvancedPanel,
-            WorkflowManager,
-            _songEditInteractionService,
-            raiseAllCommandsCanExecuteChangedCallback
-        );
-
-        ViewModelOrchestrator = new MainWindowViewModelOrchestrator(
-            Library,
-            Playback,
-            AdvancedPanel,
             raiseAllCommandsCanExecuteChangedCallback,
             updateStatusBarTextCallback,
             notifyMainWindowVMPropertyChangedCallback
@@ -8708,7 +8856,7 @@ public class MainWindowComponentsManager : IDisposable
 
     private void PlaybackService_PlaybackEndedNaturally(object? sender, EventArgs e)
     {
-        // WorkflowManager is instantiated and owned by this ComponentsManager
+        // WorkflowManager is instantiated and owned by this ComponentsManager via the factory
         WorkflowManager.HandlePlaybackEndedNaturally();
     }
 

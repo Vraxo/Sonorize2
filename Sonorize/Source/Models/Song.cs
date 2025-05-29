@@ -57,8 +57,6 @@ public class Song : ViewModelBase
 
         set
         {
-            // Setter is now a standard property setter.
-            // Persistence is handled by SongLoopService.
             if (!SetProperty(ref field, value))
             {
                 return;

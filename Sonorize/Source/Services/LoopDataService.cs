@@ -13,6 +13,7 @@ public class LoopDataService
     private readonly string _loopDataFilePath;
     private Dictionary<string, LoopStorageData> _loopDataStore = new();
     private readonly object _lock = new object();
+    private readonly LoopDataMigrator _loopDataMigrator;
 
     public LoopDataService()
     {
@@ -20,6 +21,7 @@ public class LoopDataService
         var sonorizeAppDataPath = Path.Combine(appDataPath, "Sonorize");
         Directory.CreateDirectory(sonorizeAppDataPath);
         _loopDataFilePath = Path.Combine(sonorizeAppDataPath, "loopdata.json");
+        _loopDataMigrator = new LoopDataMigrator(); // Instantiate the migrator
         LoadLoopData();
         Debug.WriteLine($"[LoopDataService] Initialized. Data loaded from: {_loopDataFilePath}");
     }
@@ -33,42 +35,34 @@ public class LoopDataService
                 if (File.Exists(_loopDataFilePath))
                 {
                     var json = File.ReadAllText(_loopDataFilePath);
-                    // Handle potential old format without IsActive gracefully
                     var tempStore = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
                     _loopDataStore = new Dictionary<string, LoopStorageData>();
+
                     if (tempStore != null)
                     {
                         foreach (var kvp in tempStore)
                         {
-                            try
+                            if (LoopDataMigrator.TryProcessEntry(kvp.Key, kvp.Value, out LoopStorageData? processedData) && processedData != null)
                             {
-                                // Try to deserialize to the new record type
-                                _loopDataStore[kvp.Key] = kvp.Value.Deserialize<LoopStorageData>()!;
+                                _loopDataStore[kvp.Key] = processedData;
                             }
-                            catch (JsonException) // If it fails, it might be the old format
+                            else
                             {
-                                try
-                                {
-                                    // Old format: record LoopStorageData(TimeSpan Start, TimeSpan End);
-                                    var oldLoop = kvp.Value.Deserialize<OldLoopStorageDataTemp>();
-                                    if (oldLoop != null)
-                                    {
-                                        _loopDataStore[kvp.Key] = new LoopStorageData(oldLoop.Start, oldLoop.End, false); // Default IsActive to false for old data
-                                        Debug.WriteLine($"[LoopDataService] Migrated old loop format for {Path.GetFileName(kvp.Key)}");
-                                    }
-                                }
-                                catch (Exception exMigrate)
-                                {
-                                    Debug.WriteLine($"[LoopDataService] Failed to migrate or deserialize loop for {Path.GetFileName(kvp.Key)}: {exMigrate.Message}");
-                                }
+                                Debug.WriteLine($"[LoopDataService] Failed to process or migrate loop entry for {Path.GetFileName(kvp.Key)}, entry skipped.");
                             }
                         }
+                        Debug.WriteLine($"[LoopDataService] Successfully loaded/migrated {_loopDataStore.Count} loop entries using LoopDataMigrator.");
                     }
-                    Debug.WriteLine($"[LoopDataService] Successfully loaded/migrated {_loopDataStore.Count} loop entries.");
+                    else
+                    {
+                        _loopDataStore = new Dictionary<string, LoopStorageData>();
+                        Debug.WriteLine($"[LoopDataService] Loop data file was empty or malformed (tempStore is null).");
+                    }
                 }
                 else
                 {
                     _loopDataStore = new Dictionary<string, LoopStorageData>();
+                    Debug.WriteLine($"[LoopDataService] Loop data file not found. Initialized with empty store.");
                 }
             }
             catch (Exception ex)
@@ -78,8 +72,8 @@ public class LoopDataService
             }
         }
     }
-    // Temporary record for migration from old format
-    private record OldLoopStorageDataTemp(TimeSpan Start, TimeSpan End);
+
+    // OldLoopStorageDataTemp record is removed from here, as it's now in LoopDataMigrator
 
 
     private void SaveLoopData()
