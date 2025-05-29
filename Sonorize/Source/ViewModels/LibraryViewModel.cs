@@ -34,6 +34,8 @@ public class LibraryViewModel : ViewModelBase
     public ICommand SetDisplayModeCommand => _displayModeService.SetDisplayModeCommand;
     public ICommand PreviousTrackCommand => _trackNavigationManager.PreviousTrackCommand;
     public ICommand NextTrackCommand => _trackNavigationManager.NextTrackCommand;
+    public ICommand EditSongMetadataCommand { get; }
+
 
     public string SearchQuery
     {
@@ -162,6 +164,8 @@ public class LibraryViewModel : ViewModelBase
         _libraryDataOrchestrator = new LibraryDataOrchestrator(_musicLibraryService, _artistAlbumManager, _settingsService);
 
         _musicLibraryService.SongThumbnailUpdated += MusicLibraryService_SongThumbnailUpdated;
+
+        EditSongMetadataCommand = new RelayCommand(ExecuteEditSongMetadata, CanExecuteEditSongMetadata);
 
         UpdateStatusBarText();
     }
@@ -308,10 +312,26 @@ public class LibraryViewModel : ViewModelBase
         }
     }
 
+    private void ExecuteEditSongMetadata(object? parameter)
+    {
+        if (parameter is Song song)
+        {
+            Debug.WriteLine($"[LibraryVM] Edit metadata requested for: {song.Title}");
+            // Future: Open metadata editing dialog here
+        }
+    }
+
+    private bool CanExecuteEditSongMetadata(object? parameter)
+    {
+        return parameter is Song;
+    }
+
+
     public void RaiseLibraryCommandsCanExecuteChanged()
     {
         // SetDisplayModeCommand CanExecute is handled by LibraryDisplayModeService
         // Navigation commands are handled by TrackNavigationManager
+        (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
     public void Dispose()
