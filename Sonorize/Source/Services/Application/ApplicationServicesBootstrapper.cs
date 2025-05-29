@@ -14,12 +14,14 @@ public class ApplicationServicesBootstrapper
         var scrobblingService = new ScrobblingService(settingsService, lastfmAuthenticatorService, scrobbleEligibilityService);
         var playbackService = new PlaybackService(scrobblingService);
         var loopDataService = new LoopDataService();
-        var thumbnailService = new ThumbnailService();
+        var defaultIconGenerator = new DefaultIconGenerator();
+        var albumArtLoader = new AlbumArtLoader(); // Create AlbumArtLoader
+        var thumbnailService = new ThumbnailService(defaultIconGenerator, albumArtLoader); // Pass both dependencies
         var songFactory = new SongFactory(loopDataService);
         var musicLibraryService = new MusicLibraryService(loopDataService, thumbnailService, songFactory);
         var waveformService = new WaveformService();
         var songMetadataService = new SongMetadataService();
-        var songLoopService = new SongLoopService(loopDataService); // New service
+        var songLoopService = new SongLoopService(loopDataService);
 
         var playbackResourceInterlockService = new PlaybackResourceInterlockService(playbackService.SessionManager);
 
@@ -36,7 +38,7 @@ public class ApplicationServicesBootstrapper
             scrobblingService,
             songMetadataService,
             songEditInteractionService,
-            songLoopService); // Pass new service
+            songLoopService);
 
         return mainWindowViewModel;
     }

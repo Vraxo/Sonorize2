@@ -9,9 +9,12 @@ namespace Sonorize.ViewModels.MainWindow;
 
 public class MainWindowComponentsManager : IDisposable
 {
+    // Keep direct service references if they are passed to multiple components
+    // or if MainWindowViewModel needs them directly (though preferably through properties here)
     private readonly SettingsService _settingsService;
     private readonly MusicLibraryService _musicLibraryService;
-    private readonly PlaybackService _playbackService;
+    // PlaybackService is now a property for MainWindowViewModel to expose
+    public PlaybackService PlaybackServiceProperty { get; }
     private readonly ThemeColors _currentTheme;
     private readonly WaveformService _waveformService;
     private readonly LoopDataService _loopDataService;
@@ -33,7 +36,7 @@ public class MainWindowComponentsManager : IDisposable
         MainWindowViewModel parentMainWindowViewModel,
         SettingsService settingsService,
         MusicLibraryService musicLibraryService,
-        PlaybackService playbackService,
+        PlaybackService playbackService, // Renamed for clarity from _playbackService
         ThemeColors currentTheme,
         WaveformService waveformService,
         LoopDataService loopDataService,
@@ -48,7 +51,7 @@ public class MainWindowComponentsManager : IDisposable
     {
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
-        _playbackService = playbackService;
+        PlaybackServiceProperty = playbackService; // Store the passed service
         _currentTheme = currentTheme;
         _waveformService = waveformService;
         _loopDataService = loopDataService;
@@ -58,9 +61,10 @@ public class MainWindowComponentsManager : IDisposable
         _songLoopService = songLoopService;
 
         LibraryDisplayModeService = new LibraryDisplayModeService(_settingsService);
+        // Pass parentMainWindowViewModel to LibraryViewModel as per its constructor
         Library = new LibraryViewModel(parentMainWindowViewModel, _settingsService, _musicLibraryService, _loopDataService, LibraryDisplayModeService);
-        Playback = new PlaybackViewModel(_playbackService, _waveformService);
-        LoopEditor = new LoopEditorViewModel(_playbackService, _loopDataService, _songLoopService);
+        Playback = new PlaybackViewModel(PlaybackServiceProperty, _waveformService); // Use the stored PlaybackService
+        LoopEditor = new LoopEditorViewModel(PlaybackServiceProperty, _loopDataService, _songLoopService); // Use stored PlaybackService
         AdvancedPanel = new AdvancedPanelViewModel(Playback, Library);
 
         WorkflowManager = new ApplicationWorkflowManager(
@@ -69,7 +73,7 @@ public class MainWindowComponentsManager : IDisposable
             _currentTheme,
             Library,
             Playback,
-            _playbackService,
+            PlaybackServiceProperty, // Use stored PlaybackService
             _loopDataService);
 
         InteractionCoordinator = new MainWindowInteractionCoordinator(
@@ -90,19 +94,21 @@ public class MainWindowComponentsManager : IDisposable
             notifyMainWindowVMPropertyChangedCallback
         );
 
-        _playbackService.PlaybackEndedNaturally += PlaybackService_PlaybackEndedNaturally;
+        // Subscribe to PlaybackServiceProperty events here, as this manager owns the WorkflowManager that handles it.
+        PlaybackServiceProperty.PlaybackEndedNaturally += PlaybackService_PlaybackEndedNaturally;
     }
 
     private void PlaybackService_PlaybackEndedNaturally(object? sender, EventArgs e)
     {
+        // WorkflowManager is instantiated and owned by this ComponentsManager
         WorkflowManager.HandlePlaybackEndedNaturally();
     }
 
     public void Dispose()
     {
-        if (_playbackService != null)
+        if (PlaybackServiceProperty != null)
         {
-            _playbackService.PlaybackEndedNaturally -= PlaybackService_PlaybackEndedNaturally;
+            PlaybackServiceProperty.PlaybackEndedNaturally -= PlaybackService_PlaybackEndedNaturally;
         }
         ViewModelOrchestrator?.Dispose();
         WorkflowManager?.Dispose();

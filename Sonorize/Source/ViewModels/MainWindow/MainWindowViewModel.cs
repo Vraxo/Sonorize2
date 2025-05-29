@@ -19,37 +19,23 @@ namespace Sonorize.ViewModels;
 
 public class MainWindowViewModel : ViewModelBase, IDisposable
 {
-    private readonly SettingsService _settingsService;
-    private readonly MusicLibraryService _musicLibraryService;
-    private readonly WaveformService _waveformService;
-    private readonly LoopDataService _loopDataService;
-    private readonly ScrobblingService _scrobblingService;
-    private readonly SongMetadataService _songMetadataService;
-    private readonly SongEditInteractionService _songEditInteractionService;
-    private readonly SongLoopService _songLoopService; // New service
-
-    private readonly MainWindowViewModelOrchestrator _orchestrator;
-    private readonly ApplicationWorkflowManager _workflowManager;
-    private readonly LibraryDisplayModeService _libraryDisplayModeService;
-    private readonly MainWindowInteractionCoordinator _interactionCoordinator;
-
+    private readonly MainWindowComponentsManager _componentsManager;
     private Window? _ownerView;
 
-
-    // Expose the Services directly for child VMs or public properties
-    public PlaybackService PlaybackService { get; }
+    // Expose Services needed by views or bindings if not through child VMs
+    public PlaybackService PlaybackService => _componentsManager.PlaybackServiceProperty; // Exposed from ComponentsManager
     public ThemeColors CurrentTheme { get; }
 
-    // Expose the child ViewModels
-    public LibraryViewModel Library { get; set; }
-    public LoopEditorViewModel LoopEditor { get; }
-    public PlaybackViewModel Playback { get; }
-    public AdvancedPanelViewModel AdvancedPanel { get; }
-    public string StatusBarText { get => field; set => SetProperty(ref field, value); } = "Welcome to Sonorize!";
+    // Expose the child ViewModels from ComponentsManager
+    public LibraryViewModel Library => _componentsManager.Library;
+    public LoopEditorViewModel LoopEditor => _componentsManager.LoopEditor;
+    public PlaybackViewModel Playback => _componentsManager.Playback;
+    public AdvancedPanelViewModel AdvancedPanel => _componentsManager.AdvancedPanel;
 
+    public string StatusBarText { get => field; set => SetProperty(ref field, value); } = "Welcome to Sonorize!";
     public int ActiveTabIndex { get => field; set => SetProperty(ref field, value); } = 0;
 
-    public bool IsLoadingLibrary { get => Library.IsLoadingLibrary; }
+    public bool IsLoadingLibrary => Library.IsLoadingLibrary;
 
     public bool IsAdvancedPanelVisible
     {
@@ -59,19 +45,17 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             if (AdvancedPanel.IsVisible != value)
             {
                 AdvancedPanel.IsVisible = value;
-                OnPropertyChanged();
+                OnPropertyChanged(); // AdvancedPanel will also raise its own, this is for MainWindowViewModel bindings
             }
         }
     }
     public ICommand ToggleAdvancedPanelCommand => AdvancedPanel.ToggleVisibilityCommand;
-
 
     public ICommand LoadInitialDataCommand { get; }
     public ICommand OpenSettingsCommand { get; }
     public ICommand ExitCommand { get; }
     public ICommand AddDirectoryAndRefreshCommand { get; }
     public ICommand OpenEditSongMetadataDialogCommand { get; }
-
 
     public MainWindowViewModel(
         SettingsService settingsService,
@@ -83,60 +67,37 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         ScrobblingService scrobblingService,
         SongMetadataService songMetadataService,
         SongEditInteractionService songEditInteractionService,
-        SongLoopService songLoopService) // Added songLoopService
+        SongLoopService songLoopService)
     {
-        _settingsService = settingsService;
-        _musicLibraryService = musicLibraryService;
-        PlaybackService = playbackService;
-        CurrentTheme = theme;
-        _waveformService = waveformService;
-        _loopDataService = loopDataService;
-        _scrobblingService = scrobblingService;
-        _songMetadataService = songMetadataService;
-        _songEditInteractionService = songEditInteractionService;
-        _songLoopService = songLoopService; // Store new service
+        CurrentTheme = theme; // Store theme directly
 
-        _libraryDisplayModeService = new LibraryDisplayModeService(_settingsService);
-        Library = new LibraryViewModel(this, _settingsService, _musicLibraryService, _loopDataService, _libraryDisplayModeService);
-        Playback = new PlaybackViewModel(PlaybackService, _waveformService);
-        LoopEditor = new LoopEditorViewModel(PlaybackService, _loopDataService, _songLoopService); // Pass new service
-        AdvancedPanel = new AdvancedPanelViewModel(Playback, Library);
-
-        _workflowManager = new ApplicationWorkflowManager(
-            _settingsService,
-            _scrobblingService,
-            CurrentTheme,
-            Library,
-            Playback,
-            PlaybackService,
-            _loopDataService);
-
-        _interactionCoordinator = new MainWindowInteractionCoordinator(
+        _componentsManager = new MainWindowComponentsManager(
+            this, // Pass self as parent
+            settingsService,
+            musicLibraryService,
+            playbackService, // Pass the service instance
+            theme,
+            waveformService,
+            loopDataService,
+            scrobblingService,
+            songMetadataService,
+            songEditInteractionService,
+            songLoopService,
             () => _ownerView,
-            Library,
-            AdvancedPanel,
-            _workflowManager,
-            _songEditInteractionService,
-            RaiseAllCommandsCanExecuteChanged
-        );
-
-        _orchestrator = new MainWindowViewModelOrchestrator(
-            Library,
-            Playback,
-            AdvancedPanel,
             RaiseAllCommandsCanExecuteChanged,
             UpdateStatusBarText,
             (propertyName) => OnPropertyChanged(propertyName)
         );
 
-        PlaybackService.PlaybackEndedNaturally += PlaybackService_PlaybackEndedNaturally;
-
-        LoadInitialDataCommand = new RelayCommand(async _ => await Library.LoadLibraryAsync(), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
-        OpenSettingsCommand = new RelayCommand(async _ => await OpenSettingsDialogAsync(), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
+        // Commands that interact with components managed by _componentsManager
+        LoadInitialDataCommand = new RelayCommand(async _ => await Library.LoadLibraryAsync(),
+            _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
+        OpenSettingsCommand = new RelayCommand(async _ => await OpenSettingsDialogAsync(),
+            _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
         ExitCommand = new RelayCommand(_ => Environment.Exit(0));
-        AddDirectoryAndRefreshCommand = new RelayCommand(async _ => await AddMusicDirectoryAndRefreshAsync(), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
+        AddDirectoryAndRefreshCommand = new RelayCommand(async _ => await AddMusicDirectoryAndRefreshAsync(),
+            _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
         OpenEditSongMetadataDialogCommand = new RelayCommand(async song => await HandleOpenEditSongMetadataDialogAsync(song), CanOpenEditSongMetadataDialog);
-
 
         Dispatcher.UIThread.InvokeAsync(UpdateAllUIDependentStates);
     }
@@ -146,22 +107,15 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         _ownerView = ownerView;
     }
 
-    private void PlaybackService_PlaybackEndedNaturally(object? sender, EventArgs e)
-    {
-        Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally event received. Delegating to WorkflowManager.");
-        _workflowManager.HandlePlaybackEndedNaturally();
-        Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally handler completed after delegation.");
-    }
+    // PlaybackService_PlaybackEndedNaturally is now handled within MainWindowComponentsManager via its WorkflowManager
 
     private void UpdateAllUIDependentStates()
     {
         OnPropertyChanged(nameof(IsLoadingLibrary));
-        OnPropertyChanged(nameof(Playback.CurrentSong));
-        OnPropertyChanged(nameof(Playback.HasCurrentSong));
-        OnPropertyChanged(nameof(Playback.CurrentPlaybackStatus));
-        OnPropertyChanged(nameof(Playback.IsPlaying));
-        OnPropertyChanged(nameof(Playback.CurrentTimeDisplay));
-        OnPropertyChanged(nameof(Playback.TotalTimeDisplay));
+        // Properties of child VMs (Playback.CurrentSong etc.) will notify through their own INPC.
+        // MainWindowViewModel itself doesn't need to raise OnPropertyChanged for them unless it has direct proxy properties.
+        // However, if bindings are to "Playback.CurrentSong" directly from MainWindowViewModel's XAML, they will work.
+        // Let's ensure relevant top-level states that might affect commands are refreshed.
         OnPropertyChanged(nameof(IsAdvancedPanelVisible));
         OnPropertyChanged(nameof(ActiveTabIndex));
 
@@ -179,12 +133,12 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenEditSongMetadataDialogCommand as RelayCommand)?.RaiseCanExecuteChanged();
 
-
+            // Child VMs manage their own command executability updates based on their state.
+            // If MainWindowViewModel needs to explicitly trigger updates in child VMs' commands:
             Library.RaiseLibraryCommandsCanExecuteChanged();
             Playback.RaisePlaybackCommandCanExecuteChanged();
             LoopEditor.RaiseMainLoopCommandsCanExecuteChanged();
-            LoopEditor.CandidateLoop.RaiseCaptureCommandsCanExecuteChanged();
-            (AdvancedPanel.ToggleVisibilityCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            // AdvancedPanel's ToggleVisibilityCommand CanExecute will be updated by AdvancedPanelViewModel itself.
         });
     }
 
@@ -192,33 +146,36 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     {
         Dispatcher.UIThread.InvokeAsync(() =>
         {
-            StatusBarText = _workflowManager.GetCurrentStatusText(LoopEditor);
+            // WorkflowManager is now accessed via _componentsManager
+            StatusBarText = _componentsManager.WorkflowManager.GetCurrentStatusText(LoopEditor);
         });
     }
 
     private async Task OpenSettingsDialogAsync()
     {
-        string statusMessage = await _interactionCoordinator.CoordinateOpenSettingsDialogAsync();
+        // InteractionCoordinator is accessed via _componentsManager
+        string statusMessage = await _componentsManager.InteractionCoordinator.CoordinateOpenSettingsDialogAsync();
         if (!string.IsNullOrEmpty(statusMessage))
         {
             StatusBarText = statusMessage;
         }
         else
         {
-            UpdateStatusBarText();
+            UpdateStatusBarText(); // Update with default status if no specific message
         }
     }
 
     private async Task AddMusicDirectoryAndRefreshAsync()
     {
-        var (refreshNeeded, statusMessage) = await _interactionCoordinator.CoordinateAddMusicDirectoryAsync();
+        // InteractionCoordinator is accessed via _componentsManager
+        var (refreshNeeded, statusMessage) = await _componentsManager.InteractionCoordinator.CoordinateAddMusicDirectoryAsync();
         StatusBarText = statusMessage;
 
         if (refreshNeeded)
         {
-            await Library.LoadLibraryAsync();
+            await Library.LoadLibraryAsync(); // Library is from _componentsManager
         }
-        else if (string.IsNullOrEmpty(statusMessage))
+        else if (string.IsNullOrEmpty(statusMessage)) // If no specific message (e.g. "already exists")
         {
             UpdateStatusBarText();
         }
@@ -226,9 +183,10 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private async Task HandleOpenEditSongMetadataDialogAsync(object? songObject)
     {
-        string statusMessage = await _interactionCoordinator.CoordinateEditSongMetadataAsync(songObject as Song);
+        // InteractionCoordinator is accessed via _componentsManager
+        string statusMessage = await _componentsManager.InteractionCoordinator.CoordinateEditSongMetadataAsync(songObject as Song);
         StatusBarText = statusMessage;
-        if (string.IsNullOrEmpty(statusMessage))
+        if (string.IsNullOrEmpty(statusMessage)) // Ensure status bar updates if no message
         {
             UpdateStatusBarText();
         }
@@ -239,19 +197,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         return songObject is Song && !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading);
     }
 
-
     public void Dispose()
     {
-        if (PlaybackService != null)
-        {
-            PlaybackService.PlaybackEndedNaturally -= PlaybackService_PlaybackEndedNaturally;
-        }
-        _orchestrator?.Dispose();
-        _workflowManager?.Dispose();
-        Library?.Dispose();
-        Playback?.Dispose();
-        AdvancedPanel?.Dispose();
-        LoopEditor?.Dispose();
+        _componentsManager?.Dispose();
         _ownerView = null;
     }
 }
