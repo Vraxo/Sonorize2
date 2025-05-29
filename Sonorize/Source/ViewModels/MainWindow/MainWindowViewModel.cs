@@ -38,11 +38,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public LoopEditorViewModel LoopEditor { get; }
     public PlaybackViewModel Playback { get; }
     public AdvancedPanelViewModel AdvancedPanel { get; }
-    private string _statusBarText = "Welcome to Sonorize!";
-    public string StatusBarText { get => _statusBarText; set => SetProperty(ref _statusBarText, value); }
+    public string StatusBarText { get => field; set => SetProperty(ref field, value); } = "Welcome to Sonorize!";
 
-    private int _activeTabIndex = 0;
-    public int ActiveTabIndex { get => _activeTabIndex; set => SetProperty(ref _activeTabIndex, value); }
+    public int ActiveTabIndex { get => field; set => SetProperty(ref field, value); } = 0;
 
     public bool IsLoadingLibrary { get => Library.IsLoadingLibrary; }
 
@@ -65,9 +63,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public ICommand OpenSettingsCommand { get; }
     public ICommand ExitCommand { get; }
     public ICommand AddDirectoryAndRefreshCommand { get; }
-
-    public Window? OwnerWindow { get; set; } // To be set by MainWindow after DataContext is assigned
-
 
     public MainWindowViewModel(
         SettingsService settingsService,
@@ -169,10 +164,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         });
     }
 
-    private async Task OpenSettingsDialogAsync(object? ownerWindowObj)
+    private async Task OpenSettingsDialogAsync(object? ownerWindow)
     {
-        Window? owner = ownerWindowObj as Window ?? OwnerWindow;
-        if (owner == null || Library.IsLoadingLibrary) return;
+        if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
         IsAdvancedPanelVisible = false;
 
         var (statusMessages, settingsChanged) = await _workflowManager.HandleOpenSettingsDialogAsync(owner);
@@ -195,10 +189,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         RaiseAllCommandsCanExecuteChanged();
     }
 
-    private async Task AddMusicDirectoryAndRefreshAsync(object? ownerWindowObj)
+    private async Task AddMusicDirectoryAndRefreshAsync(object? ownerWindow)
     {
-        Window? owner = ownerWindowObj as Window ?? OwnerWindow;
-        if (owner == null || Library.IsLoadingLibrary) return;
+        if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
         IsAdvancedPanelVisible = false;
 
         var (directoryAdded, statusMessage) = await _workflowManager.HandleAddMusicDirectoryAsync(owner);

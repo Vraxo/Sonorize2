@@ -8,7 +8,6 @@ using Sonorize.Models;
 using Sonorize.Services;
 using Sonorize.ViewModels.LibraryManagement;
 using System.ComponentModel; // Required for PropertyChangedEventArgs
-using Sonorize.Views; // Required for SongMetadataEditorWindow
 
 namespace Sonorize.ViewModels;
 
@@ -35,30 +34,28 @@ public class LibraryViewModel : ViewModelBase
     public ICommand SetDisplayModeCommand => _displayModeService.SetDisplayModeCommand;
     public ICommand PreviousTrackCommand => _trackNavigationManager.PreviousTrackCommand;
     public ICommand NextTrackCommand => _trackNavigationManager.NextTrackCommand;
-    public ICommand EditSongMetadataCommand { get; }
 
-
-    private string _searchQuery = string.Empty;
     public string SearchQuery
     {
-        get => _searchQuery;
+        get;
+
         set
         {
-            if (!SetProperty(ref _searchQuery, value))
+            if (!SetProperty(ref field, value))
             {
                 return;
             }
             ApplyFilter();
         }
-    }
+    } = string.Empty;
 
-    private Song? _selectedSong;
     public Song? SelectedSong
     {
-        get => _selectedSong;
+        get;
+
         set
         {
-            if (!SetProperty(ref _selectedSong, value))
+            if (!SetProperty(ref field, value))
             {
                 return;
             }
@@ -68,13 +65,13 @@ public class LibraryViewModel : ViewModelBase
         }
     }
 
-    private ArtistViewModel? _selectedArtist;
     public ArtistViewModel? SelectedArtist
     {
-        get => _selectedArtist;
+        get;
+
         set
         {
-            if (!SetProperty(ref _selectedArtist, value))
+            if (!SetProperty(ref field, value))
             {
                 return;
             }
@@ -90,13 +87,13 @@ public class LibraryViewModel : ViewModelBase
         }
     }
 
-    private AlbumViewModel? _selectedAlbum;
     public AlbumViewModel? SelectedAlbum
     {
-        get => _selectedAlbum;
+        get;
+
         set
         {
-            if (!SetProperty(ref _selectedAlbum, value))
+            if (!SetProperty(ref field, value))
             {
                 return;
             }
@@ -112,27 +109,27 @@ public class LibraryViewModel : ViewModelBase
         }
     }
 
-    private bool _isLoadingLibrary = false;
     public bool IsLoadingLibrary
     {
-        get => _isLoadingLibrary;
+        get;
+
         private set
         {
-            if (!SetProperty(ref _isLoadingLibrary, value))
+            if (!SetProperty(ref field, value))
             {
                 return;
             }
 
             RaiseLibraryCommandsCanExecuteChanged();
         }
-    }
+    } = false;
 
-    private string _libraryStatusText = "";
     public string LibraryStatusText
     {
         get => _libraryStatusText;
         private set => SetProperty(ref _libraryStatusText, value);
     }
+    private string _libraryStatusText = "";
 
 
     // Display mode properties are now proxies to LibraryDisplayModeService
@@ -166,39 +163,8 @@ public class LibraryViewModel : ViewModelBase
 
         _musicLibraryService.SongThumbnailUpdated += MusicLibraryService_SongThumbnailUpdated;
 
-        EditSongMetadataCommand = new RelayCommand(async song => await ExecuteEditSongMetadata(song as Song), song => song is Song);
-
-
         UpdateStatusBarText();
     }
-
-    private async Task ExecuteEditSongMetadata(Song? songToEdit)
-    {
-        if (songToEdit == null || _parentViewModel.OwnerWindow == null) return;
-
-        var editorViewModel = new SongMetadataEditorViewModel(songToEdit, _parentViewModel.PlaybackService);
-        var editorWindow = new SongMetadataEditorWindow(_parentViewModel.CurrentTheme)
-        {
-            DataContext = editorViewModel
-        };
-
-        var success = await editorWindow.ShowDialog<bool>(_parentViewModel.OwnerWindow);
-
-        if (success)
-        {
-            Debug.WriteLine($"[LibraryVM] Metadata for '{songToEdit.Title}' updated. Refreshing views.");
-            // The Song object itself is updated by the editor.
-            // Refresh Artists and Albums collections
-            _artistAlbumManager.PopulateCollections(_allSongs); // Re-populates based on potentially changed artist/album names
-            OnPropertyChanged(nameof(Artists));
-            OnPropertyChanged(nameof(Albums));
-
-            // Re-apply filter to update the song list if necessary
-            ApplyFilter();
-            UpdateStatusBarText();
-        }
-    }
-
 
     private void DisplayModeService_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -324,7 +290,6 @@ public class LibraryViewModel : ViewModelBase
             else _trackNavigationManager.UpdateSelectedSong(null);
         }
         UpdateStatusBarText();
-        (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
     public void UpdateStatusBarText()
@@ -347,7 +312,6 @@ public class LibraryViewModel : ViewModelBase
     {
         // SetDisplayModeCommand CanExecute is handled by LibraryDisplayModeService
         // Navigation commands are handled by TrackNavigationManager
-        (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
     public void Dispose()

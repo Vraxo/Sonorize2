@@ -8,7 +8,6 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Sonorize.Models; // For Song, ArtistViewModel, AlbumViewModel, ThemeColors
 using Sonorize.ViewModels; // For SongDisplayMode (though not directly used here, context is relevant)
-using Avalonia.VisualTree; // Required for FindAncestorOfType
 
 namespace Sonorize.Views.MainWindowControls
 {
@@ -45,43 +44,6 @@ namespace Sonorize.Views.MainWindowControls
             InitializePanelTemplates();
         }
 
-        private ContextMenu CreateSongContextMenu()
-        {
-            var contextMenu = new ContextMenu();
-            var editMenuItem = new MenuItem { Header = "View/Edit Metadata" };
-
-            // Command is on LibraryViewModel (which will be ContextMenu.DataContext)
-            editMenuItem.Bind(MenuItem.CommandProperty, new Binding("EditSongMetadataCommand"));
-
-            // CommandParameter is the Song object.
-            // Song is DataContext of PlacementTarget (the control the ContextMenu is attached to).
-            // The RelativeSource finds the ContextMenu itself to access its PlacementTarget.DataContext.
-            editMenuItem.Bind(MenuItem.CommandParameterProperty,
-                new Binding("PlacementTarget.DataContext")
-                {
-                    RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(ContextMenu) }
-                });
-
-            contextMenu.Items.Add(editMenuItem);
-
-            // Set DataContext of ContextMenu when it's opening.
-            // This ensures it gets the LibraryViewModel from the ListBox.
-            contextMenu.Opening += (sender, args) => {
-                var cm = sender as ContextMenu;
-                if (cm?.PlacementTarget is Control placementTarget)
-                {
-                    var listBox = placementTarget.FindAncestorOfType<ListBox>();
-                    if (listBox != null)
-                    {
-                        cm.DataContext = listBox.DataContext; // Should be LibraryViewModel
-                    }
-                }
-            };
-
-            return contextMenu;
-        }
-
-
         private void InitializeSongTemplates()
         {
             // Detailed Song Template
@@ -103,10 +65,7 @@ namespace Sonorize.Views.MainWindowControls
                 var textStack = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Children = { titleBlock, artistBlock } };
                 var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), VerticalAlignment = VerticalAlignment.Center, Children = { image, textStack, durationBlock } };
                 Grid.SetColumn(image, 0); Grid.SetColumn(textStack, 1); Grid.SetColumn(durationBlock, 2);
-
-                var rootBorder = new Border { Padding = new Thickness(10, 6, 10, 6), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
-                rootBorder.ContextMenu = CreateSongContextMenu();
-                return rootBorder;
+                return new Border { Padding = new Thickness(10, 6, 10, 6), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
             }, supportsRecycling: true);
 
             // Compact Song Template
@@ -127,10 +86,7 @@ namespace Sonorize.Views.MainWindowControls
                 var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), VerticalAlignment = VerticalAlignment.Center };
                 itemGrid.Children.Add(titleArtistPanel); itemGrid.Children.Add(durationBlock);
                 Grid.SetColumn(titleArtistPanel, 0); Grid.SetColumn(durationBlock, 1);
-
-                var rootBorder = new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = itemGrid };
-                rootBorder.ContextMenu = CreateSongContextMenu();
-                return rootBorder;
+                return new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = itemGrid };
             }, supportsRecycling: true);
 
             // Grid Song Template
@@ -158,10 +114,7 @@ namespace Sonorize.Views.MainWindowControls
                 artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
 
                 var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { image, titleBlock, artistBlock } };
-
-                var rootBorder = new Border { Width = 120, Height = 150, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-                rootBorder.ContextMenu = CreateSongContextMenu();
-                return rootBorder;
+                return new Border { Width = 120, Height = 150, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             }, supportsRecycling: true);
         }
 
