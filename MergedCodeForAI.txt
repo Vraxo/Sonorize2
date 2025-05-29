@@ -1329,6 +1329,49 @@ public class NextTrackSelectorService(Random shuffleRandom)
 }
 </file>
 
+<file path="Source\Services\ScrobbleEligibilityService.cs">
+using System;
+using System.Diagnostics;
+using Sonorize.Models; // For Song
+
+namespace Sonorize.Services;
+
+public record ScrobbleThresholds(int ScrobbleThresholdPercentage, int ScrobbleThresholdAbsoluteSeconds);
+
+public class ScrobbleEligibilityService
+{
+    private const int MinTrackLengthForScrobbleSeconds = 30;
+
+    public static bool ShouldScrobble(Song song, TimeSpan playedDuration, ScrobbleThresholds thresholds)
+    {
+        if (song == null || song.Duration.TotalSeconds <= MinTrackLengthForScrobbleSeconds)
+        {
+            Debug.WriteLine($"[ScrobbleEligibilityService] ShouldScrobble: Song '{song?.Title ?? "null"}' is null or too short ({song?.Duration.TotalSeconds ?? 0}s). Min required: {MinTrackLengthForScrobbleSeconds}s. Returning false.");
+            return false;
+        }
+
+        double percentagePlayed = (playedDuration.TotalSeconds / song.Duration.TotalSeconds) * 100.0;
+        double requiredPlaybackFromPercentage = song.Duration.TotalSeconds * (thresholds.ScrobbleThresholdPercentage / 100.0);
+        double requiredPlaybackAbsolute = thresholds.ScrobbleThresholdAbsoluteSeconds;
+
+        // Effective threshold is the stricter of the two: percentage-based OR absolute time.
+        // However, the Last.fm guideline is "The track must be played for at least half its duration, or for 4 minutes (whichever is shorter)."
+        // This implies a MINIMUM of the two conditions (percentage vs absolute) for the *required playback time*, not the maximum.
+        // E.g., if 50% is 30s, and absolute is 240s, need 30s. If 50% is 300s, and absolute is 240s, need 240s.
+        double effectiveRequiredSeconds = Math.Min(requiredPlaybackFromPercentage, requiredPlaybackAbsolute);
+
+        bool conditionMet = playedDuration.TotalSeconds >= effectiveRequiredSeconds;
+
+        Debug.WriteLine($"[ScrobbleEligibilityService] ShouldScrobble for '{song.Title}': " +
+                        $"Played: {playedDuration.TotalSeconds:F1}s ({percentagePlayed:F1}%), " +
+                        $"Song Duration: {song.Duration.TotalSeconds:F1}s. " +
+                        $"Configured Thresholds: {thresholds.ScrobbleThresholdPercentage}% (gives {requiredPlaybackFromPercentage:F1}s) OR {thresholds.ScrobbleThresholdAbsoluteSeconds}s. " +
+                        $"Effective Threshold: {effectiveRequiredSeconds:F1}s. Met: {conditionMet}");
+        return conditionMet;
+    }
+}
+</file>
+
 <file path="Source\Services\ScrobblingService.cs">
 using System;
 using System.Diagnostics;
@@ -1343,18 +1386,21 @@ public class ScrobblingService
 {
     private readonly SettingsService _settingsService;
     private readonly LastfmAuthenticatorService _authenticatorService;
+    private readonly ScrobbleEligibilityService _eligibilityService; // New dependency
     private AppSettings _currentSettings;
-
-    private const int MinTrackLengthForScrobbleSeconds = 30;
 
     public bool IsScrobblingEnabled => _currentSettings.LastfmScrobblingEnabled;
 
     public bool AreCredentialsEffectivelyConfigured => _authenticatorService.AreCredentialsEffectivelyConfigured(_currentSettings);
 
-    public ScrobblingService(SettingsService settingsService, LastfmAuthenticatorService authenticatorService)
+    public ScrobblingService(
+        SettingsService settingsService,
+        LastfmAuthenticatorService authenticatorService,
+        ScrobbleEligibilityService eligibilityService) // Added eligibilityService
     {
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
         _authenticatorService = authenticatorService ?? throw new ArgumentNullException(nameof(authenticatorService));
+        _eligibilityService = eligibilityService ?? throw new ArgumentNullException(nameof(eligibilityService)); // Store new dependency
         RefreshSettings(); // Initial load of settings
         Debug.WriteLine($"[ScrobblingService] Initialized. Scrobbling Enabled: {IsScrobblingEnabled}, Credentials Configured: {AreCredentialsEffectivelyConfigured}");
     }
@@ -1362,16 +1408,11 @@ public class ScrobblingService
     public void RefreshSettings()
     {
         _currentSettings = _settingsService.LoadSettings();
-        // Session key is now managed by LastfmAuthenticatorService, no need to cache it here.
         Debug.WriteLine($"[ScrobblingService] Settings refreshed. Scrobbling Enabled: {IsScrobblingEnabled}, Credentials Configured: {AreCredentialsEffectivelyConfigured}, Thresholds: {_currentSettings.ScrobbleThresholdPercentage}% / {_currentSettings.ScrobbleThresholdAbsoluteSeconds}s");
     }
 
     private async Task<LastfmClient?> GetAuthenticatedClientAsync()
     {
-        // Refresh settings before attempting to get a client to ensure AppSettings used by authenticator are current
-        // This might be redundant if RefreshSettings() is called frequently elsewhere, but safe.
-        // No, _authenticatorService.GetAuthenticatedClientAsync() loads its own fresh copy of settings.
-        // So, RefreshSettings() here is mainly for _currentSettings used by IsScrobblingEnabled and ShouldScrobble.
         RefreshSettings();
         return await _authenticatorService.GetAuthenticatedClientAsync();
     }
@@ -1380,31 +1421,16 @@ public class ScrobblingService
     {
         RefreshSettings(); // Ensure _currentSettings is up-to-date for threshold values
 
-        if (song == null || song.Duration.TotalSeconds <= MinTrackLengthForScrobbleSeconds)
-        {
-            Debug.WriteLine($"[ScrobblingService] ShouldScrobble: Song '{song?.Title ?? "null"}' is null or too short ({song?.Duration.TotalSeconds ?? 0}s). Min required: {MinTrackLengthForScrobbleSeconds}s. Returning false.");
-            return false;
-        }
+        var thresholds = new ScrobbleThresholds(
+            _currentSettings.ScrobbleThresholdPercentage,
+            _currentSettings.ScrobbleThresholdAbsoluteSeconds);
 
-        double percentagePlayed = (playedDuration.TotalSeconds / song.Duration.TotalSeconds) * 100.0;
-        double requiredPlaybackFromPercentage = song.Duration.TotalSeconds * (_currentSettings.ScrobbleThresholdPercentage / 100.0);
-        double requiredPlaybackAbsolute = _currentSettings.ScrobbleThresholdAbsoluteSeconds;
-        double effectiveRequiredSeconds = Math.Min(requiredPlaybackFromPercentage, requiredPlaybackAbsolute);
-        bool conditionMet = playedDuration.TotalSeconds >= effectiveRequiredSeconds;
-
-        Debug.WriteLine($"[ScrobblingService] ShouldScrobble for '{song.Title}': " +
-                        $"Played: {playedDuration.TotalSeconds:F1}s ({percentagePlayed:F1}%), " +
-                        $"Song Duration: {song.Duration.TotalSeconds:F1}s. " +
-                        $"Configured Thresholds: {_currentSettings.ScrobbleThresholdPercentage}% (gives {requiredPlaybackFromPercentage:F1}s) OR {_currentSettings.ScrobbleThresholdAbsoluteSeconds}s. " +
-                        $"Effective Threshold: {effectiveRequiredSeconds:F1}s. Met: {conditionMet}");
-        return conditionMet;
+        return ScrobbleEligibilityService.ShouldScrobble(song, playedDuration, thresholds);
     }
 
 
     public async Task UpdateNowPlayingAsync(Song song)
     {
-        // RefreshSettings() is called by GetAuthenticatedClientAsync() if needed,
-        // but also good to call here to check IsScrobblingEnabled with latest settings.
         RefreshSettings();
         if (!IsScrobblingEnabled || song == null)
         {
@@ -2674,28 +2700,46 @@ using Sonorize.Models;
 using Sonorize.Services;
 using Sonorize.ViewModels.LibraryManagement;
 using System.ComponentModel; // Required for PropertyChangedEventArgs
+using System.Collections.Generic; // Required for IReadOnlyList
 
 namespace Sonorize.ViewModels;
 
-public class LibraryViewModel : ViewModelBase
+public class LibraryViewModel : ViewModelBase, IDisposable
 {
     private readonly SettingsService _settingsService; // Kept for LibraryStatusTextGenerator
     private readonly MusicLibraryService _musicLibraryService;
-    private readonly LoopDataService _loopDataService;
+    // private readonly LoopDataService _loopDataService; // LoopDataService is used by SongFactory, not directly here anymore.
     private readonly MainWindowViewModel _parentViewModel;
     private readonly ArtistAlbumCollectionManager _artistAlbumManager;
-    private readonly SongFilteringService _songFilteringService;
+    private readonly SongFilteringService _songFilteringService; // Passed to SongListManager
     private readonly LibraryStatusTextGenerator _statusTextGenerator;
     private readonly LibraryDataOrchestrator _libraryDataOrchestrator;
     private readonly TrackNavigationManager _trackNavigationManager;
     private readonly LibraryDisplayModeService _displayModeService; // New dependency
     private readonly LibraryFilterStateManager _filterStateManager; // New dependency
+    private readonly SongListManager _songListManager; // New dependency
 
-    private readonly ObservableCollection<Song> _allSongs = [];
+    // Proxied properties from SongListManager
+    public ObservableCollection<Song> FilteredSongs => _songListManager.FilteredSongs;
+    public Song? SelectedSong
+    {
+        get => _songListManager.SelectedSong;
+        set
+        {
+            // Forward to SongListManager, which handles INotifyPropertyChanged for its SelectedSong
+            if (_songListManager.SelectedSong != value)
+            {
+                _songListManager.SelectedSong = value;
+                // We still need to notify that LibraryViewModel.SelectedSong has changed for its bindings
+                OnPropertyChanged();
+                // Let TrackNavigationManager know
+                _trackNavigationManager.UpdateSelectedSong(value);
+                (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"} (via SongListManager)");
+            }
+        }
+    }
 
-    public ObservableCollection<Song> FilteredSongs { get; } = [];
-    public ObservableCollection<ArtistViewModel> Artists { get; } = [];
-    public ObservableCollection<AlbumViewModel> Albums { get; } = [];
 
     // Expose FilterStateManager for binding
     public LibraryFilterStateManager FilterState => _filterStateManager;
@@ -2707,22 +2751,6 @@ public class LibraryViewModel : ViewModelBase
     public ICommand NextTrackCommand => _trackNavigationManager.NextTrackCommand;
     public ICommand EditSongMetadataCommand { get; }
 
-    public Song? SelectedSong
-    {
-        get;
-
-        set
-        {
-            if (!SetProperty(ref field, value))
-            {
-                return;
-            }
-
-            Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"}");
-            _trackNavigationManager.UpdateSelectedSong(value);
-            (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged(); // Update CanExecute for Edit
-        }
-    }
 
     public bool IsLoadingLibrary
     {
@@ -2756,28 +2784,30 @@ public class LibraryViewModel : ViewModelBase
         MainWindowViewModel parentViewModel,
         SettingsService settingsService,
         MusicLibraryService musicLibraryService,
-        LoopDataService loopDataService,
+        LoopDataService loopDataService, // Still needed for SongFactory used by MusicLibraryService indirectly
         LibraryDisplayModeService displayModeService)
     {
         _parentViewModel = parentViewModel ?? throw new ArgumentNullException(nameof(parentViewModel));
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
-        _loopDataService = loopDataService;
+        // _loopDataService = loopDataService; // Not directly used here
         _displayModeService = displayModeService ?? throw new ArgumentNullException(nameof(displayModeService));
 
         _filterStateManager = new LibraryFilterStateManager();
         _filterStateManager.FilterCriteriaChanged += (s, e) => ApplyFilter();
         _filterStateManager.RequestTabSwitchToLibrary += (s, e) => _parentViewModel.ActiveTabIndex = 0;
 
+        _songFilteringService = new SongFilteringService();
+        _songListManager = new SongListManager(_songFilteringService);
+        _songListManager.PropertyChanged += SongListManager_PropertyChanged;
+
 
         // Subscribe to PropertyChanged on _displayModeService to update proxied properties
         _displayModeService.PropertyChanged += DisplayModeService_PropertyChanged;
 
-        FilteredSongs = new ObservableCollection<Song>();
-        _trackNavigationManager = new TrackNavigationManager(FilteredSongs);
+        _trackNavigationManager = new TrackNavigationManager(FilteredSongs); // FilteredSongs is now from _songListManager
 
         _artistAlbumManager = new ArtistAlbumCollectionManager(Artists, Albums, _musicLibraryService);
-        _songFilteringService = new SongFilteringService();
         _statusTextGenerator = new LibraryStatusTextGenerator();
         _libraryDataOrchestrator = new LibraryDataOrchestrator(_musicLibraryService, _artistAlbumManager, _settingsService);
 
@@ -2787,6 +2817,23 @@ public class LibraryViewModel : ViewModelBase
 
         UpdateStatusBarText();
     }
+
+    private void SongListManager_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SongListManager.SelectedSong))
+        {
+            // Relay the property change for LibraryViewModel.SelectedSong
+            OnPropertyChanged(nameof(SelectedSong));
+            _trackNavigationManager.UpdateSelectedSong(_songListManager.SelectedSong);
+            (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            Debug.WriteLine($"[LibraryVM] SongListManager.SelectedSong changed to: {_songListManager.SelectedSong?.Title ?? "null"}. Updated own SelectedSong.");
+        }
+        else if (e.PropertyName == nameof(SongListManager.FilteredSongs))
+        {
+            OnPropertyChanged(nameof(FilteredSongs));
+        }
+    }
+
 
     private void DisplayModeService_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -2805,13 +2852,18 @@ public class LibraryViewModel : ViewModelBase
         }
     }
 
+    // Collections for Artists and Albums are still managed directly by LibraryViewModel
+    // for simplicity, as they are primarily populated once by ArtistAlbumCollectionManager.
+    public ObservableCollection<ArtistViewModel> Artists { get; } = [];
+    public ObservableCollection<AlbumViewModel> Albums { get; } = [];
+
 
     private async void MusicLibraryService_SongThumbnailUpdated(Song updatedSong)
     {
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            _artistAlbumManager.UpdateCollectionsForSongThumbnail(updatedSong, _allSongs);
-            OnPropertyChanged(nameof(Artists));
+            _artistAlbumManager.UpdateCollectionsForSongThumbnail(updatedSong, _songListManager.GetAllSongsReadOnly());
+            OnPropertyChanged(nameof(Artists)); // These are still direct properties of LibraryVM
             OnPropertyChanged(nameof(Albums));
         });
     }
@@ -2825,27 +2877,34 @@ public class LibraryViewModel : ViewModelBase
 
         IsLoadingLibrary = true;
         _filterStateManager.ClearSelectionsAndSearch(); // Resets SearchQuery, SelectedArtist, SelectedAlbum
-        SelectedSong = null;
+        // SelectedSong will be cleared by SongListManager.ClearAllSongs or during filter application
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            _allSongs.Clear();
-            FilteredSongs.Clear();
+            _songListManager.ClearAllSongs(); // Clears all songs, filtered songs, and selected song
             Artists.Clear();
             Albums.Clear();
             LibraryStatusText = "Preparing to load music...";
         });
 
-        Action<Song> songAddedCallback = song => _allSongs.Add(song);
+        List<Song> loadedRawSongs = new List<Song>();
+        Action<Song> songAddedCallback = song => loadedRawSongs.Add(song); // Collect raw songs
         Action<string> statusUpdateCallback = status => LibraryStatusText = status;
 
-        await _libraryDataOrchestrator.LoadAndProcessLibraryDataAsync(statusUpdateCallback, songAddedCallback);
+        // _libraryDataOrchestrator now uses the songAddedCallback to populate the list it returns
+        // instead of directly adding to LibraryViewModel's _allSongs.
+        // We pass a callback that just collects them temporarily.
+        var allLoadedSongsFromOrchestrator = await _libraryDataOrchestrator.LoadAndProcessLibraryDataAsync(statusUpdateCallback, songAddedCallback);
+        _songListManager.SetAllSongs(allLoadedSongsFromOrchestrator); // Set all songs in the manager
+
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
+            // ArtistAlbumManager populates Artists and Albums collections using the master list from SongListManager
+            _artistAlbumManager.PopulateCollections(_songListManager.GetAllSongsReadOnly());
             OnPropertyChanged(nameof(Artists));
             OnPropertyChanged(nameof(Albums));
-            ApplyFilter();
+            ApplyFilter(); // Apply initial filter
         });
 
         IsLoadingLibrary = false;
@@ -2854,34 +2913,14 @@ public class LibraryViewModel : ViewModelBase
 
     private void ApplyFilter()
     {
-        var currentSelectedSongBeforeFilter = SelectedSong;
-
-        FilteredSongs.Clear();
-        var filtered = _songFilteringService.ApplyFilter(
-            _allSongs,
+        _songListManager.ApplyFilter(
             _filterStateManager.SearchQuery,
             _filterStateManager.SelectedArtist,
             _filterStateManager.SelectedAlbum);
+        // SelectedSong management is now inside _songListManager.ApplyFilter
 
-        foreach (var song in filtered)
-        {
-            FilteredSongs.Add(song);
-        }
-
-        if (currentSelectedSongBeforeFilter != null && FilteredSongs.Contains(currentSelectedSongBeforeFilter))
-        {
-            SelectedSong = currentSelectedSongBeforeFilter;
-        }
-        else if (currentSelectedSongBeforeFilter != null)
-        {
-            Debug.WriteLine($"[LibraryVM] Selected song '{currentSelectedSongBeforeFilter.Title}' is no longer in the filtered list. Clearing selection.");
-            SelectedSong = null;
-        }
-        else
-        {
-            if (SelectedSong != null) SelectedSong = null;
-            else _trackNavigationManager.UpdateSelectedSong(null);
-        }
+        // Ensure TrackNavigationManager is aware of the potentially changed SelectedSong from SongListManager
+        _trackNavigationManager.UpdateSelectedSong(_songListManager.SelectedSong);
         UpdateStatusBarText();
     }
 
@@ -2891,8 +2930,8 @@ public class LibraryViewModel : ViewModelBase
         {
             LibraryStatusText = _statusTextGenerator.GenerateStatusText(
                 IsLoadingLibrary,
-                _allSongs.Count,
-                FilteredSongs.Count,
+                _songListManager.AllSongsCount, // Use count from SongListManager
+                FilteredSongs.Count, // FilteredSongs is a direct proxy
                 _filterStateManager.SelectedArtist,
                 _filterStateManager.SelectedAlbum,
                 _filterStateManager.SearchQuery,
@@ -2936,14 +2975,17 @@ public class LibraryViewModel : ViewModelBase
         if (_displayModeService != null)
         {
             _displayModeService.PropertyChanged -= DisplayModeService_PropertyChanged;
-            // If LibraryDisplayModeService becomes IDisposable, dispose it here.
         }
         if (_filterStateManager != null)
         {
             _filterStateManager.FilterCriteriaChanged -= (s, e) => ApplyFilter();
             _filterStateManager.RequestTabSwitchToLibrary -= (s, e) => _parentViewModel.ActiveTabIndex = 0;
         }
-        // Clean up if necessary, though RelayCommand doesn't typically need explicit disposal
+        if (_songListManager != null)
+        {
+            _songListManager.PropertyChanged -= SongListManager_PropertyChanged;
+            // If SongListManager implemented IDisposable, dispose it here.
+        }
     }
 }
 </file>
@@ -4356,7 +4398,8 @@ public class ApplicationServicesBootstrapper
     {
         // Create all services
         var lastfmAuthenticatorService = new LastfmAuthenticatorService(settingsService);
-        var scrobblingService = new ScrobblingService(settingsService, lastfmAuthenticatorService);
+        var scrobbleEligibilityService = new ScrobbleEligibilityService(); // New
+        var scrobblingService = new ScrobblingService(settingsService, lastfmAuthenticatorService, scrobbleEligibilityService); // Modified
         var playbackService = new PlaybackService(scrobblingService); // PlaybackService creates its SessionManager
         var loopDataService = new LoopDataService();
         var thumbnailService = new ThumbnailService();
@@ -6938,6 +6981,100 @@ public class SongFilteringService
 
         return songsToFilter.OrderBy(s => s.Title, StringComparer.OrdinalIgnoreCase);
     }
+}
+</file>
+
+<file path="Source\ViewModels\LibraryManagement\SongListManager.cs">
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Linq;
+using Sonorize.Models;
+
+namespace Sonorize.ViewModels.LibraryManagement;
+
+public class SongListManager : ViewModelBase
+{
+    private readonly SongFilteringService _songFilteringService;
+    private List<Song> _allSongs = new(); // Master list
+
+    public ObservableCollection<Song> FilteredSongs { get; } = new();
+
+    public Song? SelectedSong
+    {
+        get;
+        set
+        {
+            if (SetProperty(ref field, value))
+            {
+                // Consumers (like TrackNavigationManager via LibraryViewModel)
+                // will be notified of this change.
+            }
+        }
+    }
+
+    public SongListManager(SongFilteringService songFilteringService)
+    {
+        _songFilteringService = songFilteringService ?? throw new ArgumentNullException(nameof(songFilteringService));
+    }
+
+    public void SetAllSongs(IEnumerable<Song> songs)
+    {
+        _allSongs = new List<Song>(songs);
+        // Typically, after setting all songs, a filter application would follow.
+        // This can be triggered by the caller (LibraryViewModel).
+        OnPropertyChanged(nameof(AllSongsCount)); // For any internal/debug use
+    }
+
+    public void ClearAllSongs()
+    {
+        _allSongs.Clear();
+        FilteredSongs.Clear();
+        SelectedSong = null; // This will notify
+        OnPropertyChanged(nameof(AllSongsCount));
+    }
+
+    public int AllSongsCount => _allSongs.Count;
+
+    public void ApplyFilter(string? searchQuery, ArtistViewModel? selectedArtist, AlbumViewModel? selectedAlbum)
+    {
+        var currentSelectedSongBeforeFilter = SelectedSong;
+
+        FilteredSongs.Clear();
+        var filtered = _songFilteringService.ApplyFilter(
+            _allSongs,
+            searchQuery,
+            selectedArtist,
+            selectedAlbum);
+
+        foreach (var song in filtered)
+        {
+            FilteredSongs.Add(song);
+        }
+
+        // Preserve selection if possible
+        if (currentSelectedSongBeforeFilter != null && FilteredSongs.Contains(currentSelectedSongBeforeFilter))
+        {
+            SelectedSong = currentSelectedSongBeforeFilter; // No change notification if it's the same instance
+        }
+        else if (currentSelectedSongBeforeFilter != null)
+        {
+            Debug.WriteLine($"[SongListManager] Selected song '{currentSelectedSongBeforeFilter.Title}' is no longer in the filtered list. Clearing selection.");
+            SelectedSong = null; // Notify that selection is cleared
+        }
+        else if (SelectedSong != null) // If there was a selection but it's no longer valid (e.g. currentSelectedSongBeforeFilter was null, but SelectedSong somehow had a value from previous invalid state)
+        {
+            SelectedSong = null; // Ensure selection is cleared and notified
+        }
+        // If currentSelectedSongBeforeFilter was null and SelectedSong is also null, no change, no notification.
+
+        OnPropertyChanged(nameof(FilteredSongs)); // Notify that the collection content has changed (though individual adds also notify)
+    }
+
+    // Provides access to the master list for services like ArtistAlbumCollectionManager
+    public IReadOnlyList<Song> GetAllSongsReadOnly() => _allSongs.AsReadOnly();
 }
 </file>
 
