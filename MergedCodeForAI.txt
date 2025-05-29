@@ -624,87 +624,61 @@ public class Song : ViewModelBase
 {
     public string DurationString => $"{Duration:mm\\:ss}";
 
-    private string _filePath = string.Empty;
     public string FilePath
     {
-        get => _filePath;
-        set => SetProperty(ref _filePath, value);
-    }
+        get;
+        set => SetProperty(ref field, value);
+    } = string.Empty;
+    
     public string Title
     {
         get;
         set => SetProperty(ref field, value);
     } = "Unknown Title";
-
-    private string _artist = "Unknown Artist";
+    
     public string Artist
     {
-        get => _artist;
-        set => SetProperty(ref _artist, value);
-    }
+        get;
+        set => SetProperty(ref field, value);
+    } = "Unknown Artist";
+    
+    public string Album 
+    { 
+        get; 
+        set => SetProperty(ref field, value); 
+    } = "Unknown Album";
 
-    private string _album = "Unknown Album";
-    public string Album
-    {
-        get => _album;
-        set => SetProperty(ref _album, value);
-    }
-
-    private TimeSpan _duration;
     public TimeSpan Duration
     {
-        get => _duration;
-        set => SetProperty(ref _duration, value);
+        get;
+        set => SetProperty(ref field, value);
     }
 
-    private Bitmap? _thumbnail;
     public Bitmap? Thumbnail
     {
-        get => _thumbnail;
-        set => SetProperty(ref _thumbnail, value);
+        get;
+        set => SetProperty(ref field, value);
     }
 
-    private LoopRegion? _savedLoop;
     public LoopRegion? SavedLoop
     {
-        get => _savedLoop;
-        set => SetProperty(ref _savedLoop, value);
+        get;
+        set => SetProperty(ref field, value);
     }
 
-    private bool _isLoopActive;
     public bool IsLoopActive
     {
-        get => _isLoopActive;
+        get;
+
         set
         {
-            if (!SetProperty(ref _isLoopActive, value))
+            if (!SetProperty(ref field, value))
             {
                 return;
             }
 
             Debug.WriteLine($"[SongModel] {Title} - IsLoopActive set to: {value}");
         }
-    }
-
-    private string _genre = "Unknown Genre";
-    public string Genre
-    {
-        get => _genre;
-        set => SetProperty(ref _genre, value);
-    }
-
-    private uint _trackNumber;
-    public uint TrackNumber
-    {
-        get => _trackNumber;
-        set => SetProperty(ref _trackNumber, value);
-    }
-
-    private uint _year;
-    public uint Year
-    {
-        get => _year;
-        set => SetProperty(ref _year, value);
     }
 }
 </file>
@@ -1546,9 +1520,6 @@ public class SongFactory
             Title = Path.GetFileNameWithoutExtension(filePath), // Default title
             Artist = "Unknown Artist",                         // Default artist
             Album = "Unknown Album",                           // Default album
-            Genre = "Unknown Genre",                           // Default genre
-            TrackNumber = 0,                                   // Default track number
-            Year = 0,                                          // Default year
             Duration = TimeSpan.Zero,                          // Default duration
             Thumbnail = defaultThumbnail                       // Initial default thumbnail
         };
@@ -1565,13 +1536,6 @@ public class SongFactory
 
             if (!string.IsNullOrWhiteSpace(tagFile.Tag.Album)) song.Album = tagFile.Tag.Album;
             if (tagFile.Properties.Duration > TimeSpan.Zero) song.Duration = tagFile.Properties.Duration;
-
-            if (tagFile.Tag.Genres.Length > 0 && !string.IsNullOrWhiteSpace(tagFile.Tag.Genres[0]))
-                song.Genre = tagFile.Tag.Genres[0];
-
-            song.TrackNumber = tagFile.Tag.Track;
-            song.Year = tagFile.Tag.Year;
-
         }
         catch (CorruptFileException cfe)
         {
@@ -2523,7 +2487,6 @@ using Sonorize.Models;
 using Sonorize.Services;
 using Sonorize.ViewModels.LibraryManagement;
 using System.ComponentModel; // Required for PropertyChangedEventArgs
-using Sonorize.Views; // Required for SongMetadataEditorWindow
 
 namespace Sonorize.ViewModels;
 
@@ -2550,30 +2513,28 @@ public class LibraryViewModel : ViewModelBase
     public ICommand SetDisplayModeCommand => _displayModeService.SetDisplayModeCommand;
     public ICommand PreviousTrackCommand => _trackNavigationManager.PreviousTrackCommand;
     public ICommand NextTrackCommand => _trackNavigationManager.NextTrackCommand;
-    public ICommand EditSongMetadataCommand { get; }
 
-
-    private string _searchQuery = string.Empty;
     public string SearchQuery
     {
-        get => _searchQuery;
+        get;
+
         set
         {
-            if (!SetProperty(ref _searchQuery, value))
+            if (!SetProperty(ref field, value))
             {
                 return;
             }
             ApplyFilter();
         }
-    }
+    } = string.Empty;
 
-    private Song? _selectedSong;
     public Song? SelectedSong
     {
-        get => _selectedSong;
+        get;
+
         set
         {
-            if (!SetProperty(ref _selectedSong, value))
+            if (!SetProperty(ref field, value))
             {
                 return;
             }
@@ -2583,13 +2544,13 @@ public class LibraryViewModel : ViewModelBase
         }
     }
 
-    private ArtistViewModel? _selectedArtist;
     public ArtistViewModel? SelectedArtist
     {
-        get => _selectedArtist;
+        get;
+
         set
         {
-            if (!SetProperty(ref _selectedArtist, value))
+            if (!SetProperty(ref field, value))
             {
                 return;
             }
@@ -2605,13 +2566,13 @@ public class LibraryViewModel : ViewModelBase
         }
     }
 
-    private AlbumViewModel? _selectedAlbum;
     public AlbumViewModel? SelectedAlbum
     {
-        get => _selectedAlbum;
+        get;
+
         set
         {
-            if (!SetProperty(ref _selectedAlbum, value))
+            if (!SetProperty(ref field, value))
             {
                 return;
             }
@@ -2627,27 +2588,27 @@ public class LibraryViewModel : ViewModelBase
         }
     }
 
-    private bool _isLoadingLibrary = false;
     public bool IsLoadingLibrary
     {
-        get => _isLoadingLibrary;
+        get;
+
         private set
         {
-            if (!SetProperty(ref _isLoadingLibrary, value))
+            if (!SetProperty(ref field, value))
             {
                 return;
             }
 
             RaiseLibraryCommandsCanExecuteChanged();
         }
-    }
+    } = false;
 
-    private string _libraryStatusText = "";
     public string LibraryStatusText
     {
         get => _libraryStatusText;
         private set => SetProperty(ref _libraryStatusText, value);
     }
+    private string _libraryStatusText = "";
 
 
     // Display mode properties are now proxies to LibraryDisplayModeService
@@ -2681,39 +2642,8 @@ public class LibraryViewModel : ViewModelBase
 
         _musicLibraryService.SongThumbnailUpdated += MusicLibraryService_SongThumbnailUpdated;
 
-        EditSongMetadataCommand = new RelayCommand(async song => await ExecuteEditSongMetadata(song as Song), song => song is Song);
-
-
         UpdateStatusBarText();
     }
-
-    private async Task ExecuteEditSongMetadata(Song? songToEdit)
-    {
-        if (songToEdit == null || _parentViewModel.OwnerWindow == null) return;
-
-        var editorViewModel = new SongMetadataEditorViewModel(songToEdit, _parentViewModel.PlaybackService);
-        var editorWindow = new SongMetadataEditorWindow(_parentViewModel.CurrentTheme)
-        {
-            DataContext = editorViewModel
-        };
-
-        var success = await editorWindow.ShowDialog<bool>(_parentViewModel.OwnerWindow);
-
-        if (success)
-        {
-            Debug.WriteLine($"[LibraryVM] Metadata for '{songToEdit.Title}' updated. Refreshing views.");
-            // The Song object itself is updated by the editor.
-            // Refresh Artists and Albums collections
-            _artistAlbumManager.PopulateCollections(_allSongs); // Re-populates based on potentially changed artist/album names
-            OnPropertyChanged(nameof(Artists));
-            OnPropertyChanged(nameof(Albums));
-
-            // Re-apply filter to update the song list if necessary
-            ApplyFilter();
-            UpdateStatusBarText();
-        }
-    }
-
 
     private void DisplayModeService_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -2839,7 +2769,6 @@ public class LibraryViewModel : ViewModelBase
             else _trackNavigationManager.UpdateSelectedSong(null);
         }
         UpdateStatusBarText();
-        (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
     public void UpdateStatusBarText()
@@ -2862,7 +2791,6 @@ public class LibraryViewModel : ViewModelBase
     {
         // SetDisplayModeCommand CanExecute is handled by LibraryDisplayModeService
         // Navigation commands are handled by TrackNavigationManager
-        (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
     public void Dispose()
@@ -3338,191 +3266,6 @@ public enum SongDisplayMode
 }
 </file>
 
-<file path="Source\ViewModels\SongMetadataEditorViewModel.cs">
-using System;
-using System.ComponentModel;
-using System.Diagnostics;
-using System.Globalization;
-using System.IO;
-using System.Windows.Input;
-using Sonorize.Models;
-using Sonorize.Services; // For PlaybackService
-using TagLib;
-
-namespace Sonorize.ViewModels;
-
-public class SongMetadataEditorViewModel : ViewModelBase
-{
-    private readonly Song _originalSong;
-    private readonly PlaybackService _playbackService;
-
-    public string WindowTitle => $"Edit Metadata - {_originalSong.Title}";
-
-    private string _editableTitle;
-    public string EditableTitle
-    {
-        get => _editableTitle;
-        set => SetProperty(ref _editableTitle, value);
-    }
-
-    private string _editableArtist;
-    public string EditableArtist
-    {
-        get => _editableArtist;
-        set => SetProperty(ref _editableArtist, value);
-    }
-
-    private string _editableAlbum;
-    public string EditableAlbum
-    {
-        get => _editableAlbum;
-        set => SetProperty(ref _editableAlbum, value);
-    }
-
-    private string _editableGenre;
-    public string EditableGenre
-    {
-        get => _editableGenre;
-        set => SetProperty(ref _editableGenre, value);
-    }
-
-    private string _editableTrackNumber;
-    public string EditableTrackNumber // String for easier binding and validation
-    {
-        get => _editableTrackNumber;
-        set => SetProperty(ref _editableTrackNumber, value);
-    }
-
-    private string _editableYear;
-    public string EditableYear // String for easier binding and validation
-    {
-        get => _editableYear;
-        set => SetProperty(ref _editableYear, value);
-    }
-
-    public ICommand SaveCommand { get; }
-    public ICommand CancelCommand { get; }
-
-    public Action<bool>? CloseAction { get; set; }
-
-
-    public SongMetadataEditorViewModel(Song originalSong, PlaybackService playbackService)
-    {
-        _originalSong = originalSong ?? throw new ArgumentNullException(nameof(originalSong));
-        _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
-
-        _editableTitle = _originalSong.Title;
-        _editableArtist = _originalSong.Artist;
-        _editableAlbum = _originalSong.Album;
-        _editableGenre = _originalSong.Genre;
-        _editableTrackNumber = _originalSong.TrackNumber == 0 ? string.Empty : _originalSong.TrackNumber.ToString(CultureInfo.InvariantCulture);
-        _editableYear = _originalSong.Year == 0 ? string.Empty : _originalSong.Year.ToString(CultureInfo.InvariantCulture);
-
-        SaveCommand = new RelayCommand(ExecuteSave, CanExecuteSave);
-        CancelCommand = new RelayCommand(ExecuteCancel);
-    }
-
-    private bool CanExecuteSave(object? parameter)
-    {
-        // Check if the song is currently playing
-        if (_playbackService.CurrentSong == _originalSong && _playbackService.IsPlaying)
-        {
-            return false; // Don't allow saving if the song is playing
-        }
-        return true;
-    }
-
-
-    private void ExecuteSave(object? parameter)
-    {
-        try
-        {
-            using (var tagFile = TagLib.File.Create(_originalSong.FilePath))
-            {
-                tagFile.Tag.Title = EditableTitle;
-                tagFile.Tag.Performers = new[] { EditableArtist };
-                tagFile.Tag.AlbumArtists = new[] { EditableArtist };
-                tagFile.Tag.Album = EditableAlbum;
-                tagFile.Tag.Genres = new[] { EditableGenre };
-
-                if (uint.TryParse(EditableTrackNumber, out uint trackNum))
-                {
-                    tagFile.Tag.Track = trackNum;
-                }
-                else
-                {
-                    tagFile.Tag.Track = 0; // Or handle error
-                }
-
-                if (uint.TryParse(EditableYear, out uint yearNum))
-                {
-                    tagFile.Tag.Year = yearNum;
-                }
-                else
-                {
-                    tagFile.Tag.Year = 0; // Or handle error
-                }
-
-                tagFile.Save();
-                Debug.WriteLine($"[SongMetadataEditorVM] Successfully saved metadata for: {_originalSong.FilePath}");
-
-                // Update the original Song object
-                _originalSong.Title = EditableTitle;
-                _originalSong.Artist = EditableArtist;
-                _originalSong.Album = EditableAlbum;
-                _originalSong.Genre = EditableGenre;
-                _originalSong.TrackNumber = uint.TryParse(EditableTrackNumber, out trackNum) ? trackNum : 0;
-                _originalSong.Year = uint.TryParse(EditableYear, out yearNum) ? yearNum : 0;
-
-                CloseAction?.Invoke(true);
-            }
-        }
-        catch (IOException ioEx)
-        {
-            Debug.WriteLine($"[SongMetadataEditorVM] IO Error saving metadata for {_originalSong.FilePath}: {ioEx.Message}. File might be in use.");
-            // TODO: Show error message to user
-            CloseAction?.Invoke(false);
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"[SongMetadataEditorVM] Error saving metadata for {_originalSong.FilePath}: {ex.Message}");
-            // TODO: Show error message to user
-            CloseAction?.Invoke(false);
-        }
-    }
-
-    private void ExecuteCancel(object? parameter)
-    {
-        CloseAction?.Invoke(false);
-    }
-
-    public void RefreshCanExecuteSave()
-    {
-        (SaveCommand as RelayCommand)?.RaiseCanExecuteChanged();
-    }
-
-    // Listen to PlaybackService to enable/disable save command
-    public void SubscribeToPlaybackServiceEvents()
-    {
-        _playbackService.PropertyChanged += PlaybackService_PropertyChanged;
-        RefreshCanExecuteSave();
-    }
-
-    public void UnsubscribeFromPlaybackServiceEvents()
-    {
-        _playbackService.PropertyChanged -= PlaybackService_PropertyChanged;
-    }
-
-    private void PlaybackService_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(PlaybackService.CurrentSong) || e.PropertyName == nameof(PlaybackService.IsPlaying))
-        {
-            RefreshCanExecuteSave();
-        }
-    }
-}
-</file>
-
 <file path="Source\ViewModels\StatusBarTextProvider.cs">
 using Sonorize.Services; // For PlaybackStateStatus
 
@@ -3912,19 +3655,15 @@ public class MainWindow : Window
             _currentLibraryVM = null;
         }
 
-        if (DataContext is MainWindowViewModel vm)
+        if (DataContext is MainWindowViewModel vm && vm.Library != null)
         {
-            vm.OwnerWindow = this; // Set the owner window reference
-            if (vm.Library != null)
-            {
-                _currentLibraryVM = vm.Library;
-                _currentLibraryVM.PropertyChanged += LibraryViewModel_PropertyChanged;
+            _currentLibraryVM = vm.Library;
+            _currentLibraryVM.PropertyChanged += LibraryViewModel_PropertyChanged;
 
-                // Apply initial display modes for each list
-                ApplyListViewDisplayMode(_songListBox, _currentLibraryVM.LibraryViewMode, _sharedViewTemplates.DetailedSongTemplate, _sharedViewTemplates.CompactSongTemplate, _sharedViewTemplates.GridSongTemplate);
-                ApplyListViewDisplayMode(_artistsListBox, _currentLibraryVM.ArtistViewMode, _sharedViewTemplates.DetailedArtistTemplate, _sharedViewTemplates.CompactArtistTemplate, _sharedViewTemplates.GridArtistTemplate);
-                ApplyListViewDisplayMode(_albumsListBox, _currentLibraryVM.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate);
-            }
+            // Apply initial display modes for each list
+            ApplyListViewDisplayMode(_songListBox, _currentLibraryVM.LibraryViewMode, _sharedViewTemplates.DetailedSongTemplate, _sharedViewTemplates.CompactSongTemplate, _sharedViewTemplates.GridSongTemplate);
+            ApplyListViewDisplayMode(_artistsListBox, _currentLibraryVM.ArtistViewMode, _sharedViewTemplates.DetailedArtistTemplate, _sharedViewTemplates.CompactArtistTemplate, _sharedViewTemplates.GridArtistTemplate);
+            ApplyListViewDisplayMode(_albumsListBox, _currentLibraryVM.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate);
         }
     }
 
@@ -3972,10 +3711,6 @@ public class MainWindow : Window
         if (_currentLibraryVM != null)
         {
             _currentLibraryVM.PropertyChanged -= LibraryViewModel_PropertyChanged;
-        }
-        if (DataContext is MainWindowViewModel vm)
-        {
-            vm.OwnerWindow = null; // Clear the reference
         }
         base.OnClosed(e);
     }
@@ -4082,207 +3817,6 @@ public class SettingsWindow : Window
         contentPanel.Children.Add(scrobblingSettingsPanel);
 
         return contentPanel;
-    }
-}
-</file>
-
-<file path="Source\Views\SongMetadataEditorWindow.cs">
-using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Data;
-using Avalonia.Layout;
-using Avalonia.Media;
-using Sonorize.Models; // For ThemeColors
-using Sonorize.ViewModels;
-using System; // Required for EventArgs
-
-namespace Sonorize.Views;
-
-public class SongMetadataEditorWindow : Window
-{
-    private readonly ThemeColors _theme;
-    private SongMetadataEditorViewModel? _viewModel;
-
-    public SongMetadataEditorWindow(ThemeColors theme)
-    {
-        _theme = theme;
-        InitializeComponent();
-    }
-
-    private void InitializeComponent()
-    {
-        Title = "Edit Song Metadata"; // Will be updated by ViewModel
-        Width = 450; MinWidth = 400;
-        Height = 420; MinHeight = 380;
-        WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        Background = _theme.B_SlightlyLighterBackground;
-        CanResize = true;
-        Icon = null; // Or set an icon
-
-        var mainGrid = new Grid
-        {
-            Margin = new Thickness(15),
-            RowDefinitions = new RowDefinitions("Auto,*,Auto") // Title, Form, Buttons
-        };
-
-        // Title will be bound from ViewModel
-        var titleLabel = new TextBlock
-        {
-            FontSize = 18,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = _theme.B_TextColor,
-            Margin = new Thickness(0, 0, 0, 15),
-            HorizontalAlignment = HorizontalAlignment.Center
-        };
-        titleLabel.Bind(TextBlock.TextProperty, new Binding("WindowTitle"));
-        Grid.SetRow(titleLabel, 0);
-        mainGrid.Children.Add(titleLabel);
-
-        // Metadata Form
-        var formGrid = new Grid
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*")
-            // Removed RowSpacing = 8, Grid doesn't have this property.
-            // Spacing is managed by RowDefinition heights or control Margins.
-        };
-
-        formGrid.RowDefinitions.Add(new RowDefinition(GridLength.Auto)); // Title
-        formGrid.RowDefinitions.Add(new RowDefinition(GridLength.Auto)); // Artist
-        formGrid.RowDefinitions.Add(new RowDefinition(GridLength.Auto)); // Album
-        formGrid.RowDefinitions.Add(new RowDefinition(GridLength.Auto)); // Genre
-        formGrid.RowDefinitions.Add(new RowDefinition(GridLength.Auto)); // Track #
-        formGrid.RowDefinitions.Add(new RowDefinition(GridLength.Auto)); // Year
-
-        // Title
-        formGrid.Children.Add(CreateLabel("Title:", 0));
-        formGrid.Children.Add(CreateTextBox("EditableTitle", 0, 1));
-
-        // Artist
-        formGrid.Children.Add(CreateLabel("Artist:", 1));
-        formGrid.Children.Add(CreateTextBox("EditableArtist", 1, 1));
-
-        // Album
-        formGrid.Children.Add(CreateLabel("Album:", 2));
-        formGrid.Children.Add(CreateTextBox("EditableAlbum", 2, 1));
-
-        // Genre
-        formGrid.Children.Add(CreateLabel("Genre:", 3));
-        formGrid.Children.Add(CreateTextBox("EditableGenre", 3, 1));
-
-        // Track Number
-        formGrid.Children.Add(CreateLabel("Track #:", 4));
-        formGrid.Children.Add(CreateTextBox("EditableTrackNumber", 4, 1, isNumeric: true));
-
-        // Year
-        formGrid.Children.Add(CreateLabel("Year:", 5));
-        formGrid.Children.Add(CreateTextBox("EditableYear", 5, 1, isNumeric: true));
-
-        Grid.SetRow(formGrid, 1);
-        mainGrid.Children.Add(formGrid);
-
-        // Buttons
-        var buttonPanel = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Spacing = 10,
-            Margin = new Thickness(0, 15, 0, 0)
-        };
-
-        var saveButton = new Button
-        {
-            Content = "Save",
-            Background = _theme.B_AccentColor,
-            Foreground = _theme.B_AccentForeground,
-            Padding = new Thickness(15, 8),
-            CornerRadius = new CornerRadius(3)
-        };
-        saveButton.Bind(Button.CommandProperty, new Binding("SaveCommand"));
-
-        var cancelButton = new Button
-        {
-            Content = "Cancel",
-            Background = _theme.B_ControlBackgroundColor,
-            Foreground = _theme.B_TextColor,
-            Padding = new Thickness(15, 8),
-            CornerRadius = new CornerRadius(3)
-        };
-        cancelButton.Bind(Button.CommandProperty, new Binding("CancelCommand"));
-
-        buttonPanel.Children.Add(saveButton);
-        buttonPanel.Children.Add(cancelButton);
-        Grid.SetRow(buttonPanel, 2);
-        mainGrid.Children.Add(buttonPanel);
-
-        Content = mainGrid;
-
-        DataContextChanged += OnDataContextChanged;
-    }
-
-    private TextBlock CreateLabel(string text, int row)
-    {
-        var label = new TextBlock
-        {
-            Text = text,
-            Foreground = _theme.B_TextColor,
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 0, 10, 8) // Added bottom margin for spacing
-        };
-        Grid.SetRow(label, row);
-        Grid.SetColumn(label, 0);
-        return label;
-    }
-
-    private TextBox CreateTextBox(string bindingPath, int row, int column, bool isNumeric = false)
-    {
-        var textBox = new TextBox
-        {
-            Background = _theme.B_ControlBackgroundColor,
-            Foreground = _theme.B_TextColor,
-            CaretBrush = _theme.B_TextColor,
-            BorderBrush = _theme.B_SecondaryTextColor,
-            BorderThickness = new Thickness(1),
-            Padding = new Thickness(5),
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            Margin = new Thickness(0, 0, 0, 8) // Added bottom margin for spacing
-        };
-        textBox.Bind(TextBox.TextProperty, new Binding(bindingPath, BindingMode.TwoWay));
-        Grid.SetRow(textBox, row);
-        Grid.SetColumn(textBox, column);
-        return textBox;
-    }
-
-    private void OnDataContextChanged(object? sender, EventArgs e)
-    {
-        if (_viewModel != null)
-        {
-            _viewModel.CloseAction = null;
-            _viewModel.UnsubscribeFromPlaybackServiceEvents();
-        }
-
-        _viewModel = DataContext as SongMetadataEditorViewModel;
-
-        if (_viewModel != null)
-        {
-            _viewModel.CloseAction = success =>
-            {
-                // For ShowDialog<T>, call Close(T result) to return the result
-                this.Close(success);
-            };
-            _viewModel.SubscribeToPlaybackServiceEvents(); // Subscribe when VM is ready
-        }
-    }
-
-    protected override void OnClosed(EventArgs e)
-    {
-        if (_viewModel != null)
-        {
-            _viewModel.UnsubscribeFromPlaybackServiceEvents(); // Ensure unsubscription
-            _viewModel.CloseAction = null;
-        }
-        base.OnClosed(e);
     }
 }
 </file>
@@ -7200,11 +6734,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public LoopEditorViewModel LoopEditor { get; }
     public PlaybackViewModel Playback { get; }
     public AdvancedPanelViewModel AdvancedPanel { get; }
-    private string _statusBarText = "Welcome to Sonorize!";
-    public string StatusBarText { get => _statusBarText; set => SetProperty(ref _statusBarText, value); }
+    public string StatusBarText { get => field; set => SetProperty(ref field, value); } = "Welcome to Sonorize!";
 
-    private int _activeTabIndex = 0;
-    public int ActiveTabIndex { get => _activeTabIndex; set => SetProperty(ref _activeTabIndex, value); }
+    public int ActiveTabIndex { get => field; set => SetProperty(ref field, value); } = 0;
 
     public bool IsLoadingLibrary { get => Library.IsLoadingLibrary; }
 
@@ -7227,9 +6759,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public ICommand OpenSettingsCommand { get; }
     public ICommand ExitCommand { get; }
     public ICommand AddDirectoryAndRefreshCommand { get; }
-
-    public Window? OwnerWindow { get; set; } // To be set by MainWindow after DataContext is assigned
-
 
     public MainWindowViewModel(
         SettingsService settingsService,
@@ -7331,10 +6860,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         });
     }
 
-    private async Task OpenSettingsDialogAsync(object? ownerWindowObj)
+    private async Task OpenSettingsDialogAsync(object? ownerWindow)
     {
-        Window? owner = ownerWindowObj as Window ?? OwnerWindow;
-        if (owner == null || Library.IsLoadingLibrary) return;
+        if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
         IsAdvancedPanelVisible = false;
 
         var (statusMessages, settingsChanged) = await _workflowManager.HandleOpenSettingsDialogAsync(owner);
@@ -7357,10 +6885,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         RaiseAllCommandsCanExecuteChanged();
     }
 
-    private async Task AddMusicDirectoryAndRefreshAsync(object? ownerWindowObj)
+    private async Task AddMusicDirectoryAndRefreshAsync(object? ownerWindow)
     {
-        Window? owner = ownerWindowObj as Window ?? OwnerWindow;
-        if (owner == null || Library.IsLoadingLibrary) return;
+        if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
         IsAdvancedPanelVisible = false;
 
         var (directoryAdded, statusMessage) = await _workflowManager.HandleAddMusicDirectoryAsync(owner);
@@ -8827,7 +8354,6 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Sonorize.Models; // For Song, ArtistViewModel, AlbumViewModel, ThemeColors
 using Sonorize.ViewModels; // For SongDisplayMode (though not directly used here, context is relevant)
-using Avalonia.VisualTree; // Required for FindAncestorOfType
 
 namespace Sonorize.Views.MainWindowControls
 {
@@ -8864,43 +8390,6 @@ namespace Sonorize.Views.MainWindowControls
             InitializePanelTemplates();
         }
 
-        private ContextMenu CreateSongContextMenu()
-        {
-            var contextMenu = new ContextMenu();
-            var editMenuItem = new MenuItem { Header = "View/Edit Metadata" };
-
-            // Command will be bound to LibraryViewModel.EditSongMetadataCommand.
-            // LibraryViewModel will be stored in ContextMenu.Tag.
-            editMenuItem.Bind(MenuItem.CommandProperty,
-                new Binding("Tag.EditSongMetadataCommand")
-                {
-                    RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(ContextMenu) }
-                });
-
-            // CommandParameter will be the MenuItem's DataContext, which is the Song object.
-            editMenuItem.Bind(MenuItem.CommandParameterProperty, new Binding("."));
-
-            contextMenu.Items.Add(editMenuItem);
-
-            // When the ContextMenu opens, store LibraryViewModel in its Tag property.
-            // The MenuItem's DataContext will remain the Song object (inherited from ListBoxItem content).
-            contextMenu.Opening += (sender, args) => {
-                var cm = sender as ContextMenu;
-                if (cm?.PlacementTarget is Control placementTarget)
-                {
-                    // The ListBox's DataContext is LibraryViewModel
-                    var listBox = placementTarget.FindAncestorOfType<ListBox>();
-                    if (listBox != null)
-                    {
-                        cm.Tag = listBox.DataContext; // Store LibraryViewModel in Tag
-                    }
-                }
-            };
-
-            return contextMenu;
-        }
-
-
         private void InitializeSongTemplates()
         {
             // Detailed Song Template
@@ -8922,10 +8411,7 @@ namespace Sonorize.Views.MainWindowControls
                 var textStack = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Children = { titleBlock, artistBlock } };
                 var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), VerticalAlignment = VerticalAlignment.Center, Children = { image, textStack, durationBlock } };
                 Grid.SetColumn(image, 0); Grid.SetColumn(textStack, 1); Grid.SetColumn(durationBlock, 2);
-
-                var rootBorder = new Border { Padding = new Thickness(10, 6, 10, 6), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
-                rootBorder.ContextMenu = CreateSongContextMenu();
-                return rootBorder;
+                return new Border { Padding = new Thickness(10, 6, 10, 6), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
             }, supportsRecycling: true);
 
             // Compact Song Template
@@ -8946,10 +8432,7 @@ namespace Sonorize.Views.MainWindowControls
                 var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), VerticalAlignment = VerticalAlignment.Center };
                 itemGrid.Children.Add(titleArtistPanel); itemGrid.Children.Add(durationBlock);
                 Grid.SetColumn(titleArtistPanel, 0); Grid.SetColumn(durationBlock, 1);
-
-                var rootBorder = new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = itemGrid };
-                rootBorder.ContextMenu = CreateSongContextMenu();
-                return rootBorder;
+                return new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = itemGrid };
             }, supportsRecycling: true);
 
             // Grid Song Template
@@ -8977,10 +8460,7 @@ namespace Sonorize.Views.MainWindowControls
                 artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
 
                 var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { image, titleBlock, artistBlock } };
-
-                var rootBorder = new Border { Width = 120, Height = 150, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-                rootBorder.ContextMenu = CreateSongContextMenu();
-                return rootBorder;
+                return new Border { Width = 120, Height = 150, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             }, supportsRecycling: true);
         }
 

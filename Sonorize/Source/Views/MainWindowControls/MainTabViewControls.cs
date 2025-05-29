@@ -14,18 +14,18 @@ namespace Sonorize.Views.MainWindowControls
     public class MainTabViewControls
     {
         private readonly ThemeColors _theme;
-        private readonly SharedViewTemplates _sharedViewTemplates;
+        private readonly SharedViewTemplates _sharedViewTemplates; // Changed from SongListTemplates
         private ListBox? _songListBoxInstance;
-        private ListBox? _artistsListBoxInstance;
-        private ListBox? _albumsListBoxInstance;
+        private ListBox? _artistsListBoxInstance; // Added
+        private ListBox? _albumsListBoxInstance;  // Added
 
-        public MainTabViewControls(ThemeColors theme, SharedViewTemplates sharedViewTemplates)
+        public MainTabViewControls(ThemeColors theme, SharedViewTemplates sharedViewTemplates) // Changed parameter type
         {
             _theme = theme;
             _sharedViewTemplates = sharedViewTemplates;
         }
 
-        public TabControl CreateMainTabView(out ListBox songListBox, out ListBox artistsListBox, out ListBox albumsListBox)
+        public TabControl CreateMainTabView(out ListBox songListBox, out ListBox artistsListBox, out ListBox albumsListBox) // Added out params
         {
             var tabControl = new TabControl
             {
@@ -80,8 +80,8 @@ namespace Sonorize.Views.MainWindowControls
             tabControl.Items.Add(albumsTab);
 
             songListBox = _songListBoxInstance!;
-            artistsListBox = _artistsListBoxInstance!;
-            albumsListBox = _albumsListBoxInstance!;
+            artistsListBox = _artistsListBoxInstance!; // Assign out param
+            albumsListBox = _albumsListBoxInstance!;   // Assign out param
             return tabControl;
         }
 
@@ -95,6 +95,7 @@ namespace Sonorize.Views.MainWindowControls
                 Name = "SongListBox"
             };
 
+            // Common ListBoxItem styles
             ApplyListBoxItemStyles(_songListBoxInstance);
 
             _songListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.FilteredSongs"));
@@ -148,20 +149,16 @@ namespace Sonorize.Views.MainWindowControls
 
         private void ApplyListBoxItemStyles(ListBox listBox)
         {
-            var itemStyle = new Style(s => s.Is<ListBoxItem>())
+            listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>())
             {
                 Setters = {
                     new Setter(TemplatedControl.BackgroundProperty, _theme.B_ListBoxBackground),
                     new Setter(TextBlock.ForegroundProperty, _theme.B_TextColor),
-                    new Setter(ListBoxItem.PaddingProperty, new Thickness(3))
+                    new Setter(ListBoxItem.PaddingProperty, new Thickness(3)) // Default padding, templates can override
                 }
-            };
-
-            listBox.Styles.Add(itemStyle);
-
+            });
             listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":pointerover").Not(xx => xx.Class(":selected")))
             { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_ControlBackgroundColor) } });
-
             listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected"))
             {
                 Setters = {
@@ -172,12 +169,13 @@ namespace Sonorize.Views.MainWindowControls
             listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected").Class(":pointerover"))
             {
                 Setters = {
-                    new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
+                    new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor), // Keep accent when selected and hovered
                     new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
                 }
             });
         }
 
+        // Renamed and generalized
         public void UpdateListViewMode(SongDisplayMode mode, ListBox listBox, IDataTemplate detailedTemplate, IDataTemplate compactTemplate, IDataTemplate gridTemplate)
         {
             if (listBox == null)

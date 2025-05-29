@@ -9,7 +9,6 @@ using Avalonia.Media.Imaging;
 using Sonorize.Models; // For Song, ArtistViewModel, AlbumViewModel, ThemeColors
 using Sonorize.ViewModels; // For SongDisplayMode (though not directly used here, context is relevant)
 using Avalonia.VisualTree; // Required for FindAncestorOfType
-using System.Diagnostics; // Required for Debug
 
 namespace Sonorize.Views.MainWindowControls
 {
@@ -37,7 +36,6 @@ namespace Sonorize.Views.MainWindowControls
         public ITemplate<Panel?> StackPanelItemsPanelTemplate { get; private set; }
         public ITemplate<Panel?> WrapPanelItemsPanelTemplate { get; private set; }
 
-
         public SharedViewTemplates(ThemeColors theme)
         {
             _theme = theme;
@@ -52,11 +50,12 @@ namespace Sonorize.Views.MainWindowControls
             var contextMenu = new ContextMenu();
             var editMenuItem = new MenuItem { Header = "View/Edit Metadata" };
 
-            // Command will bind to a command on the ContextMenu's DataContext (set to LibraryViewModel in Opening event)
+            // Command is on LibraryViewModel (which will be ContextMenu.DataContext)
             editMenuItem.Bind(MenuItem.CommandProperty, new Binding("EditSongMetadataCommand"));
 
-            // CommandParameter: Binds to the DataContext of the ContextMenu's PlacementTarget (which is the rootBorder, whose DC is the Song)
-            // RelativeSource starts from the MenuItem, finds its ancestor ContextMenu, then accesses PlacementTarget.DataContext.
+            // CommandParameter is the Song object.
+            // Song is DataContext of PlacementTarget (the control the ContextMenu is attached to).
+            // The RelativeSource finds the ContextMenu itself to access its PlacementTarget.DataContext.
             editMenuItem.Bind(MenuItem.CommandParameterProperty,
                 new Binding("PlacementTarget.DataContext")
                 {
@@ -65,37 +64,18 @@ namespace Sonorize.Views.MainWindowControls
 
             contextMenu.Items.Add(editMenuItem);
 
-            contextMenu.Opening += (sender, args) =>
-            {
+            // Set DataContext of ContextMenu when it's opening.
+            // This ensures it gets the LibraryViewModel from the ListBox.
+            contextMenu.Opening += (sender, args) => {
                 var cm = sender as ContextMenu;
-                if (cm == null) { args.Cancel = true; return; }
-
-                cm.DataContext = null; // Clear previous DataContext
-
-                var placementTargetControl = cm.PlacementTarget as Control; // This should be the rootBorder
-                if (placementTargetControl == null)
+                if (cm?.PlacementTarget is Control placementTarget)
                 {
-                    Debug.WriteLine($"[ContextMenuOpening] PlacementTarget is NULL or not a Control. Cancelling menu.");
-                    args.Cancel = true;
-                    return;
+                    var listBox = placementTarget.FindAncestorOfType<ListBox>();
+                    if (listBox != null)
+                    {
+                        cm.DataContext = listBox.DataContext; // Should be LibraryViewModel
+                    }
                 }
-
-                // The LibraryViewModel is the DataContext of the ListBox.
-                var listBox = placementTargetControl.FindAncestorOfType<ListBox>();
-                if (listBox != null && listBox.DataContext is LibraryViewModel libraryVM)
-                {
-                    cm.DataContext = libraryVM; // Set LibraryViewModel as DataContext for the ContextMenu itself
-                }
-                else
-                {
-                    Debug.WriteLine($"[ContextMenuOpening] Failed to find LibraryViewModel from ListBox ancestor of '{placementTargetControl.Name ?? placementTargetControl.GetType().Name}'. ListBox DC: {listBox?.DataContext?.GetType().Name}. Cancelling menu.");
-                    args.Cancel = true;
-                }
-            };
-
-            contextMenu.Closed += (sender, args) =>
-            {
-                if (sender is ContextMenu cm) { cm.DataContext = null; } // Clean up DataContext
             };
 
             return contextMenu;
@@ -125,7 +105,7 @@ namespace Sonorize.Views.MainWindowControls
                 Grid.SetColumn(image, 0); Grid.SetColumn(textStack, 1); Grid.SetColumn(durationBlock, 2);
 
                 var rootBorder = new Border { Padding = new Thickness(10, 6, 10, 6), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
-                rootBorder.ContextMenu = CreateSongContextMenu(); // Each item gets its own ContextMenu instance
+                rootBorder.ContextMenu = CreateSongContextMenu();
                 return rootBorder;
             }, supportsRecycling: true);
 
@@ -149,7 +129,7 @@ namespace Sonorize.Views.MainWindowControls
                 Grid.SetColumn(titleArtistPanel, 0); Grid.SetColumn(durationBlock, 1);
 
                 var rootBorder = new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = itemGrid };
-                rootBorder.ContextMenu = CreateSongContextMenu(); // Each item gets its own ContextMenu instance
+                rootBorder.ContextMenu = CreateSongContextMenu();
                 return rootBorder;
             }, supportsRecycling: true);
 
@@ -180,7 +160,7 @@ namespace Sonorize.Views.MainWindowControls
                 var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { image, titleBlock, artistBlock } };
 
                 var rootBorder = new Border { Width = 120, Height = 150, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-                rootBorder.ContextMenu = CreateSongContextMenu(); // Each item gets its own ContextMenu instance
+                rootBorder.ContextMenu = CreateSongContextMenu();
                 return rootBorder;
             }, supportsRecycling: true);
         }
@@ -245,6 +225,10 @@ namespace Sonorize.Views.MainWindowControls
                 for (int i = 0; i < 4; i++)
                 {
                     var img = new Image { Width = 28, Height = 28, Stretch = Stretch.UniformToFill };
+                    // Binding to an indexed property of a List<Bitmap?>.
+                    // This relies on AlbumViewModel.SongThumbnailsForGrid property itself raising PropertyChanged if the list instance changes,
+                    // or if AlbumViewModel.SongThumbnailsForGrid was an ObservableCollection and its items change.
+                    // Given current AlbumViewModel setup, this will show initial state.
                     img.Bind(Image.SourceProperty, new Binding($"SongThumbnailsForGrid[{i}]"));
                     RenderOptions.SetBitmapInterpolationMode(img, BitmapInterpolationMode.HighQuality);
                     Grid.SetRow(img, i / 2);
@@ -290,13 +274,25 @@ namespace Sonorize.Views.MainWindowControls
                     Spacing = 3
                 };
 
+                // Logic to decide 2x2 or single image based on bound data needs to be cleaner if done in C# template.
+                // For simplicity, binding to RepresentativeThumbnail (which AlbumViewModel should prepare).
+                // A more complex template might use a ContentControl with a StyleSelector or multiple DataTemplates.
+
+                // Create a placeholder for the image part, could be a Grid or single Image
                 var imagePresenter = new Panel { Width = 80, Height = 80, HorizontalAlignment = HorizontalAlignment.Center };
+
+
+                // Attempting a dynamic switch based on data. This is complex in FuncDataTemplate.
+                // A common approach is to have the ViewModel provide a single "display-ready" thumbnail or a type indicator.
+                // Here, we'll just bind to RepresentativeThumbnail for grid view.
+                // If more complex logic (like showing 2x2) is needed, it should ideally be handled by ViewModel state
+                // or a custom control / more sophisticated templating.
 
                 if (dataContext != null && dataContext.SongThumbnailsForGrid != null && dataContext.SongThumbnailsForGrid.Count(t => t != null) > 1)
                 {
                     var imageGrid = new Grid
                     {
-                        Width = 80,
+                        Width = 80, // Keep overall size consistent
                         Height = 80,
                         HorizontalAlignment = HorizontalAlignment.Center,
                         ColumnDefinitions = new ColumnDefinitions("*,*"),
@@ -305,7 +301,7 @@ namespace Sonorize.Views.MainWindowControls
 
                     for (int i = 0; i < 4; i++)
                     {
-                        var img = new Image { Width = 38, Height = 38, Stretch = Stretch.UniformToFill, Margin = new Thickness(1) };
+                        var img = new Image { Width = 38, Height = 38, Stretch = Stretch.UniformToFill, Margin = new Thickness(1) }; // Smaller images for grid
                         img.Bind(Image.SourceProperty, new Binding($"SongThumbnailsForGrid[{i}]"));
                         RenderOptions.SetBitmapInterpolationMode(img, BitmapInterpolationMode.HighQuality);
                         Grid.SetRow(img, i / 2);
@@ -314,7 +310,7 @@ namespace Sonorize.Views.MainWindowControls
                     }
                     imagePresenter.Children.Add(imageGrid);
                 }
-                else
+                else // Show single representative thumbnail
                 {
                     var singleImage = new Image
                     {
@@ -371,7 +367,7 @@ namespace Sonorize.Views.MainWindowControls
         private void InitializePanelTemplates()
         {
             StackPanelItemsPanelTemplate = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel { Orientation = Orientation.Vertical });
-            WrapPanelItemsPanelTemplate = new FuncTemplate<Panel?>(() => new WrapPanel { Orientation = Orientation.Horizontal, ItemWidth = 130, ItemHeight = 160 });
+            WrapPanelItemsPanelTemplate = new FuncTemplate<Panel?>(() => new WrapPanel { Orientation = Orientation.Horizontal, ItemWidth = 130, ItemHeight = 160 }); // Adjusted ItemWidth/Height for grid items
         }
     }
 }
