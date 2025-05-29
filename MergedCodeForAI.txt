@@ -3430,6 +3430,10 @@ public class MainWindowViewModel : ViewModelBase
 
         Library.PropertyChanged += Library_PropertyChanged;
         Playback.PropertyChanged += Playback_PropertyChanged;
+        // Also listen to changes on the child ViewModels of PlaybackViewModel if necessary
+        Playback.ModeControls.PropertyChanged += PlaybackModeControls_PropertyChanged;
+        // Playback.EffectsControls has no commands/properties that MainWindowViewModel directly reacts to yet.
+
         // Listen to PropertyChanged on Playback.WaveformDisplay as well
         if (Playback.WaveformDisplay != null)
         {
@@ -3532,14 +3536,30 @@ public class MainWindowViewModel : ViewModelBase
                     OnPropertyChanged(nameof(Playback.TotalTimeDisplay));
                     RaiseAllCommandsCanExecuteChanged();
                     break;
-                case nameof(PlaybackViewModel.ShuffleEnabled):
-                case nameof(PlaybackViewModel.RepeatMode):
-                    Playback.RaisePlaybackCommandCanExecuteChanged(); // PlaybackVM commands might depend on these
+                    // ShuffleEnabled and RepeatMode are now on Playback.ModeControls
+                    // Their changes will be handled by PlaybackModeControls_PropertyChanged
+            }
+        });
+    }
+
+    private void PlaybackModeControls_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            switch (e.PropertyName)
+            {
+                case nameof(PlaybackModeViewModel.ShuffleEnabled):
+                case nameof(PlaybackModeViewModel.RepeatMode):
+                    // MainWindowViewModel itself doesn't directly bind to these for its own properties,
+                    // but PlaybackViewModel's commands might depend on them indirectly (via ModeControls),
+                    // and StatusBarText definitely depends on them.
+                    Playback.RaisePlaybackCommandCanExecuteChanged();
                     UpdateStatusBarText();
                     break;
             }
         });
     }
+
 
     private void UpdateAllUIDependentStates()
     {
@@ -3614,6 +3634,70 @@ public class MainWindowViewModel : ViewModelBase
             UpdateStatusBarText();
         }
     }
+}
+</file>
+
+<file path="Source\ViewModels\PlaybackEffectsViewModel.cs">
+using System;
+using System.Diagnostics;
+using Sonorize.Services; // Required for PlaybackService
+
+namespace Sonorize.ViewModels;
+
+public class PlaybackEffectsViewModel : ViewModelBase
+{
+    private readonly PlaybackService _playbackService;
+
+    public double PlaybackSpeed
+    {
+        get;
+        set
+        {
+            value = Math.Clamp(value, 0.5, 2.0);
+            if (SetProperty(ref field, value))
+            {
+                _playbackService.PlaybackRate = (float)value;
+                OnPropertyChanged(nameof(PlaybackSpeedDisplay));
+                Debug.WriteLine($"[PlaybackEffectsVM] PlaybackSpeed set to: {value}");
+            }
+        }
+    } = 1.0;
+
+    public string PlaybackSpeedDisplay => $"{PlaybackSpeed:F2}x";
+
+    public double PlaybackPitch
+    {
+        get;
+        set
+        {
+            // Round to nearest 0.5
+            double roundedValue = Math.Round(value * 2, MidpointRounding.AwayFromZero) / 2.0;
+            roundedValue = Math.Clamp(roundedValue, -4.0, 4.0); // Clamp after rounding
+
+            if (SetProperty(ref field, roundedValue))
+            {
+                _playbackService.PitchSemitones = (float)roundedValue;
+                OnPropertyChanged(nameof(PlaybackPitchDisplay));
+                Debug.WriteLine($"[PlaybackEffectsVM] PlaybackPitch set to: {roundedValue}");
+            }
+        }
+    } = 0.0;
+    
+    public string PlaybackPitchDisplay => $"{PlaybackPitch:+0.0;-0.0;0} st";
+
+    public PlaybackEffectsViewModel(PlaybackService playbackService)
+    {
+        _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
+        // Initialize with current service values if necessary, or assume service defaults are fine.
+        // For now, assume ViewModel defaults (1.0 speed, 0.0 pitch) are fine and will set service on first change.
+        // Or, sync from service:
+        // _playbackSpeed = _playbackService.PlaybackRate;
+        // _playbackPitch = _playbackService.PitchSemitones;
+    }
+
+    // If PlaybackService can change these values externally and this VM needs to reflect that,
+    // then PlaybackEffectsViewModel would need to subscribe to PlaybackService.PropertyChanged.
+    // For now, assuming changes are driven from this VM.
 }
 </file>
 
@@ -3747,7 +3831,8 @@ public class PlaybackViewModel : ViewModelBase
     public PlaybackService PlaybackService { get; } // Keep reference to the service
 
     public WaveformDisplayViewModel WaveformDisplay { get; }
-    public PlaybackModeViewModel ModeControls { get; } // Extracted mode controls
+    public PlaybackModeViewModel ModeControls { get; }
+    public PlaybackEffectsViewModel EffectsControls { get; } // New child VM
 
     public Song? CurrentSong => PlaybackService.CurrentSong;
 
@@ -3776,30 +3861,11 @@ public class PlaybackViewModel : ViewModelBase
 
     public bool IsPlaying => PlaybackService.IsPlaying;
 
-    public double PlaybackSpeed { get; set { value = Math.Clamp(value, 0.5, 2.0); if (SetProperty(ref field, value)) { PlaybackService.PlaybackRate = (float)value; OnPropertyChanged(nameof(PlaybackSpeedDisplay)); } } } = 1.0;
-
-    public string PlaybackSpeedDisplay => $"{PlaybackSpeed:F2}x";
-
-    public double PlaybackPitch
-    {
-        get;
-
-        set
-        {
-            value = double.Round(value * 2, MidpointRounding.AwayFromZero) / 2.0;
-            value = double.Clamp(value, -4.0, 4.0);
-
-            if (!SetProperty(ref field, value))
-            {
-                return;
-            }
-
-            PlaybackService.PitchSemitones = (float)field;
-            OnPropertyChanged(nameof(PlaybackPitchDisplay));
-        }
-    } = 0.0;
-
-    public string PlaybackPitchDisplay => $"{PlaybackPitch:+0.0;-0.0;0} st";
+    // PlaybackSpeed and PlaybackPitch are now managed by PlaybackEffectsViewModel
+    // public double PlaybackSpeed { get; set { value = Math.Clamp(value, 0.5, 2.0); if (SetProperty(ref field, value)) { PlaybackService.PlaybackRate = (float)value; OnPropertyChanged(nameof(PlaybackSpeedDisplay)); } } } = 1.0;
+    // public string PlaybackSpeedDisplay => $"{PlaybackSpeed:F2}x";
+    // public double PlaybackPitch { /* ... */ } = 0.0;
+    // public string PlaybackPitchDisplay => $"{PlaybackPitch:+0.0;-0.0;0} st";
 
     public string CurrentTimeDisplay
     {
@@ -3834,10 +3900,11 @@ public class PlaybackViewModel : ViewModelBase
     {
         PlaybackService = playbackService;
         WaveformDisplay = new WaveformDisplayViewModel(playbackService, waveformService);
-        ModeControls = new PlaybackModeViewModel(this); // Instantiate extracted VM
+        ModeControls = new PlaybackModeViewModel(this);
+        EffectsControls = new PlaybackEffectsViewModel(playbackService); // Instantiate new VM
 
-        PlaybackSpeed = 1.0;
-        PlaybackPitch = 0.0;
+        // PlaybackSpeed = 1.0; // Now managed by EffectsControls
+        // PlaybackPitch = 0.0; // Now managed by EffectsControls
 
         PlayPauseResumeCommand = new RelayCommand(
             _ => TogglePlayPauseResume(),
@@ -3856,6 +3923,8 @@ public class PlaybackViewModel : ViewModelBase
         PlaybackService.PropertyChanged += PlaybackService_PropertyChanged;
         PropertyChanged += PlaybackViewModel_PropertyChanged; // For HasCurrentSong affecting ModeControls
         WaveformDisplay.PropertyChanged += WaveformDisplay_PropertyChanged;
+        // EffectsControls does not currently raise events that PlaybackViewModel needs to listen to directly.
+        // If it did, we would subscribe here: EffectsControls.PropertyChanged += EffectsControls_PropertyChanged;
     }
 
     private void WaveformDisplay_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -3918,6 +3987,13 @@ public class PlaybackViewModel : ViewModelBase
                     OnPropertyChanged(nameof(IsPlaying));
                     RaisePlaybackCommandCanExecuteChanged();
                     break;
+                    // If PlaybackRate or PitchSemitones from PlaybackService were to update EffectsControls:
+                    // case nameof(PlaybackService.PlaybackRate):
+                    //    EffectsControls.PlaybackSpeed = PlaybackService.PlaybackRate; // Or some sync logic
+                    //    break;
+                    // case nameof(PlaybackService.PitchSemitones):
+                    //    EffectsControls.PlaybackPitch = PlaybackService.PitchSemitones;
+                    //    break;
             }
         });
     }
@@ -3938,6 +4014,7 @@ public class PlaybackViewModel : ViewModelBase
         (PlayPauseResumeCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (SeekCommand as RelayCommand)?.RaiseCanExecuteChanged();
         ModeControls.RaiseCommandCanExecuteChanged(); // Delegate to the extracted VM
+        // EffectsControls currently has no commands.
     }
 
     public void Dispose()
@@ -3952,6 +4029,7 @@ public class PlaybackViewModel : ViewModelBase
             // If WaveformDisplay implements IDisposable, call it
         }
         ModeControls?.Dispose(); // Dispose the extracted VM
+        // EffectsControls does not currently implement IDisposable or hold resources.
     }
 }
 </file>
@@ -4288,11 +4366,11 @@ public class StatusBarTextProvider
             }
 
             string modeStatus = "";
-            if (_playbackViewModel.ShuffleEnabled)
+            if (_playbackViewModel.ModeControls.ShuffleEnabled) // Corrected access
             {
                 modeStatus += " | Shuffle";
             }
-            modeStatus += _playbackViewModel.RepeatMode switch
+            modeStatus += _playbackViewModel.ModeControls.RepeatMode switch // Corrected access
             {
                 RepeatMode.None => " | Do Nothing",
                 RepeatMode.PlayOnce => " | Play Once",
@@ -5807,8 +5885,8 @@ public class PlaybackFlowManagerService
 
         Song? currentSong = _libraryViewModel.SelectedSong;
         List<Song> currentList = [.. _libraryViewModel.FilteredSongs];
-        RepeatMode repeatMode = _playbackViewModel.RepeatMode;
-        bool shuffleEnabled = _playbackViewModel.ShuffleEnabled;
+        RepeatMode repeatMode = _playbackViewModel.ModeControls.RepeatMode; // Corrected access
+        bool shuffleEnabled = _playbackViewModel.ModeControls.ShuffleEnabled; // Corrected access
 
         Song? nextSong = _nextTrackSelectorService.GetNextSong(currentSong, currentList, repeatMode, shuffleEnabled);
 
@@ -7074,16 +7152,16 @@ public static class AdvancedPlaybackPanelControls
         var speedLabel = new TextBlock { Text = "Tempo:", VerticalAlignment = VerticalAlignment.Center, Foreground = theme.B_TextColor, Margin = new Thickness(0, 0, 5, 0) };
         var speedSlider = new Slider { Minimum = 0.5, Maximum = 2.0, SmallChange = 0.05, LargeChange = 0.25, TickFrequency = 0.25, Foreground = theme.B_AccentColor, Background = theme.B_SecondaryTextColor };
         speedSlider.Styles.Add(new Style(s => s.Is<Thumb>()) { Setters = { new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor) } });
-        speedSlider.Bind(Slider.ValueProperty, new Binding("Playback.PlaybackSpeed", BindingMode.TwoWay));
+        speedSlider.Bind(Slider.ValueProperty, new Binding("Playback.EffectsControls.PlaybackSpeed", BindingMode.TwoWay)); // Updated binding
         var speedDisplay = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0), Foreground = theme.B_TextColor, MinWidth = 35, HorizontalAlignment = HorizontalAlignment.Right };
-        speedDisplay.Bind(TextBlock.TextProperty, new Binding("Playback.PlaybackSpeedDisplay"));
+        speedDisplay.Bind(TextBlock.TextProperty, new Binding("Playback.EffectsControls.PlaybackSpeedDisplay")); // Updated binding
 
         var pitchLabel = new TextBlock { Text = "Pitch:", VerticalAlignment = VerticalAlignment.Center, Foreground = theme.B_TextColor, Margin = new Thickness(0, 0, 5, 0) };
         var pitchSlider = new Slider { Minimum = -4, Maximum = 4, SmallChange = 0.1, LargeChange = 0.5, TickFrequency = 0.5, Foreground = theme.B_AccentColor, Background = theme.B_SecondaryTextColor };
         pitchSlider.Styles.Add(new Style(s => s.Is<Thumb>()) { Setters = { new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor) } });
-        pitchSlider.Bind(Slider.ValueProperty, new Binding("Playback.PlaybackPitch", BindingMode.TwoWay));
+        pitchSlider.Bind(Slider.ValueProperty, new Binding("Playback.EffectsControls.PlaybackPitch", BindingMode.TwoWay)); // Updated binding
         var pitchDisplay = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0), Foreground = theme.B_TextColor, MinWidth = 45, HorizontalAlignment = HorizontalAlignment.Right };
-        pitchDisplay.Bind(TextBlock.TextProperty, new Binding("Playback.PlaybackPitchDisplay"));
+        pitchDisplay.Bind(TextBlock.TextProperty, new Binding("Playback.EffectsControls.PlaybackPitchDisplay")); // Updated binding
 
         Grid.SetColumn(speedLabel, 0); Grid.SetColumn(speedSlider, 1); Grid.SetColumn(speedDisplay, 2);
         Grid.SetColumn(pitchLabel, 4); Grid.SetColumn(pitchSlider, 5); Grid.SetColumn(pitchDisplay, 6);
@@ -7679,9 +7757,9 @@ public static class PlaybackNavigationButtonsPanel
             HorizontalAlignment = HorizontalAlignment.Center,
             FontSize = 18,
             FontFamily = new FontFamily("Segoe UI Symbol, Arial"),
-            [!TextBlock.TextProperty] = new Binding("Playback.ShuffleEnabled") { Converter = BooleanToShuffleIconConverter.Instance }
+            [!TextBlock.TextProperty] = new Binding("Playback.ModeControls.ShuffleEnabled") { Converter = BooleanToShuffleIconConverter.Instance } // Updated path
         };
-        shuffleButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.ShuffleEnabled", BindingMode.TwoWay));
+        shuffleButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.ModeControls.ShuffleEnabled", BindingMode.TwoWay)); // Updated path
         shuffleButton[!ToggleButton.ForegroundProperty] = new Binding("IsChecked")
         {
             Source = shuffleButton,
@@ -7718,7 +7796,7 @@ public static class PlaybackNavigationButtonsPanel
             FontSize = 18,
             FontFamily = new FontFamily("Segoe UI Symbol, Arial"),
             RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
-            [!TextBlock.TextProperty] = new Binding("Playback.RepeatMode")
+            [!TextBlock.TextProperty] = new Binding("Playback.ModeControls.RepeatMode") // Updated path
             {
                 Converter = new FuncValueConverter<RepeatMode, string>(mode => mode switch
                 {
@@ -7729,7 +7807,7 @@ public static class PlaybackNavigationButtonsPanel
                     _ => "?"
                 })
             },
-            [!TextBlock.RenderTransformProperty] = new Binding("Playback.RepeatMode")
+            [!TextBlock.RenderTransformProperty] = new Binding("Playback.ModeControls.RepeatMode") // Updated path
             {
                 Converter = new FuncValueConverter<RepeatMode, ITransform?>(mode =>
                 {
@@ -7742,16 +7820,16 @@ public static class PlaybackNavigationButtonsPanel
                 })
             }
         };
-        repeatModeButton[!ToggleButton.ForegroundProperty] = new Binding("Playback.RepeatMode")
+        repeatModeButton[!ToggleButton.ForegroundProperty] = new Binding("Playback.ModeControls.RepeatMode") // Updated path
         {
             Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.None ? theme.B_AccentColor : theme.B_SecondaryTextColor)
         };
-        repeatModeButton[!ToggleButton.BorderBrushProperty] = new Binding("Playback.RepeatMode")
+        repeatModeButton[!ToggleButton.BorderBrushProperty] = new Binding("Playback.ModeControls.RepeatMode") // Updated path
         {
             Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.None ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
         };
-        repeatModeButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.IsRepeatActive"));
-        repeatModeButton.Bind(Button.CommandProperty, new Binding("Playback.CycleRepeatModeCommand"));
+        repeatModeButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.ModeControls.IsRepeatActive")); // Updated path
+        repeatModeButton.Bind(Button.CommandProperty, new Binding("Playback.ModeControls.CycleRepeatModeCommand")); // Updated path
         repeatModeButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
         var combinedPlaybackButtonControlsPanel = new StackPanel
