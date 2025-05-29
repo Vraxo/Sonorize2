@@ -13,6 +13,7 @@ using Sonorize.Models;
 using Sonorize.Services;
 // Removed: using Sonorize.ViewModels.Status; // StatusBarTextProvider usage moved
 using Sonorize.ViewModels.LibraryManagement; // Required for LibraryDisplayModeService
+using Sonorize.ViewModels.MainWindow; // Added for MainWindowInteractionCoordinator
 
 namespace Sonorize.ViewModels;
 
@@ -24,11 +25,12 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private readonly LoopDataService _loopDataService;
     private readonly ScrobblingService _scrobblingService;
     private readonly SongMetadataService _songMetadataService;
-    private readonly SongEditInteractionService _songEditInteractionService; // New service
+    private readonly SongEditInteractionService _songEditInteractionService;
 
     private readonly MainWindowViewModelOrchestrator _orchestrator;
     private readonly ApplicationWorkflowManager _workflowManager;
     private readonly LibraryDisplayModeService _libraryDisplayModeService;
+    private readonly MainWindowInteractionCoordinator _interactionCoordinator; // New
 
     private Window? _ownerView;
 
@@ -79,7 +81,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         LoopDataService loopDataService,
         ScrobblingService scrobblingService,
         SongMetadataService songMetadataService,
-        SongEditInteractionService songEditInteractionService) // Added new service dependency
+        SongEditInteractionService songEditInteractionService)
     {
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
@@ -89,7 +91,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         _loopDataService = loopDataService;
         _scrobblingService = scrobblingService;
         _songMetadataService = songMetadataService;
-        _songEditInteractionService = songEditInteractionService; // Store new service
+        _songEditInteractionService = songEditInteractionService;
 
         _libraryDisplayModeService = new LibraryDisplayModeService(_settingsService);
         Library = new LibraryViewModel(this, _settingsService, _musicLibraryService, _loopDataService, _libraryDisplayModeService);
@@ -107,6 +109,15 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             _loopDataService,
             _songMetadataService);
 
+        _interactionCoordinator = new MainWindowInteractionCoordinator(
+            () => _ownerView,
+            Library,
+            AdvancedPanel,
+            _workflowManager,
+            _songEditInteractionService,
+            RaiseAllCommandsCanExecuteChanged
+        );
+
         _orchestrator = new MainWindowViewModelOrchestrator(
             Library,
             Playback,
@@ -119,9 +130,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         PlaybackService.PlaybackEndedNaturally += PlaybackService_PlaybackEndedNaturally;
 
         LoadInitialDataCommand = new RelayCommand(async _ => await Library.LoadLibraryAsync(), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
-        OpenSettingsCommand = new RelayCommand(async owner => await OpenSettingsDialogAsync(owner), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
+        OpenSettingsCommand = new RelayCommand(async _ => await OpenSettingsDialogAsync(), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
         ExitCommand = new RelayCommand(_ => Environment.Exit(0));
-        AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefreshAsync(owner), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
+        AddDirectoryAndRefreshCommand = new RelayCommand(async _ => await AddMusicDirectoryAndRefreshAsync(), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
         OpenEditSongMetadataDialogCommand = new RelayCommand(async song => await HandleOpenEditSongMetadataDialogAsync(song), CanOpenEditSongMetadataDialog);
 
 
@@ -183,79 +194,42 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         });
     }
 
-    private async Task OpenSettingsDialogAsync(object? ownerWindowObj)
+    private async Task OpenSettingsDialogAsync()
     {
-        if (ownerWindowObj is not Window owner || Library.IsLoadingLibrary) return;
-        IsAdvancedPanelVisible = false;
-
-        var (statusMessages, settingsChanged) = await _workflowManager.HandleOpenSettingsDialogAsync(owner);
-
-        if (settingsChanged)
+        string statusMessage = await _interactionCoordinator.CoordinateOpenSettingsDialogAsync();
+        if (!string.IsNullOrEmpty(statusMessage))
         {
-            if (statusMessages.Any())
-            {
-                StatusBarText = string.Join(" | ", statusMessages);
-            }
-            else
-            {
-                UpdateStatusBarText();
-            }
+            StatusBarText = statusMessage;
         }
         else
+        {
+            UpdateStatusBarText(); // Default update if no specific message from coordinator
+        }
+    }
+
+    private async Task AddMusicDirectoryAndRefreshAsync()
+    {
+        var (refreshNeeded, statusMessage) = await _interactionCoordinator.CoordinateAddMusicDirectoryAsync();
+        StatusBarText = statusMessage;
+
+        if (refreshNeeded)
+        {
+            await Library.LoadLibraryAsync(); // Library loading itself updates status text
+        }
+        else if (string.IsNullOrEmpty(statusMessage)) // If no specific message and no refresh, update general status
         {
             UpdateStatusBarText();
         }
-        RaiseAllCommandsCanExecuteChanged();
-    }
-
-    private async Task AddMusicDirectoryAndRefreshAsync(object? ownerWindowObj)
-    {
-        if (ownerWindowObj is not Window owner || Library.IsLoadingLibrary) return;
-        IsAdvancedPanelVisible = false;
-
-        var (directoryAdded, statusMessage) = await _workflowManager.HandleAddMusicDirectoryAsync(owner);
-
-        StatusBarText = statusMessage;
-
-        if (directoryAdded)
-        {
-            await Library.LoadLibraryAsync();
-        }
-        else
-        {
-            UpdateStatusBarText(); // Ensure status bar reflects non-refresh outcome
-        }
-        RaiseAllCommandsCanExecuteChanged();
     }
 
     private async Task HandleOpenEditSongMetadataDialogAsync(object? songObject)
     {
-        if (songObject is not Song songToEdit)
-        {
-            Debug.WriteLine("[MainVM] HandleOpenEditSongMetadataDialogAsync: songObject is not a Song.");
-            return;
-        }
-
-        Window? ownerWindow = _ownerView;
-        if (ownerWindow == null)
-        {
-            Debug.WriteLine("[MainVM] HandleOpenEditSongMetadataDialogAsync: Owner window is not set. Cannot proceed.");
-            StatusBarText = "Error: Cannot open editor, main window context lost.";
-            return;
-        }
-
-        IsAdvancedPanelVisible = false; // Hide advanced panel during dialog interaction
-
-        var (metadataSaved, statusMessage) = await _songEditInteractionService.HandleEditSongMetadataAsync(songToEdit, ownerWindow);
-
+        string statusMessage = await _interactionCoordinator.CoordinateEditSongMetadataAsync(songObject as Song);
         StatusBarText = statusMessage;
-
-        if (!metadataSaved && string.IsNullOrEmpty(statusMessage)) // Default status if none provided by service on non-save
+        if (string.IsNullOrEmpty(statusMessage)) // Default status if none provided by service on non-save
         {
-            UpdateStatusBarText(); // Revert to default status if edit was cancelled without a specific message
+            UpdateStatusBarText();
         }
-
-        RaiseAllCommandsCanExecuteChanged();
     }
 
     private bool CanOpenEditSongMetadataDialog(object? songObject)
