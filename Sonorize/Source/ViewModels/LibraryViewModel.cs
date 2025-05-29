@@ -14,34 +14,27 @@ namespace Sonorize.ViewModels;
 
 public class LibraryViewModel : ViewModelBase, IDisposable
 {
-    private readonly SettingsService _settingsService; // Kept for LibraryStatusTextGenerator
+    private readonly SettingsService _settingsService;
     private readonly MusicLibraryService _musicLibraryService;
-    // private readonly LoopDataService _loopDataService; // LoopDataService is used by SongFactory, not directly here anymore.
     private readonly MainWindowViewModel _parentViewModel;
-    private readonly SongFilteringService _songFilteringService; // Passed to SongListManager
-    private readonly LibraryStatusTextGenerator _statusTextGenerator;
-    private readonly LibraryDataOrchestrator _libraryDataOrchestrator;
+    private readonly LibraryDisplayModeService _displayModeService;
     private readonly TrackNavigationManager _trackNavigationManager;
-    private readonly LibraryDisplayModeService _displayModeService; // New dependency
-    private readonly LibraryFilterStateManager _filterStateManager; // New dependency
-    private readonly SongListManager _songListManager; // New dependency
+    private readonly LibraryComponentProvider _components;
 
-    public LibraryGroupingsViewModel Groupings { get; } // New ViewModel for Artists/Albums
+    // Proxied properties using _components
+    public LibraryGroupingsViewModel Groupings => _components.Groupings;
+    public ObservableCollection<Song> FilteredSongs => _components.SongList.FilteredSongs;
+    public LibraryFilterStateManager FilterState => _components.FilterState;
 
-    // Proxied properties from SongListManager
-    public ObservableCollection<Song> FilteredSongs => _songListManager.FilteredSongs;
     public Song? SelectedSong
     {
-        get => _songListManager.SelectedSong;
+        get => _components.SongList.SelectedSong;
         set
         {
-            // Forward to SongListManager, which handles INotifyPropertyChanged for its SelectedSong
-            if (_songListManager.SelectedSong != value)
+            if (_components.SongList.SelectedSong != value)
             {
-                _songListManager.SelectedSong = value;
-                // We still need to notify that LibraryViewModel.SelectedSong has changed for its bindings
-                OnPropertyChanged();
-                // Let TrackNavigationManager know
+                _components.SongList.SelectedSong = value;
+                OnPropertyChanged(); // Notify that LibraryViewModel.SelectedSong has changed
                 _trackNavigationManager.UpdateSelectedSong(value);
                 (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"} (via SongListManager)");
@@ -49,12 +42,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         }
     }
 
-
-    // Expose FilterStateManager for binding
-    public LibraryFilterStateManager FilterState => _filterStateManager;
-
-
-    // Display mode command is now proxied from LibraryDisplayModeService
     public ICommand SetDisplayModeCommand => _displayModeService.SetDisplayModeCommand;
     public ICommand PreviousTrackCommand => _trackNavigationManager.PreviousTrackCommand;
     public ICommand NextTrackCommand => _trackNavigationManager.NextTrackCommand;
@@ -84,7 +71,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     private string _libraryStatusText = "";
 
 
-    // Display mode properties are now proxies to LibraryDisplayModeService
     public SongDisplayMode LibraryViewMode => _displayModeService.LibraryViewMode;
     public SongDisplayMode ArtistViewMode => _displayModeService.ArtistViewMode;
     public SongDisplayMode AlbumViewMode => _displayModeService.AlbumViewMode;
@@ -93,37 +79,23 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         MainWindowViewModel parentViewModel,
         SettingsService settingsService,
         MusicLibraryService musicLibraryService,
-        LoopDataService loopDataService, // Still needed for SongFactory used by MusicLibraryService indirectly
+        LoopDataService loopDataService,
         LibraryDisplayModeService displayModeService)
     {
         _parentViewModel = parentViewModel ?? throw new ArgumentNullException(nameof(parentViewModel));
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
-        // _loopDataService = loopDataService; // Not directly used here
         _displayModeService = displayModeService ?? throw new ArgumentNullException(nameof(displayModeService));
 
-        Groupings = new LibraryGroupingsViewModel(_musicLibraryService); // Instantiate new VM
+        _components = new LibraryComponentProvider(musicLibraryService, settingsService);
+        _trackNavigationManager = new TrackNavigationManager(_components.SongList.FilteredSongs);
 
-        _filterStateManager = new LibraryFilterStateManager();
-        _filterStateManager.FilterCriteriaChanged += (s, e) => ApplyFilter();
-        _filterStateManager.RequestTabSwitchToLibrary += (s, e) => _parentViewModel.ActiveTabIndex = 0;
+        // Subscribe to events from components provided by _components
+        _components.FilterState.FilterCriteriaChanged += (s, e) => ApplyFilter();
+        _components.FilterState.RequestTabSwitchToLibrary += (s, e) => _parentViewModel.ActiveTabIndex = 0;
+        _components.SongList.PropertyChanged += SongListManager_PropertyChanged;
 
-        _songFilteringService = new SongFilteringService();
-        _songListManager = new SongListManager(_songFilteringService);
-        _songListManager.PropertyChanged += SongListManager_PropertyChanged;
-
-
-        // Subscribe to PropertyChanged on _displayModeService to update proxied properties
         _displayModeService.PropertyChanged += DisplayModeService_PropertyChanged;
-
-        _trackNavigationManager = new TrackNavigationManager(FilteredSongs); // FilteredSongs is now from _songListManager
-
-        // _artistAlbumManager is now encapsulated in Groupings
-        _statusTextGenerator = new LibraryStatusTextGenerator();
-        // Pass Groupings VM's ArtistAlbumManager instance to LibraryDataOrchestrator
-        _libraryDataOrchestrator = new LibraryDataOrchestrator(_musicLibraryService, Groupings.ArtistAlbumManager, _settingsService);
-
-
         _musicLibraryService.SongThumbnailUpdated += MusicLibraryService_SongThumbnailUpdated;
 
         EditSongMetadataCommand = new RelayCommand(ExecuteEditSongMetadata, CanExecuteEditSongMetadata);
@@ -135,11 +107,10 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     {
         if (e.PropertyName == nameof(SongListManager.SelectedSong))
         {
-            // Relay the property change for LibraryViewModel.SelectedSong
             OnPropertyChanged(nameof(SelectedSong));
-            _trackNavigationManager.UpdateSelectedSong(_songListManager.SelectedSong);
+            _trackNavigationManager.UpdateSelectedSong(_components.SongList.SelectedSong);
             (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            Debug.WriteLine($"[LibraryVM] SongListManager.SelectedSong changed to: {_songListManager.SelectedSong?.Title ?? "null"}. Updated own SelectedSong.");
+            Debug.WriteLine($"[LibraryVM] SongListManager.SelectedSong changed to: {_components.SongList.SelectedSong?.Title ?? "null"}. Updated own SelectedSong.");
         }
         else if (e.PropertyName == nameof(SongListManager.FilteredSongs))
         {
@@ -150,7 +121,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
     private void DisplayModeService_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        // Raise PropertyChanged for our proxy properties when the service's properties change
         switch (e.PropertyName)
         {
             case nameof(LibraryDisplayModeService.LibraryViewMode):
@@ -169,9 +139,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     {
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            Groupings.HandleSongThumbnailUpdate(updatedSong, _songListManager.GetAllSongsReadOnly());
-            // OnPropertyChanged for Groupings.Artists and Groupings.Albums will be handled by LibraryGroupingsViewModel
-            // if the collections themselves are replaced, or by ObservableCollection if items are modified.
+            _components.Groupings.HandleSongThumbnailUpdate(updatedSong, _components.SongList.GetAllSongsReadOnly());
         });
     }
 
@@ -183,30 +151,28 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         }
 
         IsLoadingLibrary = true;
-        _filterStateManager.ClearSelectionsAndSearch(); // Resets SearchQuery, SelectedArtist, SelectedAlbum
-        // SelectedSong will be cleared by SongListManager.ClearAllSongs or during filter application
+        _components.FilterState.ClearSelectionsAndSearch();
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            _songListManager.ClearAllSongs(); // Clears all songs, filtered songs, and selected song
-            Groupings.Artists.Clear(); // Clear collections in Groupings VM
-            Groupings.Albums.Clear();
+            _components.SongList.ClearAllSongs();
+            _components.Groupings.Artists.Clear();
+            _components.Groupings.Albums.Clear();
             LibraryStatusText = "Preparing to load music...";
         });
 
         List<Song> loadedRawSongs = new List<Song>();
-        Action<Song> songAddedCallback = song => loadedRawSongs.Add(song); // Collect raw songs
+        Action<Song> songAddedCallback = song => loadedRawSongs.Add(song);
         Action<string> statusUpdateCallback = status => LibraryStatusText = status;
 
-        var allLoadedSongsFromOrchestrator = await _libraryDataOrchestrator.LoadAndProcessLibraryDataAsync(statusUpdateCallback, songAddedCallback);
-        _songListManager.SetAllSongs(allLoadedSongsFromOrchestrator); // Set all songs in the manager
+        var allLoadedSongsFromOrchestrator = await _components.DataOrchestrator.LoadAndProcessLibraryDataAsync(statusUpdateCallback, songAddedCallback);
+        _components.SongList.SetAllSongs(allLoadedSongsFromOrchestrator);
 
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            // Groupings VM populates its collections
-            Groupings.PopulateCollections(_songListManager.GetAllSongsReadOnly());
-            ApplyFilter(); // Apply initial filter
+            _components.Groupings.PopulateCollections(_components.SongList.GetAllSongsReadOnly());
+            ApplyFilter();
         });
 
         IsLoadingLibrary = false;
@@ -215,14 +181,12 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
     private void ApplyFilter()
     {
-        _songListManager.ApplyFilter(
-            _filterStateManager.SearchQuery,
-            _filterStateManager.SelectedArtist,
-            _filterStateManager.SelectedAlbum);
-        // SelectedSong management is now inside _songListManager.ApplyFilter
+        _components.SongList.ApplyFilter(
+            _components.FilterState.SearchQuery,
+            _components.FilterState.SelectedArtist,
+            _components.FilterState.SelectedAlbum);
 
-        // Ensure TrackNavigationManager is aware of the potentially changed SelectedSong from SongListManager
-        _trackNavigationManager.UpdateSelectedSong(_songListManager.SelectedSong);
+        _trackNavigationManager.UpdateSelectedSong(_components.SongList.SelectedSong);
         UpdateStatusBarText();
     }
 
@@ -230,13 +194,13 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     {
         if (!IsLoadingLibrary)
         {
-            LibraryStatusText = _statusTextGenerator.GenerateStatusText(
+            LibraryStatusText = _components.StatusTextGenerator.GenerateStatusText(
                 IsLoadingLibrary,
-                _songListManager.AllSongsCount, // Use count from SongListManager
-                FilteredSongs.Count, // FilteredSongs is a direct proxy
-                _filterStateManager.SelectedArtist,
-                _filterStateManager.SelectedAlbum,
-                _filterStateManager.SearchQuery,
+                _components.SongList.AllSongsCount,
+                FilteredSongs.Count,
+                _components.FilterState.SelectedArtist,
+                _components.FilterState.SelectedAlbum,
+                _components.FilterState.SearchQuery,
                 _settingsService
             );
         }
@@ -263,8 +227,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
     public void RaiseLibraryCommandsCanExecuteChanged()
     {
-        // SetDisplayModeCommand CanExecute is handled by LibraryDisplayModeService
-        // Navigation commands are handled by TrackNavigationManager
         (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
@@ -278,16 +240,14 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         {
             _displayModeService.PropertyChanged -= DisplayModeService_PropertyChanged;
         }
-        if (_filterStateManager != null)
+        if (_components?.FilterState != null)
         {
-            _filterStateManager.FilterCriteriaChanged -= (s, e) => ApplyFilter();
-            _filterStateManager.RequestTabSwitchToLibrary -= (s, e) => _parentViewModel.ActiveTabIndex = 0;
+            _components.FilterState.FilterCriteriaChanged -= (s, e) => ApplyFilter();
+            _components.FilterState.RequestTabSwitchToLibrary -= (s, e) => _parentViewModel.ActiveTabIndex = 0;
         }
-        if (_songListManager != null)
+        if (_components?.SongList != null)
         {
-            _songListManager.PropertyChanged -= SongListManager_PropertyChanged;
-            // If SongListManager implemented IDisposable, dispose it here.
+            _components.SongList.PropertyChanged -= SongListManager_PropertyChanged;
         }
-        // Groupings VM does not currently implement IDisposable
     }
 }
