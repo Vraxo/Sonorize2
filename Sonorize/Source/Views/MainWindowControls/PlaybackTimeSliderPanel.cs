@@ -25,8 +25,8 @@ public static class PlaybackTimeSliderPanel
             MinWidth = 40,
             HorizontalAlignment = HorizontalAlignment.Left
         };
-        currentTimeTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.Controls.CurrentTimeDisplay"));
-        currentTimeTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.Controls.HasCurrentSong"));
+        currentTimeTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentTimeDisplay"));
+        currentTimeTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
 
         // TextBlock for Total Time
         var totalTimeTextBlock = new TextBlock
@@ -38,8 +38,8 @@ public static class PlaybackTimeSliderPanel
             MinWidth = 40,
             HorizontalAlignment = HorizontalAlignment.Right
         };
-        totalTimeTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.Controls.TotalTimeDisplay"));
-        totalTimeTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.Controls.HasCurrentSong"));
+        totalTimeTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.TotalTimeDisplay"));
+        totalTimeTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
 
         var mainPlaybackSlider = new Slider
         {
@@ -128,6 +128,8 @@ public static class PlaybackTimeSliderPanel
             return container;
         });
 
+        // HERE IS THE CRUCIAL CHANGE:
+        // Handle PointerPressed on the slider itself (the whole clickable area)
         mainPlaybackSlider.PointerPressed += (sender, e) =>
         {
             var s = (Slider)sender;
@@ -136,16 +138,20 @@ public static class PlaybackTimeSliderPanel
 
             if (bounds.Width > 0)
             {
+                // Calculate ratio (clamped 0 to 1)
                 double ratio = Math.Clamp(pos.X / bounds.Width, 0, 1);
+
+                // Calculate new slider value based on ratio
                 double newValue = s.Minimum + ratio * (s.Maximum - s.Minimum);
+
                 s.Value = newValue;
                 e.Handled = true;
             }
         };
 
-        mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("Playback.Controls.CurrentSongDurationSeconds"));
-        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("Playback.Controls.CurrentPositionSeconds", BindingMode.TwoWay));
-        mainPlaybackSlider.Bind(Control.IsEnabledProperty, new Binding("Playback.Controls.HasCurrentSong"));
+        mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("Playback.CurrentSongDurationSeconds"));
+        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("Playback.CurrentPositionSeconds", BindingMode.TwoWay));
+        mainPlaybackSlider.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
         var timeSliderGrid = new Grid
         {

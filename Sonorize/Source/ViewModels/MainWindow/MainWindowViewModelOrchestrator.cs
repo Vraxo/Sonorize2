@@ -35,11 +35,7 @@ public class MainWindowViewModelOrchestrator : IDisposable
     private void SubscribeToEvents()
     {
         _libraryViewModel.PropertyChanged += Library_PropertyChanged;
-        _playbackViewModel.PropertyChanged += PlaybackViewModel_PropertyChanged; // Handles CurrentSong, HasCurrentSong from PlaybackVM
-        if (_playbackViewModel.Controls != null)
-        {
-            _playbackViewModel.Controls.PropertyChanged += PlaybackControls_PropertyChanged; // Handles specific control properties
-        }
+        _playbackViewModel.PropertyChanged += Playback_PropertyChanged;
         if (_playbackViewModel.ModeControls != null)
         {
             _playbackViewModel.ModeControls.PropertyChanged += PlaybackModeControls_PropertyChanged;
@@ -54,11 +50,7 @@ public class MainWindowViewModelOrchestrator : IDisposable
     private void UnsubscribeFromEvents()
     {
         _libraryViewModel.PropertyChanged -= Library_PropertyChanged;
-        _playbackViewModel.PropertyChanged -= PlaybackViewModel_PropertyChanged;
-        if (_playbackViewModel.Controls != null)
-        {
-            _playbackViewModel.Controls.PropertyChanged -= PlaybackControls_PropertyChanged;
-        }
+        _playbackViewModel.PropertyChanged -= Playback_PropertyChanged;
         if (_playbackViewModel.ModeControls != null)
         {
             _playbackViewModel.ModeControls.PropertyChanged -= PlaybackModeControls_PropertyChanged;
@@ -105,70 +97,37 @@ public class MainWindowViewModelOrchestrator : IDisposable
         }
     }
 
-    // Handles PropertyChanged from PlaybackViewModel (e.g., CurrentSong, HasCurrentSong)
-    private void PlaybackViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    private void Playback_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         switch (e.PropertyName)
         {
             case nameof(PlaybackViewModel.CurrentSong):
-                // MainWindowViewModel.Playback.CurrentSong will be updated because PlaybackViewModel.CurrentSong changed.
-                _notifyMainWindowVMPropertyChangedCallback("Playback.CurrentSong");
-                _notifyMainWindowVMPropertyChangedCallback("Playback.HasCurrentSong");
-                // Properties on Playback.Controls might also change as a result of CurrentSong changing,
-                // so we also notify for them as they are likely bound in UI.
-                // PlaybackControls_PropertyChanged will handle granular updates if it receives direct events.
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.CurrentTimeDisplay");
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.TotalTimeDisplay");
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.CurrentPlaybackStatus");
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.IsPlaying");
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentSong)); // Or just rely on MainWindowViewModel.Playback being the source
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.HasCurrentSong));
                 _raiseAllCommandsCanExecuteChangedCallback();
                 _updateStatusBarTextCallback();
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentTimeDisplay));
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.TotalTimeDisplay));
                 break;
-            case nameof(PlaybackViewModel.HasCurrentSong):
-                _notifyMainWindowVMPropertyChangedCallback("Playback.HasCurrentSong");
-                _raiseAllCommandsCanExecuteChangedCallback();
+            case nameof(PlaybackViewModel.CurrentPlaybackStatus):
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentPlaybackStatus));
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.IsPlaying));
                 _updateStatusBarTextCallback();
+                _raiseAllCommandsCanExecuteChangedCallback();
+                break;
+            case nameof(PlaybackViewModel.CurrentPosition):
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentPosition));
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentPositionSeconds));
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentTimeDisplay));
+                break;
+            case nameof(PlaybackViewModel.CurrentSongDuration):
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentSongDuration));
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentSongDurationSeconds));
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.TotalTimeDisplay));
+                _raiseAllCommandsCanExecuteChangedCallback();
                 break;
         }
     }
-
-    // Handles PropertyChanged from PlaybackViewModel.Controls (PlaybackControlViewModel)
-    private void PlaybackControls_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        switch (e.PropertyName)
-        {
-            case nameof(PlaybackControlViewModel.CurrentPlaybackStatus):
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.CurrentPlaybackStatus");
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.IsPlaying"); // IsPlaying depends on CurrentPlaybackStatus
-                _updateStatusBarTextCallback();
-                _raiseAllCommandsCanExecuteChangedCallback();
-                break;
-            case nameof(PlaybackControlViewModel.IsPlaying):
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.IsPlaying");
-                _updateStatusBarTextCallback();
-                _raiseAllCommandsCanExecuteChangedCallback();
-                break;
-            case nameof(PlaybackControlViewModel.CurrentPosition):
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.CurrentPosition");
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.CurrentPositionSeconds");
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.CurrentTimeDisplay");
-                break;
-            case nameof(PlaybackControlViewModel.CurrentSongDuration):
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.CurrentSongDuration");
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.CurrentSongDurationSeconds");
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.TotalTimeDisplay");
-                _raiseAllCommandsCanExecuteChangedCallback();
-                break;
-            case nameof(PlaybackControlViewModel.CurrentTimeDisplay):
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.CurrentTimeDisplay");
-                break;
-            case nameof(PlaybackControlViewModel.TotalTimeDisplay):
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.TotalTimeDisplay");
-                break;
-                // CurrentSong change is handled by PlaybackViewModel_PropertyChanged, which then can trigger notifications for control properties too.
-        }
-    }
-
 
     private void PlaybackModeControls_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -176,7 +135,7 @@ public class MainWindowViewModelOrchestrator : IDisposable
         {
             case nameof(PlaybackModeViewModel.ShuffleEnabled):
             case nameof(PlaybackModeViewModel.RepeatMode):
-                _playbackViewModel.RaisePlaybackCommandCanExecuteChanged();
+                _playbackViewModel.RaisePlaybackCommandCanExecuteChanged(); // PlaybackVM raises its own commands
                 _updateStatusBarTextCallback();
                 break;
         }

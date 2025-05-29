@@ -3364,40 +3364,105 @@ namespace Sonorize.ViewModels;
 
 public enum RepeatMode { None, PlayOnce, RepeatOne, RepeatAll }
 
-public class PlaybackViewModel : ViewModelBase, IDisposable
+public class PlaybackViewModel : ViewModelBase
 {
-    public PlaybackService PlaybackService { get; }
+    public PlaybackService PlaybackService { get; } // Keep reference to the service
 
-    public PlaybackControlViewModel Controls { get; } // New child VM
     public WaveformDisplayViewModel WaveformDisplay { get; }
     public PlaybackModeViewModel ModeControls { get; }
-    public PlaybackEffectsViewModel EffectsControls { get; }
+    public PlaybackEffectsViewModel EffectsControls { get; } // New child VM
 
-    // Proxied properties for general state, often used by parent or for broader UI logic
     public Song? CurrentSong => PlaybackService.CurrentSong;
+
     public bool HasCurrentSong => PlaybackService.CurrentSong != null;
 
+    public TimeSpan CurrentPosition => PlaybackService.CurrentPosition;
 
-    // Properties related to direct playback control are now in PlaybackControlViewModel
-    // e.g., CurrentPosition, CurrentPositionSeconds, CurrentSongDuration, CurrentSongDurationSeconds
-    // e.g., CurrentPlaybackStatus, IsPlaying
-    // e.g., CurrentTimeDisplay, TotalTimeDisplay
+    public double CurrentPositionSeconds
+    {
+        get => PlaybackService.CurrentPositionSeconds;
+        set
+        {
+            if (PlaybackService.CurrentSong == null || Math.Abs(PlaybackService.CurrentPositionSeconds - value) <= 0.01)
+            {
+                return;
+            }
+            PlaybackService.Seek(TimeSpan.FromSeconds(value));
+        }
+    }
 
-    // Commands are now in PlaybackControlViewModel
-    // public ICommand PlayPauseResumeCommand { get; }
-    // public ICommand SeekCommand { get; }
+    public TimeSpan CurrentSongDuration => PlaybackService.CurrentSongDuration;
+
+    public double CurrentSongDurationSeconds => PlaybackService.CurrentSongDurationSeconds;
+
+    public PlaybackStateStatus CurrentPlaybackStatus => PlaybackService.CurrentPlaybackStatus;
+
+    public bool IsPlaying => PlaybackService.IsPlaying;
+
+    // PlaybackSpeed and PlaybackPitch are now managed by PlaybackEffectsViewModel
+    // public double PlaybackSpeed { get; set { value = Math.Clamp(value, 0.5, 2.0); if (SetProperty(ref field, value)) { PlaybackService.PlaybackRate = (float)value; OnPropertyChanged(nameof(PlaybackSpeedDisplay)); } } } = 1.0;
+    // public string PlaybackSpeedDisplay => $"{PlaybackSpeed:F2}x";
+    // public double PlaybackPitch { /* ... */ } = 0.0;
+    // public string PlaybackPitchDisplay => $"{PlaybackPitch:+0.0;-0.0;0} st";
+
+    public string CurrentTimeDisplay
+    {
+        get
+        {
+            if (PlaybackService.CurrentSong != null)
+            {
+                return $"{PlaybackService.CurrentPosition:mm\\:ss}";
+            }
+
+            return "--:--";
+        }
+    }
+
+    public string TotalTimeDisplay
+    {
+        get
+        {
+            if (PlaybackService.CurrentSong != null && PlaybackService.CurrentSongDuration.TotalSeconds > 0)
+            {
+                return $"{PlaybackService.CurrentSongDuration:mm\\:ss}";
+            }
+
+            return "--:--";
+        }
+    }
+
+    public ICommand PlayPauseResumeCommand { get; }
+    public ICommand SeekCommand { get; }
 
     public PlaybackViewModel(PlaybackService playbackService, WaveformService waveformService)
     {
         PlaybackService = playbackService;
         WaveformDisplay = new WaveformDisplayViewModel(playbackService, waveformService);
-        Controls = new PlaybackControlViewModel(playbackService, WaveformDisplay); // Instantiate new VM
         ModeControls = new PlaybackModeViewModel(this);
-        EffectsControls = new PlaybackEffectsViewModel(playbackService);
+        EffectsControls = new PlaybackEffectsViewModel(playbackService); // Instantiate new VM
+
+        // PlaybackSpeed = 1.0; // Now managed by EffectsControls
+        // PlaybackPitch = 0.0; // Now managed by EffectsControls
+
+        PlayPauseResumeCommand = new RelayCommand(
+            _ => TogglePlayPauseResume(),
+            _ => PlaybackService.CurrentSong != null && !WaveformDisplay.IsWaveformLoading);
+
+        SeekCommand = new RelayCommand(
+            positionSecondsObj =>
+            {
+                if (positionSecondsObj is double seconds && PlaybackService.CurrentSongDuration.TotalSeconds > 0)
+                {
+                    PlaybackService.Seek(TimeSpan.FromSeconds(seconds));
+                }
+            },
+             _ => PlaybackService.CurrentSong != null && PlaybackService.CurrentSongDuration.TotalSeconds > 0 && !WaveformDisplay.IsWaveformLoading);
 
         PlaybackService.PropertyChanged += PlaybackService_PropertyChanged;
-        PropertyChanged += PlaybackViewModel_PropertyChanged;
+        PropertyChanged += PlaybackViewModel_PropertyChanged; // For HasCurrentSong affecting ModeControls
         WaveformDisplay.PropertyChanged += WaveformDisplay_PropertyChanged;
+        // EffectsControls does not currently raise events that PlaybackViewModel needs to listen to directly.
+        // If it did, we would subscribe here: EffectsControls.PropertyChanged += EffectsControls_PropertyChanged;
     }
 
     private void WaveformDisplay_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -3406,8 +3471,29 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
         {
             return;
         }
-        // PlaybackControlViewModel also listens to this, so this call ensures all commands are updated
+
         RaisePlaybackCommandCanExecuteChanged();
+    }
+
+    private void TogglePlayPauseResume()
+    {
+        Debug.WriteLine($"[PlaybackVM] TogglePlayPauseResume called. Current state: {PlaybackService.CurrentPlaybackStatus}");
+        if (PlaybackService.CurrentPlaybackStatus == PlaybackStateStatus.Playing)
+        {
+            PlaybackService.Pause();
+        }
+        else if (PlaybackService.CurrentPlaybackStatus == PlaybackStateStatus.Paused)
+        {
+            PlaybackService.Resume();
+        }
+        else if (PlaybackService.CurrentPlaybackStatus == PlaybackStateStatus.Stopped && PlaybackService.CurrentSong != null)
+        {
+            PlaybackService.Resume();
+        }
+        else if (PlaybackService.CurrentPlaybackStatus == PlaybackStateStatus.Stopped && PlaybackService.CurrentSong == null)
+        {
+            Debug.WriteLine("[PlaybackVM] TogglePlayPauseResume called in Stopped state with no song. Doing nothing.");
+        }
     }
 
     private void PlaybackService_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -3417,16 +3503,36 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
             switch (e.PropertyName)
             {
                 case nameof(PlaybackService.CurrentSong):
-                    OnPropertyChanged(nameof(CurrentSong)); // For data contexts, WaveformDisplay, etc.
-                    OnPropertyChanged(nameof(HasCurrentSong)); // For ModeControls, general UI state
-                                                               // PlaybackControlViewModel handles its own updates from PlaybackService
+                    OnPropertyChanged(nameof(CurrentSong));
+                    OnPropertyChanged(nameof(HasCurrentSong)); // This will be picked up by PlaybackModeViewModel
+                    OnPropertyChanged(nameof(CurrentTimeDisplay));
+                    OnPropertyChanged(nameof(TotalTimeDisplay));
+                    RaisePlaybackCommandCanExecuteChanged();
                     break;
-                    // Other properties like CurrentPosition, CurrentPlaybackStatus are handled
-                    // directly by PlaybackControlViewModel for its specific UI elements.
+                case nameof(PlaybackService.CurrentPosition):
+                    OnPropertyChanged(nameof(CurrentPosition));
+                    OnPropertyChanged(nameof(CurrentPositionSeconds));
+                    OnPropertyChanged(nameof(CurrentTimeDisplay));
+                    break;
+                case nameof(PlaybackService.CurrentSongDuration):
+                    OnPropertyChanged(nameof(CurrentSongDuration));
+                    OnPropertyChanged(nameof(CurrentSongDurationSeconds));
+                    OnPropertyChanged(nameof(TotalTimeDisplay));
+                    RaisePlaybackCommandCanExecuteChanged();
+                    break;
+                case nameof(PlaybackService.CurrentPlaybackStatus):
+                    OnPropertyChanged(nameof(CurrentPlaybackStatus));
+                    OnPropertyChanged(nameof(IsPlaying));
+                    RaisePlaybackCommandCanExecuteChanged();
+                    break;
+                    // If PlaybackRate or PitchSemitones from PlaybackService were to update EffectsControls:
+                    // case nameof(PlaybackService.PlaybackRate):
+                    //    EffectsControls.PlaybackSpeed = PlaybackService.PlaybackRate; // Or some sync logic
+                    //    break;
+                    // case nameof(PlaybackService.PitchSemitones):
+                    //    EffectsControls.PlaybackPitch = PlaybackService.PitchSemitones;
+                    //    break;
             }
-            // It's important to raise command changes if HasCurrentSong changes,
-            // as many commands depend on it.
-            RaisePlaybackCommandCanExecuteChanged();
         });
     }
 
@@ -3434,22 +3540,19 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
     {
         switch (e.PropertyName)
         {
-            case nameof(HasCurrentSong):
+            case nameof(HasCurrentSong): // ModeControls depends on this
                 ModeControls.RaiseCommandCanExecuteChanged();
-                // PlaybackControlViewModel also depends on HasCurrentSong (via PlaybackService)
-                // and updates its commands internally.
-                // This global RaisePlaybackCommandCanExecuteChanged ensures all relevant commands
-                // across PlaybackViewModel and its children are re-evaluated.
-                RaisePlaybackCommandCanExecuteChanged();
+                RaisePlaybackCommandCanExecuteChanged(); // Other commands might also depend on HasCurrentSong
                 break;
         }
     }
 
     public void RaisePlaybackCommandCanExecuteChanged()
     {
-        Controls.RaiseCommandsCanExecuteChanged();
-        ModeControls.RaiseCommandCanExecuteChanged();
-        // EffectsControls currently has no commands that need dynamic CanExecute updates.
+        (PlayPauseResumeCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (SeekCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        ModeControls.RaiseCommandCanExecuteChanged(); // Delegate to the extracted VM
+        // EffectsControls currently has no commands.
     }
 
     public void Dispose()
@@ -3458,15 +3561,12 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
         {
             PlaybackService.PropertyChanged -= PlaybackService_PropertyChanged;
         }
-        PropertyChanged -= PlaybackViewModel_PropertyChanged;
-
         if (WaveformDisplay != null)
         {
             WaveformDisplay.PropertyChanged -= WaveformDisplay_PropertyChanged;
-            // If WaveformDisplay implements IDisposable, call it: WaveformDisplay.Dispose();
+            // If WaveformDisplay implements IDisposable, call it
         }
-        Controls?.Dispose();
-        ModeControls?.Dispose();
+        ModeControls?.Dispose(); // Dispose the extracted VM
         // EffectsControls does not currently implement IDisposable or hold resources.
     }
 }
@@ -8034,7 +8134,7 @@ using Sonorize.ViewModels;
 
 namespace Sonorize.ViewModels;
 
-public class MainWindowViewModelOrchestrator : IDisposable
+internal class MainWindowViewModelOrchestrator : IDisposable
 {
     private readonly LibraryViewModel _libraryViewModel;
     private readonly PlaybackViewModel _playbackViewModel;
@@ -8065,11 +8165,7 @@ public class MainWindowViewModelOrchestrator : IDisposable
     private void SubscribeToEvents()
     {
         _libraryViewModel.PropertyChanged += Library_PropertyChanged;
-        _playbackViewModel.PropertyChanged += PlaybackViewModel_PropertyChanged; // Handles CurrentSong, HasCurrentSong from PlaybackVM
-        if (_playbackViewModel.Controls != null)
-        {
-            _playbackViewModel.Controls.PropertyChanged += PlaybackControls_PropertyChanged; // Handles specific control properties
-        }
+        _playbackViewModel.PropertyChanged += Playback_PropertyChanged;
         if (_playbackViewModel.ModeControls != null)
         {
             _playbackViewModel.ModeControls.PropertyChanged += PlaybackModeControls_PropertyChanged;
@@ -8084,11 +8180,7 @@ public class MainWindowViewModelOrchestrator : IDisposable
     private void UnsubscribeFromEvents()
     {
         _libraryViewModel.PropertyChanged -= Library_PropertyChanged;
-        _playbackViewModel.PropertyChanged -= PlaybackViewModel_PropertyChanged;
-        if (_playbackViewModel.Controls != null)
-        {
-            _playbackViewModel.Controls.PropertyChanged -= PlaybackControls_PropertyChanged;
-        }
+        _playbackViewModel.PropertyChanged -= Playback_PropertyChanged;
         if (_playbackViewModel.ModeControls != null)
         {
             _playbackViewModel.ModeControls.PropertyChanged -= PlaybackModeControls_PropertyChanged;
@@ -8135,70 +8227,37 @@ public class MainWindowViewModelOrchestrator : IDisposable
         }
     }
 
-    // Handles PropertyChanged from PlaybackViewModel (e.g., CurrentSong, HasCurrentSong)
-    private void PlaybackViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    private void Playback_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         switch (e.PropertyName)
         {
             case nameof(PlaybackViewModel.CurrentSong):
-                // MainWindowViewModel.Playback.CurrentSong will be updated because PlaybackViewModel.CurrentSong changed.
-                _notifyMainWindowVMPropertyChangedCallback("Playback.CurrentSong");
-                _notifyMainWindowVMPropertyChangedCallback("Playback.HasCurrentSong");
-                // Properties on Playback.Controls might also change as a result of CurrentSong changing,
-                // so we also notify for them as they are likely bound in UI.
-                // PlaybackControls_PropertyChanged will handle granular updates if it receives direct events.
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.CurrentTimeDisplay");
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.TotalTimeDisplay");
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.CurrentPlaybackStatus");
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.IsPlaying");
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentSong)); // Or just rely on MainWindowViewModel.Playback being the source
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.HasCurrentSong));
                 _raiseAllCommandsCanExecuteChangedCallback();
                 _updateStatusBarTextCallback();
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentTimeDisplay));
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.TotalTimeDisplay));
                 break;
-            case nameof(PlaybackViewModel.HasCurrentSong):
-                _notifyMainWindowVMPropertyChangedCallback("Playback.HasCurrentSong");
-                _raiseAllCommandsCanExecuteChangedCallback();
+            case nameof(PlaybackViewModel.CurrentPlaybackStatus):
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentPlaybackStatus));
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.IsPlaying));
                 _updateStatusBarTextCallback();
+                _raiseAllCommandsCanExecuteChangedCallback();
+                break;
+            case nameof(PlaybackViewModel.CurrentPosition):
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentPosition));
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentPositionSeconds));
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentTimeDisplay));
+                break;
+            case nameof(PlaybackViewModel.CurrentSongDuration):
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentSongDuration));
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentSongDurationSeconds));
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.TotalTimeDisplay));
+                _raiseAllCommandsCanExecuteChangedCallback();
                 break;
         }
     }
-
-    // Handles PropertyChanged from PlaybackViewModel.Controls (PlaybackControlViewModel)
-    private void PlaybackControls_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        switch (e.PropertyName)
-        {
-            case nameof(PlaybackControlViewModel.CurrentPlaybackStatus):
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.CurrentPlaybackStatus");
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.IsPlaying"); // IsPlaying depends on CurrentPlaybackStatus
-                _updateStatusBarTextCallback();
-                _raiseAllCommandsCanExecuteChangedCallback();
-                break;
-            case nameof(PlaybackControlViewModel.IsPlaying):
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.IsPlaying");
-                _updateStatusBarTextCallback();
-                _raiseAllCommandsCanExecuteChangedCallback();
-                break;
-            case nameof(PlaybackControlViewModel.CurrentPosition):
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.CurrentPosition");
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.CurrentPositionSeconds");
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.CurrentTimeDisplay");
-                break;
-            case nameof(PlaybackControlViewModel.CurrentSongDuration):
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.CurrentSongDuration");
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.CurrentSongDurationSeconds");
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.TotalTimeDisplay");
-                _raiseAllCommandsCanExecuteChangedCallback();
-                break;
-            case nameof(PlaybackControlViewModel.CurrentTimeDisplay):
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.CurrentTimeDisplay");
-                break;
-            case nameof(PlaybackControlViewModel.TotalTimeDisplay):
-                _notifyMainWindowVMPropertyChangedCallback("Playback.Controls.TotalTimeDisplay");
-                break;
-                // CurrentSong change is handled by PlaybackViewModel_PropertyChanged, which then can trigger notifications for control properties too.
-        }
-    }
-
 
     private void PlaybackModeControls_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -8206,7 +8265,7 @@ public class MainWindowViewModelOrchestrator : IDisposable
         {
             case nameof(PlaybackModeViewModel.ShuffleEnabled):
             case nameof(PlaybackModeViewModel.RepeatMode):
-                _playbackViewModel.RaisePlaybackCommandCanExecuteChanged();
+                _playbackViewModel.RaisePlaybackCommandCanExecuteChanged(); // PlaybackVM raises its own commands
                 _updateStatusBarTextCallback();
                 break;
         }
@@ -8532,124 +8591,6 @@ public class SettingsViewModel : ViewModelBase
 }
 </file>
 
-<file path="Source\Views\MainWindow\MainWindowComponentsManager.cs">
-using System;
-using System.ComponentModel;
-using Avalonia.Controls;
-using Sonorize.Models;
-using Sonorize.Services;
-using Sonorize.ViewModels.LibraryManagement; // Required for LibraryDisplayModeService
-
-namespace Sonorize.ViewModels.MainWindow;
-
-public class MainWindowComponentsManager : IDisposable
-{
-    private readonly SettingsService _settingsService;
-    private readonly MusicLibraryService _musicLibraryService;
-    private readonly PlaybackService _playbackService;
-    private readonly ThemeColors _currentTheme;
-    private readonly WaveformService _waveformService;
-    private readonly LoopDataService _loopDataService;
-    private readonly ScrobblingService _scrobblingService;
-    private readonly SongMetadataService _songMetadataService;
-    private readonly SongEditInteractionService _songEditInteractionService;
-    private readonly SongLoopService _songLoopService;
-
-    public LibraryViewModel Library { get; }
-    public PlaybackViewModel Playback { get; }
-    public LoopEditorViewModel LoopEditor { get; }
-    public AdvancedPanelViewModel AdvancedPanel { get; }
-    public LibraryDisplayModeService LibraryDisplayModeService { get; }
-    public ApplicationWorkflowManager WorkflowManager { get; }
-    public MainWindowInteractionCoordinator InteractionCoordinator { get; }
-    public MainWindowViewModelOrchestrator ViewModelOrchestrator { get; }
-
-    public MainWindowComponentsManager(
-        MainWindowViewModel parentMainWindowViewModel,
-        SettingsService settingsService,
-        MusicLibraryService musicLibraryService,
-        PlaybackService playbackService,
-        ThemeColors currentTheme,
-        WaveformService waveformService,
-        LoopDataService loopDataService,
-        ScrobblingService scrobblingService,
-        SongMetadataService songMetadataService,
-        SongEditInteractionService songEditInteractionService,
-        SongLoopService songLoopService,
-        Func<Window?> getOwnerViewFunc,
-        Action raiseAllCommandsCanExecuteChangedCallback,
-        Action updateStatusBarTextCallback,
-        Action<string> notifyMainWindowVMPropertyChangedCallback)
-    {
-        _settingsService = settingsService;
-        _musicLibraryService = musicLibraryService;
-        _playbackService = playbackService;
-        _currentTheme = currentTheme;
-        _waveformService = waveformService;
-        _loopDataService = loopDataService;
-        _scrobblingService = scrobblingService;
-        _songMetadataService = songMetadataService;
-        _songEditInteractionService = songEditInteractionService;
-        _songLoopService = songLoopService;
-
-        LibraryDisplayModeService = new LibraryDisplayModeService(_settingsService);
-        Library = new LibraryViewModel(parentMainWindowViewModel, _settingsService, _musicLibraryService, _loopDataService, LibraryDisplayModeService);
-        Playback = new PlaybackViewModel(_playbackService, _waveformService);
-        LoopEditor = new LoopEditorViewModel(_playbackService, _loopDataService, _songLoopService);
-        AdvancedPanel = new AdvancedPanelViewModel(Playback, Library);
-
-        WorkflowManager = new ApplicationWorkflowManager(
-            _settingsService,
-            _scrobblingService,
-            _currentTheme,
-            Library,
-            Playback,
-            _playbackService,
-            _loopDataService);
-
-        InteractionCoordinator = new MainWindowInteractionCoordinator(
-            getOwnerViewFunc,
-            Library,
-            AdvancedPanel,
-            WorkflowManager,
-            _songEditInteractionService,
-            raiseAllCommandsCanExecuteChangedCallback
-        );
-
-        ViewModelOrchestrator = new MainWindowViewModelOrchestrator(
-            Library,
-            Playback,
-            AdvancedPanel,
-            raiseAllCommandsCanExecuteChangedCallback,
-            updateStatusBarTextCallback,
-            notifyMainWindowVMPropertyChangedCallback
-        );
-
-        _playbackService.PlaybackEndedNaturally += PlaybackService_PlaybackEndedNaturally;
-    }
-
-    private void PlaybackService_PlaybackEndedNaturally(object? sender, EventArgs e)
-    {
-        WorkflowManager.HandlePlaybackEndedNaturally();
-    }
-
-    public void Dispose()
-    {
-        if (_playbackService != null)
-        {
-            _playbackService.PlaybackEndedNaturally -= PlaybackService_PlaybackEndedNaturally;
-        }
-        ViewModelOrchestrator?.Dispose();
-        WorkflowManager?.Dispose();
-        Library?.Dispose();
-        Playback?.Dispose();
-        AdvancedPanel?.Dispose();
-        LoopEditor?.Dispose();
-        // LibraryDisplayModeService does not currently implement IDisposable
-    }
-}
-</file>
-
 <file path="Source\Views\MainWindowControls\AdvancedPlaybackPanelControls.cs">
 using Avalonia;
 using Avalonia.Controls;
@@ -8685,16 +8626,16 @@ public static class AdvancedPlaybackPanelControls
         var speedLabel = new TextBlock { Text = "Tempo:", VerticalAlignment = VerticalAlignment.Center, Foreground = theme.B_TextColor, Margin = new Thickness(0, 0, 5, 0) };
         var speedSlider = new Slider { Minimum = 0.5, Maximum = 2.0, SmallChange = 0.05, LargeChange = 0.25, TickFrequency = 0.25, Foreground = theme.B_AccentColor, Background = theme.B_SecondaryTextColor };
         speedSlider.Styles.Add(new Style(s => s.Is<Thumb>()) { Setters = { new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor) } });
-        speedSlider.Bind(Slider.ValueProperty, new Binding("Playback.EffectsControls.PlaybackSpeed", BindingMode.TwoWay));
+        speedSlider.Bind(Slider.ValueProperty, new Binding("Playback.EffectsControls.PlaybackSpeed", BindingMode.TwoWay)); // Updated binding
         var speedDisplay = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0), Foreground = theme.B_TextColor, MinWidth = 35, HorizontalAlignment = HorizontalAlignment.Right };
-        speedDisplay.Bind(TextBlock.TextProperty, new Binding("Playback.EffectsControls.PlaybackSpeedDisplay"));
+        speedDisplay.Bind(TextBlock.TextProperty, new Binding("Playback.EffectsControls.PlaybackSpeedDisplay")); // Updated binding
 
         var pitchLabel = new TextBlock { Text = "Pitch:", VerticalAlignment = VerticalAlignment.Center, Foreground = theme.B_TextColor, Margin = new Thickness(0, 0, 5, 0) };
         var pitchSlider = new Slider { Minimum = -4, Maximum = 4, SmallChange = 0.1, LargeChange = 0.5, TickFrequency = 0.5, Foreground = theme.B_AccentColor, Background = theme.B_SecondaryTextColor };
         pitchSlider.Styles.Add(new Style(s => s.Is<Thumb>()) { Setters = { new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor) } });
-        pitchSlider.Bind(Slider.ValueProperty, new Binding("Playback.EffectsControls.PlaybackPitch", BindingMode.TwoWay));
+        pitchSlider.Bind(Slider.ValueProperty, new Binding("Playback.EffectsControls.PlaybackPitch", BindingMode.TwoWay)); // Updated binding
         var pitchDisplay = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0), Foreground = theme.B_TextColor, MinWidth = 45, HorizontalAlignment = HorizontalAlignment.Right };
-        pitchDisplay.Bind(TextBlock.TextProperty, new Binding("Playback.EffectsControls.PlaybackPitchDisplay"));
+        pitchDisplay.Bind(TextBlock.TextProperty, new Binding("Playback.EffectsControls.PlaybackPitchDisplay")); // Updated binding
 
         Grid.SetColumn(speedLabel, 0); Grid.SetColumn(speedSlider, 1); Grid.SetColumn(speedDisplay, 2);
         Grid.SetColumn(pitchLabel, 4); Grid.SetColumn(pitchSlider, 5); Grid.SetColumn(pitchDisplay, 6);
@@ -8714,11 +8655,9 @@ public static class AdvancedPlaybackPanelControls
             LoopRegionBrush = new SolidColorBrush(accentColorForLoopRegion, 0.3)
         };
         waveformDisplay.Bind(WaveformDisplayControl.WaveformPointsProperty, new Binding("Playback.WaveformDisplay.WaveformRenderData"));
-        // WaveformDisplayControl needs CurrentPosition and Duration. These are now in Playback.Controls
-        waveformDisplay.Bind(WaveformDisplayControl.CurrentPositionProperty, new Binding("Playback.Controls.CurrentPosition"));
-        waveformDisplay.Bind(WaveformDisplayControl.DurationProperty, new Binding("Playback.Controls.CurrentSongDuration"));
-        // ActiveLoop is on the Song model, accessed via PlaybackService (or PlaybackControlViewModel which proxies PlaybackService)
-        waveformDisplay.Bind(WaveformDisplayControl.ActiveLoopProperty, new Binding("Playback.Controls.CurrentSong.SavedLoop"));
+        waveformDisplay.Bind(WaveformDisplayControl.CurrentPositionProperty, new Binding("Playback.CurrentPosition"));
+        waveformDisplay.Bind(WaveformDisplayControl.DurationProperty, new Binding("Playback.CurrentSongDuration"));
+        waveformDisplay.Bind(WaveformDisplayControl.ActiveLoopProperty, new Binding("Playback.PlaybackService.CurrentSong.SavedLoop"));
         waveformDisplay.SeekRequested += (s, time) =>
         {
             if (s is Control { DataContext: MainWindowViewModel mainWindowVM })
@@ -8741,12 +8680,12 @@ public static class AdvancedPlaybackPanelControls
         var setStartBtn = new Button { Content = "A", FontSize = 12, Padding = new Thickness(10, 5), MinWidth = 40, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         setStartBtn.Bind(Button.CommandProperty, new Binding("LoopEditor.CaptureLoopStartCandidateCommand"));
         var startDisp = new TextBlock { FontSize = 11, Margin = new Thickness(3, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = theme.B_SecondaryTextColor, MinWidth = 60 };
-        startDisp.Bind(TextBlock.TextProperty, new Binding("LoopEditor.CandidateLoop.NewLoopStartCandidateDisplay"));
+        startDisp.Bind(TextBlock.TextProperty, new Binding("LoopEditor.NewLoopStartCandidateDisplay"));
 
         var setEndBtn = new Button { Content = "B", FontSize = 12, Padding = new Thickness(10, 5), MinWidth = 40, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         setEndBtn.Bind(Button.CommandProperty, new Binding("LoopEditor.CaptureLoopEndCandidateCommand"));
         var endDisp = new TextBlock { FontSize = 11, Margin = new Thickness(3, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = theme.B_SecondaryTextColor, MinWidth = 60 };
-        endDisp.Bind(TextBlock.TextProperty, new Binding("LoopEditor.CandidateLoop.NewLoopEndCandidateDisplay"));
+        endDisp.Bind(TextBlock.TextProperty, new Binding("LoopEditor.NewLoopEndCandidateDisplay"));
 
         var saveLoopBtn = new Button { Content = "Save Loop", FontSize = 11, Padding = new Thickness(10, 5), Background = theme.B_AccentColor, Foreground = theme.B_AccentForeground };
         saveLoopBtn.Bind(Button.CommandProperty, new Binding("LoopEditor.SaveLoopCommand"));
@@ -8754,8 +8693,7 @@ public static class AdvancedPlaybackPanelControls
 
         var clearLoopBtn = new Button { Content = "Clear Loop", FontSize = 11, Padding = new Thickness(10, 5), Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         clearLoopBtn.Bind(Button.CommandProperty, new Binding("LoopEditor.ClearLoopCommand"));
-        // CurrentSong is now on Playback.Controls
-        var clearLoopBinding = new Binding("Playback.Controls.CurrentSong.SavedLoop") { Converter = NotNullToBooleanConverter.Instance };
+        var clearLoopBinding = new Binding("PlaybackService.CurrentSong.SavedLoop") { Converter = NotNullToBooleanConverter.Instance };
         clearLoopBtn.Bind(Button.IsEnabledProperty, clearLoopBinding);
 
         loopActionsPanel.Children.Add(setStartBtn); loopActionsPanel.Children.Add(startDisp);
@@ -8765,9 +8703,8 @@ public static class AdvancedPlaybackPanelControls
         var loopActiveTogglePanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0), Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
         var loopActiveCheckBox = new CheckBox { Content = "Activate Loop", Foreground = theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
         loopActiveCheckBox.Bind(ToggleButton.IsCheckedProperty, new Binding("LoopEditor.IsCurrentLoopActiveUiBinding", BindingMode.TwoWay));
-        // CurrentSong is now on Playback.Controls
-        var loopActiveCheckBoxIsEnabledBinding = new Binding("Playback.Controls.CurrentSong.SavedLoop") { Converter = NotNullToBooleanConverter.Instance };
-        loopActiveCheckBox.Bind(Control.IsEnabledProperty, loopActiveCheckBoxIsEnabledBinding);
+        var loopActiveCheckBoxIsEnabledBinding = new Binding("PlaybackService.CurrentSong.SavedLoop") { Converter = NotNullToBooleanConverter.Instance };
+        loopActiveCheckBox.Bind(Control.IsEnabledProperty, loopActiveCheckBoxIsEnabledBinding); // Corrected: Control.IsEnabledProperty
         loopActiveTogglePanel.Children.Add(loopActiveCheckBox);
 
         loopControlsOuterPanel.Children.Add(loopDefinitionLabel);
@@ -8946,165 +8883,112 @@ public static class MainMenu
 </file>
 
 <file path="Source\Views\MainWindowControls\MainPlaybackControlsPanel.cs">
-using System;
-using System.ComponentModel;
-using System.Diagnostics;
-using System.Windows.Input;
-using Avalonia.Threading;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Data;
+using Avalonia.Data.Converters; // Added required using directive for FuncValueConverter
+using Avalonia.Layout;
+using Avalonia.Media;
 using Sonorize.Models;
-using Sonorize.Services;
 
-namespace Sonorize.ViewModels;
+namespace Sonorize.Views.MainWindowControls;
 
-public class PlaybackControlViewModel : ViewModelBase, IDisposable
+public static class MainPlaybackControlsPanel
 {
-    private readonly PlaybackService _playbackService;
-    private readonly WaveformDisplayViewModel _waveformDisplay;
-
-    public Song? CurrentSong => _playbackService.CurrentSong;
-    public bool HasCurrentSong => _playbackService.HasCurrentSong;
-    public bool IsPlaying => _playbackService.IsPlaying;
-    public PlaybackStateStatus CurrentPlaybackStatus => _playbackService.CurrentPlaybackStatus;
-    public TimeSpan CurrentPosition => _playbackService.CurrentPosition;
-    public TimeSpan CurrentSongDuration => _playbackService.CurrentSongDuration;
-
-    public double CurrentPositionSeconds
+    public static Grid Create(ThemeColors theme) // Root is a Grid
     {
-        get => _playbackService.CurrentPositionSeconds;
-        set
+        // --- Playback Navigation Buttons Panel (Extracted) ---
+        var combinedPlaybackButtonControlsPanel = PlaybackNavigationButtonsPanel.Create(theme);
+
+        var toggleAdvPanelButton = new Button
         {
-            if (CurrentSong == null || Math.Abs(_playbackService.CurrentPositionSeconds - value) <= 0.01)
-            {
-                return;
-            }
-            _playbackService.Seek(TimeSpan.FromSeconds(value));
-        }
-    }
-    public double CurrentSongDurationSeconds => _playbackService.CurrentSongDurationSeconds;
-
-    public string CurrentTimeDisplay
-    {
-        get
+            Content = "+",
+            Background = theme.B_SlightlyLighterBackground,
+            Foreground = theme.B_TextColor, // Default color
+            BorderBrush = theme.B_ControlBackgroundColor, // Default border color
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(3),
+            Padding = new Thickness(8, 4),
+            MinWidth = 30, // Give it a minimum size to occupy space
+            FontWeight = FontWeight.Bold,
+            Width = 32, // Fixed width for consistency
+            Height = 32, // Fixed height for consistency
+            HorizontalContentAlignment = HorizontalAlignment.Center, // Center content horizontally
+            VerticalContentAlignment = VerticalAlignment.Center     // Center content vertically
+        };
+        // Change BorderBrush color based on IsAdvancedPanelVisible
+        toggleAdvPanelButton[!Button.BorderBrushProperty] = new Binding("IsAdvancedPanelVisible")
         {
-            if (CurrentSong != null)
-            {
-                return CurrentPosition.ToString("mm\\:ss");
-            }
-            return "--:--";
-        }
-    }
-
-    public string TotalTimeDisplay
-    {
-        get
+            Converter = new FuncValueConverter<bool, IBrush>(isVisible => isVisible ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
+        };
+        toggleAdvPanelButton[!Button.ForegroundProperty] = new Binding("IsAdvancedPanelVisible")
         {
-            if (CurrentSong != null && CurrentSongDuration.TotalSeconds > 0)
-            {
-                return CurrentSongDuration.ToString("mm\\:ss");
-            }
-            return "--:--";
-        }
-    }
+            Converter = new FuncValueConverter<bool, IBrush>(isVisible => isVisible ? theme.B_AccentColor : theme.B_TextColor)
+        };
+        toggleAdvPanelButton.Bind(Button.CommandProperty, new Binding("ToggleAdvancedPanelCommand"));
+        toggleAdvPanelButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
-    public ICommand PlayPauseResumeCommand { get; }
-    public ICommand SeekCommand { get; }
 
-    public PlaybackControlViewModel(PlaybackService playbackService, WaveformDisplayViewModel waveformDisplay)
-    {
-        _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
-        _waveformDisplay = waveformDisplay ?? throw new ArgumentNullException(nameof(waveformDisplay));
-
-        PlayPauseResumeCommand = new RelayCommand(
-            _ => TogglePlayPauseResume(),
-            _ => CurrentSong != null && !_waveformDisplay.IsWaveformLoading);
-
-        SeekCommand = new RelayCommand(
-            positionSecondsObj =>
-            {
-                if (positionSecondsObj is double seconds && CurrentSongDuration.TotalSeconds > 0)
-                {
-                    _playbackService.Seek(TimeSpan.FromSeconds(seconds));
-                }
-            },
-             _ => CurrentSong != null && CurrentSongDuration.TotalSeconds > 0 && !_waveformDisplay.IsWaveformLoading);
-
-        _playbackService.PropertyChanged += PlaybackService_PropertyChanged;
-        _waveformDisplay.PropertyChanged += WaveformDisplay_PropertyChanged;
-
-        // Initial property updates based on service state
-        UpdateAllProperties();
-    }
-
-    private void TogglePlayPauseResume()
-    {
-        Debug.WriteLine($"[PlaybackCtrlVM] TogglePlayPauseResume called. Current state: {CurrentPlaybackStatus}");
-        if (CurrentPlaybackStatus == PlaybackStateStatus.Playing)
+        var rightControlsPanel = new StackPanel // Holds toggle button
         {
-            _playbackService.Pause();
-        }
-        else if (CurrentPlaybackStatus == PlaybackStateStatus.Paused)
-        {
-            _playbackService.Resume();
-        }
-        else if (CurrentPlaybackStatus == PlaybackStateStatus.Stopped && CurrentSong != null)
-        {
-            _playbackService.Resume(); // Or Play(CurrentSong) if Resume doesn't handle stopped state
-        }
-        else if (CurrentPlaybackStatus == PlaybackStateStatus.Stopped && CurrentSong == null)
-        {
-            Debug.WriteLine("[PlaybackCtrlVM] TogglePlayPauseResume called in Stopped state with no song. Doing nothing.");
-        }
-    }
+            Orientation = Orientation.Horizontal,
+            Spacing = 5,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Right, // Align to the right within its grid cell
+            Margin = new Thickness(0, 0, 10, 0) // Margin from the right edge of the grid cell
+            // MinWidth/Width could be added here if needed to reserve space even when invisible
+        };
+        rightControlsPanel.Children.Add(toggleAdvPanelButton);
 
-    private void PlaybackService_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        Dispatcher.UIThread.InvokeAsync(() =>
+        // --- Playback Time Slider Panel (Extracted) ---
+        var timeSliderGrid = PlaybackTimeSliderPanel.Create(theme);
+
+
+        // --- Center Playback Controls Stack (Combined Buttons Panel + Slider) ---
+        // This stack panel contains the combined button panel (now includes shuffle/loop, prev/play/next) and the time/slider grid.
+        var centerPlaybackControlsStack = new StackPanel
         {
-            switch (e.PropertyName)
-            {
-                case nameof(PlaybackService.CurrentSong):
-                case nameof(PlaybackService.CurrentPosition):
-                case nameof(PlaybackService.CurrentSongDuration):
-                case nameof(PlaybackService.CurrentPlaybackStatus):
-                    UpdateAllProperties();
-                    RaiseCommandsCanExecuteChanged();
-                    break;
-            }
-        });
-    }
+            Orientation = Orientation.Vertical,
+            Margin = new Thickness(0, 5, 0, 0),
+            Spacing = 8, // Space between the button row and the slider row
+            HorizontalAlignment = HorizontalAlignment.Center, // Center this stack panel within its parent grid cell
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        // Add the combined button panel (now includes shuffle/loop, prev/play/next)
+        centerPlaybackControlsStack.Children.Add(combinedPlaybackButtonControlsPanel);
+        centerPlaybackControlsStack.Children.Add(timeSliderGrid);
 
-    private void WaveformDisplay_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(WaveformDisplayViewModel.IsWaveformLoading))
+
+        // --- Currently Playing Song Info Panel (Extracted) ---
+        var songInfoPanel = SongInfoDisplayPanel.Create(theme);
+
+
+        // --- Main Grid Layout (Restored Single Column Centering) ---
+        // Use a single star (*) column. All children are placed in this column.
+        // Their HorizontalAlignment determines their position within the column.
+        // The centerPlaybackControlsStack has HorizontalAlignment.Center, ensuring it's centered
+        // regardless of the width of the left (songInfoPanel) or right (rightControlsPanel) elements.
+        var outerGrid = new Grid // This is the root panel
         {
-            RaiseCommandsCanExecuteChanged();
-        }
-    }
+            Background = theme.B_BackgroundColor,
+            Margin = new Thickness(0, 5, 0, 5), // Vertical margin for the whole control
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            RowDefinitions = new RowDefinitions("Auto"), // Single row, height is Auto based on content
+            ColumnDefinitions = new ColumnDefinitions("*") // Single column spanning the width
+        };
 
-    private void UpdateAllProperties()
-    {
-        OnPropertyChanged(nameof(CurrentSong));
-        OnPropertyChanged(nameof(HasCurrentSong));
-        OnPropertyChanged(nameof(IsPlaying));
-        OnPropertyChanged(nameof(CurrentPlaybackStatus));
-        OnPropertyChanged(nameof(CurrentPosition));
-        OnPropertyChanged(nameof(CurrentPositionSeconds));
-        OnPropertyChanged(nameof(CurrentSongDuration));
-        OnPropertyChanged(nameof(CurrentSongDurationSeconds));
-        OnPropertyChanged(nameof(CurrentTimeDisplay));
-        OnPropertyChanged(nameof(TotalTimeDisplay));
-    }
+        // Place all panels in the single column (column 0).
+        // Their HorizontalAlignment will handle horizontal positioning.
+        Grid.SetColumn(songInfoPanel, 0);
+        Grid.SetColumn(centerPlaybackControlsStack, 0);
+        Grid.SetColumn(rightControlsPanel, 0);
 
-    public void RaiseCommandsCanExecuteChanged()
-    {
-        (PlayPauseResumeCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        (SeekCommand as RelayCommand)?.RaiseCanExecuteChanged();
-    }
+        // Add children in any order; their position is determined by grid layout and alignment.
+        outerGrid.Children.Add(songInfoPanel);
+        outerGrid.Children.Add(centerPlaybackControlsStack);
+        outerGrid.Children.Add(rightControlsPanel);
 
-    public void Dispose()
-    {
-        _playbackService.PropertyChanged -= PlaybackService_PropertyChanged;
-        _waveformDisplay.PropertyChanged -= WaveformDisplay_PropertyChanged;
+        return outerGrid;
     }
 }
 </file>
@@ -9229,10 +9113,10 @@ public class MainTabViewControls
         };
         ApplyListBoxItemStyles(_artistsListBoxInstance);
 
-        _artistsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Groupings.Artists")); // Corrected binding
+        _artistsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Artists"));
         _artistsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.FilterState.SelectedArtist", BindingMode.TwoWay));
 
-        _artistsListBoxInstance.ItemTemplate = _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate;
+        _artistsListBoxInstance.ItemTemplate = _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate; // Updated path
         _artistsListBoxInstance.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
 
         return new ScrollViewer { Content = _artistsListBoxInstance, Padding = new Thickness(0, 0, 0, 5), HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
@@ -9249,7 +9133,7 @@ public class MainTabViewControls
         };
         ApplyListBoxItemStyles(_albumsListBoxInstance);
 
-        _albumsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Groupings.Albums")); // Corrected binding
+        _albumsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Albums"));
         _albumsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.FilterState.SelectedAlbum", BindingMode.TwoWay));
 
         _albumsListBoxInstance.ItemTemplate = _sharedViewTemplates.DetailedAlbumTemplate;
@@ -9370,9 +9254,8 @@ public static class PlaybackNavigationButtonsPanel
             VerticalContentAlignment = VerticalAlignment.Center,
             HorizontalContentAlignment = HorizontalAlignment.Center
         };
-        // Bind to Playback.Controls for command and IsPlaying state
-        mainPlayPauseButton.Bind(Button.CommandProperty, new Binding("Playback.Controls.PlayPauseResumeCommand"));
-        mainPlayPauseButton.Bind(Button.ContentProperty, new Binding("Playback.Controls.IsPlaying") { Converter = BooleanToPlayPauseIconConverter.Instance });
+        mainPlayPauseButton.Bind(Button.CommandProperty, new Binding("Playback.PlayPauseResumeCommand"));
+        mainPlayPauseButton.Bind(Button.ContentProperty, new Binding("Playback.IsPlaying") { Converter = BooleanToPlayPauseIconConverter.Instance });
 
         var nextButton = new Button
         {
@@ -9414,9 +9297,9 @@ public static class PlaybackNavigationButtonsPanel
             HorizontalAlignment = HorizontalAlignment.Center,
             FontSize = 18,
             FontFamily = new FontFamily("Segoe UI Symbol, Arial"),
-            [!TextBlock.TextProperty] = new Binding("Playback.ModeControls.ShuffleEnabled") { Converter = BooleanToShuffleIconConverter.Instance }
+            [!TextBlock.TextProperty] = new Binding("Playback.ModeControls.ShuffleEnabled") { Converter = BooleanToShuffleIconConverter.Instance } // Updated path
         };
-        shuffleButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.ModeControls.ShuffleEnabled", BindingMode.TwoWay));
+        shuffleButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.ModeControls.ShuffleEnabled", BindingMode.TwoWay)); // Updated path
         shuffleButton[!ToggleButton.ForegroundProperty] = new Binding("IsChecked")
         {
             Source = shuffleButton,
@@ -9427,8 +9310,7 @@ public static class PlaybackNavigationButtonsPanel
             Source = shuffleButton,
             Converter = new FuncValueConverter<bool, IBrush>(isChecked => isChecked ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
         };
-        // HasCurrentSong is still on PlaybackViewModel or proxied via Playback.Controls
-        shuffleButton.Bind(Control.IsEnabledProperty, new Binding("Playback.Controls.HasCurrentSong"));
+        shuffleButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
         var repeatModeButton = new ToggleButton
         {
@@ -9454,7 +9336,7 @@ public static class PlaybackNavigationButtonsPanel
             FontSize = 18,
             FontFamily = new FontFamily("Segoe UI Symbol, Arial"),
             RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
-            [!TextBlock.TextProperty] = new Binding("Playback.ModeControls.RepeatMode")
+            [!TextBlock.TextProperty] = new Binding("Playback.ModeControls.RepeatMode") // Updated path
             {
                 Converter = new FuncValueConverter<RepeatMode, string>(mode => mode switch
                 {
@@ -9465,7 +9347,7 @@ public static class PlaybackNavigationButtonsPanel
                     _ => "?"
                 })
             },
-            [!TextBlock.RenderTransformProperty] = new Binding("Playback.ModeControls.RepeatMode")
+            [!TextBlock.RenderTransformProperty] = new Binding("Playback.ModeControls.RepeatMode") // Updated path
             {
                 Converter = new FuncValueConverter<RepeatMode, ITransform?>(mode =>
                 {
@@ -9478,17 +9360,17 @@ public static class PlaybackNavigationButtonsPanel
                 })
             }
         };
-        repeatModeButton[!ToggleButton.ForegroundProperty] = new Binding("Playback.ModeControls.RepeatMode")
+        repeatModeButton[!ToggleButton.ForegroundProperty] = new Binding("Playback.ModeControls.RepeatMode") // Updated path
         {
             Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.None ? theme.B_AccentColor : theme.B_SecondaryTextColor)
         };
-        repeatModeButton[!ToggleButton.BorderBrushProperty] = new Binding("Playback.ModeControls.RepeatMode")
+        repeatModeButton[!ToggleButton.BorderBrushProperty] = new Binding("Playback.ModeControls.RepeatMode") // Updated path
         {
             Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.None ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
         };
-        repeatModeButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.ModeControls.IsRepeatActive"));
-        repeatModeButton.Bind(Button.CommandProperty, new Binding("Playback.ModeControls.CycleRepeatModeCommand"));
-        repeatModeButton.Bind(Control.IsEnabledProperty, new Binding("Playback.Controls.HasCurrentSong"));
+        repeatModeButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.ModeControls.IsRepeatActive")); // Updated path
+        repeatModeButton.Bind(Button.CommandProperty, new Binding("Playback.ModeControls.CycleRepeatModeCommand")); // Updated path
+        repeatModeButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
         var combinedPlaybackButtonControlsPanel = new StackPanel
         {
@@ -9538,8 +9420,8 @@ public static class PlaybackTimeSliderPanel
             MinWidth = 40,
             HorizontalAlignment = HorizontalAlignment.Left
         };
-        currentTimeTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.Controls.CurrentTimeDisplay"));
-        currentTimeTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.Controls.HasCurrentSong"));
+        currentTimeTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentTimeDisplay"));
+        currentTimeTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
 
         // TextBlock for Total Time
         var totalTimeTextBlock = new TextBlock
@@ -9551,8 +9433,8 @@ public static class PlaybackTimeSliderPanel
             MinWidth = 40,
             HorizontalAlignment = HorizontalAlignment.Right
         };
-        totalTimeTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.Controls.TotalTimeDisplay"));
-        totalTimeTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.Controls.HasCurrentSong"));
+        totalTimeTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.TotalTimeDisplay"));
+        totalTimeTextBlock.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
 
         var mainPlaybackSlider = new Slider
         {
@@ -9641,6 +9523,8 @@ public static class PlaybackTimeSliderPanel
             return container;
         });
 
+        // HERE IS THE CRUCIAL CHANGE:
+        // Handle PointerPressed on the slider itself (the whole clickable area)
         mainPlaybackSlider.PointerPressed += (sender, e) =>
         {
             var s = (Slider)sender;
@@ -9649,16 +9533,20 @@ public static class PlaybackTimeSliderPanel
 
             if (bounds.Width > 0)
             {
+                // Calculate ratio (clamped 0 to 1)
                 double ratio = Math.Clamp(pos.X / bounds.Width, 0, 1);
+
+                // Calculate new slider value based on ratio
                 double newValue = s.Minimum + ratio * (s.Maximum - s.Minimum);
+
                 s.Value = newValue;
                 e.Handled = true;
             }
         };
 
-        mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("Playback.Controls.CurrentSongDurationSeconds"));
-        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("Playback.Controls.CurrentPositionSeconds", BindingMode.TwoWay));
-        mainPlaybackSlider.Bind(Control.IsEnabledProperty, new Binding("Playback.Controls.HasCurrentSong"));
+        mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("Playback.CurrentSongDurationSeconds"));
+        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("Playback.CurrentPositionSeconds", BindingMode.TwoWay));
+        mainPlaybackSlider.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
         var timeSliderGrid = new Grid
         {

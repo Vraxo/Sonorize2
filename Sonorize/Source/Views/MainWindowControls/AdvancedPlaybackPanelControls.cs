@@ -32,16 +32,16 @@ public static class AdvancedPlaybackPanelControls
         var speedLabel = new TextBlock { Text = "Tempo:", VerticalAlignment = VerticalAlignment.Center, Foreground = theme.B_TextColor, Margin = new Thickness(0, 0, 5, 0) };
         var speedSlider = new Slider { Minimum = 0.5, Maximum = 2.0, SmallChange = 0.05, LargeChange = 0.25, TickFrequency = 0.25, Foreground = theme.B_AccentColor, Background = theme.B_SecondaryTextColor };
         speedSlider.Styles.Add(new Style(s => s.Is<Thumb>()) { Setters = { new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor) } });
-        speedSlider.Bind(Slider.ValueProperty, new Binding("Playback.EffectsControls.PlaybackSpeed", BindingMode.TwoWay));
+        speedSlider.Bind(Slider.ValueProperty, new Binding("Playback.EffectsControls.PlaybackSpeed", BindingMode.TwoWay)); // Updated binding
         var speedDisplay = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0), Foreground = theme.B_TextColor, MinWidth = 35, HorizontalAlignment = HorizontalAlignment.Right };
-        speedDisplay.Bind(TextBlock.TextProperty, new Binding("Playback.EffectsControls.PlaybackSpeedDisplay"));
+        speedDisplay.Bind(TextBlock.TextProperty, new Binding("Playback.EffectsControls.PlaybackSpeedDisplay")); // Updated binding
 
         var pitchLabel = new TextBlock { Text = "Pitch:", VerticalAlignment = VerticalAlignment.Center, Foreground = theme.B_TextColor, Margin = new Thickness(0, 0, 5, 0) };
         var pitchSlider = new Slider { Minimum = -4, Maximum = 4, SmallChange = 0.1, LargeChange = 0.5, TickFrequency = 0.5, Foreground = theme.B_AccentColor, Background = theme.B_SecondaryTextColor };
         pitchSlider.Styles.Add(new Style(s => s.Is<Thumb>()) { Setters = { new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor) } });
-        pitchSlider.Bind(Slider.ValueProperty, new Binding("Playback.EffectsControls.PlaybackPitch", BindingMode.TwoWay));
+        pitchSlider.Bind(Slider.ValueProperty, new Binding("Playback.EffectsControls.PlaybackPitch", BindingMode.TwoWay)); // Updated binding
         var pitchDisplay = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0), Foreground = theme.B_TextColor, MinWidth = 45, HorizontalAlignment = HorizontalAlignment.Right };
-        pitchDisplay.Bind(TextBlock.TextProperty, new Binding("Playback.EffectsControls.PlaybackPitchDisplay"));
+        pitchDisplay.Bind(TextBlock.TextProperty, new Binding("Playback.EffectsControls.PlaybackPitchDisplay")); // Updated binding
 
         Grid.SetColumn(speedLabel, 0); Grid.SetColumn(speedSlider, 1); Grid.SetColumn(speedDisplay, 2);
         Grid.SetColumn(pitchLabel, 4); Grid.SetColumn(pitchSlider, 5); Grid.SetColumn(pitchDisplay, 6);
@@ -61,11 +61,9 @@ public static class AdvancedPlaybackPanelControls
             LoopRegionBrush = new SolidColorBrush(accentColorForLoopRegion, 0.3)
         };
         waveformDisplay.Bind(WaveformDisplayControl.WaveformPointsProperty, new Binding("Playback.WaveformDisplay.WaveformRenderData"));
-        // WaveformDisplayControl needs CurrentPosition and Duration. These are now in Playback.Controls
-        waveformDisplay.Bind(WaveformDisplayControl.CurrentPositionProperty, new Binding("Playback.Controls.CurrentPosition"));
-        waveformDisplay.Bind(WaveformDisplayControl.DurationProperty, new Binding("Playback.Controls.CurrentSongDuration"));
-        // ActiveLoop is on the Song model, accessed via PlaybackService (or PlaybackControlViewModel which proxies PlaybackService)
-        waveformDisplay.Bind(WaveformDisplayControl.ActiveLoopProperty, new Binding("Playback.Controls.CurrentSong.SavedLoop"));
+        waveformDisplay.Bind(WaveformDisplayControl.CurrentPositionProperty, new Binding("Playback.CurrentPosition"));
+        waveformDisplay.Bind(WaveformDisplayControl.DurationProperty, new Binding("Playback.CurrentSongDuration"));
+        waveformDisplay.Bind(WaveformDisplayControl.ActiveLoopProperty, new Binding("Playback.PlaybackService.CurrentSong.SavedLoop"));
         waveformDisplay.SeekRequested += (s, time) =>
         {
             if (s is Control { DataContext: MainWindowViewModel mainWindowVM })
@@ -88,12 +86,12 @@ public static class AdvancedPlaybackPanelControls
         var setStartBtn = new Button { Content = "A", FontSize = 12, Padding = new Thickness(10, 5), MinWidth = 40, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         setStartBtn.Bind(Button.CommandProperty, new Binding("LoopEditor.CaptureLoopStartCandidateCommand"));
         var startDisp = new TextBlock { FontSize = 11, Margin = new Thickness(3, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = theme.B_SecondaryTextColor, MinWidth = 60 };
-        startDisp.Bind(TextBlock.TextProperty, new Binding("LoopEditor.CandidateLoop.NewLoopStartCandidateDisplay"));
+        startDisp.Bind(TextBlock.TextProperty, new Binding("LoopEditor.NewLoopStartCandidateDisplay"));
 
         var setEndBtn = new Button { Content = "B", FontSize = 12, Padding = new Thickness(10, 5), MinWidth = 40, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         setEndBtn.Bind(Button.CommandProperty, new Binding("LoopEditor.CaptureLoopEndCandidateCommand"));
         var endDisp = new TextBlock { FontSize = 11, Margin = new Thickness(3, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = theme.B_SecondaryTextColor, MinWidth = 60 };
-        endDisp.Bind(TextBlock.TextProperty, new Binding("LoopEditor.CandidateLoop.NewLoopEndCandidateDisplay"));
+        endDisp.Bind(TextBlock.TextProperty, new Binding("LoopEditor.NewLoopEndCandidateDisplay"));
 
         var saveLoopBtn = new Button { Content = "Save Loop", FontSize = 11, Padding = new Thickness(10, 5), Background = theme.B_AccentColor, Foreground = theme.B_AccentForeground };
         saveLoopBtn.Bind(Button.CommandProperty, new Binding("LoopEditor.SaveLoopCommand"));
@@ -101,8 +99,7 @@ public static class AdvancedPlaybackPanelControls
 
         var clearLoopBtn = new Button { Content = "Clear Loop", FontSize = 11, Padding = new Thickness(10, 5), Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         clearLoopBtn.Bind(Button.CommandProperty, new Binding("LoopEditor.ClearLoopCommand"));
-        // CurrentSong is now on Playback.Controls
-        var clearLoopBinding = new Binding("Playback.Controls.CurrentSong.SavedLoop") { Converter = NotNullToBooleanConverter.Instance };
+        var clearLoopBinding = new Binding("PlaybackService.CurrentSong.SavedLoop") { Converter = NotNullToBooleanConverter.Instance };
         clearLoopBtn.Bind(Button.IsEnabledProperty, clearLoopBinding);
 
         loopActionsPanel.Children.Add(setStartBtn); loopActionsPanel.Children.Add(startDisp);
@@ -112,9 +109,8 @@ public static class AdvancedPlaybackPanelControls
         var loopActiveTogglePanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0), Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
         var loopActiveCheckBox = new CheckBox { Content = "Activate Loop", Foreground = theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
         loopActiveCheckBox.Bind(ToggleButton.IsCheckedProperty, new Binding("LoopEditor.IsCurrentLoopActiveUiBinding", BindingMode.TwoWay));
-        // CurrentSong is now on Playback.Controls
-        var loopActiveCheckBoxIsEnabledBinding = new Binding("Playback.Controls.CurrentSong.SavedLoop") { Converter = NotNullToBooleanConverter.Instance };
-        loopActiveCheckBox.Bind(Control.IsEnabledProperty, loopActiveCheckBoxIsEnabledBinding);
+        var loopActiveCheckBoxIsEnabledBinding = new Binding("PlaybackService.CurrentSong.SavedLoop") { Converter = NotNullToBooleanConverter.Instance };
+        loopActiveCheckBox.Bind(Control.IsEnabledProperty, loopActiveCheckBoxIsEnabledBinding); // Corrected: Control.IsEnabledProperty
         loopActiveTogglePanel.Children.Add(loopActiveCheckBox);
 
         loopControlsOuterPanel.Children.Add(loopDefinitionLabel);

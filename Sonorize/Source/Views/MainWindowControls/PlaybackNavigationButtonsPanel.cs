@@ -48,9 +48,8 @@ public static class PlaybackNavigationButtonsPanel
             VerticalContentAlignment = VerticalAlignment.Center,
             HorizontalContentAlignment = HorizontalAlignment.Center
         };
-        // Bind to Playback.Controls for command and IsPlaying state
-        mainPlayPauseButton.Bind(Button.CommandProperty, new Binding("Playback.Controls.PlayPauseResumeCommand"));
-        mainPlayPauseButton.Bind(Button.ContentProperty, new Binding("Playback.Controls.IsPlaying") { Converter = BooleanToPlayPauseIconConverter.Instance });
+        mainPlayPauseButton.Bind(Button.CommandProperty, new Binding("Playback.PlayPauseResumeCommand"));
+        mainPlayPauseButton.Bind(Button.ContentProperty, new Binding("Playback.IsPlaying") { Converter = BooleanToPlayPauseIconConverter.Instance });
 
         var nextButton = new Button
         {
@@ -92,9 +91,9 @@ public static class PlaybackNavigationButtonsPanel
             HorizontalAlignment = HorizontalAlignment.Center,
             FontSize = 18,
             FontFamily = new FontFamily("Segoe UI Symbol, Arial"),
-            [!TextBlock.TextProperty] = new Binding("Playback.ModeControls.ShuffleEnabled") { Converter = BooleanToShuffleIconConverter.Instance }
+            [!TextBlock.TextProperty] = new Binding("Playback.ModeControls.ShuffleEnabled") { Converter = BooleanToShuffleIconConverter.Instance } // Updated path
         };
-        shuffleButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.ModeControls.ShuffleEnabled", BindingMode.TwoWay));
+        shuffleButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.ModeControls.ShuffleEnabled", BindingMode.TwoWay)); // Updated path
         shuffleButton[!ToggleButton.ForegroundProperty] = new Binding("IsChecked")
         {
             Source = shuffleButton,
@@ -105,8 +104,7 @@ public static class PlaybackNavigationButtonsPanel
             Source = shuffleButton,
             Converter = new FuncValueConverter<bool, IBrush>(isChecked => isChecked ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
         };
-        // HasCurrentSong is still on PlaybackViewModel or proxied via Playback.Controls
-        shuffleButton.Bind(Control.IsEnabledProperty, new Binding("Playback.Controls.HasCurrentSong"));
+        shuffleButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
         var repeatModeButton = new ToggleButton
         {
@@ -132,7 +130,7 @@ public static class PlaybackNavigationButtonsPanel
             FontSize = 18,
             FontFamily = new FontFamily("Segoe UI Symbol, Arial"),
             RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
-            [!TextBlock.TextProperty] = new Binding("Playback.ModeControls.RepeatMode")
+            [!TextBlock.TextProperty] = new Binding("Playback.ModeControls.RepeatMode") // Updated path
             {
                 Converter = new FuncValueConverter<RepeatMode, string>(mode => mode switch
                 {
@@ -143,7 +141,7 @@ public static class PlaybackNavigationButtonsPanel
                     _ => "?"
                 })
             },
-            [!TextBlock.RenderTransformProperty] = new Binding("Playback.ModeControls.RepeatMode")
+            [!TextBlock.RenderTransformProperty] = new Binding("Playback.ModeControls.RepeatMode") // Updated path
             {
                 Converter = new FuncValueConverter<RepeatMode, ITransform?>(mode =>
                 {
@@ -156,17 +154,17 @@ public static class PlaybackNavigationButtonsPanel
                 })
             }
         };
-        repeatModeButton[!ToggleButton.ForegroundProperty] = new Binding("Playback.ModeControls.RepeatMode")
+        repeatModeButton[!ToggleButton.ForegroundProperty] = new Binding("Playback.ModeControls.RepeatMode") // Updated path
         {
             Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.None ? theme.B_AccentColor : theme.B_SecondaryTextColor)
         };
-        repeatModeButton[!ToggleButton.BorderBrushProperty] = new Binding("Playback.ModeControls.RepeatMode")
+        repeatModeButton[!ToggleButton.BorderBrushProperty] = new Binding("Playback.ModeControls.RepeatMode") // Updated path
         {
             Converter = new FuncValueConverter<RepeatMode, IBrush>(mode => mode != RepeatMode.None ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
         };
-        repeatModeButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.ModeControls.IsRepeatActive"));
-        repeatModeButton.Bind(Button.CommandProperty, new Binding("Playback.ModeControls.CycleRepeatModeCommand"));
-        repeatModeButton.Bind(Control.IsEnabledProperty, new Binding("Playback.Controls.HasCurrentSong"));
+        repeatModeButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.ModeControls.IsRepeatActive")); // Updated path
+        repeatModeButton.Bind(Button.CommandProperty, new Binding("Playback.ModeControls.CycleRepeatModeCommand")); // Updated path
+        repeatModeButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
         var combinedPlaybackButtonControlsPanel = new StackPanel
         {

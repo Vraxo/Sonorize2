@@ -117,10 +117,10 @@ public class MainTabViewControls
         };
         ApplyListBoxItemStyles(_artistsListBoxInstance);
 
-        _artistsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Groupings.Artists")); // Corrected binding
+        _artistsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Artists"));
         _artistsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.FilterState.SelectedArtist", BindingMode.TwoWay));
 
-        _artistsListBoxInstance.ItemTemplate = _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate;
+        _artistsListBoxInstance.ItemTemplate = _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate; // Updated path
         _artistsListBoxInstance.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
 
         return new ScrollViewer { Content = _artistsListBoxInstance, Padding = new Thickness(0, 0, 0, 5), HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
@@ -137,7 +137,7 @@ public class MainTabViewControls
         };
         ApplyListBoxItemStyles(_albumsListBoxInstance);
 
-        _albumsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Groupings.Albums")); // Corrected binding
+        _albumsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Albums"));
         _albumsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.FilterState.SelectedAlbum", BindingMode.TwoWay));
 
         _albumsListBoxInstance.ItemTemplate = _sharedViewTemplates.DetailedAlbumTemplate;
