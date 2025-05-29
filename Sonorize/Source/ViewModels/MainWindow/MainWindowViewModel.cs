@@ -11,26 +11,23 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Sonorize.Models;
 using Sonorize.Services;
-using Sonorize.ViewModels.Status; // Added for StatusBarTextProvider
+// Removed: using Sonorize.ViewModels.Status; // StatusBarTextProvider usage moved
 using Sonorize.ViewModels.LibraryManagement; // Required for LibraryDisplayModeService
 
 namespace Sonorize.ViewModels;
 
-public class MainWindowViewModel : ViewModelBase
+public class MainWindowViewModel : ViewModelBase, IDisposable
 {
     private readonly SettingsService _settingsService;
     private readonly MusicLibraryService _musicLibraryService;
     private readonly WaveformService _waveformService;
     private readonly LoopDataService _loopDataService;
     private readonly ScrobblingService _scrobblingService;
-    private readonly NextTrackSelectorService _nextTrackSelectorService;
-    private readonly StatusBarTextProvider _statusBarTextProvider;
-    private readonly SettingsChangeProcessorService _settingsChangeProcessorService;
-    private readonly PlaybackFlowManagerService _playbackFlowManagerService;
-    private readonly ApplicationInteractionService _applicationInteractionService;
-    private readonly LibraryPlaybackLinkService _libraryPlaybackLinkService;
+
+    private readonly MainWindowViewModelOrchestrator _orchestrator;
+    private readonly ApplicationWorkflowManager _workflowManager; // New workflow manager
     private readonly LibraryDisplayModeService _libraryDisplayModeService;
-    private readonly MainWindowViewModelOrchestrator _orchestrator; // New orchestrator
+
 
     // Expose the Services directly for child VMs or public properties
     public PlaybackService PlaybackService { get; }
@@ -55,7 +52,7 @@ public class MainWindowViewModel : ViewModelBase
             if (AdvancedPanel.IsVisible != value)
             {
                 AdvancedPanel.IsVisible = value;
-                OnPropertyChanged(); // PropertyChanged handled by orchestrator if it sets this
+                OnPropertyChanged();
             }
         }
     }
@@ -66,9 +63,6 @@ public class MainWindowViewModel : ViewModelBase
     public ICommand OpenSettingsCommand { get; }
     public ICommand ExitCommand { get; }
     public ICommand AddDirectoryAndRefreshCommand { get; }
-
-
-    private readonly Random _shuffleRandom = new();
 
     public MainWindowViewModel(
         SettingsService settingsService,
@@ -86,7 +80,6 @@ public class MainWindowViewModel : ViewModelBase
         _waveformService = waveformService;
         _loopDataService = loopDataService;
         _scrobblingService = scrobblingService;
-        _nextTrackSelectorService = new NextTrackSelectorService(_shuffleRandom);
 
         _libraryDisplayModeService = new LibraryDisplayModeService(_settingsService);
         Library = new LibraryViewModel(this, _settingsService, _musicLibraryService, _loopDataService, _libraryDisplayModeService);
@@ -94,16 +87,16 @@ public class MainWindowViewModel : ViewModelBase
         LoopEditor = new LoopEditorViewModel(PlaybackService, _loopDataService);
         AdvancedPanel = new AdvancedPanelViewModel(Playback, Library);
 
-        _statusBarTextProvider = new StatusBarTextProvider(Playback, LoopEditor, Library);
-        _settingsChangeProcessorService = new SettingsChangeProcessorService(Library, _scrobblingService);
-        _playbackFlowManagerService = new PlaybackFlowManagerService(Library, Playback, PlaybackService, _nextTrackSelectorService);
-        _applicationInteractionService = new ApplicationInteractionService(
+        // Instantiate the workflow manager, passing necessary dependencies
+        _workflowManager = new ApplicationWorkflowManager(
             _settingsService,
-            _settingsChangeProcessorService,
-            CurrentTheme);
-        _libraryPlaybackLinkService = new LibraryPlaybackLinkService(Library, PlaybackService, Playback);
+            _scrobblingService,
+            CurrentTheme,
+            Library,
+            Playback,
+            PlaybackService,
+            _loopDataService); // Pass LoopDataService, though ApplicationWorkflowManager might not use it directly currently
 
-        // Instantiate and set up the orchestrator
         _orchestrator = new MainWindowViewModelOrchestrator(
             Library,
             Playback,
@@ -120,25 +113,20 @@ public class MainWindowViewModel : ViewModelBase
         ExitCommand = new RelayCommand(_ => Environment.Exit(0));
         AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefreshAsync(owner), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
 
-        // Initial UI state update
         Dispatcher.UIThread.InvokeAsync(UpdateAllUIDependentStates);
     }
 
     private void PlaybackService_PlaybackEndedNaturally(object? sender, EventArgs e)
     {
-        Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally event received. Delegating to PlaybackFlowManagerService.");
-        _playbackFlowManagerService.HandlePlaybackEndedNaturally();
+        Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally event received. Delegating to WorkflowManager.");
+        _workflowManager.HandlePlaybackEndedNaturally();
         Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally handler completed after delegation.");
     }
 
-    // Removed individual PropertyChanged handlers; logic is now in _orchestrator
-
     private void UpdateAllUIDependentStates()
     {
-        // These ensure that the UI reflects the initial state correctly,
-        // especially for properties managed or affected by the orchestrator.
         OnPropertyChanged(nameof(IsLoadingLibrary));
-        OnPropertyChanged(nameof(Playback.CurrentSong)); // Trigger updates for all Playback related derived properties
+        OnPropertyChanged(nameof(Playback.CurrentSong));
         OnPropertyChanged(nameof(Playback.HasCurrentSong));
         OnPropertyChanged(nameof(Playback.CurrentPlaybackStatus));
         OnPropertyChanged(nameof(Playback.IsPlaying));
@@ -147,13 +135,13 @@ public class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsAdvancedPanelVisible));
         OnPropertyChanged(nameof(ActiveTabIndex));
 
-        UpdateStatusBarText(); // Initial status bar text
-        RaiseAllCommandsCanExecuteChanged(); // Initial command states
+        UpdateStatusBarText();
+        RaiseAllCommandsCanExecuteChanged();
     }
 
     public void RaiseAllCommandsCanExecuteChanged()
     {
-        Dispatcher.UIThread.InvokeAsync(() => // Ensure runs on UI thread
+        Dispatcher.UIThread.InvokeAsync(() =>
         {
             (LoadInitialDataCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenSettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -162,17 +150,17 @@ public class MainWindowViewModel : ViewModelBase
 
             Library.RaiseLibraryCommandsCanExecuteChanged();
             Playback.RaisePlaybackCommandCanExecuteChanged();
-            LoopEditor.RaiseMainLoopCommandsCanExecuteChanged(); // Corrected method name
-            LoopEditor.CandidateLoop.RaiseCaptureCommandsCanExecuteChanged(); // Ensure candidate commands are also updated
+            LoopEditor.RaiseMainLoopCommandsCanExecuteChanged();
+            LoopEditor.CandidateLoop.RaiseCaptureCommandsCanExecuteChanged();
             (AdvancedPanel.ToggleVisibilityCommand as RelayCommand)?.RaiseCanExecuteChanged();
         });
     }
 
     private void UpdateStatusBarText()
     {
-        Dispatcher.UIThread.InvokeAsync(() => // Ensure runs on UI thread
+        Dispatcher.UIThread.InvokeAsync(() =>
         {
-            StatusBarText = _statusBarTextProvider.GetCurrentStatusText();
+            StatusBarText = _workflowManager.GetCurrentStatusText(LoopEditor);
         });
     }
 
@@ -181,7 +169,7 @@ public class MainWindowViewModel : ViewModelBase
         if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
         IsAdvancedPanelVisible = false;
 
-        var (statusMessages, settingsChanged) = await _applicationInteractionService.HandleOpenSettingsDialogAsync(owner);
+        var (statusMessages, settingsChanged) = await _workflowManager.HandleOpenSettingsDialogAsync(owner);
 
         if (settingsChanged)
         {
@@ -191,14 +179,13 @@ public class MainWindowViewModel : ViewModelBase
             }
             else
             {
-                UpdateStatusBarText(); // Fallback to default status text logic
+                UpdateStatusBarText();
             }
         }
         else
         {
-            UpdateStatusBarText(); // Update status if no changes or no specific messages
+            UpdateStatusBarText();
         }
-        // Re-evaluate commands as settings changes might affect them (e.g., scrobbling related UI)
         RaiseAllCommandsCanExecuteChanged();
     }
 
@@ -207,32 +194,33 @@ public class MainWindowViewModel : ViewModelBase
         if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
         IsAdvancedPanelVisible = false;
 
-        var (directoryAdded, statusMessage) = await _applicationInteractionService.HandleAddMusicDirectoryAsync(owner);
+        var (directoryAdded, statusMessage) = await _workflowManager.HandleAddMusicDirectoryAsync(owner);
 
-        StatusBarText = statusMessage; // Display immediate feedback
+        StatusBarText = statusMessage;
 
         if (directoryAdded)
         {
-            await Library.LoadLibraryAsync(); // This will update status text further during/after loading
+            await Library.LoadLibraryAsync();
         }
         else
         {
-            UpdateStatusBarText(); // Revert to standard status text if dir not added
+            UpdateStatusBarText();
         }
         RaiseAllCommandsCanExecuteChanged();
     }
 
-    public void Dispose() // Ensure orchestrator is disposed
+    public void Dispose()
     {
         if (PlaybackService != null)
         {
             PlaybackService.PlaybackEndedNaturally -= PlaybackService_PlaybackEndedNaturally;
         }
         _orchestrator?.Dispose();
-        _libraryPlaybackLinkService?.Dispose();
+        _workflowManager?.Dispose(); // Dispose the new manager
+        // _libraryPlaybackLinkService was moved into _workflowManager
         Library?.Dispose();
         Playback?.Dispose();
         AdvancedPanel?.Dispose();
-        LoopEditor?.Dispose(); // Dispose LoopEditorViewModel
+        LoopEditor?.Dispose();
     }
 }

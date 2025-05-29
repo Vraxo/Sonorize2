@@ -409,6 +409,31 @@ namespace Sonorize.Converters
 }
 </file>
 
+<file path="Source\Converters\EnumToBooleanConverter.cs">
+using System;
+using System.Globalization;
+using Avalonia.Data.Converters;
+
+namespace Sonorize.Converters;
+
+public class EnumToBooleanConverter : IValueConverter
+{
+    public static readonly EnumToBooleanConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        return value != null && parameter != null && value.Equals(parameter);
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        // This converter is typically used one-way for visibility.
+        // If two-way binding is needed (e.g., for radio buttons), parameter would be the enum value to return.
+        throw new NotSupportedException();
+    }
+}
+</file>
+
 <file path="Source\Converters\NotNullToBooleanConverter.cs">
 using System;
 using System.Globalization;
@@ -705,144 +730,6 @@ public class ThemeColors
 }
 </file>
 
-<file path="Source\Services\ApplicationInteractionService.cs">
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
-using Avalonia.Controls;
-using Avalonia.Platform.Storage;
-using Sonorize.Models;
-using Sonorize.ViewModels;
-
-namespace Sonorize.Services;
-
-public class ApplicationInteractionService
-{
-    private readonly SettingsService _settingsService;
-    private readonly SettingsChangeProcessorService _settingsChangeProcessorService;
-    private readonly ThemeColors _currentTheme;
-
-    public ApplicationInteractionService(
-        SettingsService settingsService,
-        SettingsChangeProcessorService settingsChangeProcessorService,
-        ThemeColors currentTheme)
-    {
-        _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
-        _settingsChangeProcessorService = settingsChangeProcessorService ?? throw new ArgumentNullException(nameof(settingsChangeProcessorService));
-        _currentTheme = currentTheme ?? throw new ArgumentNullException(nameof(currentTheme));
-    }
-
-    public async Task<(List<string> statusMessages, bool settingsChanged)> HandleOpenSettingsDialogAsync(Window owner)
-    {
-        var currentSettingsBeforeDialog = _settingsService.LoadSettings();
-        var settingsVM = new SettingsViewModel(_settingsService);
-        var settingsDialog = new Sonorize.Views.SettingsWindow(_currentTheme) { DataContext = settingsVM };
-
-        await settingsDialog.ShowDialog(owner);
-
-        List<string> statusMessages = [];
-        bool overallSettingsChanged = false;
-
-        if (settingsVM.SettingsChanged)
-        {
-            Debug.WriteLine("[AppInteractionService] Settings changed detected after dialog closed. Processing changes...");
-            var newSettingsAfterDialog = _settingsService.LoadSettings(); // Get the latest saved settings
-
-            statusMessages = await _settingsChangeProcessorService.ProcessChangesAndGetStatus(
-                currentSettingsBeforeDialog,
-                newSettingsAfterDialog
-            );
-            overallSettingsChanged = true; // Indicate that settings were processed
-        }
-        else
-        {
-            Debug.WriteLine("[AppInteractionService] Settings dialog closed, no changes reported by SettingsViewModel.");
-        }
-        return (statusMessages, overallSettingsChanged);
-    }
-
-    public async Task<(bool directoryAddedAndLibraryRefreshNeeded, string statusMessage)> HandleAddMusicDirectoryAsync(Window owner)
-    {
-        var result = await owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Select Music Directory", AllowMultiple = false });
-
-        if (result == null || result.Count == 0)
-        {
-            Debug.WriteLine("[AppInteractionService] Folder picker cancelled or returned no results.");
-            return (false, "Folder selection cancelled.");
-        }
-
-        string? folderPath = null;
-        try
-        {
-            folderPath = Path.GetFullPath(result[0].Path.LocalPath);
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"[AppInteractionService] Error getting full path for selected directory: {ex.Message}");
-            return (false, "Error getting path for selected directory.");
-        }
-
-        if (string.IsNullOrEmpty(folderPath) || !Directory.Exists(folderPath))
-        {
-            Debug.WriteLine($"[AppInteractionService] Selected directory path is invalid or does not exist: {folderPath}");
-            return (false, "Invalid directory selected.");
-        }
-
-        var settings = _settingsService.LoadSettings();
-        if (!settings.MusicDirectories.Any(d => string.Equals(d, folderPath, StringComparison.OrdinalIgnoreCase)))
-        {
-            settings.MusicDirectories.Add(folderPath);
-            _settingsService.SaveSettings(settings);
-            Debug.WriteLine($"[AppInteractionService] Added new directory: {folderPath}. Library refresh needed.");
-            return (true, $"Added directory: {Path.GetFileName(folderPath)}. Library refreshing...");
-        }
-        else
-        {
-            Debug.WriteLine($"[AppInteractionService] Directory already exists: {folderPath}");
-            return (false, "Directory already in library.");
-        }
-    }
-}
-</file>
-
-<file path="Source\Services\ApplicationServicesBootstrapper.cs">
-using Sonorize.Models;
-using Sonorize.ViewModels;
-
-namespace Sonorize.Services;
-
-public class ApplicationServicesBootstrapper
-{
-    public MainWindowViewModel Bootstrap(SettingsService settingsService, ThemeColors currentCustomTheme)
-    {
-        // Create all services
-        var lastfmAuthenticatorService = new LastfmAuthenticatorService(settingsService);
-        var scrobblingService = new ScrobblingService(settingsService, lastfmAuthenticatorService);
-        var playbackService = new PlaybackService(scrobblingService);
-        var loopDataService = new LoopDataService();
-        var thumbnailService = new ThumbnailService();
-        var songFactory = new SongFactory(loopDataService); // Create SongFactory
-        var musicLibraryService = new MusicLibraryService(loopDataService, thumbnailService, songFactory); // Inject SongFactory
-        var waveformService = new WaveformService();
-
-        // Create MainWindowViewModel
-        var mainWindowViewModel = new MainWindowViewModel(
-            settingsService,
-            musicLibraryService,
-            playbackService,
-            currentCustomTheme,
-            waveformService,
-            loopDataService,
-            scrobblingService);
-
-        return mainWindowViewModel;
-    }
-}
-</file>
-
 <file path="Source\Services\LastfmAuthenticatorService.cs">
 using System;
 using System.Diagnostics;
@@ -940,6 +827,106 @@ public class LastfmAuthenticatorService
         // OR if we have username/password to attempt to get one.
         return !string.IsNullOrEmpty(settings.LastfmSessionKey) ||
                (!string.IsNullOrEmpty(settings.LastfmUsername) && !string.IsNullOrEmpty(settings.LastfmPassword));
+    }
+}
+</file>
+
+<file path="Source\Services\LibraryPlaybackLinkService.cs">
+using System;
+using System.ComponentModel;
+using System.Diagnostics;
+using Avalonia.Threading;
+using Sonorize.ViewModels;
+
+namespace Sonorize.Services;
+
+public class LibraryPlaybackLinkService : IDisposable
+{
+    private readonly LibraryViewModel _libraryViewModel;
+    private readonly PlaybackService _playbackService;
+    private readonly PlaybackViewModel _playbackViewModel; // To observe HasCurrentSong easily
+
+    public LibraryPlaybackLinkService(
+        LibraryViewModel libraryViewModel,
+        PlaybackService playbackService,
+        PlaybackViewModel playbackViewModel)
+    {
+        _libraryViewModel = libraryViewModel ?? throw new ArgumentNullException(nameof(libraryViewModel));
+        _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
+        _playbackViewModel = playbackViewModel ?? throw new ArgumentNullException(nameof(playbackViewModel));
+
+        SubscribeToEvents();
+        Debug.WriteLine("[LibraryPlaybackLinkService] Initialized and subscribed to events.");
+    }
+
+    private void SubscribeToEvents()
+    {
+        _libraryViewModel.PropertyChanged += OnLibraryViewModelPropertyChanged;
+        _playbackViewModel.PropertyChanged += OnPlaybackViewModelPropertyChanged;
+    }
+
+    private void UnsubscribeFromEvents()
+    {
+        _libraryViewModel.PropertyChanged -= OnLibraryViewModelPropertyChanged;
+        _playbackViewModel.PropertyChanged -= OnPlaybackViewModelPropertyChanged;
+    }
+
+    private void OnLibraryViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(LibraryViewModel.SelectedSong))
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            Debug.WriteLine($"[LibraryPlaybackLinkService] Library.SelectedSong changed to: {_libraryViewModel.SelectedSong?.Title ?? "null"}. Instance: {_libraryViewModel.SelectedSong?.GetHashCode() ?? 0}");
+
+            if (_libraryViewModel.SelectedSong != null && _playbackService.CurrentSong != _libraryViewModel.SelectedSong)
+            {
+                Debug.WriteLine($"[LibraryPlaybackLinkService] Library.SelectedSong changed to a *different* song ({_libraryViewModel.SelectedSong.Title}) than PlaybackService.CurrentSong ({_playbackService.CurrentSong?.Title ?? "null"}). Calling PlaybackService.Play().");
+                _playbackService.Play(_libraryViewModel.SelectedSong);
+            }
+            else if (_libraryViewModel.SelectedSong != null && _playbackService.CurrentSong == _libraryViewModel.SelectedSong)
+            {
+                Debug.WriteLine($"[LibraryPlaybackLinkService] Library.SelectedSong changed but is the SAME song instance as PlaybackService.CurrentSong ({_libraryViewModel.SelectedSong.Title}). No Play call needed here.");
+            }
+            else if (_libraryViewModel.SelectedSong == null)
+            {
+                Debug.WriteLine("[LibraryPlaybackLinkService] Library.SelectedSong is null. No Play call needed here.");
+            }
+        });
+    }
+
+    private void OnPlaybackViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(PlaybackViewModel.HasCurrentSong)) // Or CurrentSong
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (_playbackViewModel.HasCurrentSong || _libraryViewModel.SelectedSong == null)
+            {
+                return;
+            }
+
+            Debug.WriteLine("[LibraryPlaybackLinkService] Playback has no current song. Clearing Library selection.");
+            _libraryViewModel.SelectedSong = null;
+        });
+    }
+
+    public void Dispose()
+    {
+        UnsubscribeFromEvents();
+        Debug.WriteLine("[LibraryPlaybackLinkService] Disposed and unsubscribed from events.");
+        GC.SuppressFinalize(this);
+    }
+
+    ~LibraryPlaybackLinkService()
+    {
+        Dispose();
     }
 }
 </file>
@@ -1494,169 +1481,6 @@ public class ScrobblingService
         catch (Exception ex)
         {
             Debug.WriteLine($"[ScrobblingService] CRITICAL EXCEPTION during Scrobble for {song.Title}: {ex.Message}");
-        }
-    }
-}
-</file>
-
-<file path="Source\Services\SettingsChangeProcessorService.cs">
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Threading.Tasks;
-using Sonorize.Models;
-using Sonorize.ViewModels; // Required for LibraryViewModel
-
-namespace Sonorize.Services;
-
-public class SettingsChangeProcessorService
-{
-    private readonly LibraryViewModel _libraryViewModel;
-    private readonly ScrobblingService _scrobblingService;
-
-    public SettingsChangeProcessorService(LibraryViewModel libraryViewModel, ScrobblingService scrobblingService)
-    {
-        _libraryViewModel = libraryViewModel ?? throw new System.ArgumentNullException(nameof(libraryViewModel));
-        _scrobblingService = scrobblingService ?? throw new System.ArgumentNullException(nameof(scrobblingService));
-    }
-
-    public async Task<List<string>> ProcessChangesAndGetStatus(AppSettings oldSettings, AppSettings newSettings)
-    {
-        List<string> statusMessages = [];
-
-        // Directory changes
-        bool dirsActuallyChanged = !oldSettings.MusicDirectories.SequenceEqual(newSettings.MusicDirectories);
-        if (dirsActuallyChanged)
-        {
-            Debug.WriteLine("[SettingsChangeProcessor] Music directories changed. Reloading library.");
-            await _libraryViewModel.LoadLibraryAsync();
-            // Status text during library loading is handled by LibraryViewModel/MusicLibraryService
-        }
-
-        // Theme changes
-        bool themeActuallyChanged = oldSettings.PreferredThemeFileName != newSettings.PreferredThemeFileName;
-        if (themeActuallyChanged)
-        {
-            Debug.WriteLine("[SettingsChangeProcessor] Theme changed. Restart recommended.");
-            statusMessages.Add("Theme changed. Restart Sonorize for full effect.");
-        }
-
-        // Scrobbling settings changes
-        bool scrobbleSettingsActuallyChanged =
-            oldSettings.LastfmScrobblingEnabled != newSettings.LastfmScrobblingEnabled ||
-            oldSettings.LastfmUsername != newSettings.LastfmUsername ||
-            oldSettings.LastfmPassword != newSettings.LastfmPassword || // Used for change detection only
-            oldSettings.LastfmSessionKey != newSettings.LastfmSessionKey || // If session key is cleared/changed directly
-            oldSettings.ScrobbleThresholdPercentage != newSettings.ScrobbleThresholdPercentage ||
-            oldSettings.ScrobbleThresholdAbsoluteSeconds != newSettings.ScrobbleThresholdAbsoluteSeconds;
-
-        if (scrobbleSettingsActuallyChanged)
-        {
-            Debug.WriteLine("[SettingsChangeProcessor] Scrobbling settings changed. Refreshing ScrobblingService.");
-            _scrobblingService.RefreshSettings(); // This will re-evaluate credentials and session key
-
-            // Provide feedback based on the new state of scrobbling AFTER refresh
-            _scrobblingService.RefreshSettings(); // Call refresh again to ensure service state is based on latest
-            if (_scrobblingService.IsScrobblingEnabled && _scrobblingService.AreCredentialsEffectivelyConfigured)
-            {
-                // Check if already added "Theme changed..." to avoid overwriting it with a less critical message
-                if (!statusMessages.Any(m => m.Contains("Theme changed")))
-                {
-                    statusMessages.Add("Scrobbling enabled and configured.");
-                }
-                else
-                {
-                    // Append if theme change message exists
-                    var themeMsgIndex = statusMessages.FindIndex(m => m.Contains("Theme changed"));
-                    if (themeMsgIndex != -1) statusMessages[themeMsgIndex] += " Scrobbling enabled.";
-                    else statusMessages.Add("Scrobbling enabled and configured.");
-                }
-            }
-            else if (_scrobblingService.IsScrobblingEnabled && !_scrobblingService.AreCredentialsEffectivelyConfigured)
-            {
-                if (!statusMessages.Any(m => m.Contains("Theme changed")))
-                {
-                    statusMessages.Add("Scrobbling enabled, but not configured. Check settings.");
-                }
-                else
-                {
-                    var themeMsgIndex = statusMessages.FindIndex(m => m.Contains("Theme changed"));
-                    if (themeMsgIndex != -1) statusMessages[themeMsgIndex] += " Scrobbling enabled (check config).";
-                    else statusMessages.Add("Scrobbling enabled, but not configured. Check settings.");
-                }
-            }
-            else if (!_scrobblingService.IsScrobblingEnabled && oldSettings.LastfmScrobblingEnabled)
-            {
-                if (!statusMessages.Any(m => m.Contains("Theme changed")))
-                {
-                    statusMessages.Add("Scrobbling disabled.");
-                }
-                else
-                {
-                    var themeMsgIndex = statusMessages.FindIndex(m => m.Contains("Theme changed"));
-                    if (themeMsgIndex != -1) statusMessages[themeMsgIndex] += " Scrobbling disabled.";
-                    else statusMessages.Add("Scrobbling disabled.");
-                }
-
-            }
-        }
-
-        // If no specific messages were generated but changes happened, ensure status bar updates.
-        // This is implicitly handled if statusMessages is empty, MainWindowViewModel calls UpdateStatusBarText().
-
-        return statusMessages;
-    }
-}
-</file>
-
-<file path="Source\Services\SettingsService.cs">
-using System;
-using System.IO;
-using System.Text.Json;
-using Sonorize.Models;
-
-namespace Sonorize.Services;
-
-public class SettingsService
-{
-    private readonly string _settingsFilePath;
-
-    public SettingsService()
-    {
-        var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var sonorizeAppDataPath = Path.Combine(appDataPath, "Sonorize");
-        Directory.CreateDirectory(sonorizeAppDataPath); // Ensure directory exists
-        _settingsFilePath = Path.Combine(sonorizeAppDataPath, "settings.json");
-    }
-
-    public AppSettings LoadSettings()
-    {
-        try
-        {
-            if (File.Exists(_settingsFilePath))
-            {
-                var json = File.ReadAllText(_settingsFilePath);
-                return JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error loading settings: {ex.Message}");
-            // Fallback to default settings
-        }
-        return new AppSettings();
-    }
-
-    public void SaveSettings(AppSettings settings)
-    {
-        try
-        {
-            var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(_settingsFilePath, json);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error saving settings: {ex.Message}");
         }
     }
 }
@@ -2442,6 +2266,113 @@ public class AlbumViewModel : ViewModelBase
 }
 </file>
 
+<file path="Source\ViewModels\ApplicationWorkflowManager.cs">
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Avalonia.Controls; // For Window
+using Sonorize.Models;
+using Sonorize.Services;
+using Sonorize.ViewModels.Status; // For StatusBarTextProvider
+
+namespace Sonorize.ViewModels;
+
+public class ApplicationWorkflowManager : IDisposable
+{
+    private readonly SettingsService _settingsService;
+    private readonly ScrobblingService _scrobblingService;
+    private readonly ThemeColors _currentTheme;
+    private readonly LibraryViewModel _libraryViewModel;
+    private readonly PlaybackViewModel _playbackViewModel;
+    private readonly PlaybackService _playbackService;
+
+    private readonly NextTrackSelectorService _nextTrackSelectorService;
+    private readonly StatusBarTextProvider _statusBarTextProvider;
+    private readonly SettingsChangeProcessorService _settingsChangeProcessorService;
+    private readonly PlaybackFlowManagerService _playbackFlowManagerService;
+    private readonly ApplicationInteractionService _applicationInteractionService;
+    private readonly LibraryPlaybackLinkService _libraryPlaybackLinkService;
+
+    private readonly Random _shuffleRandom = new();
+
+    public ApplicationWorkflowManager(
+        SettingsService settingsService,
+        ScrobblingService scrobblingService,
+        ThemeColors currentTheme,
+        LibraryViewModel libraryViewModel,
+        PlaybackViewModel playbackViewModel,
+        PlaybackService playbackService,
+        LoopDataService loopDataService) // LoopDataService needed by LoopEditor, indirectly for status
+    {
+        _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
+        _scrobblingService = scrobblingService ?? throw new ArgumentNullException(nameof(scrobblingService));
+        _currentTheme = currentTheme ?? throw new ArgumentNullException(nameof(currentTheme));
+        _libraryViewModel = libraryViewModel ?? throw new ArgumentNullException(nameof(libraryViewModel));
+        _playbackViewModel = playbackViewModel ?? throw new ArgumentNullException(nameof(playbackViewModel));
+        _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
+
+        // Create internal services
+        _nextTrackSelectorService = new NextTrackSelectorService(_shuffleRandom);
+
+        // Assuming LoopEditorViewModel is accessible or its relevant state for status bar is handled differently
+        // For StatusBarTextProvider, we might need LoopEditorViewModel or a subset of its state.
+        // For simplicity here, if LoopEditor is a direct child of MainWindowViewModel, it could be passed too.
+        // Or StatusBarTextProvider could be simplified if LoopEditor state isn't strictly needed or handled via PlaybackViewModel.
+        // Let's assume MainWindowViewModel will pass its LoopEditorViewModel instance to GetCurrentStatusText.
+        // For now, StatusBarTextProvider is created here.
+        // If LoopEditorViewModel is critical, it should be passed in constructor.
+        // Let's pass LoopEditorViewModel's required data if possible, or the VM itself.
+        // For now, creating it with what's available.
+        // LoopEditorViewModel is created in MainWindowViewModel, so we can't easily pass it here without a circular setup.
+        // Solution: MainWindowViewModel passes its instance of LoopEditorViewModel to GetCurrentStatusText.
+        _statusBarTextProvider = new StatusBarTextProvider(_playbackViewModel, null!, _libraryViewModel); // Placeholder for LoopEditorViewModel
+
+        _settingsChangeProcessorService = new SettingsChangeProcessorService(_libraryViewModel, _scrobblingService);
+        _playbackFlowManagerService = new PlaybackFlowManagerService(_libraryViewModel, _playbackViewModel, _playbackService, _nextTrackSelectorService);
+
+        _applicationInteractionService = new ApplicationInteractionService(
+            _settingsService,
+            _settingsChangeProcessorService,
+            _currentTheme);
+
+        _libraryPlaybackLinkService = new LibraryPlaybackLinkService(_libraryViewModel, _playbackService, _playbackViewModel);
+    }
+
+    public async Task<(List<string> statusMessages, bool settingsChanged)> HandleOpenSettingsDialogAsync(Window owner)
+    {
+        return await _applicationInteractionService.HandleOpenSettingsDialogAsync(owner);
+    }
+
+    public async Task<(bool directoryAddedAndLibraryRefreshNeeded, string statusMessage)> HandleAddMusicDirectoryAsync(Window owner)
+    {
+        return await _applicationInteractionService.HandleAddMusicDirectoryAsync(owner);
+    }
+
+    public void HandlePlaybackEndedNaturally()
+    {
+        _playbackFlowManagerService.HandlePlaybackEndedNaturally();
+    }
+
+    public string GetCurrentStatusText(LoopEditorViewModel loopEditorViewModel) // Accept LoopEditorViewModel here
+    {
+        // Temporarily create a new StatusBarTextProvider if we can't store LoopEditorViewModel
+        // This is not ideal. Better to have StatusBarTextProvider take LoopEditorViewModel in its constructor.
+        // For this refactor, we'll assume the existing StatusBarTextProvider in MainWindowViewModel is used,
+        // and this method would reconstruct the string or MainWindowViewModel calls its own provider.
+        // To make this class fully responsible, it needs LoopEditorViewModel.
+        // Let's refine _statusBarTextProvider initialization or GetCurrentStatusText method.
+        // A simple way is for this method to reconstruct the provider instance or update it.
+        var localStatusBarTextProvider = new StatusBarTextProvider(_playbackViewModel, loopEditorViewModel, _libraryViewModel);
+        return localStatusBarTextProvider.GetCurrentStatusText();
+    }
+
+    public void Dispose()
+    {
+        _libraryPlaybackLinkService?.Dispose();
+    }
+}
+</file>
+
 <file path="Source\ViewModels\ArtistViewModel.cs">
 using Avalonia.Media.Imaging;
 
@@ -2541,106 +2472,6 @@ public class LastfmSettingsViewModel : ViewModelBase
         
         settings.ScrobbleThresholdPercentage = ScrobbleThresholdPercentage;
         settings.ScrobbleThresholdAbsoluteSeconds = ScrobbleThresholdAbsoluteSeconds;
-    }
-}
-</file>
-
-<file path="Source\ViewModels\LibraryPlaybackLinkService.cs">
-using System;
-using System.ComponentModel;
-using System.Diagnostics;
-using Avalonia.Threading;
-using Sonorize.ViewModels;
-
-namespace Sonorize.Services;
-
-public class LibraryPlaybackLinkService : IDisposable
-{
-    private readonly LibraryViewModel _libraryViewModel;
-    private readonly PlaybackService _playbackService;
-    private readonly PlaybackViewModel _playbackViewModel; // To observe HasCurrentSong easily
-
-    public LibraryPlaybackLinkService(
-        LibraryViewModel libraryViewModel,
-        PlaybackService playbackService,
-        PlaybackViewModel playbackViewModel)
-    {
-        _libraryViewModel = libraryViewModel ?? throw new ArgumentNullException(nameof(libraryViewModel));
-        _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
-        _playbackViewModel = playbackViewModel ?? throw new ArgumentNullException(nameof(playbackViewModel));
-
-        SubscribeToEvents();
-        Debug.WriteLine("[LibraryPlaybackLinkService] Initialized and subscribed to events.");
-    }
-
-    private void SubscribeToEvents()
-    {
-        _libraryViewModel.PropertyChanged += OnLibraryViewModelPropertyChanged;
-        _playbackViewModel.PropertyChanged += OnPlaybackViewModelPropertyChanged;
-    }
-
-    private void UnsubscribeFromEvents()
-    {
-        _libraryViewModel.PropertyChanged -= OnLibraryViewModelPropertyChanged;
-        _playbackViewModel.PropertyChanged -= OnPlaybackViewModelPropertyChanged;
-    }
-
-    private void OnLibraryViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName != nameof(LibraryViewModel.SelectedSong))
-        {
-            return;
-        }
-
-        Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            Debug.WriteLine($"[LibraryPlaybackLinkService] Library.SelectedSong changed to: {_libraryViewModel.SelectedSong?.Title ?? "null"}. Instance: {_libraryViewModel.SelectedSong?.GetHashCode() ?? 0}");
-
-            if (_libraryViewModel.SelectedSong != null && _playbackService.CurrentSong != _libraryViewModel.SelectedSong)
-            {
-                Debug.WriteLine($"[LibraryPlaybackLinkService] Library.SelectedSong changed to a *different* song ({_libraryViewModel.SelectedSong.Title}) than PlaybackService.CurrentSong ({_playbackService.CurrentSong?.Title ?? "null"}). Calling PlaybackService.Play().");
-                _playbackService.Play(_libraryViewModel.SelectedSong);
-            }
-            else if (_libraryViewModel.SelectedSong != null && _playbackService.CurrentSong == _libraryViewModel.SelectedSong)
-            {
-                Debug.WriteLine($"[LibraryPlaybackLinkService] Library.SelectedSong changed but is the SAME song instance as PlaybackService.CurrentSong ({_libraryViewModel.SelectedSong.Title}). No Play call needed here.");
-            }
-            else if (_libraryViewModel.SelectedSong == null)
-            {
-                Debug.WriteLine("[LibraryPlaybackLinkService] Library.SelectedSong is null. No Play call needed here.");
-            }
-        });
-    }
-
-    private void OnPlaybackViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName != nameof(PlaybackViewModel.HasCurrentSong)) // Or CurrentSong
-        {
-            return;
-        }
-
-        Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            if (_playbackViewModel.HasCurrentSong || _libraryViewModel.SelectedSong == null)
-            {
-                return;
-            }
-
-            Debug.WriteLine("[LibraryPlaybackLinkService] Playback has no current song. Clearing Library selection.");
-            _libraryViewModel.SelectedSong = null;
-        });
-    }
-
-    public void Dispose()
-    {
-        UnsubscribeFromEvents();
-        Debug.WriteLine("[LibraryPlaybackLinkService] Disposed and unsubscribed from events.");
-        GC.SuppressFinalize(this);
-    }
-
-    ~LibraryPlaybackLinkService()
-    {
-        Dispose();
     }
 }
 </file>
@@ -2973,702 +2804,6 @@ public class LibraryViewModel : ViewModelBase
             _displayModeService.PropertyChanged -= DisplayModeService_PropertyChanged;
             // If LibraryDisplayModeService becomes IDisposable, dispose it here.
         }
-    }
-}
-</file>
-
-<file path="Source\ViewModels\LoopEditorViewModel.cs">
-using System;
-using System.Diagnostics;
-using System.Windows.Input;
-using Avalonia.Threading; // Required for Dispatcher
-using Sonorize.Models;
-using Sonorize.Services;
-
-namespace Sonorize.ViewModels;
-
-public class LoopEditorViewModel : ViewModelBase
-{
-    private readonly PlaybackService _playbackService;
-    private readonly LoopDataService _loopDataService;
-    private Song? _currentSongInternal; // Holds the Song instance from PlaybackService.CurrentSong
-
-    public TimeSpan? NewLoopStartCandidate
-    {
-        get;
-        set { SetProperty(ref field, value); OnPropertyChanged(nameof(CanSaveLoopRegion)); OnPropertyChanged(nameof(NewLoopStartCandidateDisplay)); }
-    }
-
-    public TimeSpan? NewLoopEndCandidate
-    {
-        get;
-        set { SetProperty(ref field, value); OnPropertyChanged(nameof(CanSaveLoopRegion)); OnPropertyChanged(nameof(NewLoopEndCandidateDisplay)); }
-    }
-
-    public string NewLoopStartCandidateDisplay => NewLoopStartCandidate.HasValue ? $"{NewLoopStartCandidate.Value:mm\\:ss\\.ff}" : "Not set";
-    public string NewLoopEndCandidateDisplay => NewLoopEndCandidate.HasValue ? $"{NewLoopEndCandidate.Value:mm\\:ss\\.ff}" : "Not set";
-
-    private string _activeLoopDisplayText = "No loop defined.";
-    public string ActiveLoopDisplayText { get => _activeLoopDisplayText; set => SetProperty(ref _activeLoopDisplayText, value); }
-
-    private bool _isCurrentLoopActiveUiBinding;
-    public bool IsCurrentLoopActiveUiBinding
-    {
-        get => _isCurrentLoopActiveUiBinding;
-        set
-        {
-            // Only set if different to avoid unnecessary property changed events and potential recursion
-            if (SetProperty(ref _isCurrentLoopActiveUiBinding, value))
-            {
-                if (_currentSongInternal != null && _currentSongInternal.SavedLoop != null)
-                {
-                    // Update the underlying model property. The model's PropertyChanged handler
-                    // will trigger persistence logic in the main VM or here if needed.
-                    _currentSongInternal.IsLoopActive = value;
-                    Debug.WriteLine($"[LoopEdVM] UI binding set IsLoopActive on Song '{_currentSongInternal.Title}' to: {value}");
-                }
-                else if (_currentSongInternal != null && _currentSongInternal.SavedLoop == null && value == true)
-                {
-                    // Prevent activating loop if none is defined, revert UI state
-                    _isCurrentLoopActiveUiBinding = false;
-                    OnPropertyChanged(nameof(IsCurrentLoopActiveUiBinding)); // Notify UI to revert
-                    Debug.WriteLine($"[LoopEdVM] Attempted to activate loop via UI, but no loop is defined for {_currentSongInternal.Title}.");
-                }
-                // If _currentSongInternal is null, setting _isCurrentLoopActiveUiBinding to false is handled by UpdateStateForCurrentSong(null)
-            }
-        }
-    }
-
-
-    public bool CanSaveLoopRegion => _currentSongInternal != null
-                                     && NewLoopStartCandidate.HasValue
-                                     && NewLoopEndCandidate.HasValue
-                                     && NewLoopEndCandidate.Value > NewLoopStartCandidate.Value
-                                     && _currentSongInternal.Duration.TotalSeconds > 0 // Need duration for comparison
-                                     && NewLoopEndCandidate.Value <= _currentSongInternal.Duration
-                                     && NewLoopStartCandidate.Value >= TimeSpan.Zero;
-
-    public ICommand CaptureLoopStartCandidateCommand { get; }
-    public ICommand CaptureLoopEndCandidateCommand { get; }
-    public ICommand SaveLoopCommand { get; }
-    public ICommand ClearLoopCommand { get; }
-    public ICommand ToggleLoopActiveCommand { get; }
-    public ICommand WaveformSeekCommand { get; }
-
-
-    public LoopEditorViewModel(PlaybackService playbackService, LoopDataService loopDataService)
-    {
-        _playbackService = playbackService;
-        _loopDataService = loopDataService;
-
-        CaptureLoopStartCandidateCommand = new RelayCommand(
-            _ => NewLoopStartCandidate = _playbackService.CurrentPosition,
-            _ => _currentSongInternal != null && _playbackService.CurrentPlaybackStatus != PlaybackStateStatus.Stopped);
-
-        CaptureLoopEndCandidateCommand = new RelayCommand(
-            _ => NewLoopEndCandidate = _playbackService.CurrentPosition,
-            _ => _currentSongInternal != null && _playbackService.CurrentPlaybackStatus != PlaybackStateStatus.Stopped);
-
-        SaveLoopCommand = new RelayCommand(SaveLoopAction, _ => CanSaveLoopRegion);
-
-        ClearLoopCommand = new RelayCommand(ClearSavedLoopAction, _ => _currentSongInternal?.SavedLoop != null);
-
-        ToggleLoopActiveCommand = new RelayCommand(ToggleCurrentSongLoopActive, _ => _currentSongInternal?.SavedLoop != null);
-
-        // WaveformSeekCommand is needed here as it interacts directly with the playback position based on a UI event
-        WaveformSeekCommand = new RelayCommand(
-            timeSpanObj => { if (timeSpanObj is TimeSpan ts && _currentSongInternal != null) _playbackService.Seek(ts); },
-            _ => _currentSongInternal != null);
-
-
-        // Listen to PlaybackService property changes relevant to loop editing state
-        _playbackService.PropertyChanged += PlaybackService_PropertyChanged;
-
-        // Initial state update
-        UpdateStateForCurrentSong(_playbackService.CurrentSong);
-    }
-
-    private void PlaybackService_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            switch (e.PropertyName)
-            {
-                case nameof(PlaybackService.CurrentSong):
-                    Debug.WriteLine($"[LoopEdVM] PlaybackService.CurrentSong changed to: {_playbackService.CurrentSong?.Title ?? "null"}. Updating loop state.");
-                    // Remove handler from old song
-                    if (_currentSongInternal != null)
-                    {
-                        _currentSongInternal.PropertyChanged -= CurrentSong_PropertyChanged;
-                    }
-                    // Update internal song reference
-                    _currentSongInternal = _playbackService.CurrentSong;
-                    // Add handler to new song if not null
-                    if (_currentSongInternal != null)
-                    {
-                        _currentSongInternal.PropertyChanged += CurrentSong_PropertyChanged;
-                    }
-                    UpdateStateForCurrentSong(_currentSongInternal);
-                    break;
-                case nameof(PlaybackService.CurrentPosition):
-                case nameof(PlaybackService.CurrentSongDuration):
-                    // These affect CanSaveLoopRegion and command CanExecute states
-                    OnPropertyChanged(nameof(CanSaveLoopRegion));
-                    RaiseLoopCommandCanExecuteChanged();
-                    // Also need to update loop display text if CurrentSong or its Loop property isn't triggering it
-                    UpdateActiveLoopDisplayText(); // Ensure text reflects active loop status
-                    break;
-                case nameof(PlaybackService.CurrentPlaybackStatus):
-                    // Affects Capture command CanExecute
-                    RaiseLoopCommandCanExecuteChanged();
-                    break;
-            }
-        });
-    }
-
-    private void CurrentSong_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            // Listen for changes on the *Song model itself* relevant to loop state
-            if (sender is Song song && song == _currentSongInternal)
-            {
-                switch (e.PropertyName)
-                {
-                    case nameof(Song.SavedLoop):
-                        Debug.WriteLine($"[LoopEdVM] CurrentSong.SavedLoop changed for {song.Title}. Updating loop state.");
-                        UpdateStateForCurrentSong(song); // Fully refresh state based on the new loop
-                        break;
-                    case nameof(Song.IsLoopActive):
-                        Debug.WriteLine($"[LoopEdVM] CurrentSong.IsLoopActive changed to {song.IsLoopActive} for {song.Title}. Updating UI binding and persisting.");
-                        // Update the UI binding property if it's out of sync
-                        if (_isCurrentLoopActiveUiBinding != song.IsLoopActive)
-                        {
-                            _isCurrentLoopActiveUiBinding = song.IsLoopActive;
-                            OnPropertyChanged(nameof(IsCurrentLoopActiveUiBinding));
-                        }
-                        // Persist the active state change
-                        if (song.SavedLoop != null)
-                        {
-                            _loopDataService.UpdateLoopActiveState(song.FilePath, song.IsLoopActive);
-                        }
-                        UpdateActiveLoopDisplayText(); // Update the display text
-                        break;
-                        // Add other relevant song properties if they affect loop state UI
-                }
-            }
-        });
-    }
-
-    private void UpdateStateForCurrentSong(Song? song)
-    {
-        // This method syncs the LoopEditorViewModel's state with the current song's state
-        Debug.WriteLine($"[LoopEdVM] UpdateStateForCurrentSong called for: {song?.Title ?? "null"}");
-        if (song?.SavedLoop != null)
-        {
-            NewLoopStartCandidate = song.SavedLoop.Start;
-            NewLoopEndCandidate = song.SavedLoop.End;
-            IsCurrentLoopActiveUiBinding = song.IsLoopActive; // Sync UI binding
-        }
-        else
-        {
-            NewLoopStartCandidate = null;
-            NewLoopEndCandidate = null;
-            IsCurrentLoopActiveUiBinding = false; // Ensure binding is false when no loop
-        }
-        UpdateActiveLoopDisplayText();
-        OnPropertyChanged(nameof(CanSaveLoopRegion));
-        RaiseLoopCommandCanExecuteChanged();
-    }
-
-    private void ClearLoopCandidateInputs()
-    {
-        NewLoopStartCandidate = null;
-        NewLoopEndCandidate = null;
-        Debug.WriteLine("[LoopEdVM] Loop candidates cleared.");
-    }
-
-    private void SaveLoopAction(object? param)
-    {
-        var currentSong = _currentSongInternal;
-        if (!CanSaveLoopRegion || currentSong == null || !NewLoopStartCandidate.HasValue || !NewLoopEndCandidate.HasValue)
-        {
-            Debug.WriteLine("[LoopEdVM] SaveLoopAction skipped: conditions not met.");
-            return;
-        }
-
-        var newLoop = new LoopRegion(NewLoopStartCandidate.Value, NewLoopEndCandidate.Value, "User Loop");
-
-        // Determine the desired active state for the new loop:
-        // - If there was a loop before and it was active, the new one should also be active.
-        // - If there was no loop before, setting a new one implies it should be active.
-        // - If there was a loop before and it was *in*active, keep the new one inactive initially.
-        bool shouldBeActive = (currentSong.SavedLoop != null && currentSong.IsLoopActive) || currentSong.SavedLoop == null;
-
-        currentSong.SavedLoop = newLoop; // This might trigger Song's PropertyChanged -> LoopEditorViewModel.CurrentSong_PropertyChanged -> UpdateStateForCurrentSong
-
-        // Set IsLoopActive *after* setting SavedLoop to potentially trigger the right logic flow
-        // If the desired state is different from the current Song.IsLoopActive, set it.
-        // If it's the same, explicitly trigger the persistence call as the Song.IsLoopActive setter might not fire PropertyChanged
-        if (currentSong.IsLoopActive != shouldBeActive)
-        {
-            currentSong.IsLoopActive = shouldBeActive; // This should trigger persistence via CurrentSong_PropertyChanged
-        }
-        else
-        {
-            // State is the same, manually trigger persistence
-            _loopDataService.SetLoop(currentSong.FilePath, newLoop.Start, newLoop.End, currentSong.IsLoopActive);
-        }
-
-        Debug.WriteLine($"[LoopEdVM] Loop saved for {currentSong.Title}. Start: {newLoop.Start}, End: {newLoop.End}, Active: {currentSong.IsLoopActive}");
-
-        // Update UI state might be redundant if triggered by CurrentSong_PropertyChanged, but safe
-        UpdateStateForCurrentSong(currentSong);
-    }
-
-
-    private void ClearSavedLoopAction(object? param)
-    {
-        var currentSong = _currentSongInternal;
-        if (currentSong != null)
-        {
-            var filePath = currentSong.FilePath;
-            Debug.WriteLine($"[LoopEdVM] Clearing loop for {currentSong.Title}.");
-            currentSong.SavedLoop = null; // This might trigger Song's PropertyChanged
-            currentSong.IsLoopActive = false; // This might trigger Song's PropertyChanged
-            if (!string.IsNullOrEmpty(filePath))
-            {
-                _loopDataService.ClearLoop(filePath);
-            }
-        }
-        ClearLoopCandidateInputs();
-        UpdateStateForCurrentSong(currentSong); // Ensure UI syncs after clearing
-    }
-
-    private void ToggleCurrentSongLoopActive(object? parameter)
-    {
-        if (_currentSongInternal != null && _currentSongInternal.SavedLoop != null)
-        {
-            Debug.WriteLine($"[LoopEdVM] Toggling loop active state for {_currentSongInternal.Title}. Current: {_currentSongInternal.IsLoopActive}");
-            // Toggling IsCurrentLoopActiveUiBinding will flow back through its setter
-            IsCurrentLoopActiveUiBinding = !_isCurrentLoopActiveUiBinding;
-        }
-    }
-
-    private void UpdateActiveLoopDisplayText()
-    {
-        var currentSong = _currentSongInternal;
-        if (currentSong?.SavedLoop != null)
-        {
-            var loop = currentSong.SavedLoop;
-            string activeStatus = currentSong.IsLoopActive ? " (Active)" : " (Inactive)";
-            ActiveLoopDisplayText = $"Loop: {loop.Start:mm\\:ss\\.f} - {loop.End:mm\\:ss\\.f}{activeStatus}";
-        }
-        else
-        {
-            ActiveLoopDisplayText = "No loop defined.";
-        }
-    }
-
-    public void RaiseLoopCommandCanExecuteChanged()
-    {
-        (CaptureLoopStartCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        (CaptureLoopEndCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        (SaveLoopCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        (ClearLoopCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        (ToggleLoopActiveCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        (WaveformSeekCommand as RelayCommand)?.RaiseCanExecuteChanged();
-    }
-}
-</file>
-
-<file path="Source\ViewModels\MainWindowViewModel.cs">
-using System;
-using System.Collections.Generic; // Added for List<string>
-using System.ComponentModel;
-using System.Diagnostics;
-using System.IO; // Required for Path.GetFullPath, Directory.Exists
-using System.Linq;
-using System.Threading.Tasks;
-using System.Windows.Input;
-using Avalonia.Controls;
-using Avalonia.Platform.Storage;
-using Avalonia.Threading;
-using Sonorize.Models;
-using Sonorize.Services;
-using Sonorize.ViewModels.Status; // Added for StatusBarTextProvider
-using Sonorize.ViewModels.LibraryManagement; // Required for LibraryDisplayModeService
-
-namespace Sonorize.ViewModels;
-
-public class MainWindowViewModel : ViewModelBase
-{
-    private readonly SettingsService _settingsService;
-    private readonly MusicLibraryService _musicLibraryService;
-    private readonly WaveformService _waveformService;
-    private readonly LoopDataService _loopDataService;
-    private readonly ScrobblingService _scrobblingService;
-    private readonly NextTrackSelectorService _nextTrackSelectorService;
-    private readonly StatusBarTextProvider _statusBarTextProvider;
-    private readonly SettingsChangeProcessorService _settingsChangeProcessorService;
-    private readonly PlaybackFlowManagerService _playbackFlowManagerService;
-    private readonly ApplicationInteractionService _applicationInteractionService;
-    private readonly LibraryPlaybackLinkService _libraryPlaybackLinkService;
-    private readonly LibraryDisplayModeService _libraryDisplayModeService;
-    private readonly MainWindowViewModelOrchestrator _orchestrator; // New orchestrator
-
-    // Expose the Services directly for child VMs or public properties
-    public PlaybackService PlaybackService { get; }
-    public ThemeColors CurrentTheme { get; }
-
-    // Expose the child ViewModels
-    public LibraryViewModel Library { get; set; }
-    public LoopEditorViewModel LoopEditor { get; }
-    public PlaybackViewModel Playback { get; }
-    public AdvancedPanelViewModel AdvancedPanel { get; }
-    public string StatusBarText { get => field; set => SetProperty(ref field, value); } = "Welcome to Sonorize!";
-
-    public int ActiveTabIndex { get => field; set => SetProperty(ref field, value); } = 0;
-
-    public bool IsLoadingLibrary { get => Library.IsLoadingLibrary; }
-
-    public bool IsAdvancedPanelVisible
-    {
-        get => AdvancedPanel.IsVisible;
-        set
-        {
-            if (AdvancedPanel.IsVisible != value)
-            {
-                AdvancedPanel.IsVisible = value;
-                OnPropertyChanged(); // PropertyChanged handled by orchestrator if it sets this
-            }
-        }
-    }
-    public ICommand ToggleAdvancedPanelCommand => AdvancedPanel.ToggleVisibilityCommand;
-
-
-    public ICommand LoadInitialDataCommand { get; }
-    public ICommand OpenSettingsCommand { get; }
-    public ICommand ExitCommand { get; }
-    public ICommand AddDirectoryAndRefreshCommand { get; }
-
-
-    private readonly Random _shuffleRandom = new();
-
-    public MainWindowViewModel(
-        SettingsService settingsService,
-        MusicLibraryService musicLibraryService,
-        PlaybackService playbackService,
-        ThemeColors theme,
-        WaveformService waveformService,
-        LoopDataService loopDataService,
-        ScrobblingService scrobblingService)
-    {
-        _settingsService = settingsService;
-        _musicLibraryService = musicLibraryService;
-        PlaybackService = playbackService;
-        CurrentTheme = theme;
-        _waveformService = waveformService;
-        _loopDataService = loopDataService;
-        _scrobblingService = scrobblingService;
-        _nextTrackSelectorService = new NextTrackSelectorService(_shuffleRandom);
-
-        _libraryDisplayModeService = new LibraryDisplayModeService(_settingsService);
-        Library = new LibraryViewModel(this, _settingsService, _musicLibraryService, _loopDataService, _libraryDisplayModeService);
-        Playback = new PlaybackViewModel(PlaybackService, _waveformService);
-        LoopEditor = new LoopEditorViewModel(PlaybackService, _loopDataService);
-        AdvancedPanel = new AdvancedPanelViewModel(Playback, Library);
-
-        _statusBarTextProvider = new StatusBarTextProvider(Playback, LoopEditor, Library);
-        _settingsChangeProcessorService = new SettingsChangeProcessorService(Library, _scrobblingService);
-        _playbackFlowManagerService = new PlaybackFlowManagerService(Library, Playback, PlaybackService, _nextTrackSelectorService);
-        _applicationInteractionService = new ApplicationInteractionService(
-            _settingsService,
-            _settingsChangeProcessorService,
-            CurrentTheme);
-        _libraryPlaybackLinkService = new LibraryPlaybackLinkService(Library, PlaybackService, Playback);
-
-        // Instantiate and set up the orchestrator
-        _orchestrator = new MainWindowViewModelOrchestrator(
-            Library,
-            Playback,
-            AdvancedPanel,
-            RaiseAllCommandsCanExecuteChanged,
-            UpdateStatusBarText,
-            (propertyName) => OnPropertyChanged(propertyName)
-        );
-
-        PlaybackService.PlaybackEndedNaturally += PlaybackService_PlaybackEndedNaturally;
-
-        LoadInitialDataCommand = new RelayCommand(async _ => await Library.LoadLibraryAsync(), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
-        OpenSettingsCommand = new RelayCommand(async owner => await OpenSettingsDialogAsync(owner), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
-        ExitCommand = new RelayCommand(_ => Environment.Exit(0));
-        AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefreshAsync(owner), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
-
-        // Initial UI state update
-        Dispatcher.UIThread.InvokeAsync(UpdateAllUIDependentStates);
-    }
-
-    private void PlaybackService_PlaybackEndedNaturally(object? sender, EventArgs e)
-    {
-        Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally event received. Delegating to PlaybackFlowManagerService.");
-        _playbackFlowManagerService.HandlePlaybackEndedNaturally();
-        Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally handler completed after delegation.");
-    }
-
-    // Removed individual PropertyChanged handlers; logic is now in _orchestrator
-
-    private void UpdateAllUIDependentStates()
-    {
-        // These ensure that the UI reflects the initial state correctly,
-        // especially for properties managed or affected by the orchestrator.
-        OnPropertyChanged(nameof(IsLoadingLibrary));
-        OnPropertyChanged(nameof(Playback.CurrentSong)); // Trigger updates for all Playback related derived properties
-        OnPropertyChanged(nameof(Playback.HasCurrentSong));
-        OnPropertyChanged(nameof(Playback.CurrentPlaybackStatus));
-        OnPropertyChanged(nameof(Playback.IsPlaying));
-        OnPropertyChanged(nameof(Playback.CurrentTimeDisplay));
-        OnPropertyChanged(nameof(Playback.TotalTimeDisplay));
-        OnPropertyChanged(nameof(IsAdvancedPanelVisible));
-        OnPropertyChanged(nameof(ActiveTabIndex));
-
-        UpdateStatusBarText(); // Initial status bar text
-        RaiseAllCommandsCanExecuteChanged(); // Initial command states
-    }
-
-    public void RaiseAllCommandsCanExecuteChanged()
-    {
-        Dispatcher.UIThread.InvokeAsync(() => // Ensure runs on UI thread
-        {
-            (LoadInitialDataCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            (OpenSettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            (ExitCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
-
-            Library.RaiseLibraryCommandsCanExecuteChanged();
-            Playback.RaisePlaybackCommandCanExecuteChanged();
-            LoopEditor.RaiseLoopCommandCanExecuteChanged();
-            (AdvancedPanel.ToggleVisibilityCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        });
-    }
-
-    private void UpdateStatusBarText()
-    {
-        Dispatcher.UIThread.InvokeAsync(() => // Ensure runs on UI thread
-        {
-            StatusBarText = _statusBarTextProvider.GetCurrentStatusText();
-        });
-    }
-
-    private async Task OpenSettingsDialogAsync(object? ownerWindow)
-    {
-        if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
-        IsAdvancedPanelVisible = false;
-
-        var (statusMessages, settingsChanged) = await _applicationInteractionService.HandleOpenSettingsDialogAsync(owner);
-
-        if (settingsChanged)
-        {
-            if (statusMessages.Any())
-            {
-                StatusBarText = string.Join(" | ", statusMessages);
-            }
-            else
-            {
-                UpdateStatusBarText(); // Fallback to default status text logic
-            }
-        }
-        else
-        {
-            UpdateStatusBarText(); // Update status if no changes or no specific messages
-        }
-        // Re-evaluate commands as settings changes might affect them (e.g., scrobbling related UI)
-        RaiseAllCommandsCanExecuteChanged();
-    }
-
-    private async Task AddMusicDirectoryAndRefreshAsync(object? ownerWindow)
-    {
-        if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
-        IsAdvancedPanelVisible = false;
-
-        var (directoryAdded, statusMessage) = await _applicationInteractionService.HandleAddMusicDirectoryAsync(owner);
-
-        StatusBarText = statusMessage; // Display immediate feedback
-
-        if (directoryAdded)
-        {
-            await Library.LoadLibraryAsync(); // This will update status text further during/after loading
-        }
-        else
-        {
-            UpdateStatusBarText(); // Revert to standard status text if dir not added
-        }
-        RaiseAllCommandsCanExecuteChanged();
-    }
-
-    public void Dispose() // Ensure orchestrator is disposed
-    {
-        if (PlaybackService != null)
-        {
-            PlaybackService.PlaybackEndedNaturally -= PlaybackService_PlaybackEndedNaturally;
-        }
-        _orchestrator?.Dispose();
-        _libraryPlaybackLinkService?.Dispose();
-        Library?.Dispose();
-        Playback?.Dispose();
-        AdvancedPanel?.Dispose();
-    }
-}
-</file>
-
-<file path="Source\ViewModels\MainWindowViewModelOrchestrator.cs">
-using System;
-using System.ComponentModel;
-using Sonorize.ViewModels;
-
-namespace Sonorize.ViewModels;
-
-internal class MainWindowViewModelOrchestrator : IDisposable
-{
-    private readonly LibraryViewModel _libraryViewModel;
-    private readonly PlaybackViewModel _playbackViewModel;
-    private readonly AdvancedPanelViewModel _advancedPanelViewModel;
-
-    private readonly Action _raiseAllCommandsCanExecuteChangedCallback;
-    private readonly Action _updateStatusBarTextCallback;
-    private readonly Action<string> _notifyMainWindowVMPropertyChangedCallback;
-
-    public MainWindowViewModelOrchestrator(
-        LibraryViewModel libraryViewModel,
-        PlaybackViewModel playbackViewModel,
-        AdvancedPanelViewModel advancedPanelViewModel,
-        Action raiseAllCommandsCanExecuteChangedCallback,
-        Action updateStatusBarTextCallback,
-        Action<string> notifyMainWindowVMPropertyChangedCallback)
-    {
-        _libraryViewModel = libraryViewModel ?? throw new ArgumentNullException(nameof(libraryViewModel));
-        _playbackViewModel = playbackViewModel ?? throw new ArgumentNullException(nameof(playbackViewModel));
-        _advancedPanelViewModel = advancedPanelViewModel ?? throw new ArgumentNullException(nameof(advancedPanelViewModel));
-        _raiseAllCommandsCanExecuteChangedCallback = raiseAllCommandsCanExecuteChangedCallback ?? throw new ArgumentNullException(nameof(raiseAllCommandsCanExecuteChangedCallback));
-        _updateStatusBarTextCallback = updateStatusBarTextCallback ?? throw new ArgumentNullException(nameof(updateStatusBarTextCallback));
-        _notifyMainWindowVMPropertyChangedCallback = notifyMainWindowVMPropertyChangedCallback ?? throw new ArgumentNullException(nameof(notifyMainWindowVMPropertyChangedCallback));
-
-        SubscribeToEvents();
-    }
-
-    private void SubscribeToEvents()
-    {
-        _libraryViewModel.PropertyChanged += Library_PropertyChanged;
-        _playbackViewModel.PropertyChanged += Playback_PropertyChanged;
-        if (_playbackViewModel.ModeControls != null)
-        {
-            _playbackViewModel.ModeControls.PropertyChanged += PlaybackModeControls_PropertyChanged;
-        }
-        if (_playbackViewModel.WaveformDisplay != null)
-        {
-            _playbackViewModel.WaveformDisplay.PropertyChanged += PlaybackWaveformDisplay_PropertyChanged;
-        }
-        _advancedPanelViewModel.PropertyChanged += AdvancedPanel_PropertyChanged;
-    }
-
-    private void UnsubscribeFromEvents()
-    {
-        _libraryViewModel.PropertyChanged -= Library_PropertyChanged;
-        _playbackViewModel.PropertyChanged -= Playback_PropertyChanged;
-        if (_playbackViewModel.ModeControls != null)
-        {
-            _playbackViewModel.ModeControls.PropertyChanged -= PlaybackModeControls_PropertyChanged;
-        }
-        if (_playbackViewModel.WaveformDisplay != null)
-        {
-            _playbackViewModel.WaveformDisplay.PropertyChanged -= PlaybackWaveformDisplay_PropertyChanged;
-        }
-        _advancedPanelViewModel.PropertyChanged -= AdvancedPanel_PropertyChanged;
-    }
-
-    private void PlaybackWaveformDisplay_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(WaveformDisplayViewModel.IsWaveformLoading))
-        {
-            _raiseAllCommandsCanExecuteChangedCallback();
-        }
-    }
-
-    private void AdvancedPanel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(AdvancedPanelViewModel.IsVisible))
-        {
-            _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.IsAdvancedPanelVisible));
-            _raiseAllCommandsCanExecuteChangedCallback();
-        }
-    }
-
-    private void Library_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        switch (e.PropertyName)
-        {
-            case nameof(LibraryViewModel.SelectedSong):
-                _raiseAllCommandsCanExecuteChangedCallback();
-                break;
-            case nameof(LibraryViewModel.IsLoadingLibrary):
-                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.IsLoadingLibrary));
-                _raiseAllCommandsCanExecuteChangedCallback();
-                _updateStatusBarTextCallback();
-                break;
-            case nameof(LibraryViewModel.LibraryStatusText):
-                _updateStatusBarTextCallback();
-                break;
-        }
-    }
-
-    private void Playback_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        switch (e.PropertyName)
-        {
-            case nameof(PlaybackViewModel.CurrentSong):
-                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentSong)); // Or just rely on MainWindowViewModel.Playback being the source
-                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.HasCurrentSong));
-                _raiseAllCommandsCanExecuteChangedCallback();
-                _updateStatusBarTextCallback();
-                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentTimeDisplay));
-                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.TotalTimeDisplay));
-                break;
-            case nameof(PlaybackViewModel.CurrentPlaybackStatus):
-                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentPlaybackStatus));
-                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.IsPlaying));
-                _updateStatusBarTextCallback();
-                _raiseAllCommandsCanExecuteChangedCallback();
-                break;
-            case nameof(PlaybackViewModel.CurrentPosition):
-                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentPosition));
-                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentPositionSeconds));
-                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentTimeDisplay));
-                break;
-            case nameof(PlaybackViewModel.CurrentSongDuration):
-                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentSongDuration));
-                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentSongDurationSeconds));
-                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.TotalTimeDisplay));
-                _raiseAllCommandsCanExecuteChangedCallback();
-                break;
-        }
-    }
-
-    private void PlaybackModeControls_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        switch (e.PropertyName)
-        {
-            case nameof(PlaybackModeViewModel.ShuffleEnabled):
-            case nameof(PlaybackModeViewModel.RepeatMode):
-                _playbackViewModel.RaisePlaybackCommandCanExecuteChanged(); // PlaybackVM raises its own commands
-                _updateStatusBarTextCallback();
-                break;
-        }
-    }
-
-    public void Dispose()
-    {
-        UnsubscribeFromEvents();
-        GC.SuppressFinalize(this);
     }
 }
 </file>
@@ -4117,295 +3252,6 @@ public class RelayCommand : ICommand
 
     public bool CanExecute(object? parameter) => _canExecute == null || _canExecute(parameter);
     public void Execute(object? parameter) => _execute(parameter);
-}
-</file>
-
-<file path="Source\ViewModels\SettingsPersistenceManager.cs">
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using Sonorize.Models;
-using Sonorize.Services;
-
-namespace Sonorize.ViewModels;
-
-public class SettingsPersistenceManager
-{
-    private readonly SettingsService _settingsService;
-
-    public SettingsPersistenceManager(SettingsService settingsService)
-    {
-        _settingsService = settingsService ?? throw new System.ArgumentNullException(nameof(settingsService));
-    }
-
-    public bool ApplyAndSaveChanges(
-        AppSettings settingsOnDisk,
-        IEnumerable<string> currentUiMusicDirs,
-        IEnumerable<string> initialUiMusicDirs, // Used to detect if UI list changed from its initial state
-        string? currentUiSelectedTheme,
-        LastfmSettingsViewModel currentUiLastfmSettings)
-    {
-        AppSettings newSettingsToSave = new();
-
-        // Preserve settings not managed by SettingsViewModel's UI by copying from disk state
-        newSettingsToSave.LibraryViewModePreference = settingsOnDisk.LibraryViewModePreference;
-        newSettingsToSave.ArtistViewModePreference = settingsOnDisk.ArtistViewModePreference;
-        newSettingsToSave.AlbumViewModePreference = settingsOnDisk.AlbumViewModePreference;
-        newSettingsToSave.LastfmSessionKey = settingsOnDisk.LastfmSessionKey;
-        // Add any other unmanaged settings here if AppSettings grows
-
-        bool actualChangesMade = false;
-
-        // Music Directories
-        // A change is made if the current UI list is different from its initial state OR different from disk state
-        if (!initialUiMusicDirs.SequenceEqual(currentUiMusicDirs) ||
-            !settingsOnDisk.MusicDirectories.SequenceEqual(currentUiMusicDirs))
-        {
-            newSettingsToSave.MusicDirectories = new List<string>(currentUiMusicDirs);
-            actualChangesMade = true;
-            Debug.WriteLine($"[SettingsPersistence] Music directories changed. Count: {newSettingsToSave.MusicDirectories.Count}");
-        }
-        else
-        {
-            newSettingsToSave.MusicDirectories = new List<string>(settingsOnDisk.MusicDirectories);
-        }
-
-        // Theme
-        if (settingsOnDisk.PreferredThemeFileName != currentUiSelectedTheme)
-        {
-            newSettingsToSave.PreferredThemeFileName = currentUiSelectedTheme;
-            actualChangesMade = true;
-            Debug.WriteLine($"[SettingsPersistence] Theme changed to: {currentUiSelectedTheme}");
-        }
-        else
-        {
-            newSettingsToSave.PreferredThemeFileName = settingsOnDisk.PreferredThemeFileName;
-        }
-
-        // Last.fm Settings - Compare UI state against disk state for change detection
-        if (settingsOnDisk.LastfmScrobblingEnabled != currentUiLastfmSettings.LastfmScrobblingEnabled) actualChangesMade = true;
-        if (settingsOnDisk.LastfmUsername != currentUiLastfmSettings.LastfmUsername) actualChangesMade = true;
-        // Password comparison: change if UI has a new password (and it's different from disk, though disk doesn't store it long-term)
-        // Or, more simply, if the password field in UI was touched and is not null.
-        // The original logic was: settingsOnDisk.LastfmPassword != LastfmSettings.LastfmPassword && !string.IsNullOrEmpty(LastfmSettings.LastfmPassword)
-        // This implies if LastfmSettings.LastfmPassword is set, it's a change (as disk password is nulled after session key).
-        if (!string.IsNullOrEmpty(currentUiLastfmSettings.LastfmPassword)) actualChangesMade = true; // If a password was entered, consider it a change for re-auth.
-        if (settingsOnDisk.ScrobbleThresholdPercentage != currentUiLastfmSettings.ScrobbleThresholdPercentage) actualChangesMade = true;
-        if (settingsOnDisk.ScrobbleThresholdAbsoluteSeconds != currentUiLastfmSettings.ScrobbleThresholdAbsoluteSeconds) actualChangesMade = true;
-
-        // Apply UI Last.fm settings to newSettingsToSave object
-        currentUiLastfmSettings.UpdateAppSettings(newSettingsToSave);
-        if (actualChangesMade)
-        {
-            // Log Last.fm specific changes if any were part of overall changes
-            Debug.WriteLine($"[SettingsPersistence] Last.fm settings potentially updated in newSettingsToSave: " +
-                          $"Scrobbling={newSettingsToSave.LastfmScrobblingEnabled}, " +
-                          $"User={newSettingsToSave.LastfmUsername}, " +
-                          $"PassLen={(newSettingsToSave.LastfmPassword?.Length ?? 0)}, " +
-                          $"Thresh%={newSettingsToSave.ScrobbleThresholdPercentage}, " +
-                          $"ThreshAbsSec={newSettingsToSave.ScrobbleThresholdAbsoluteSeconds}");
-        }
-
-
-        if (actualChangesMade)
-        {
-            _settingsService.SaveSettings(newSettingsToSave);
-            Debug.WriteLine("[SettingsPersistence] Actual changes detected and settings saved.");
-            return true;
-        }
-
-        Debug.WriteLine("[SettingsPersistence] No actual changes to persist.");
-        return false;
-    }
-}
-</file>
-
-<file path="Source\ViewModels\SettingsViewModel.cs">
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Diagnostics;
-using System.Linq;
-using System.Threading.Tasks;
-using System.Windows.Input;
-using Avalonia.Controls;
-using Avalonia.Platform.Storage;
-using Sonorize.Models; // Required for AppSettings type
-using Sonorize.Services;
-
-namespace Sonorize.ViewModels;
-
-public class SettingsViewModel : ViewModelBase
-{
-    private readonly SettingsService _settingsService;
-    private readonly ThemeService _themeService;
-    private readonly SettingsPersistenceManager _settingsPersistenceManager;
-
-    public ObservableCollection<string> MusicDirectories { get; } = new();
-    public List<string> InitialMusicDirectories { get; private set; }
-
-    public string? SelectedDirectory
-    {
-        get;
-
-        set => SetProperty(ref field, value, nameof(CanRemoveDirectory));
-    }
-
-    public ObservableCollection<string> AvailableThemes { get; } = new();
-
-    public string? SelectedThemeFile
-    {
-        get;
-
-        set
-        {
-            if (!SetProperty(ref field, value))
-            {
-                return;
-            }
-            MarkSettingsChanged();
-        }
-    }
-
-    // Encapsulated Last.fm Settings
-    public LastfmSettingsViewModel LastfmSettings { get; }
-
-
-    public bool SettingsChanged { get; private set; } = false;
-
-    public ICommand AddDirectoryCommand { get; }
-    public ICommand RemoveDirectoryCommand { get; }
-    public ICommand SaveAndCloseCommand { get; }
-
-    public bool CanRemoveDirectory => SelectedDirectory != null;
-
-    public SettingsViewModel(SettingsService settingsService)
-    {
-        _settingsService = settingsService;
-        _themeService = new ThemeService(null); // ThemeService used for GetAvailableThemeFiles
-        _settingsPersistenceManager = new SettingsPersistenceManager(settingsService);
-
-        var settings = _settingsService.LoadSettings();
-        InitialMusicDirectories = new List<string>(settings.MusicDirectories);
-
-        foreach (var dir in settings.MusicDirectories)
-        {
-            MusicDirectories.Add(dir);
-        }
-
-        foreach (var themeFile in _themeService.GetAvailableThemeFiles())
-        {
-            AvailableThemes.Add(themeFile);
-        }
-
-        SelectedThemeFile = settings.PreferredThemeFileName ?? ThemeService.DefaultThemeFileName;
-        if (!AvailableThemes.Contains(SelectedThemeFile) && AvailableThemes.Any())
-        {
-            SelectedThemeFile = AvailableThemes.First();
-        }
-
-        // Initialize Last.fm settings module
-        LastfmSettings = new LastfmSettingsViewModel();
-        LastfmSettings.LoadFromSettings(settings);
-        LastfmSettings.PropertyChanged += (s, e) => MarkSettingsChanged();
-
-
-        SettingsChanged = false; // Initial state is unchanged
-
-        AddDirectoryCommand = new RelayCommand(async owner => await AddDirectory(owner as Window));
-        RemoveDirectoryCommand = new RelayCommand(RemoveSelectedDirectory, _ => CanRemoveDirectory);
-        SaveAndCloseCommand = new RelayCommand(SaveSettings);
-
-        PropertyChanged += (s, e) =>
-        {
-            if (e.PropertyName == nameof(SelectedDirectory))
-            {
-                (RemoveDirectoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            }
-            // Changes to SelectedThemeFile already call MarkSettingsChanged in their setter
-        };
-        MusicDirectories.CollectionChanged += (s, e) => MarkSettingsChanged();
-    }
-
-    private void MarkSettingsChanged()
-    {
-        if (!SettingsChanged)
-        {
-            SettingsChanged = true;
-            Debug.WriteLine("[SettingsVM] Settings marked as changed (UI interaction).");
-        }
-    }
-
-
-    private async Task AddDirectory(Window? owner)
-    {
-        if (owner?.StorageProvider == null)
-        {
-            Debug.WriteLine("StorageProvider is not available.");
-            return;
-        }
-
-        var options = new FolderPickerOpenOptions
-        {
-            Title = "Select Music Directory",
-            AllowMultiple = false
-        };
-
-        var result = await owner.StorageProvider.OpenFolderPickerAsync(options);
-
-        if (result != null && result.Count > 0)
-        {
-            var folder = result.FirstOrDefault();
-            if (folder == null) return;
-
-            var path = folder.Path.LocalPath;
-            if (string.IsNullOrEmpty(path) || MusicDirectories.Contains(path)) return;
-
-            MusicDirectories.Add(path);
-            // MarkSettingsChanged() is called by CollectionChanged handler
-        }
-    }
-
-    private void RemoveSelectedDirectory(object? parameter)
-    {
-        if (SelectedDirectory == null) return;
-
-        MusicDirectories.Remove(SelectedDirectory);
-        SelectedDirectory = null;
-        // MarkSettingsChanged() is called by CollectionChanged handler
-    }
-
-    private void SaveSettings(object? parameter)
-    {
-        AppSettings settingsOnDisk = _settingsService.LoadSettings();
-
-        bool changesPersisted = _settingsPersistenceManager.ApplyAndSaveChanges(
-            settingsOnDisk,
-            this.MusicDirectories,
-            this.InitialMusicDirectories,
-            this.SelectedThemeFile,
-            this.LastfmSettings
-        );
-
-        if (changesPersisted)
-        {
-            // Update the baseline for future comparisons if changes were actually saved
-            this.InitialMusicDirectories = new List<string>(this.MusicDirectories);
-            // SettingsChanged flag is used by ApplicationInteractionService to determine if post-save processing is needed.
-            // If ApplyAndSaveChanges persisted anything, then SettingsChanged should be true.
-            // If MarkSettingsChanged() was called due to UI interaction but no actual changes were persisted,
-            // then SettingsChanged should reflect that no *persistent* change happened.
-            this.SettingsChanged = true;
-            Debug.WriteLine("[SettingsVM] Changes were persisted by SettingsPersistenceManager.");
-        }
-        else
-        {
-            // If no changes were persisted, ensure SettingsChanged reflects this,
-            // even if UI interactions previously set it to true.
-            // This is important because SettingsChanged is checked *after* this method by the caller.
-            this.SettingsChanged = false;
-            Debug.WriteLine("[SettingsVM] No changes were persisted by SettingsPersistenceManager.");
-        }
-    }
 }
 </file>
 
@@ -4879,6 +3725,7 @@ using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Sonorize.Converters; // For EnumToBooleanConverter
 using Sonorize.Models;
 using Sonorize.ViewModels;
 
@@ -4892,8 +3739,8 @@ public class SettingsWindow : Window
     {
         _theme = currentDisplayTheme;
 
-        Title = "Sonorize Settings"; Width = 500; Height = 700;
-        CanResize = false; WindowStartupLocation = WindowStartupLocation.CenterOwner; Icon = null;
+        Title = "Sonorize Settings"; Width = 650; Height = 500; MinWidth = 600; MinHeight = 450;
+        CanResize = true; WindowStartupLocation = WindowStartupLocation.CenterOwner; Icon = null;
         Background = _theme.B_SlightlyLighterBackground;
 
         // Style for the TextBox part of NumericUpDown controls in this window
@@ -4902,30 +3749,124 @@ public class SettingsWindow : Window
             Setters =
             {
                 new Setter(TextBox.ForegroundProperty, _theme.B_TextColor),
-                new Setter(TextBox.BackgroundProperty, Brushes.Transparent), // Ensure NumericUpDown's background shows through
-                new Setter(TextBox.CaretBrushProperty, _theme.B_TextColor), // For when editing
-                new Setter(TextBox.BorderThicknessProperty, new Thickness(0)), // Remove internal border if any
+                new Setter(TextBox.BackgroundProperty, Brushes.Transparent),
+                new Setter(TextBox.CaretBrushProperty, _theme.B_TextColor),
+                new Setter(TextBox.BorderThicknessProperty, new Thickness(0)),
                 new Setter(TextBox.VerticalContentAlignmentProperty, VerticalAlignment.Center),
-                new Setter(TextBox.HorizontalContentAlignmentProperty, HorizontalAlignment.Center), // Center the text
-                new Setter(TextBox.PaddingProperty, new Thickness(2,0)) // Minimal padding
+                new Setter(TextBox.HorizontalContentAlignmentProperty, HorizontalAlignment.Center),
+                new Setter(TextBox.PaddingProperty, new Thickness(2,0))
             }
         });
 
+        var mainGrid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("150, *"), // Left menu, Right content
+            RowDefinitions = new RowDefinitions("*, Auto")      // Content area, Bottom buttons
+        };
 
-        var mainPanel = new DockPanel { Margin = new Thickness(15) };
+        // --- Left Navigation Menu ---
+        var menuPanelContainer = CreateLeftMenuPanel(); // Changed to get the container (Border)
+        Grid.SetColumn(menuPanelContainer, 0);
+        Grid.SetRow(menuPanelContainer, 0);
+        mainGrid.Children.Add(menuPanelContainer);
 
-        // --- Header for Directories ---
-        var dirHeaderBlock = new TextBlock
+        // --- Right Content Area ---
+        var contentArea = CreateContentAreaPanel();
+        Grid.SetColumn(contentArea, 1);
+        Grid.SetRow(contentArea, 0);
+        mainGrid.Children.Add(contentArea);
+
+        // --- Bottom Buttons Panel ---
+        var buttonsPanel = CreateBottomButtonsPanel();
+        Grid.SetColumnSpan(buttonsPanel, 2); // Span across both columns
+        Grid.SetColumn(buttonsPanel, 0);
+        Grid.SetRow(buttonsPanel, 1);
+        mainGrid.Children.Add(buttonsPanel);
+
+        Content = mainGrid;
+    }
+
+    private Border CreateLeftMenuPanel() // Returns Border instead of StackPanel
+    {
+        var menuStackPanel = new StackPanel
+        {
+            Spacing = 5
+            // Removed Padding from StackPanel as it's not supported
+        };
+
+        var directoriesButton = new Button { Content = "Directories", HorizontalAlignment = HorizontalAlignment.Stretch, Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
+        directoriesButton.Bind(Button.CommandProperty, new Binding("ShowDirectoriesSettingsCommand"));
+
+        var themeButton = new Button { Content = "Theme", HorizontalAlignment = HorizontalAlignment.Stretch, Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
+        themeButton.Bind(Button.CommandProperty, new Binding("ShowThemeSettingsCommand"));
+
+        var scrobblingButton = new Button { Content = "Scrobbling", HorizontalAlignment = HorizontalAlignment.Stretch, Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
+        scrobblingButton.Bind(Button.CommandProperty, new Binding("ShowScrobblingSettingsCommand"));
+
+        // Removed problematic activeButtonStyle and its usage
+        // Highlighting active section relies on content visibility as per prior logic
+
+        menuStackPanel.Children.Add(directoriesButton);
+        menuStackPanel.Children.Add(themeButton);
+        menuStackPanel.Children.Add(scrobblingButton);
+
+        // Wrap StackPanel in a Border to apply Padding and Background
+        var menuBorder = new Border
+        {
+            Background = _theme.B_BackgroundColor, // Slightly darker than content area background
+            Padding = new Thickness(10),
+            Child = menuStackPanel
+        };
+
+        return menuBorder;
+    }
+
+    private Panel CreateContentAreaPanel()
+    {
+        var contentPanel = new Panel { Margin = new Thickness(15) };
+
+        var directoriesSettingsPanel = CreateDirectoriesSettingsPanel();
+        directoriesSettingsPanel.Bind(Visual.IsVisibleProperty, new Binding("CurrentSettingsViewSection")
+        {
+            Converter = EnumToBooleanConverter.Instance,
+            ConverterParameter = SettingsViewSection.Directories
+        });
+
+        var themeSettingsPanel = CreateThemeSettingsPanel();
+        themeSettingsPanel.Bind(Visual.IsVisibleProperty, new Binding("CurrentSettingsViewSection")
+        {
+            Converter = EnumToBooleanConverter.Instance,
+            ConverterParameter = SettingsViewSection.Theme
+        });
+
+        var scrobblingSettingsPanel = CreateScrobblingSettingsPanel();
+        scrobblingSettingsPanel.Bind(Visual.IsVisibleProperty, new Binding("CurrentSettingsViewSection")
+        {
+            Converter = EnumToBooleanConverter.Instance,
+            ConverterParameter = SettingsViewSection.Scrobbling
+        });
+
+        contentPanel.Children.Add(directoriesSettingsPanel);
+        contentPanel.Children.Add(themeSettingsPanel);
+        contentPanel.Children.Add(scrobblingSettingsPanel);
+
+        return contentPanel;
+    }
+
+    private StackPanel CreateDirectoriesSettingsPanel()
+    {
+        var panel = new StackPanel { Spacing = 10 };
+
+        panel.Children.Add(new TextBlock
         {
             Text = "Music Directories",
             FontSize = 18,
             FontWeight = FontWeight.SemiBold,
             Foreground = _theme.B_TextColor,
             Margin = new Thickness(0, 0, 0, 10)
-        };
+        });
 
-        // --- Music Directories Section ---
-        var directoriesPanel = new DockPanel();
+        var directoriesManagementPanel = new DockPanel();
         var dirManagementButtons = new StackPanel { Orientation = Orientation.Vertical, Spacing = 5, Margin = new Thickness(0, 0, 10, 0) };
         DockPanel.SetDock(dirManagementButtons, Dock.Right);
         var addButton = new Button { Content = "Add", Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor, HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -4933,19 +3874,26 @@ public class SettingsWindow : Window
         var removeButton = new Button { Content = "Remove", Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor, HorizontalAlignment = HorizontalAlignment.Stretch };
         removeButton.Bind(Button.CommandProperty, new Binding("RemoveDirectoryCommand")); removeButton.Bind(Button.IsEnabledProperty, new Binding("CanRemoveDirectory"));
         dirManagementButtons.Children.Add(addButton); dirManagementButtons.Children.Add(removeButton);
-        var directoryListBox = new ListBox { Background = _theme.B_ControlBackgroundColor, BorderThickness = new Thickness(1), BorderBrush = _theme.B_SecondaryTextColor, Foreground = _theme.B_TextColor, Height = 120 };
-        directoryListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("MusicDirectories")); directoryListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedDirectory", BindingMode.TwoWay));
-        directoriesPanel.Children.Add(dirManagementButtons); directoriesPanel.Children.Add(directoryListBox);
 
-        // --- Theme Selection Section ---
-        var themeHeaderBlock = new TextBlock
+        var directoryListBox = new ListBox { Background = _theme.B_ControlBackgroundColor, BorderThickness = new Thickness(1), BorderBrush = _theme.B_SecondaryTextColor, Foreground = _theme.B_TextColor, Height = 150, MaxHeight = 200 };
+        directoryListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("MusicDirectories")); directoryListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedDirectory", BindingMode.TwoWay));
+        directoriesManagementPanel.Children.Add(dirManagementButtons); directoriesManagementPanel.Children.Add(directoryListBox);
+
+        panel.Children.Add(directoriesManagementPanel);
+        return panel;
+    }
+
+    private StackPanel CreateThemeSettingsPanel()
+    {
+        var panel = new StackPanel { Spacing = 10 };
+        panel.Children.Add(new TextBlock
         {
             Text = "Application Theme",
-            FontSize = 16,
+            FontSize = 18,
             FontWeight = FontWeight.SemiBold,
             Foreground = _theme.B_TextColor,
-            Margin = new Thickness(0, 15, 0, 5)
-        };
+            Margin = new Thickness(0, 0, 0, 10)
+        });
 
         var themeComboBox = new ComboBox
         {
@@ -4956,8 +3904,9 @@ public class SettingsWindow : Window
         };
         themeComboBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("AvailableThemes"));
         themeComboBox.Bind(ComboBox.SelectedItemProperty, new Binding("SelectedThemeFile", BindingMode.TwoWay));
+        panel.Children.Add(themeComboBox);
 
-        var themeRestartNotice = new TextBlock
+        panel.Children.Add(new TextBlock
         {
             Text = "A restart is required for theme changes to take full effect.",
             FontSize = 10,
@@ -4965,17 +3914,22 @@ public class SettingsWindow : Window
             FontStyle = FontStyle.Italic,
             Margin = new Thickness(0, 5, 0, 0),
             TextWrapping = TextWrapping.Wrap
-        };
+        });
+        return panel;
+    }
 
-        // --- Scrobbling Section ---
-        var scrobblingHeaderBlock = new TextBlock
+    private StackPanel CreateScrobblingSettingsPanel()
+    {
+        var panel = new StackPanel { Spacing = 10 };
+
+        panel.Children.Add(new TextBlock
         {
             Text = "Last.fm Scrobbling",
-            FontSize = 16,
+            FontSize = 18,
             FontWeight = FontWeight.SemiBold,
             Foreground = _theme.B_TextColor,
-            Margin = new Thickness(0, 15, 0, 5)
-        };
+            Margin = new Thickness(0, 0, 0, 5)
+        });
 
         var scrobblingEnableCheckBox = new CheckBox
         {
@@ -4984,6 +3938,7 @@ public class SettingsWindow : Window
             Margin = new Thickness(0, 0, 0, 10)
         };
         scrobblingEnableCheckBox.Bind(ToggleButton.IsCheckedProperty, new Binding("LastfmSettings.LastfmScrobblingEnabled", BindingMode.TwoWay));
+        panel.Children.Add(scrobblingEnableCheckBox);
 
         var usernameLabel = new TextBlock { Text = "Username:", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 5) };
         var usernameTextBox = new TextBox
@@ -5003,10 +3958,9 @@ public class SettingsWindow : Window
             Foreground = _theme.B_TextColor,
             BorderBrush = _theme.B_SecondaryTextColor,
             PasswordChar = '•',
-            Watermark = "Last.fm Password"
+            Watermark = "Last.fm Password (if changing)"
         };
         passwordTextBox.Bind(TextBox.TextProperty, new Binding("LastfmSettings.LastfmPassword", BindingMode.TwoWay));
-
 
         var scrobblingGrid = new Grid
         {
@@ -5022,94 +3976,197 @@ public class SettingsWindow : Window
         scrobblingGrid.Children.Add(usernameTextBox);
         scrobblingGrid.Children.Add(passwordLabel);
         scrobblingGrid.Children.Add(passwordTextBox);
+        panel.Children.Add(scrobblingGrid);
 
-        // Scrobbling Criteria Settings
         var criteriaPanel = new StackPanel { Orientation = Orientation.Vertical, Spacing = 8, Margin = new Thickness(0, 10, 0, 5) };
-
         var percentagePanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
         var percentageLabel = new TextBlock { Text = "Scrobble if played for at least ", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
-        var percentageUpDown = new NumericUpDown
-        {
-            Minimum = 1,
-            Maximum = 100,
-            Increment = 1,
-            Width = 90,
-            Background = _theme.B_ControlBackgroundColor,
-            Foreground = _theme.B_TextColor,
-            BorderBrush = _theme.B_SecondaryTextColor
-        };
+        var percentageUpDown = new NumericUpDown { Minimum = 1, Maximum = 100, Increment = 1, Width = 90, Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_SecondaryTextColor };
         percentageUpDown.Bind(NumericUpDown.ValueProperty, new Binding("LastfmSettings.ScrobbleThresholdPercentage", BindingMode.TwoWay));
         var percentageUnitLabel = new TextBlock { Text = "% of duration", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
         percentagePanel.Children.Add(percentageLabel); percentagePanel.Children.Add(percentageUpDown); percentagePanel.Children.Add(percentageUnitLabel);
 
         var absolutePanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
         var absoluteLabel = new TextBlock { Text = "OR Scrobble if played for at least ", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
-        var absoluteUpDown = new NumericUpDown
-        {
-            Minimum = 10,
-            Maximum = 600,
-            Increment = 10,
-            Width = 100, // Lowered Minimum to 10
-            Background = _theme.B_ControlBackgroundColor,
-            Foreground = _theme.B_TextColor,
-            BorderBrush = _theme.B_SecondaryTextColor
-        };
+        var absoluteUpDown = new NumericUpDown { Minimum = 10, Maximum = 600, Increment = 10, Width = 100, Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_SecondaryTextColor };
         absoluteUpDown.Bind(NumericUpDown.ValueProperty, new Binding("LastfmSettings.ScrobbleThresholdAbsoluteSeconds", BindingMode.TwoWay));
         var absoluteUnitLabel = new TextBlock { Text = "seconds", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
         absolutePanel.Children.Add(absoluteLabel); absolutePanel.Children.Add(absoluteUpDown); absolutePanel.Children.Add(absoluteUnitLabel);
 
-        var criteriaExplanation = new TextBlock
-        {
-            Text = "(Whichever threshold is met first, and track is > 30s)",
-            FontSize = 10,
-            Foreground = _theme.B_SecondaryTextColor,
-            FontStyle = FontStyle.Italic,
-            TextWrapping = TextWrapping.Wrap
-        };
+        var criteriaExplanation = new TextBlock { Text = "(Whichever threshold is met first, and track is > 30s)", FontSize = 10, Foreground = _theme.B_SecondaryTextColor, FontStyle = FontStyle.Italic, TextWrapping = TextWrapping.Wrap };
+        criteriaPanel.Children.Add(percentagePanel); criteriaPanel.Children.Add(absolutePanel); criteriaPanel.Children.Add(criteriaExplanation);
+        panel.Children.Add(criteriaPanel);
 
-        criteriaPanel.Children.Add(percentagePanel);
-        criteriaPanel.Children.Add(absolutePanel);
-        criteriaPanel.Children.Add(criteriaExplanation);
-
-        var scrobblingInfoNotice = new TextBlock
+        panel.Children.Add(new TextBlock
         {
-            Text = "Requires a Last.fm account. Password stored locally (exercise caution).",
+            Text = "Password stored locally only until a session key is obtained. Authentication happens when Sonorize starts or when settings are saved.",
             FontSize = 10,
             Foreground = _theme.B_SecondaryTextColor,
             FontStyle = FontStyle.Italic,
             Margin = new Thickness(0, 15, 0, 0),
             TextWrapping = TextWrapping.Wrap
+        });
+
+        return panel;
+    }
+
+    private StackPanel CreateBottomButtonsPanel()
+    {
+        var buttonsPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Spacing = 10,
+            Margin = new Thickness(15) // Consistent margin
         };
 
-
-        // --- Layout using a main StackPanel for sections ---
-        var sectionsStackPanel = new StackPanel { Orientation = Orientation.Vertical, Spacing = 5 };
-        sectionsStackPanel.Children.Add(dirHeaderBlock);
-        sectionsStackPanel.Children.Add(directoriesPanel);
-        sectionsStackPanel.Children.Add(themeHeaderBlock);
-        sectionsStackPanel.Children.Add(themeComboBox);
-        sectionsStackPanel.Children.Add(themeRestartNotice);
-        sectionsStackPanel.Children.Add(scrobblingHeaderBlock);
-        sectionsStackPanel.Children.Add(scrobblingEnableCheckBox);
-        sectionsStackPanel.Children.Add(scrobblingGrid);
-        sectionsStackPanel.Children.Add(criteriaPanel);
-        sectionsStackPanel.Children.Add(scrobblingInfoNotice);
-
-
-        // --- Buttons Panel (Bottom) ---
-        var buttonsPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 10, Margin = new Thickness(0, 20, 0, 0) };
         var saveButton = new Button { Content = "Save & Close", Background = _theme.B_AccentColor, Foreground = _theme.B_AccentForeground, Padding = new Thickness(15, 8), CornerRadius = new CornerRadius(3) };
         saveButton.Click += (s, e) => { if (DataContext is SettingsViewModel vm) { vm.SaveAndCloseCommand.Execute(null); } Close(); };
+
         var cancelButton = new Button { Content = "Cancel", Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor, Padding = new Thickness(15, 8), CornerRadius = new CornerRadius(3) };
         cancelButton.Click += (s, e) => Close();
-        buttonsPanel.Children.Add(saveButton); buttonsPanel.Children.Add(cancelButton);
 
-        // Main panel structure
-        DockPanel.SetDock(buttonsPanel, Dock.Bottom);
-        mainPanel.Children.Add(buttonsPanel);
-        mainPanel.Children.Add(new ScrollViewer { Content = sectionsStackPanel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
+        buttonsPanel.Children.Add(saveButton);
+        buttonsPanel.Children.Add(cancelButton);
+        return buttonsPanel;
+    }
+}
+</file>
 
-        Content = mainPanel;
+<file path="Source\Services\Application\ApplicationInteractionService.cs">
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using Avalonia.Controls;
+using Avalonia.Platform.Storage;
+using Sonorize.Models;
+using Sonorize.ViewModels;
+
+namespace Sonorize.Services;
+
+public class ApplicationInteractionService
+{
+    private readonly SettingsService _settingsService;
+    private readonly SettingsChangeProcessorService _settingsChangeProcessorService;
+    private readonly ThemeColors _currentTheme;
+
+    public ApplicationInteractionService(
+        SettingsService settingsService,
+        SettingsChangeProcessorService settingsChangeProcessorService,
+        ThemeColors currentTheme)
+    {
+        _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
+        _settingsChangeProcessorService = settingsChangeProcessorService ?? throw new ArgumentNullException(nameof(settingsChangeProcessorService));
+        _currentTheme = currentTheme ?? throw new ArgumentNullException(nameof(currentTheme));
+    }
+
+    public async Task<(List<string> statusMessages, bool settingsChanged)> HandleOpenSettingsDialogAsync(Window owner)
+    {
+        var currentSettingsBeforeDialog = _settingsService.LoadSettings();
+        var settingsVM = new SettingsViewModel(_settingsService);
+        var settingsDialog = new Sonorize.Views.SettingsWindow(_currentTheme) { DataContext = settingsVM };
+
+        await settingsDialog.ShowDialog(owner);
+
+        List<string> statusMessages = [];
+        bool overallSettingsChanged = false;
+
+        if (settingsVM.SettingsChanged)
+        {
+            Debug.WriteLine("[AppInteractionService] Settings changed detected after dialog closed. Processing changes...");
+            var newSettingsAfterDialog = _settingsService.LoadSettings(); // Get the latest saved settings
+
+            statusMessages = await _settingsChangeProcessorService.ProcessChangesAndGetStatus(
+                currentSettingsBeforeDialog,
+                newSettingsAfterDialog
+            );
+            overallSettingsChanged = true; // Indicate that settings were processed
+        }
+        else
+        {
+            Debug.WriteLine("[AppInteractionService] Settings dialog closed, no changes reported by SettingsViewModel.");
+        }
+        return (statusMessages, overallSettingsChanged);
+    }
+
+    public async Task<(bool directoryAddedAndLibraryRefreshNeeded, string statusMessage)> HandleAddMusicDirectoryAsync(Window owner)
+    {
+        var result = await owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Select Music Directory", AllowMultiple = false });
+
+        if (result == null || result.Count == 0)
+        {
+            Debug.WriteLine("[AppInteractionService] Folder picker cancelled or returned no results.");
+            return (false, "Folder selection cancelled.");
+        }
+
+        string? folderPath = null;
+        try
+        {
+            folderPath = Path.GetFullPath(result[0].Path.LocalPath);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[AppInteractionService] Error getting full path for selected directory: {ex.Message}");
+            return (false, "Error getting path for selected directory.");
+        }
+
+        if (string.IsNullOrEmpty(folderPath) || !Directory.Exists(folderPath))
+        {
+            Debug.WriteLine($"[AppInteractionService] Selected directory path is invalid or does not exist: {folderPath}");
+            return (false, "Invalid directory selected.");
+        }
+
+        var settings = _settingsService.LoadSettings();
+        if (!settings.MusicDirectories.Any(d => string.Equals(d, folderPath, StringComparison.OrdinalIgnoreCase)))
+        {
+            settings.MusicDirectories.Add(folderPath);
+            _settingsService.SaveSettings(settings);
+            Debug.WriteLine($"[AppInteractionService] Added new directory: {folderPath}. Library refresh needed.");
+            return (true, $"Added directory: {Path.GetFileName(folderPath)}. Library refreshing...");
+        }
+        else
+        {
+            Debug.WriteLine($"[AppInteractionService] Directory already exists: {folderPath}");
+            return (false, "Directory already in library.");
+        }
+    }
+}
+</file>
+
+<file path="Source\Services\Application\ApplicationServicesBootstrapper.cs">
+using Sonorize.Models;
+using Sonorize.ViewModels;
+
+namespace Sonorize.Services;
+
+public class ApplicationServicesBootstrapper
+{
+    public MainWindowViewModel Bootstrap(SettingsService settingsService, ThemeColors currentCustomTheme)
+    {
+        // Create all services
+        var lastfmAuthenticatorService = new LastfmAuthenticatorService(settingsService);
+        var scrobblingService = new ScrobblingService(settingsService, lastfmAuthenticatorService);
+        var playbackService = new PlaybackService(scrobblingService);
+        var loopDataService = new LoopDataService();
+        var thumbnailService = new ThumbnailService();
+        var songFactory = new SongFactory(loopDataService); // Create SongFactory
+        var musicLibraryService = new MusicLibraryService(loopDataService, thumbnailService, songFactory); // Inject SongFactory
+        var waveformService = new WaveformService();
+
+        // Create MainWindowViewModel
+        var mainWindowViewModel = new MainWindowViewModel(
+            settingsService,
+            musicLibraryService,
+            playbackService,
+            currentCustomTheme,
+            waveformService,
+            loopDataService,
+            scrobblingService);
+
+        return mainWindowViewModel;
     }
 }
 </file>
@@ -6763,6 +5820,169 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
 }
 </file>
 
+<file path="Source\Services\Settings\SettingsChangeProcessorService.cs">
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading.Tasks;
+using Sonorize.Models;
+using Sonorize.ViewModels; // Required for LibraryViewModel
+
+namespace Sonorize.Services;
+
+public class SettingsChangeProcessorService
+{
+    private readonly LibraryViewModel _libraryViewModel;
+    private readonly ScrobblingService _scrobblingService;
+
+    public SettingsChangeProcessorService(LibraryViewModel libraryViewModel, ScrobblingService scrobblingService)
+    {
+        _libraryViewModel = libraryViewModel ?? throw new System.ArgumentNullException(nameof(libraryViewModel));
+        _scrobblingService = scrobblingService ?? throw new System.ArgumentNullException(nameof(scrobblingService));
+    }
+
+    public async Task<List<string>> ProcessChangesAndGetStatus(AppSettings oldSettings, AppSettings newSettings)
+    {
+        List<string> statusMessages = [];
+
+        // Directory changes
+        bool dirsActuallyChanged = !oldSettings.MusicDirectories.SequenceEqual(newSettings.MusicDirectories);
+        if (dirsActuallyChanged)
+        {
+            Debug.WriteLine("[SettingsChangeProcessor] Music directories changed. Reloading library.");
+            await _libraryViewModel.LoadLibraryAsync();
+            // Status text during library loading is handled by LibraryViewModel/MusicLibraryService
+        }
+
+        // Theme changes
+        bool themeActuallyChanged = oldSettings.PreferredThemeFileName != newSettings.PreferredThemeFileName;
+        if (themeActuallyChanged)
+        {
+            Debug.WriteLine("[SettingsChangeProcessor] Theme changed. Restart recommended.");
+            statusMessages.Add("Theme changed. Restart Sonorize for full effect.");
+        }
+
+        // Scrobbling settings changes
+        bool scrobbleSettingsActuallyChanged =
+            oldSettings.LastfmScrobblingEnabled != newSettings.LastfmScrobblingEnabled ||
+            oldSettings.LastfmUsername != newSettings.LastfmUsername ||
+            oldSettings.LastfmPassword != newSettings.LastfmPassword || // Used for change detection only
+            oldSettings.LastfmSessionKey != newSettings.LastfmSessionKey || // If session key is cleared/changed directly
+            oldSettings.ScrobbleThresholdPercentage != newSettings.ScrobbleThresholdPercentage ||
+            oldSettings.ScrobbleThresholdAbsoluteSeconds != newSettings.ScrobbleThresholdAbsoluteSeconds;
+
+        if (scrobbleSettingsActuallyChanged)
+        {
+            Debug.WriteLine("[SettingsChangeProcessor] Scrobbling settings changed. Refreshing ScrobblingService.");
+            _scrobblingService.RefreshSettings(); // This will re-evaluate credentials and session key
+
+            // Provide feedback based on the new state of scrobbling AFTER refresh
+            _scrobblingService.RefreshSettings(); // Call refresh again to ensure service state is based on latest
+            if (_scrobblingService.IsScrobblingEnabled && _scrobblingService.AreCredentialsEffectivelyConfigured)
+            {
+                // Check if already added "Theme changed..." to avoid overwriting it with a less critical message
+                if (!statusMessages.Any(m => m.Contains("Theme changed")))
+                {
+                    statusMessages.Add("Scrobbling enabled and configured.");
+                }
+                else
+                {
+                    // Append if theme change message exists
+                    var themeMsgIndex = statusMessages.FindIndex(m => m.Contains("Theme changed"));
+                    if (themeMsgIndex != -1) statusMessages[themeMsgIndex] += " Scrobbling enabled.";
+                    else statusMessages.Add("Scrobbling enabled and configured.");
+                }
+            }
+            else if (_scrobblingService.IsScrobblingEnabled && !_scrobblingService.AreCredentialsEffectivelyConfigured)
+            {
+                if (!statusMessages.Any(m => m.Contains("Theme changed")))
+                {
+                    statusMessages.Add("Scrobbling enabled, but not configured. Check settings.");
+                }
+                else
+                {
+                    var themeMsgIndex = statusMessages.FindIndex(m => m.Contains("Theme changed"));
+                    if (themeMsgIndex != -1) statusMessages[themeMsgIndex] += " Scrobbling enabled (check config).";
+                    else statusMessages.Add("Scrobbling enabled, but not configured. Check settings.");
+                }
+            }
+            else if (!_scrobblingService.IsScrobblingEnabled && oldSettings.LastfmScrobblingEnabled)
+            {
+                if (!statusMessages.Any(m => m.Contains("Theme changed")))
+                {
+                    statusMessages.Add("Scrobbling disabled.");
+                }
+                else
+                {
+                    var themeMsgIndex = statusMessages.FindIndex(m => m.Contains("Theme changed"));
+                    if (themeMsgIndex != -1) statusMessages[themeMsgIndex] += " Scrobbling disabled.";
+                    else statusMessages.Add("Scrobbling disabled.");
+                }
+
+            }
+        }
+
+        // If no specific messages were generated but changes happened, ensure status bar updates.
+        // This is implicitly handled if statusMessages is empty, MainWindowViewModel calls UpdateStatusBarText().
+
+        return statusMessages;
+    }
+}
+</file>
+
+<file path="Source\Services\Settings\SettingsService.cs">
+using System;
+using System.IO;
+using System.Text.Json;
+using Sonorize.Models;
+
+namespace Sonorize.Services;
+
+public class SettingsService
+{
+    private readonly string _settingsFilePath;
+
+    public SettingsService()
+    {
+        var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var sonorizeAppDataPath = Path.Combine(appDataPath, "Sonorize");
+        Directory.CreateDirectory(sonorizeAppDataPath); // Ensure directory exists
+        _settingsFilePath = Path.Combine(sonorizeAppDataPath, "settings.json");
+    }
+
+    public AppSettings LoadSettings()
+    {
+        try
+        {
+            if (File.Exists(_settingsFilePath))
+            {
+                var json = File.ReadAllText(_settingsFilePath);
+                return JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading settings: {ex.Message}");
+            // Fallback to default settings
+        }
+        return new AppSettings();
+    }
+
+    public void SaveSettings(AppSettings settings)
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(_settingsFilePath, json);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving settings: {ex.Message}");
+        }
+    }
+}
+</file>
+
 <file path="Source\ViewModels\LibraryManagement\ArtistAlbumCollectionManager.cs">
 using System;
 using System.Collections.Generic;
@@ -7321,6 +6541,1060 @@ public class TrackNavigationManager : ViewModelBase // Inherit for RelayCommand'
 
     // Optional: Expose an event if LibraryViewModel needs to react to selection changes from this manager
     // public event Action<Song?>? ManagedSelectionChanged;
+}
+</file>
+
+<file path="Source\ViewModels\Loop\LoopCandidateViewModel.cs">
+using System;
+using System.ComponentModel;
+using System.Windows.Input;
+using Sonorize.Models;
+using Sonorize.Services; // For PlaybackService (to get CurrentPosition)
+
+namespace Sonorize.ViewModels;
+
+public class LoopCandidateViewModel : ViewModelBase
+{
+    private readonly PlaybackService _playbackService;
+    private readonly Func<Song?> _getCurrentSongCallback; // To check if a song is loaded
+
+    private TimeSpan? _newLoopStartCandidate;
+    public TimeSpan? NewLoopStartCandidate
+    {
+        get => _newLoopStartCandidate;
+        set
+        {
+            if (SetProperty(ref _newLoopStartCandidate, value))
+            {
+                OnPropertyChanged(nameof(NewLoopStartCandidateDisplay));
+                // Notify parent VM or raise an event if CanSave in parent depends on this directly
+                ParentLoopEditor?.RaiseCanSaveLoopRegionChanged();
+            }
+        }
+    }
+
+    private TimeSpan? _newLoopEndCandidate;
+    public TimeSpan? NewLoopEndCandidate
+    {
+        get => _newLoopEndCandidate;
+        set
+        {
+            if (SetProperty(ref _newLoopEndCandidate, value))
+            {
+                OnPropertyChanged(nameof(NewLoopEndCandidateDisplay));
+                ParentLoopEditor?.RaiseCanSaveLoopRegionChanged();
+            }
+        }
+    }
+
+    public string NewLoopStartCandidateDisplay => NewLoopStartCandidate.HasValue ? $"{NewLoopStartCandidate.Value:mm\\:ss\\.ff}" : "Not set";
+    public string NewLoopEndCandidateDisplay => NewLoopEndCandidate.HasValue ? $"{NewLoopEndCandidate.Value:mm\\:ss\\.ff}" : "Not set";
+
+    public ICommand CaptureLoopStartCandidateCommand { get; }
+    public ICommand CaptureLoopEndCandidateCommand { get; }
+
+    // Reference to parent to notify about changes affecting CanSaveLoopRegion
+    // This is a simple way; alternatively, events could be used.
+    internal LoopEditorViewModel? ParentLoopEditor { get; set; }
+
+
+    public LoopCandidateViewModel(PlaybackService playbackService, Func<Song?> getCurrentSongCallback)
+    {
+        _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
+        _getCurrentSongCallback = getCurrentSongCallback ?? throw new ArgumentNullException(nameof(getCurrentSongCallback));
+
+        CaptureLoopStartCandidateCommand = new RelayCommand(
+            _ => NewLoopStartCandidate = _playbackService.CurrentPosition,
+            CanCaptureLoopPoint);
+
+        CaptureLoopEndCandidateCommand = new RelayCommand(
+            _ => NewLoopEndCandidate = _playbackService.CurrentPosition,
+            CanCaptureLoopPoint);
+
+        _playbackService.PropertyChanged += PlaybackService_PropertyChanged;
+    }
+
+    private void PlaybackService_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(PlaybackService.CurrentPlaybackStatus) || e.PropertyName == nameof(PlaybackService.CurrentSong))
+        {
+            RaiseCaptureCommandsCanExecuteChanged();
+        }
+    }
+
+    private bool CanCaptureLoopPoint(object? _) =>
+        _getCurrentSongCallback() != null &&
+        _playbackService.CurrentPlaybackStatus != PlaybackStateStatus.Stopped;
+
+    public void RaiseCaptureCommandsCanExecuteChanged()
+    {
+        (CaptureLoopStartCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (CaptureLoopEndCandidateCommand as RelayCommand)?.RaiseCanExecuteChanged();
+    }
+
+    public void ClearCandidates()
+    {
+        NewLoopStartCandidate = null;
+        NewLoopEndCandidate = null;
+    }
+
+    public void Dispose()
+    {
+        _playbackService.PropertyChanged -= PlaybackService_PropertyChanged;
+        ParentLoopEditor = null; // Clear reference
+    }
+}
+</file>
+
+<file path="Source\ViewModels\Loop\LoopEditorViewModel.cs">
+using System;
+using System.Diagnostics;
+using System.Windows.Input;
+using Avalonia.Threading; // Required for Dispatcher
+using Sonorize.Models;
+using Sonorize.Services;
+
+namespace Sonorize.ViewModels;
+
+public class LoopEditorViewModel : ViewModelBase, IDisposable
+{
+    private readonly PlaybackService _playbackService;
+    private readonly LoopDataService _loopDataService;
+    private Song? _currentSongInternal; // Holds the Song instance from PlaybackService.CurrentSong
+
+    public LoopCandidateViewModel CandidateLoop { get; }
+
+    private string _activeLoopDisplayText = "No loop defined.";
+    public string ActiveLoopDisplayText { get => _activeLoopDisplayText; set => SetProperty(ref _activeLoopDisplayText, value); }
+
+    private bool _isCurrentLoopActiveUiBinding;
+    public bool IsCurrentLoopActiveUiBinding
+    {
+        get => _isCurrentLoopActiveUiBinding;
+        set
+        {
+            if (SetProperty(ref _isCurrentLoopActiveUiBinding, value))
+            {
+                if (_currentSongInternal != null && _currentSongInternal.SavedLoop != null)
+                {
+                    _currentSongInternal.IsLoopActive = value;
+                    Debug.WriteLine($"[LoopEdVM] UI binding set IsLoopActive on Song '{_currentSongInternal.Title}' to: {value}");
+                }
+                else if (_currentSongInternal != null && _currentSongInternal.SavedLoop == null && value == true)
+                {
+                    _isCurrentLoopActiveUiBinding = false;
+                    OnPropertyChanged(nameof(IsCurrentLoopActiveUiBinding));
+                    Debug.WriteLine($"[LoopEdVM] Attempted to activate loop via UI, but no loop is defined for {_currentSongInternal.Title}.");
+                }
+            }
+        }
+    }
+
+    public bool CanSaveLoopRegion => _currentSongInternal != null
+                                     && CandidateLoop.NewLoopStartCandidate.HasValue
+                                     && CandidateLoop.NewLoopEndCandidate.HasValue
+                                     && CandidateLoop.NewLoopEndCandidate.Value > CandidateLoop.NewLoopStartCandidate.Value
+                                     && _currentSongInternal.Duration.TotalSeconds > 0
+                                     && CandidateLoop.NewLoopEndCandidate.Value <= _currentSongInternal.Duration
+                                     && CandidateLoop.NewLoopStartCandidate.Value >= TimeSpan.Zero;
+
+    // Delegate capture commands to LoopCandidateViewModel
+    public ICommand CaptureLoopStartCandidateCommand => CandidateLoop.CaptureLoopStartCandidateCommand;
+    public ICommand CaptureLoopEndCandidateCommand => CandidateLoop.CaptureLoopEndCandidateCommand;
+
+    public ICommand SaveLoopCommand { get; }
+    public ICommand ClearLoopCommand { get; }
+    public ICommand ToggleLoopActiveCommand { get; }
+    public ICommand WaveformSeekCommand { get; }
+
+
+    public LoopEditorViewModel(PlaybackService playbackService, LoopDataService loopDataService)
+    {
+        _playbackService = playbackService;
+        _loopDataService = loopDataService;
+
+        CandidateLoop = new LoopCandidateViewModel(playbackService, () => _currentSongInternal);
+        CandidateLoop.ParentLoopEditor = this; // Allow child to notify parent
+
+        SaveLoopCommand = new RelayCommand(SaveLoopAction, _ => CanSaveLoopRegion);
+        ClearLoopCommand = new RelayCommand(ClearSavedLoopAction, _ => _currentSongInternal?.SavedLoop != null);
+        ToggleLoopActiveCommand = new RelayCommand(ToggleCurrentSongLoopActive, _ => _currentSongInternal?.SavedLoop != null);
+        WaveformSeekCommand = new RelayCommand(
+            timeSpanObj => { if (timeSpanObj is TimeSpan ts && _currentSongInternal != null) _playbackService.Seek(ts); },
+            _ => _currentSongInternal != null);
+
+        _playbackService.PropertyChanged += PlaybackService_PropertyChanged;
+        UpdateStateForCurrentSong(_playbackService.CurrentSong);
+    }
+
+    internal void RaiseCanSaveLoopRegionChanged()
+    {
+        OnPropertyChanged(nameof(CanSaveLoopRegion));
+        (SaveLoopCommand as RelayCommand)?.RaiseCanExecuteChanged();
+    }
+
+    private void PlaybackService_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            switch (e.PropertyName)
+            {
+                case nameof(PlaybackService.CurrentSong):
+                    Debug.WriteLine($"[LoopEdVM] PlaybackService.CurrentSong changed to: {_playbackService.CurrentSong?.Title ?? "null"}. Updating loop state.");
+                    if (_currentSongInternal != null)
+                    {
+                        _currentSongInternal.PropertyChanged -= CurrentSong_PropertyChanged;
+                    }
+                    _currentSongInternal = _playbackService.CurrentSong;
+                    if (_currentSongInternal != null)
+                    {
+                        _currentSongInternal.PropertyChanged += CurrentSong_PropertyChanged;
+                    }
+                    UpdateStateForCurrentSong(_currentSongInternal);
+                    break;
+                case nameof(PlaybackService.CurrentPosition):
+                case nameof(PlaybackService.CurrentSongDuration):
+                    RaiseCanSaveLoopRegionChanged();
+                    CandidateLoop.RaiseCaptureCommandsCanExecuteChanged(); // Capture commands depend on playback status/song
+                    UpdateActiveLoopDisplayText();
+                    break;
+                case nameof(PlaybackService.CurrentPlaybackStatus):
+                    CandidateLoop.RaiseCaptureCommandsCanExecuteChanged();
+                    break;
+            }
+            // All commands might be affected by song or playback state changes
+            RaiseMainLoopCommandsCanExecuteChanged();
+        });
+    }
+
+    private void CurrentSong_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (sender is Song song && song == _currentSongInternal)
+            {
+                switch (e.PropertyName)
+                {
+                    case nameof(Song.SavedLoop):
+                        Debug.WriteLine($"[LoopEdVM] CurrentSong.SavedLoop changed for {song.Title}. Updating loop state.");
+                        UpdateStateForCurrentSong(song);
+                        break;
+                    case nameof(Song.IsLoopActive):
+                        Debug.WriteLine($"[LoopEdVM] CurrentSong.IsLoopActive changed to {song.IsLoopActive} for {song.Title}. Updating UI binding and persisting.");
+                        if (_isCurrentLoopActiveUiBinding != song.IsLoopActive)
+                        {
+                            _isCurrentLoopActiveUiBinding = song.IsLoopActive;
+                            OnPropertyChanged(nameof(IsCurrentLoopActiveUiBinding));
+                        }
+                        if (song.SavedLoop != null)
+                        {
+                            _loopDataService.UpdateLoopActiveState(song.FilePath, song.IsLoopActive);
+                        }
+                        UpdateActiveLoopDisplayText();
+                        break;
+                }
+            }
+        });
+    }
+
+    private void UpdateStateForCurrentSong(Song? song)
+    {
+        Debug.WriteLine($"[LoopEdVM] UpdateStateForCurrentSong called for: {song?.Title ?? "null"}");
+        if (song?.SavedLoop != null)
+        {
+            CandidateLoop.NewLoopStartCandidate = song.SavedLoop.Start;
+            CandidateLoop.NewLoopEndCandidate = song.SavedLoop.End;
+            IsCurrentLoopActiveUiBinding = song.IsLoopActive;
+        }
+        else
+        {
+            CandidateLoop.ClearCandidates();
+            IsCurrentLoopActiveUiBinding = false;
+        }
+        UpdateActiveLoopDisplayText();
+        RaiseCanSaveLoopRegionChanged();
+        RaiseMainLoopCommandsCanExecuteChanged();
+        CandidateLoop.RaiseCaptureCommandsCanExecuteChanged();
+    }
+
+    private void SaveLoopAction(object? param)
+    {
+        var currentSong = _currentSongInternal;
+        if (!CanSaveLoopRegion || currentSong == null || !CandidateLoop.NewLoopStartCandidate.HasValue || !CandidateLoop.NewLoopEndCandidate.HasValue)
+        {
+            Debug.WriteLine("[LoopEdVM] SaveLoopAction skipped: conditions not met.");
+            return;
+        }
+
+        var newLoop = new LoopRegion(CandidateLoop.NewLoopStartCandidate.Value, CandidateLoop.NewLoopEndCandidate.Value, "User Loop");
+        bool shouldBeActive = (currentSong.SavedLoop != null && currentSong.IsLoopActive) || currentSong.SavedLoop == null;
+
+        currentSong.SavedLoop = newLoop;
+        if (currentSong.IsLoopActive != shouldBeActive)
+        {
+            currentSong.IsLoopActive = shouldBeActive;
+        }
+        else
+        {
+            _loopDataService.SetLoop(currentSong.FilePath, newLoop.Start, newLoop.End, currentSong.IsLoopActive);
+        }
+        Debug.WriteLine($"[LoopEdVM] Loop saved for {currentSong.Title}. Start: {newLoop.Start}, End: {newLoop.End}, Active: {currentSong.IsLoopActive}");
+        UpdateStateForCurrentSong(currentSong);
+    }
+
+    private void ClearSavedLoopAction(object? param)
+    {
+        var currentSong = _currentSongInternal;
+        if (currentSong != null)
+        {
+            var filePath = currentSong.FilePath;
+            Debug.WriteLine($"[LoopEdVM] Clearing loop for {currentSong.Title}.");
+            currentSong.SavedLoop = null;
+            currentSong.IsLoopActive = false;
+            if (!string.IsNullOrEmpty(filePath))
+            {
+                _loopDataService.ClearLoop(filePath);
+            }
+        }
+        CandidateLoop.ClearCandidates();
+        UpdateStateForCurrentSong(currentSong);
+    }
+
+    private void ToggleCurrentSongLoopActive(object? parameter)
+    {
+        if (_currentSongInternal != null && _currentSongInternal.SavedLoop != null)
+        {
+            Debug.WriteLine($"[LoopEdVM] Toggling loop active state for {_currentSongInternal.Title}. Current: {_currentSongInternal.IsLoopActive}");
+            IsCurrentLoopActiveUiBinding = !_isCurrentLoopActiveUiBinding;
+        }
+    }
+
+    private void UpdateActiveLoopDisplayText()
+    {
+        var currentSong = _currentSongInternal;
+        if (currentSong?.SavedLoop != null)
+        {
+            var loop = currentSong.SavedLoop;
+            string activeStatus = currentSong.IsLoopActive ? " (Active)" : " (Inactive)";
+            ActiveLoopDisplayText = $"Loop: {loop.Start:mm\\:ss\\.f} - {loop.End:mm\\:ss\\.f}{activeStatus}";
+        }
+        else
+        {
+            ActiveLoopDisplayText = "No loop defined.";
+        }
+    }
+
+    public void RaiseMainLoopCommandsCanExecuteChanged()
+    {
+        (SaveLoopCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (ClearLoopCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (ToggleLoopActiveCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (WaveformSeekCommand as RelayCommand)?.RaiseCanExecuteChanged();
+    }
+
+    public void Dispose()
+    {
+        if (_currentSongInternal != null)
+        {
+            _currentSongInternal.PropertyChanged -= CurrentSong_PropertyChanged;
+        }
+        _playbackService.PropertyChanged -= PlaybackService_PropertyChanged;
+        CandidateLoop.Dispose(); // Dispose the child ViewModel
+        CandidateLoop.ParentLoopEditor = null; // Break cycle if any strict GC needs it
+    }
+}
+</file>
+
+<file path="Source\ViewModels\MainWindow\MainWindowViewModel.cs">
+using System;
+using System.Collections.Generic; // Added for List<string>
+using System.ComponentModel;
+using System.Diagnostics;
+using System.IO; // Required for Path.GetFullPath, Directory.Exists
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows.Input;
+using Avalonia.Controls;
+using Avalonia.Platform.Storage;
+using Avalonia.Threading;
+using Sonorize.Models;
+using Sonorize.Services;
+// Removed: using Sonorize.ViewModels.Status; // StatusBarTextProvider usage moved
+using Sonorize.ViewModels.LibraryManagement; // Required for LibraryDisplayModeService
+
+namespace Sonorize.ViewModels;
+
+public class MainWindowViewModel : ViewModelBase, IDisposable
+{
+    private readonly SettingsService _settingsService;
+    private readonly MusicLibraryService _musicLibraryService;
+    private readonly WaveformService _waveformService;
+    private readonly LoopDataService _loopDataService;
+    private readonly ScrobblingService _scrobblingService;
+
+    private readonly MainWindowViewModelOrchestrator _orchestrator;
+    private readonly ApplicationWorkflowManager _workflowManager; // New workflow manager
+    private readonly LibraryDisplayModeService _libraryDisplayModeService;
+
+
+    // Expose the Services directly for child VMs or public properties
+    public PlaybackService PlaybackService { get; }
+    public ThemeColors CurrentTheme { get; }
+
+    // Expose the child ViewModels
+    public LibraryViewModel Library { get; set; }
+    public LoopEditorViewModel LoopEditor { get; }
+    public PlaybackViewModel Playback { get; }
+    public AdvancedPanelViewModel AdvancedPanel { get; }
+    public string StatusBarText { get => field; set => SetProperty(ref field, value); } = "Welcome to Sonorize!";
+
+    public int ActiveTabIndex { get => field; set => SetProperty(ref field, value); } = 0;
+
+    public bool IsLoadingLibrary { get => Library.IsLoadingLibrary; }
+
+    public bool IsAdvancedPanelVisible
+    {
+        get => AdvancedPanel.IsVisible;
+        set
+        {
+            if (AdvancedPanel.IsVisible != value)
+            {
+                AdvancedPanel.IsVisible = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+    public ICommand ToggleAdvancedPanelCommand => AdvancedPanel.ToggleVisibilityCommand;
+
+
+    public ICommand LoadInitialDataCommand { get; }
+    public ICommand OpenSettingsCommand { get; }
+    public ICommand ExitCommand { get; }
+    public ICommand AddDirectoryAndRefreshCommand { get; }
+
+    public MainWindowViewModel(
+        SettingsService settingsService,
+        MusicLibraryService musicLibraryService,
+        PlaybackService playbackService,
+        ThemeColors theme,
+        WaveformService waveformService,
+        LoopDataService loopDataService,
+        ScrobblingService scrobblingService)
+    {
+        _settingsService = settingsService;
+        _musicLibraryService = musicLibraryService;
+        PlaybackService = playbackService;
+        CurrentTheme = theme;
+        _waveformService = waveformService;
+        _loopDataService = loopDataService;
+        _scrobblingService = scrobblingService;
+
+        _libraryDisplayModeService = new LibraryDisplayModeService(_settingsService);
+        Library = new LibraryViewModel(this, _settingsService, _musicLibraryService, _loopDataService, _libraryDisplayModeService);
+        Playback = new PlaybackViewModel(PlaybackService, _waveformService);
+        LoopEditor = new LoopEditorViewModel(PlaybackService, _loopDataService);
+        AdvancedPanel = new AdvancedPanelViewModel(Playback, Library);
+
+        // Instantiate the workflow manager, passing necessary dependencies
+        _workflowManager = new ApplicationWorkflowManager(
+            _settingsService,
+            _scrobblingService,
+            CurrentTheme,
+            Library,
+            Playback,
+            PlaybackService,
+            _loopDataService); // Pass LoopDataService, though ApplicationWorkflowManager might not use it directly currently
+
+        _orchestrator = new MainWindowViewModelOrchestrator(
+            Library,
+            Playback,
+            AdvancedPanel,
+            RaiseAllCommandsCanExecuteChanged,
+            UpdateStatusBarText,
+            (propertyName) => OnPropertyChanged(propertyName)
+        );
+
+        PlaybackService.PlaybackEndedNaturally += PlaybackService_PlaybackEndedNaturally;
+
+        LoadInitialDataCommand = new RelayCommand(async _ => await Library.LoadLibraryAsync(), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
+        OpenSettingsCommand = new RelayCommand(async owner => await OpenSettingsDialogAsync(owner), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
+        ExitCommand = new RelayCommand(_ => Environment.Exit(0));
+        AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefreshAsync(owner), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
+
+        Dispatcher.UIThread.InvokeAsync(UpdateAllUIDependentStates);
+    }
+
+    private void PlaybackService_PlaybackEndedNaturally(object? sender, EventArgs e)
+    {
+        Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally event received. Delegating to WorkflowManager.");
+        _workflowManager.HandlePlaybackEndedNaturally();
+        Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally handler completed after delegation.");
+    }
+
+    private void UpdateAllUIDependentStates()
+    {
+        OnPropertyChanged(nameof(IsLoadingLibrary));
+        OnPropertyChanged(nameof(Playback.CurrentSong));
+        OnPropertyChanged(nameof(Playback.HasCurrentSong));
+        OnPropertyChanged(nameof(Playback.CurrentPlaybackStatus));
+        OnPropertyChanged(nameof(Playback.IsPlaying));
+        OnPropertyChanged(nameof(Playback.CurrentTimeDisplay));
+        OnPropertyChanged(nameof(Playback.TotalTimeDisplay));
+        OnPropertyChanged(nameof(IsAdvancedPanelVisible));
+        OnPropertyChanged(nameof(ActiveTabIndex));
+
+        UpdateStatusBarText();
+        RaiseAllCommandsCanExecuteChanged();
+    }
+
+    public void RaiseAllCommandsCanExecuteChanged()
+    {
+        Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            (LoadInitialDataCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (OpenSettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (ExitCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
+
+            Library.RaiseLibraryCommandsCanExecuteChanged();
+            Playback.RaisePlaybackCommandCanExecuteChanged();
+            LoopEditor.RaiseMainLoopCommandsCanExecuteChanged();
+            LoopEditor.CandidateLoop.RaiseCaptureCommandsCanExecuteChanged();
+            (AdvancedPanel.ToggleVisibilityCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        });
+    }
+
+    private void UpdateStatusBarText()
+    {
+        Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            StatusBarText = _workflowManager.GetCurrentStatusText(LoopEditor);
+        });
+    }
+
+    private async Task OpenSettingsDialogAsync(object? ownerWindow)
+    {
+        if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
+        IsAdvancedPanelVisible = false;
+
+        var (statusMessages, settingsChanged) = await _workflowManager.HandleOpenSettingsDialogAsync(owner);
+
+        if (settingsChanged)
+        {
+            if (statusMessages.Any())
+            {
+                StatusBarText = string.Join(" | ", statusMessages);
+            }
+            else
+            {
+                UpdateStatusBarText();
+            }
+        }
+        else
+        {
+            UpdateStatusBarText();
+        }
+        RaiseAllCommandsCanExecuteChanged();
+    }
+
+    private async Task AddMusicDirectoryAndRefreshAsync(object? ownerWindow)
+    {
+        if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
+        IsAdvancedPanelVisible = false;
+
+        var (directoryAdded, statusMessage) = await _workflowManager.HandleAddMusicDirectoryAsync(owner);
+
+        StatusBarText = statusMessage;
+
+        if (directoryAdded)
+        {
+            await Library.LoadLibraryAsync();
+        }
+        else
+        {
+            UpdateStatusBarText();
+        }
+        RaiseAllCommandsCanExecuteChanged();
+    }
+
+    public void Dispose()
+    {
+        if (PlaybackService != null)
+        {
+            PlaybackService.PlaybackEndedNaturally -= PlaybackService_PlaybackEndedNaturally;
+        }
+        _orchestrator?.Dispose();
+        _workflowManager?.Dispose(); // Dispose the new manager
+        // _libraryPlaybackLinkService was moved into _workflowManager
+        Library?.Dispose();
+        Playback?.Dispose();
+        AdvancedPanel?.Dispose();
+        LoopEditor?.Dispose();
+    }
+}
+</file>
+
+<file path="Source\ViewModels\MainWindow\MainWindowViewModelOrchestrator.cs">
+using System;
+using System.ComponentModel;
+using Sonorize.ViewModels;
+
+namespace Sonorize.ViewModels;
+
+internal class MainWindowViewModelOrchestrator : IDisposable
+{
+    private readonly LibraryViewModel _libraryViewModel;
+    private readonly PlaybackViewModel _playbackViewModel;
+    private readonly AdvancedPanelViewModel _advancedPanelViewModel;
+
+    private readonly Action _raiseAllCommandsCanExecuteChangedCallback;
+    private readonly Action _updateStatusBarTextCallback;
+    private readonly Action<string> _notifyMainWindowVMPropertyChangedCallback;
+
+    public MainWindowViewModelOrchestrator(
+        LibraryViewModel libraryViewModel,
+        PlaybackViewModel playbackViewModel,
+        AdvancedPanelViewModel advancedPanelViewModel,
+        Action raiseAllCommandsCanExecuteChangedCallback,
+        Action updateStatusBarTextCallback,
+        Action<string> notifyMainWindowVMPropertyChangedCallback)
+    {
+        _libraryViewModel = libraryViewModel ?? throw new ArgumentNullException(nameof(libraryViewModel));
+        _playbackViewModel = playbackViewModel ?? throw new ArgumentNullException(nameof(playbackViewModel));
+        _advancedPanelViewModel = advancedPanelViewModel ?? throw new ArgumentNullException(nameof(advancedPanelViewModel));
+        _raiseAllCommandsCanExecuteChangedCallback = raiseAllCommandsCanExecuteChangedCallback ?? throw new ArgumentNullException(nameof(raiseAllCommandsCanExecuteChangedCallback));
+        _updateStatusBarTextCallback = updateStatusBarTextCallback ?? throw new ArgumentNullException(nameof(updateStatusBarTextCallback));
+        _notifyMainWindowVMPropertyChangedCallback = notifyMainWindowVMPropertyChangedCallback ?? throw new ArgumentNullException(nameof(notifyMainWindowVMPropertyChangedCallback));
+
+        SubscribeToEvents();
+    }
+
+    private void SubscribeToEvents()
+    {
+        _libraryViewModel.PropertyChanged += Library_PropertyChanged;
+        _playbackViewModel.PropertyChanged += Playback_PropertyChanged;
+        if (_playbackViewModel.ModeControls != null)
+        {
+            _playbackViewModel.ModeControls.PropertyChanged += PlaybackModeControls_PropertyChanged;
+        }
+        if (_playbackViewModel.WaveformDisplay != null)
+        {
+            _playbackViewModel.WaveformDisplay.PropertyChanged += PlaybackWaveformDisplay_PropertyChanged;
+        }
+        _advancedPanelViewModel.PropertyChanged += AdvancedPanel_PropertyChanged;
+    }
+
+    private void UnsubscribeFromEvents()
+    {
+        _libraryViewModel.PropertyChanged -= Library_PropertyChanged;
+        _playbackViewModel.PropertyChanged -= Playback_PropertyChanged;
+        if (_playbackViewModel.ModeControls != null)
+        {
+            _playbackViewModel.ModeControls.PropertyChanged -= PlaybackModeControls_PropertyChanged;
+        }
+        if (_playbackViewModel.WaveformDisplay != null)
+        {
+            _playbackViewModel.WaveformDisplay.PropertyChanged -= PlaybackWaveformDisplay_PropertyChanged;
+        }
+        _advancedPanelViewModel.PropertyChanged -= AdvancedPanel_PropertyChanged;
+    }
+
+    private void PlaybackWaveformDisplay_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(WaveformDisplayViewModel.IsWaveformLoading))
+        {
+            _raiseAllCommandsCanExecuteChangedCallback();
+        }
+    }
+
+    private void AdvancedPanel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(AdvancedPanelViewModel.IsVisible))
+        {
+            _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.IsAdvancedPanelVisible));
+            _raiseAllCommandsCanExecuteChangedCallback();
+        }
+    }
+
+    private void Library_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        switch (e.PropertyName)
+        {
+            case nameof(LibraryViewModel.SelectedSong):
+                _raiseAllCommandsCanExecuteChangedCallback();
+                break;
+            case nameof(LibraryViewModel.IsLoadingLibrary):
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.IsLoadingLibrary));
+                _raiseAllCommandsCanExecuteChangedCallback();
+                _updateStatusBarTextCallback();
+                break;
+            case nameof(LibraryViewModel.LibraryStatusText):
+                _updateStatusBarTextCallback();
+                break;
+        }
+    }
+
+    private void Playback_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        switch (e.PropertyName)
+        {
+            case nameof(PlaybackViewModel.CurrentSong):
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentSong)); // Or just rely on MainWindowViewModel.Playback being the source
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.HasCurrentSong));
+                _raiseAllCommandsCanExecuteChangedCallback();
+                _updateStatusBarTextCallback();
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentTimeDisplay));
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.TotalTimeDisplay));
+                break;
+            case nameof(PlaybackViewModel.CurrentPlaybackStatus):
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentPlaybackStatus));
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.IsPlaying));
+                _updateStatusBarTextCallback();
+                _raiseAllCommandsCanExecuteChangedCallback();
+                break;
+            case nameof(PlaybackViewModel.CurrentPosition):
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentPosition));
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentPositionSeconds));
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentTimeDisplay));
+                break;
+            case nameof(PlaybackViewModel.CurrentSongDuration):
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentSongDuration));
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentSongDurationSeconds));
+                _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.TotalTimeDisplay));
+                _raiseAllCommandsCanExecuteChangedCallback();
+                break;
+        }
+    }
+
+    private void PlaybackModeControls_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        switch (e.PropertyName)
+        {
+            case nameof(PlaybackModeViewModel.ShuffleEnabled):
+            case nameof(PlaybackModeViewModel.RepeatMode):
+                _playbackViewModel.RaisePlaybackCommandCanExecuteChanged(); // PlaybackVM raises its own commands
+                _updateStatusBarTextCallback();
+                break;
+        }
+    }
+
+    public void Dispose()
+    {
+        UnsubscribeFromEvents();
+        GC.SuppressFinalize(this);
+    }
+}
+</file>
+
+<file path="Source\ViewModels\Settings\SettingsPersistenceManager.cs">
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using Sonorize.Models;
+using Sonorize.Services;
+
+namespace Sonorize.ViewModels;
+
+public class SettingsPersistenceManager
+{
+    private readonly SettingsService _settingsService;
+
+    public SettingsPersistenceManager(SettingsService settingsService)
+    {
+        _settingsService = settingsService ?? throw new System.ArgumentNullException(nameof(settingsService));
+    }
+
+    public bool ApplyAndSaveChanges(
+        AppSettings settingsOnDisk,
+        IEnumerable<string> currentUiMusicDirs,
+        IEnumerable<string> initialUiMusicDirs, // Used to detect if UI list changed from its initial state
+        string? currentUiSelectedTheme,
+        LastfmSettingsViewModel currentUiLastfmSettings)
+    {
+        AppSettings newSettingsToSave = new();
+
+        // Preserve settings not managed by SettingsViewModel's UI by copying from disk state
+        newSettingsToSave.LibraryViewModePreference = settingsOnDisk.LibraryViewModePreference;
+        newSettingsToSave.ArtistViewModePreference = settingsOnDisk.ArtistViewModePreference;
+        newSettingsToSave.AlbumViewModePreference = settingsOnDisk.AlbumViewModePreference;
+        newSettingsToSave.LastfmSessionKey = settingsOnDisk.LastfmSessionKey;
+        // Add any other unmanaged settings here if AppSettings grows
+
+        bool actualChangesMade = false;
+
+        // Music Directories
+        // A change is made if the current UI list is different from its initial state OR different from disk state
+        if (!initialUiMusicDirs.SequenceEqual(currentUiMusicDirs) ||
+            !settingsOnDisk.MusicDirectories.SequenceEqual(currentUiMusicDirs))
+        {
+            newSettingsToSave.MusicDirectories = new List<string>(currentUiMusicDirs);
+            actualChangesMade = true;
+            Debug.WriteLine($"[SettingsPersistence] Music directories changed. Count: {newSettingsToSave.MusicDirectories.Count}");
+        }
+        else
+        {
+            newSettingsToSave.MusicDirectories = new List<string>(settingsOnDisk.MusicDirectories);
+        }
+
+        // Theme
+        if (settingsOnDisk.PreferredThemeFileName != currentUiSelectedTheme)
+        {
+            newSettingsToSave.PreferredThemeFileName = currentUiSelectedTheme;
+            actualChangesMade = true;
+            Debug.WriteLine($"[SettingsPersistence] Theme changed to: {currentUiSelectedTheme}");
+        }
+        else
+        {
+            newSettingsToSave.PreferredThemeFileName = settingsOnDisk.PreferredThemeFileName;
+        }
+
+        // Last.fm Settings - Compare UI state against disk state for change detection
+        if (settingsOnDisk.LastfmScrobblingEnabled != currentUiLastfmSettings.LastfmScrobblingEnabled) actualChangesMade = true;
+        if (settingsOnDisk.LastfmUsername != currentUiLastfmSettings.LastfmUsername) actualChangesMade = true;
+        // Password comparison: change if UI has a new password (and it's different from disk, though disk doesn't store it long-term)
+        // Or, more simply, if the password field in UI was touched and is not null.
+        // The original logic was: settingsOnDisk.LastfmPassword != LastfmSettings.LastfmPassword && !string.IsNullOrEmpty(LastfmSettings.LastfmPassword)
+        // This implies if LastfmSettings.LastfmPassword is set, it's a change (as disk password is nulled after session key).
+        if (!string.IsNullOrEmpty(currentUiLastfmSettings.LastfmPassword)) actualChangesMade = true; // If a password was entered, consider it a change for re-auth.
+        if (settingsOnDisk.ScrobbleThresholdPercentage != currentUiLastfmSettings.ScrobbleThresholdPercentage) actualChangesMade = true;
+        if (settingsOnDisk.ScrobbleThresholdAbsoluteSeconds != currentUiLastfmSettings.ScrobbleThresholdAbsoluteSeconds) actualChangesMade = true;
+
+        // Apply UI Last.fm settings to newSettingsToSave object
+        currentUiLastfmSettings.UpdateAppSettings(newSettingsToSave);
+        if (actualChangesMade)
+        {
+            // Log Last.fm specific changes if any were part of overall changes
+            Debug.WriteLine($"[SettingsPersistence] Last.fm settings potentially updated in newSettingsToSave: " +
+                          $"Scrobbling={newSettingsToSave.LastfmScrobblingEnabled}, " +
+                          $"User={newSettingsToSave.LastfmUsername}, " +
+                          $"PassLen={(newSettingsToSave.LastfmPassword?.Length ?? 0)}, " +
+                          $"Thresh%={newSettingsToSave.ScrobbleThresholdPercentage}, " +
+                          $"ThreshAbsSec={newSettingsToSave.ScrobbleThresholdAbsoluteSeconds}");
+        }
+
+
+        if (actualChangesMade)
+        {
+            _settingsService.SaveSettings(newSettingsToSave);
+            Debug.WriteLine("[SettingsPersistence] Actual changes detected and settings saved.");
+            return true;
+        }
+
+        Debug.WriteLine("[SettingsPersistence] No actual changes to persist.");
+        return false;
+    }
+}
+</file>
+
+<file path="Source\ViewModels\Settings\SettingsViewModel.cs">
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows.Input;
+using Avalonia.Controls;
+using Avalonia.Platform.Storage;
+using Sonorize.Models; // Required for AppSettings type
+using Sonorize.Services;
+
+namespace Sonorize.ViewModels;
+
+public enum SettingsViewSection
+{
+    Directories,
+    Theme,
+    Scrobbling
+}
+
+public class SettingsViewModel : ViewModelBase
+{
+    private readonly SettingsService _settingsService;
+    private readonly ThemeService _themeService;
+    private readonly SettingsPersistenceManager _settingsPersistenceManager;
+
+    public ObservableCollection<string> MusicDirectories { get; } = new();
+    public List<string> InitialMusicDirectories { get; private set; }
+
+    public string? SelectedDirectory
+    {
+        get;
+
+        set => SetProperty(ref field, value, nameof(CanRemoveDirectory));
+    }
+
+    public ObservableCollection<string> AvailableThemes { get; } = new();
+
+    public string? SelectedThemeFile
+    {
+        get;
+
+        set
+        {
+            if (!SetProperty(ref field, value))
+            {
+                return;
+            }
+            MarkSettingsChanged();
+        }
+    }
+
+    // Encapsulated Last.fm Settings
+    public LastfmSettingsViewModel LastfmSettings { get; }
+
+
+    public bool SettingsChanged { get; private set; } = false;
+
+    private SettingsViewSection _currentSettingsViewSection = SettingsViewSection.Directories;
+    public SettingsViewSection CurrentSettingsViewSection
+    {
+        get => _currentSettingsViewSection;
+        set => SetProperty(ref _currentSettingsViewSection, value);
+    }
+
+    public ICommand AddDirectoryCommand { get; }
+    public ICommand RemoveDirectoryCommand { get; }
+    public ICommand SaveAndCloseCommand { get; }
+    public ICommand ShowDirectoriesSettingsCommand { get; }
+    public ICommand ShowThemeSettingsCommand { get; }
+    public ICommand ShowScrobblingSettingsCommand { get; }
+
+
+    public bool CanRemoveDirectory => SelectedDirectory != null;
+
+    public SettingsViewModel(SettingsService settingsService)
+    {
+        _settingsService = settingsService;
+        _themeService = new ThemeService(null); // ThemeService used for GetAvailableThemeFiles
+        _settingsPersistenceManager = new SettingsPersistenceManager(settingsService);
+
+        var settings = _settingsService.LoadSettings();
+        InitialMusicDirectories = new List<string>(settings.MusicDirectories);
+
+        foreach (var dir in settings.MusicDirectories)
+        {
+            MusicDirectories.Add(dir);
+        }
+
+        foreach (var themeFile in _themeService.GetAvailableThemeFiles())
+        {
+            AvailableThemes.Add(themeFile);
+        }
+
+        SelectedThemeFile = settings.PreferredThemeFileName ?? ThemeService.DefaultThemeFileName;
+        if (!AvailableThemes.Contains(SelectedThemeFile) && AvailableThemes.Any())
+        {
+            SelectedThemeFile = AvailableThemes.First();
+        }
+
+        // Initialize Last.fm settings module
+        LastfmSettings = new LastfmSettingsViewModel();
+        LastfmSettings.LoadFromSettings(settings);
+        LastfmSettings.PropertyChanged += (s, e) => MarkSettingsChanged();
+
+
+        SettingsChanged = false; // Initial state is unchanged
+
+        AddDirectoryCommand = new RelayCommand(async owner => await AddDirectory(owner as Window));
+        RemoveDirectoryCommand = new RelayCommand(RemoveSelectedDirectory, _ => CanRemoveDirectory);
+        SaveAndCloseCommand = new RelayCommand(SaveSettings);
+
+        ShowDirectoriesSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Directories);
+        ShowThemeSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Theme);
+        ShowScrobblingSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Scrobbling);
+
+
+        PropertyChanged += (s, e) =>
+        {
+            if (e.PropertyName == nameof(SelectedDirectory))
+            {
+                (RemoveDirectoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            }
+            // Changes to SelectedThemeFile already call MarkSettingsChanged in their setter
+        };
+        MusicDirectories.CollectionChanged += (s, e) => MarkSettingsChanged();
+    }
+
+    private void MarkSettingsChanged()
+    {
+        if (!SettingsChanged)
+        {
+            SettingsChanged = true;
+            Debug.WriteLine("[SettingsVM] Settings marked as changed (UI interaction).");
+        }
+    }
+
+
+    private async Task AddDirectory(Window? owner)
+    {
+        if (owner?.StorageProvider == null)
+        {
+            Debug.WriteLine("StorageProvider is not available.");
+            return;
+        }
+
+        var options = new FolderPickerOpenOptions
+        {
+            Title = "Select Music Directory",
+            AllowMultiple = false
+        };
+
+        var result = await owner.StorageProvider.OpenFolderPickerAsync(options);
+
+        if (result != null && result.Count > 0)
+        {
+            var folder = result.FirstOrDefault();
+            if (folder == null) return;
+
+            var path = folder.Path.LocalPath;
+            if (string.IsNullOrEmpty(path) || MusicDirectories.Contains(path)) return;
+
+            MusicDirectories.Add(path);
+            // MarkSettingsChanged() is called by CollectionChanged handler
+        }
+    }
+
+    private void RemoveSelectedDirectory(object? parameter)
+    {
+        if (SelectedDirectory == null) return;
+
+        MusicDirectories.Remove(SelectedDirectory);
+        SelectedDirectory = null;
+        // MarkSettingsChanged() is called by CollectionChanged handler
+    }
+
+    private void SaveSettings(object? parameter)
+    {
+        AppSettings settingsOnDisk = _settingsService.LoadSettings();
+
+        bool changesPersisted = _settingsPersistenceManager.ApplyAndSaveChanges(
+            settingsOnDisk,
+            this.MusicDirectories,
+            this.InitialMusicDirectories,
+            this.SelectedThemeFile,
+            this.LastfmSettings
+        );
+
+        if (changesPersisted)
+        {
+            // Update the baseline for future comparisons if changes were actually saved
+            this.InitialMusicDirectories = new List<string>(this.MusicDirectories);
+            // SettingsChanged flag is used by ApplicationInteractionService to determine if post-save processing is needed.
+            // If ApplyAndSaveChanges persisted anything, then SettingsChanged should be true.
+            // If MarkSettingsChanged() was called due to UI interaction but no actual changes were persisted,
+            // then SettingsChanged should reflect that no *persistent* change happened.
+            this.SettingsChanged = true;
+            Debug.WriteLine("[SettingsVM] Changes were persisted by SettingsPersistenceManager.");
+        }
+        else
+        {
+            // If no changes were persisted, ensure SettingsChanged reflects this,
+            // even if UI interactions previously set it to true.
+            // This is important because SettingsChanged is checked *after* this method by the caller.
+            this.SettingsChanged = false;
+            Debug.WriteLine("[SettingsVM] No changes were persisted by SettingsPersistenceManager.");
+        }
+    }
 }
 </file>
 

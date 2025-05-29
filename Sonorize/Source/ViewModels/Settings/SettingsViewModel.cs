@@ -11,6 +11,13 @@ using Sonorize.Services;
 
 namespace Sonorize.ViewModels;
 
+public enum SettingsViewSection
+{
+    Directories,
+    Theme,
+    Scrobbling
+}
+
 public class SettingsViewModel : ViewModelBase
 {
     private readonly SettingsService _settingsService;
@@ -49,9 +56,20 @@ public class SettingsViewModel : ViewModelBase
 
     public bool SettingsChanged { get; private set; } = false;
 
+    private SettingsViewSection _currentSettingsViewSection = SettingsViewSection.Directories;
+    public SettingsViewSection CurrentSettingsViewSection
+    {
+        get => _currentSettingsViewSection;
+        set => SetProperty(ref _currentSettingsViewSection, value);
+    }
+
     public ICommand AddDirectoryCommand { get; }
     public ICommand RemoveDirectoryCommand { get; }
     public ICommand SaveAndCloseCommand { get; }
+    public ICommand ShowDirectoriesSettingsCommand { get; }
+    public ICommand ShowThemeSettingsCommand { get; }
+    public ICommand ShowScrobblingSettingsCommand { get; }
+
 
     public bool CanRemoveDirectory => SelectedDirectory != null;
 
@@ -91,6 +109,11 @@ public class SettingsViewModel : ViewModelBase
         AddDirectoryCommand = new RelayCommand(async owner => await AddDirectory(owner as Window));
         RemoveDirectoryCommand = new RelayCommand(RemoveSelectedDirectory, _ => CanRemoveDirectory);
         SaveAndCloseCommand = new RelayCommand(SaveSettings);
+
+        ShowDirectoriesSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Directories);
+        ShowThemeSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Theme);
+        ShowScrobblingSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Scrobbling);
+
 
         PropertyChanged += (s, e) =>
         {
