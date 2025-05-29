@@ -28,7 +28,6 @@ public class MainWindowViewModel : ViewModelBase
     private readonly PlaybackFlowManagerService _playbackFlowManagerService;
     private readonly ApplicationInteractionService _applicationInteractionService; // Added
     private readonly LibraryPlaybackLinkService _libraryPlaybackLinkService; // Added
-    private readonly MainWindowViewModelCoordinator _viewModelCoordinator; // Added
 
     // Expose the Services directly for child VMs or public properties
     public PlaybackService PlaybackService { get; }
@@ -104,11 +103,20 @@ public class MainWindowViewModel : ViewModelBase
         _applicationInteractionService = new ApplicationInteractionService(
             _settingsService,
             _settingsChangeProcessorService,
-            CurrentTheme);
+            CurrentTheme); // Pass dependencies to the new service
         _libraryPlaybackLinkService = new LibraryPlaybackLinkService(Library, PlaybackService, Playback);
 
-        // Instantiate the coordinator to handle event subscriptions and subsequent logic
-        _viewModelCoordinator = new MainWindowViewModelCoordinator(this, Library, Playback, AdvancedPanel, PlaybackService, _playbackFlowManagerService);
+
+        Library.PropertyChanged += Library_PropertyChanged;
+        Playback.PropertyChanged += Playback_PropertyChanged;
+        // Listen to PropertyChanged on Playback.WaveformDisplay as well
+        if (Playback.WaveformDisplay != null)
+        {
+            Playback.WaveformDisplay.PropertyChanged += PlaybackWaveformDisplay_PropertyChanged;
+        }
+        AdvancedPanel.PropertyChanged += AdvancedPanel_PropertyChanged; // Listen to changes from AdvancedPanelVM
+
+        PlaybackService.PlaybackEndedNaturally += PlaybackService_PlaybackEndedNaturally;
 
         LoadInitialDataCommand = new RelayCommand(async _ => await Library.LoadLibraryAsync(), _ => !Library.IsLoadingLibrary);
         OpenSettingsCommand = new RelayCommand(async owner => await OpenSettingsDialogAsync(owner), _ => !Library.IsLoadingLibrary);
@@ -116,6 +124,100 @@ public class MainWindowViewModel : ViewModelBase
         AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefreshAsync(owner), _ => !Library.IsLoadingLibrary);
 
         UpdateAllUIDependentStates();
+    }
+
+    private void PlaybackWaveformDisplay_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(WaveformDisplayViewModel.IsWaveformLoading))
+        {
+            // If IsWaveformLoading changes, it can affect CanExecute of ToggleAdvancedPanelCommand
+            RaiseAllCommandsCanExecuteChanged();
+        }
+        // If UI needs to be notified about Playback.WaveformDisplay.WaveformRenderData changes from MainWindowViewModel,
+        // handle it here. However, direct binding to Playback.WaveformDisplay.WaveformRenderData is preferred.
+    }
+
+
+    private void AdvancedPanel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(AdvancedPanelViewModel.IsVisible))
+        {
+            // Propagate the change to the pass-through property if direct binding to AdvancedPanel.IsVisible isn't used everywhere
+            OnPropertyChanged(nameof(IsAdvancedPanelVisible));
+            // Command CanExecute for ToggleAdvancedPanelCommand is handled within AdvancedPanelViewModel
+            // but if MainWindowViewModel had other commands depending on IsAdvancedPanelVisible, they'd be updated here.
+            RaiseAllCommandsCanExecuteChanged(); // For safety, as it might affect other command states indirectly
+        }
+    }
+
+    private void PlaybackService_PlaybackEndedNaturally(object? sender, EventArgs e)
+    {
+        Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally event received. Delegating to PlaybackFlowManagerService.");
+        _playbackFlowManagerService.HandlePlaybackEndedNaturally();
+        Debug.WriteLine("[MainVM] PlaybackService_PlaybackEndedNaturally handler completed after delegation.");
+    }
+
+    private void Library_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            switch (e.PropertyName)
+            {
+                case nameof(Library.SelectedSong):
+                    // Logic for playing selected song is now handled by LibraryPlaybackLinkService
+                    RaiseAllCommandsCanExecuteChanged();
+                    break;
+                case nameof(Library.IsLoadingLibrary):
+                    OnPropertyChanged(nameof(IsLoadingLibrary));
+                    RaiseAllCommandsCanExecuteChanged();
+                    UpdateStatusBarText();
+                    break;
+                case nameof(Library.LibraryStatusText):
+                    UpdateStatusBarText();
+                    break;
+            }
+        });
+    }
+
+    private void Playback_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            switch (e.PropertyName)
+            {
+                case nameof(PlaybackViewModel.CurrentSong): // Property on PlaybackViewModel
+                    OnPropertyChanged(nameof(Playback.CurrentSong)); // Notify MainWindowViewModel listeners if any
+                    OnPropertyChanged(nameof(Playback.HasCurrentSong));
+                    // Logic for clearing Library.SelectedSong is now handled by LibraryPlaybackLinkService
+                    RaiseAllCommandsCanExecuteChanged();
+                    UpdateStatusBarText();
+                    OnPropertyChanged(nameof(Playback.CurrentTimeDisplay));
+                    OnPropertyChanged(nameof(Playback.TotalTimeDisplay));
+                    break;
+                case nameof(PlaybackViewModel.CurrentPlaybackStatus):
+                    OnPropertyChanged(nameof(Playback.CurrentPlaybackStatus));
+                    OnPropertyChanged(nameof(Playback.IsPlaying));
+                    UpdateStatusBarText();
+                    RaiseAllCommandsCanExecuteChanged();
+                    break;
+                case nameof(PlaybackViewModel.CurrentPosition):
+                    OnPropertyChanged(nameof(Playback.CurrentPosition));
+                    OnPropertyChanged(nameof(Playback.CurrentPositionSeconds));
+                    OnPropertyChanged(nameof(Playback.CurrentTimeDisplay));
+                    break;
+                case nameof(PlaybackViewModel.CurrentSongDuration):
+                    OnPropertyChanged(nameof(Playback.CurrentSongDuration));
+                    OnPropertyChanged(nameof(Playback.CurrentSongDurationSeconds));
+                    OnPropertyChanged(nameof(Playback.TotalTimeDisplay));
+                    RaiseAllCommandsCanExecuteChanged();
+                    break;
+                case nameof(PlaybackViewModel.ShuffleEnabled):
+                case nameof(PlaybackViewModel.RepeatMode):
+                    Playback.RaisePlaybackCommandCanExecuteChanged(); // PlaybackVM commands might depend on these
+                    UpdateStatusBarText();
+                    break;
+            }
+        });
     }
 
     private void UpdateAllUIDependentStates()
@@ -144,7 +246,7 @@ public class MainWindowViewModel : ViewModelBase
     }
 
 
-    internal void UpdateStatusBarText() // Made internal for Coordinator access if needed, or keep public
+    private void UpdateStatusBarText()
     {
         StatusBarText = _statusBarTextProvider.GetCurrentStatusText();
     }
@@ -191,13 +293,4 @@ public class MainWindowViewModel : ViewModelBase
             UpdateStatusBarText();
         }
     }
-
-    protected override void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string? propertyName = null)
-    {
-        base.OnPropertyChanged(propertyName);
-    }
-
-    // Dispose the coordinator if MainWindowViewModel is disposable
-    // For simplicity, assuming ViewModelBase handles IDisposable pattern if needed, or adding it here.
-    // public void Dispose() { _viewModelCoordinator?.Dispose(); }
 }
