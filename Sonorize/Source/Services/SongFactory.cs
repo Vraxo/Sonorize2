@@ -31,6 +31,9 @@ public class SongFactory
             Title = Path.GetFileNameWithoutExtension(filePath), // Default title
             Artist = "Unknown Artist",                         // Default artist
             Album = "Unknown Album",                           // Default album
+            Genre = "Unknown Genre",                           // Default genre
+            TrackNumber = 0,                                   // Default track number
+            Year = 0,                                          // Default year
             Duration = TimeSpan.Zero,                          // Default duration
             Thumbnail = defaultThumbnail                       // Initial default thumbnail
         };
@@ -47,6 +50,13 @@ public class SongFactory
 
             if (!string.IsNullOrWhiteSpace(tagFile.Tag.Album)) song.Album = tagFile.Tag.Album;
             if (tagFile.Properties.Duration > TimeSpan.Zero) song.Duration = tagFile.Properties.Duration;
+
+            if (tagFile.Tag.Genres.Length > 0 && !string.IsNullOrWhiteSpace(tagFile.Tag.Genres[0]))
+                song.Genre = tagFile.Tag.Genres[0];
+
+            song.TrackNumber = tagFile.Tag.Track;
+            song.Year = tagFile.Tag.Year;
+
         }
         catch (CorruptFileException cfe)
         {

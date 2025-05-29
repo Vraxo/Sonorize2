@@ -93,15 +93,19 @@ public class MainWindow : Window
             _currentLibraryVM = null;
         }
 
-        if (DataContext is MainWindowViewModel vm && vm.Library != null)
+        if (DataContext is MainWindowViewModel vm)
         {
-            _currentLibraryVM = vm.Library;
-            _currentLibraryVM.PropertyChanged += LibraryViewModel_PropertyChanged;
+            vm.OwnerWindow = this; // Set the owner window reference
+            if (vm.Library != null)
+            {
+                _currentLibraryVM = vm.Library;
+                _currentLibraryVM.PropertyChanged += LibraryViewModel_PropertyChanged;
 
-            // Apply initial display modes for each list
-            ApplyListViewDisplayMode(_songListBox, _currentLibraryVM.LibraryViewMode, _sharedViewTemplates.DetailedSongTemplate, _sharedViewTemplates.CompactSongTemplate, _sharedViewTemplates.GridSongTemplate);
-            ApplyListViewDisplayMode(_artistsListBox, _currentLibraryVM.ArtistViewMode, _sharedViewTemplates.DetailedArtistTemplate, _sharedViewTemplates.CompactArtistTemplate, _sharedViewTemplates.GridArtistTemplate);
-            ApplyListViewDisplayMode(_albumsListBox, _currentLibraryVM.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate);
+                // Apply initial display modes for each list
+                ApplyListViewDisplayMode(_songListBox, _currentLibraryVM.LibraryViewMode, _sharedViewTemplates.DetailedSongTemplate, _sharedViewTemplates.CompactSongTemplate, _sharedViewTemplates.GridSongTemplate);
+                ApplyListViewDisplayMode(_artistsListBox, _currentLibraryVM.ArtistViewMode, _sharedViewTemplates.DetailedArtistTemplate, _sharedViewTemplates.CompactArtistTemplate, _sharedViewTemplates.GridArtistTemplate);
+                ApplyListViewDisplayMode(_albumsListBox, _currentLibraryVM.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate);
+            }
         }
     }
 
@@ -149,6 +153,10 @@ public class MainWindow : Window
         if (_currentLibraryVM != null)
         {
             _currentLibraryVM.PropertyChanged -= LibraryViewModel_PropertyChanged;
+        }
+        if (DataContext is MainWindowViewModel vm)
+        {
+            vm.OwnerWindow = null; // Clear the reference
         }
         base.OnClosed(e);
     }

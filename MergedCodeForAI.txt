@@ -3728,6 +3728,7 @@ using Avalonia.Styling;
 using Sonorize.Converters; // For EnumToBooleanConverter
 using Sonorize.Models;
 using Sonorize.ViewModels;
+using Sonorize.Views.SettingsWindowControls; // Added for new panel builders
 
 namespace Sonorize.Views;
 
@@ -3754,7 +3755,7 @@ public class SettingsWindow : Window
                 new Setter(TextBox.BorderThicknessProperty, new Thickness(0)),
                 new Setter(TextBox.VerticalContentAlignmentProperty, VerticalAlignment.Center),
                 new Setter(TextBox.HorizontalContentAlignmentProperty, HorizontalAlignment.Center),
-                new Setter(TextBox.PaddingProperty, new Thickness(2,0))
+                new Setter(TextBox.PaddingProperty, new Thickness(10,0)) // Increased horizontal padding
             }
         });
 
@@ -3765,19 +3766,19 @@ public class SettingsWindow : Window
         };
 
         // --- Left Navigation Menu ---
-        var menuPanelContainer = CreateLeftMenuPanel(); // Changed to get the container (Border)
+        var menuPanelContainer = SettingsMenuPanel.Create(_theme);
         Grid.SetColumn(menuPanelContainer, 0);
         Grid.SetRow(menuPanelContainer, 0);
         mainGrid.Children.Add(menuPanelContainer);
 
         // --- Right Content Area ---
-        var contentArea = CreateContentAreaPanel();
+        var contentArea = CreateContentAreaPanel(); // This method remains to manage visibility
         Grid.SetColumn(contentArea, 1);
         Grid.SetRow(contentArea, 0);
         mainGrid.Children.Add(contentArea);
 
         // --- Bottom Buttons Panel ---
-        var buttonsPanel = CreateBottomButtonsPanel();
+        var buttonsPanel = SettingsButtonPanel.Create(_theme, this);
         Grid.SetColumnSpan(buttonsPanel, 2); // Span across both columns
         Grid.SetColumn(buttonsPanel, 0);
         Grid.SetRow(buttonsPanel, 1);
@@ -3786,60 +3787,25 @@ public class SettingsWindow : Window
         Content = mainGrid;
     }
 
-    private Border CreateLeftMenuPanel() // Returns Border instead of StackPanel
-    {
-        var menuStackPanel = new StackPanel
-        {
-            Spacing = 5
-            // Removed Padding from StackPanel as it's not supported
-        };
-
-        var directoriesButton = new Button { Content = "Directories", HorizontalAlignment = HorizontalAlignment.Stretch, Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
-        directoriesButton.Bind(Button.CommandProperty, new Binding("ShowDirectoriesSettingsCommand"));
-
-        var themeButton = new Button { Content = "Theme", HorizontalAlignment = HorizontalAlignment.Stretch, Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
-        themeButton.Bind(Button.CommandProperty, new Binding("ShowThemeSettingsCommand"));
-
-        var scrobblingButton = new Button { Content = "Scrobbling", HorizontalAlignment = HorizontalAlignment.Stretch, Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor };
-        scrobblingButton.Bind(Button.CommandProperty, new Binding("ShowScrobblingSettingsCommand"));
-
-        // Removed problematic activeButtonStyle and its usage
-        // Highlighting active section relies on content visibility as per prior logic
-
-        menuStackPanel.Children.Add(directoriesButton);
-        menuStackPanel.Children.Add(themeButton);
-        menuStackPanel.Children.Add(scrobblingButton);
-
-        // Wrap StackPanel in a Border to apply Padding and Background
-        var menuBorder = new Border
-        {
-            Background = _theme.B_BackgroundColor, // Slightly darker than content area background
-            Padding = new Thickness(10),
-            Child = menuStackPanel
-        };
-
-        return menuBorder;
-    }
-
     private Panel CreateContentAreaPanel()
     {
         var contentPanel = new Panel { Margin = new Thickness(15) };
 
-        var directoriesSettingsPanel = CreateDirectoriesSettingsPanel();
+        var directoriesSettingsPanel = DirectoriesSettingsPanel.Create(_theme, this);
         directoriesSettingsPanel.Bind(Visual.IsVisibleProperty, new Binding("CurrentSettingsViewSection")
         {
             Converter = EnumToBooleanConverter.Instance,
             ConverterParameter = SettingsViewSection.Directories
         });
 
-        var themeSettingsPanel = CreateThemeSettingsPanel();
+        var themeSettingsPanel = ThemeSettingsPanel.Create(_theme);
         themeSettingsPanel.Bind(Visual.IsVisibleProperty, new Binding("CurrentSettingsViewSection")
         {
             Converter = EnumToBooleanConverter.Instance,
             ConverterParameter = SettingsViewSection.Theme
         });
 
-        var scrobblingSettingsPanel = CreateScrobblingSettingsPanel();
+        var scrobblingSettingsPanel = ScrobblingSettingsPanel.Create(_theme);
         scrobblingSettingsPanel.Bind(Visual.IsVisibleProperty, new Binding("CurrentSettingsViewSection")
         {
             Converter = EnumToBooleanConverter.Instance,
@@ -3851,184 +3817,6 @@ public class SettingsWindow : Window
         contentPanel.Children.Add(scrobblingSettingsPanel);
 
         return contentPanel;
-    }
-
-    private StackPanel CreateDirectoriesSettingsPanel()
-    {
-        var panel = new StackPanel { Spacing = 10 };
-
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Music Directories",
-            FontSize = 18,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = _theme.B_TextColor,
-            Margin = new Thickness(0, 0, 0, 10)
-        });
-
-        var directoriesManagementPanel = new DockPanel();
-        var dirManagementButtons = new StackPanel { Orientation = Orientation.Vertical, Spacing = 5, Margin = new Thickness(0, 0, 10, 0) };
-        DockPanel.SetDock(dirManagementButtons, Dock.Right);
-        var addButton = new Button { Content = "Add", Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor, HorizontalAlignment = HorizontalAlignment.Stretch };
-        addButton.Bind(Button.CommandProperty, new Binding("AddDirectoryCommand")); addButton.CommandParameter = this;
-        var removeButton = new Button { Content = "Remove", Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor, HorizontalAlignment = HorizontalAlignment.Stretch };
-        removeButton.Bind(Button.CommandProperty, new Binding("RemoveDirectoryCommand")); removeButton.Bind(Button.IsEnabledProperty, new Binding("CanRemoveDirectory"));
-        dirManagementButtons.Children.Add(addButton); dirManagementButtons.Children.Add(removeButton);
-
-        var directoryListBox = new ListBox { Background = _theme.B_ControlBackgroundColor, BorderThickness = new Thickness(1), BorderBrush = _theme.B_SecondaryTextColor, Foreground = _theme.B_TextColor, Height = 150, MaxHeight = 200 };
-        directoryListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("MusicDirectories")); directoryListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedDirectory", BindingMode.TwoWay));
-        directoriesManagementPanel.Children.Add(dirManagementButtons); directoriesManagementPanel.Children.Add(directoryListBox);
-
-        panel.Children.Add(directoriesManagementPanel);
-        return panel;
-    }
-
-    private StackPanel CreateThemeSettingsPanel()
-    {
-        var panel = new StackPanel { Spacing = 10 };
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Application Theme",
-            FontSize = 18,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = _theme.B_TextColor,
-            Margin = new Thickness(0, 0, 0, 10)
-        });
-
-        var themeComboBox = new ComboBox
-        {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            Background = _theme.B_ControlBackgroundColor,
-            Foreground = _theme.B_TextColor,
-            BorderBrush = _theme.B_SecondaryTextColor
-        };
-        themeComboBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("AvailableThemes"));
-        themeComboBox.Bind(ComboBox.SelectedItemProperty, new Binding("SelectedThemeFile", BindingMode.TwoWay));
-        panel.Children.Add(themeComboBox);
-
-        panel.Children.Add(new TextBlock
-        {
-            Text = "A restart is required for theme changes to take full effect.",
-            FontSize = 10,
-            Foreground = _theme.B_SecondaryTextColor,
-            FontStyle = FontStyle.Italic,
-            Margin = new Thickness(0, 5, 0, 0),
-            TextWrapping = TextWrapping.Wrap
-        });
-        return panel;
-    }
-
-    private StackPanel CreateScrobblingSettingsPanel()
-    {
-        var panel = new StackPanel { Spacing = 10 };
-
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Last.fm Scrobbling",
-            FontSize = 18,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = _theme.B_TextColor,
-            Margin = new Thickness(0, 0, 0, 5)
-        });
-
-        var scrobblingEnableCheckBox = new CheckBox
-        {
-            Content = "Enable Scrobbling",
-            Foreground = _theme.B_TextColor,
-            Margin = new Thickness(0, 0, 0, 10)
-        };
-        scrobblingEnableCheckBox.Bind(ToggleButton.IsCheckedProperty, new Binding("LastfmSettings.LastfmScrobblingEnabled", BindingMode.TwoWay));
-        panel.Children.Add(scrobblingEnableCheckBox);
-
-        var usernameLabel = new TextBlock { Text = "Username:", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 5) };
-        var usernameTextBox = new TextBox
-        {
-            Background = _theme.B_ControlBackgroundColor,
-            Foreground = _theme.B_TextColor,
-            BorderBrush = _theme.B_SecondaryTextColor,
-            Watermark = "Last.fm Username",
-            Margin = new Thickness(0, 0, 0, 5)
-        };
-        usernameTextBox.Bind(TextBox.TextProperty, new Binding("LastfmSettings.LastfmUsername", BindingMode.TwoWay));
-
-        var passwordLabel = new TextBlock { Text = "Password:", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
-        var passwordTextBox = new TextBox
-        {
-            Background = _theme.B_ControlBackgroundColor,
-            Foreground = _theme.B_TextColor,
-            BorderBrush = _theme.B_SecondaryTextColor,
-            PasswordChar = '•',
-            Watermark = "Last.fm Password (if changing)"
-        };
-        passwordTextBox.Bind(TextBox.TextProperty, new Binding("LastfmSettings.LastfmPassword", BindingMode.TwoWay));
-
-        var scrobblingGrid = new Grid
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-            RowDefinitions = new RowDefinitions("Auto,Auto"),
-            Margin = new Thickness(0, 0, 0, 10)
-        };
-        Grid.SetRow(usernameLabel, 0); Grid.SetColumn(usernameLabel, 0);
-        Grid.SetRow(usernameTextBox, 0); Grid.SetColumn(usernameTextBox, 1);
-        Grid.SetRow(passwordLabel, 1); Grid.SetColumn(passwordLabel, 0);
-        Grid.SetRow(passwordTextBox, 1); Grid.SetColumn(passwordTextBox, 1);
-        scrobblingGrid.Children.Add(usernameLabel);
-        scrobblingGrid.Children.Add(usernameTextBox);
-        scrobblingGrid.Children.Add(passwordLabel);
-        scrobblingGrid.Children.Add(passwordTextBox);
-        panel.Children.Add(scrobblingGrid);
-
-        var criteriaPanel = new StackPanel { Orientation = Orientation.Vertical, Spacing = 8, Margin = new Thickness(0, 10, 0, 5) };
-        var percentagePanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
-        var percentageLabel = new TextBlock { Text = "Scrobble if played for at least ", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
-        var percentageUpDown = new NumericUpDown { Minimum = 1, Maximum = 100, Increment = 1, Width = 90, Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_SecondaryTextColor };
-        percentageUpDown.Bind(NumericUpDown.ValueProperty, new Binding("LastfmSettings.ScrobbleThresholdPercentage", BindingMode.TwoWay));
-        var percentageUnitLabel = new TextBlock { Text = "% of duration", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
-        percentagePanel.Children.Add(percentageLabel); percentagePanel.Children.Add(percentageUpDown); percentagePanel.Children.Add(percentageUnitLabel);
-
-        var absolutePanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
-        var absoluteLabel = new TextBlock { Text = "OR Scrobble if played for at least ", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
-        var absoluteUpDown = new NumericUpDown { Minimum = 10, Maximum = 600, Increment = 10, Width = 100, Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor, BorderBrush = _theme.B_SecondaryTextColor };
-        absoluteUpDown.Bind(NumericUpDown.ValueProperty, new Binding("LastfmSettings.ScrobbleThresholdAbsoluteSeconds", BindingMode.TwoWay));
-        var absoluteUnitLabel = new TextBlock { Text = "seconds", Foreground = _theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
-        absolutePanel.Children.Add(absoluteLabel); absolutePanel.Children.Add(absoluteUpDown); absolutePanel.Children.Add(absoluteUnitLabel);
-
-        var criteriaExplanation = new TextBlock { Text = "(Whichever threshold is met first, and track is > 30s)", FontSize = 10, Foreground = _theme.B_SecondaryTextColor, FontStyle = FontStyle.Italic, TextWrapping = TextWrapping.Wrap };
-        criteriaPanel.Children.Add(percentagePanel); criteriaPanel.Children.Add(absolutePanel); criteriaPanel.Children.Add(criteriaExplanation);
-        panel.Children.Add(criteriaPanel);
-
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Password stored locally only until a session key is obtained. Authentication happens when Sonorize starts or when settings are saved.",
-            FontSize = 10,
-            Foreground = _theme.B_SecondaryTextColor,
-            FontStyle = FontStyle.Italic,
-            Margin = new Thickness(0, 15, 0, 0),
-            TextWrapping = TextWrapping.Wrap
-        });
-
-        return panel;
-    }
-
-    private StackPanel CreateBottomButtonsPanel()
-    {
-        var buttonsPanel = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Spacing = 10,
-            Margin = new Thickness(15) // Consistent margin
-        };
-
-        var saveButton = new Button { Content = "Save & Close", Background = _theme.B_AccentColor, Foreground = _theme.B_AccentForeground, Padding = new Thickness(15, 8), CornerRadius = new CornerRadius(3) };
-        saveButton.Click += (s, e) => { if (DataContext is SettingsViewModel vm) { vm.SaveAndCloseCommand.Execute(null); } Close(); };
-
-        var cancelButton = new Button { Content = "Cancel", Background = _theme.B_ControlBackgroundColor, Foreground = _theme.B_TextColor, Padding = new Thickness(15, 8), CornerRadius = new CornerRadius(3) };
-        cancelButton.Click += (s, e) => Close();
-
-        buttonsPanel.Children.Add(saveButton);
-        buttonsPanel.Children.Add(cancelButton);
-        return buttonsPanel;
     }
 }
 </file>
@@ -8957,6 +8745,304 @@ public static class SongInfoDisplayPanel
         songInfoPanel.Children.Add(textStack);
 
         return songInfoPanel;
+    }
+}
+</file>
+
+<file path="Source\Views\SettingsWindowControls\DirectoriesSettingsPanel.cs">
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Data;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Sonorize.Models; // For ThemeColors
+
+namespace Sonorize.Views.SettingsWindowControls;
+
+public static class DirectoriesSettingsPanel
+{
+    public static StackPanel Create(ThemeColors theme, Window ownerWindow)
+    {
+        var panel = new StackPanel { Spacing = 10 };
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Music Directories",
+            FontSize = 18,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = theme.B_TextColor,
+            Margin = new Thickness(0, 0, 0, 10)
+        });
+
+        var directoriesManagementPanel = new DockPanel();
+        var dirManagementButtons = new StackPanel { Orientation = Orientation.Vertical, Spacing = 5, Margin = new Thickness(0, 0, 10, 0) };
+        DockPanel.SetDock(dirManagementButtons, Dock.Right);
+        var addButton = new Button { Content = "Add", Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor, HorizontalAlignment = HorizontalAlignment.Stretch };
+        addButton.Bind(Button.CommandProperty, new Binding("AddDirectoryCommand"));
+        addButton.CommandParameter = ownerWindow; // Pass the owner window for the dialog
+
+        var removeButton = new Button { Content = "Remove", Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor, HorizontalAlignment = HorizontalAlignment.Stretch };
+        removeButton.Bind(Button.CommandProperty, new Binding("RemoveDirectoryCommand"));
+        removeButton.Bind(Button.IsEnabledProperty, new Binding("CanRemoveDirectory"));
+        dirManagementButtons.Children.Add(addButton);
+        dirManagementButtons.Children.Add(removeButton);
+
+        var directoryListBox = new ListBox
+        {
+            Background = theme.B_ControlBackgroundColor,
+            BorderThickness = new Thickness(1),
+            BorderBrush = theme.B_SecondaryTextColor,
+            Foreground = theme.B_TextColor,
+            Height = 150,
+            MaxHeight = 200
+        };
+        directoryListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("MusicDirectories"));
+        directoryListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedDirectory", BindingMode.TwoWay));
+        directoriesManagementPanel.Children.Add(dirManagementButtons);
+        directoriesManagementPanel.Children.Add(directoryListBox);
+
+        panel.Children.Add(directoriesManagementPanel);
+        return panel;
+    }
+}
+</file>
+
+<file path="Source\Views\SettingsWindowControls\ScrobblingSettingsPanel.cs">
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives; // Required for NumericUpDown
+using Avalonia.Data;
+using Avalonia.Layout;
+using Avalonia.Media; // Required for Brushes
+using Sonorize.Models; // For ThemeColors
+
+namespace Sonorize.Views.SettingsWindowControls;
+
+public static class ScrobblingSettingsPanel
+{
+    public static StackPanel Create(ThemeColors theme)
+    {
+        var panel = new StackPanel { Spacing = 10 };
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Last.fm Scrobbling",
+            FontSize = 18,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = theme.B_TextColor,
+            Margin = new Thickness(0, 0, 0, 5)
+        });
+
+        var scrobblingEnableCheckBox = new CheckBox
+        {
+            Content = "Enable Scrobbling",
+            Foreground = theme.B_TextColor,
+            Margin = new Thickness(0, 0, 0, 10)
+        };
+        scrobblingEnableCheckBox.Bind(ToggleButton.IsCheckedProperty, new Binding("LastfmSettings.LastfmScrobblingEnabled", BindingMode.TwoWay));
+        panel.Children.Add(scrobblingEnableCheckBox);
+
+        var usernameLabel = new TextBlock { Text = "Username:", Foreground = theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 5) };
+        var usernameTextBox = new TextBox
+        {
+            Background = theme.B_ControlBackgroundColor,
+            Foreground = theme.B_TextColor,
+            BorderBrush = theme.B_SecondaryTextColor,
+            Watermark = "Last.fm Username",
+            Margin = new Thickness(0, 0, 0, 5)
+        };
+        usernameTextBox.Bind(TextBox.TextProperty, new Binding("LastfmSettings.LastfmUsername", BindingMode.TwoWay));
+
+        var passwordLabel = new TextBlock { Text = "Password:", Foreground = theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
+        var passwordTextBox = new TextBox
+        {
+            Background = theme.B_ControlBackgroundColor,
+            Foreground = theme.B_TextColor,
+            BorderBrush = theme.B_SecondaryTextColor,
+            PasswordChar = '•',
+            Watermark = "Last.fm Password (if changing)"
+        };
+        passwordTextBox.Bind(TextBox.TextProperty, new Binding("LastfmSettings.LastfmPassword", BindingMode.TwoWay));
+
+        var scrobblingGrid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+            RowDefinitions = new RowDefinitions("Auto,Auto"),
+            Margin = new Thickness(0, 0, 0, 10)
+        };
+        Grid.SetRow(usernameLabel, 0); Grid.SetColumn(usernameLabel, 0);
+        Grid.SetRow(usernameTextBox, 0); Grid.SetColumn(usernameTextBox, 1);
+        Grid.SetRow(passwordLabel, 1); Grid.SetColumn(passwordLabel, 0);
+        Grid.SetRow(passwordTextBox, 1); Grid.SetColumn(passwordTextBox, 1);
+        scrobblingGrid.Children.Add(usernameLabel);
+        scrobblingGrid.Children.Add(usernameTextBox);
+        scrobblingGrid.Children.Add(passwordLabel);
+        scrobblingGrid.Children.Add(passwordTextBox);
+        panel.Children.Add(scrobblingGrid);
+
+        var criteriaPanel = new StackPanel { Orientation = Orientation.Vertical, Spacing = 8, Margin = new Thickness(0, 10, 0, 5) };
+        var percentagePanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+        var percentageLabel = new TextBlock { Text = "Scrobble if played for at least ", Foreground = theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
+        var percentageUpDown = new NumericUpDown { Minimum = 1, Maximum = 100, Increment = 1, Width = 120, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor, BorderBrush = theme.B_SecondaryTextColor }; // Increased width
+        percentageUpDown.Bind(NumericUpDown.ValueProperty, new Binding("LastfmSettings.ScrobbleThresholdPercentage", BindingMode.TwoWay));
+        var percentageUnitLabel = new TextBlock { Text = "% of duration", Foreground = theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
+        percentagePanel.Children.Add(percentageLabel); percentagePanel.Children.Add(percentageUpDown); percentagePanel.Children.Add(percentageUnitLabel);
+
+        var absolutePanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+        var absoluteLabel = new TextBlock { Text = "OR Scrobble if played for at least ", Foreground = theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
+        var absoluteUpDown = new NumericUpDown { Minimum = 10, Maximum = 600, Increment = 10, Width = 130, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor, BorderBrush = theme.B_SecondaryTextColor }; // Increased width
+        absoluteUpDown.Bind(NumericUpDown.ValueProperty, new Binding("LastfmSettings.ScrobbleThresholdAbsoluteSeconds", BindingMode.TwoWay));
+        var absoluteUnitLabel = new TextBlock { Text = "seconds", Foreground = theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
+        absolutePanel.Children.Add(absoluteLabel); absolutePanel.Children.Add(absoluteUpDown); absolutePanel.Children.Add(absoluteUnitLabel);
+
+        var criteriaExplanation = new TextBlock { Text = "(Whichever threshold is met first, and track is > 30s)", FontSize = 10, Foreground = theme.B_SecondaryTextColor, FontStyle = FontStyle.Italic, TextWrapping = TextWrapping.Wrap };
+        criteriaPanel.Children.Add(percentagePanel); criteriaPanel.Children.Add(absolutePanel); criteriaPanel.Children.Add(criteriaExplanation);
+        panel.Children.Add(criteriaPanel);
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Password stored locally only until a session key is obtained. Authentication happens when Sonorize starts or when settings are saved.",
+            FontSize = 10,
+            Foreground = theme.B_SecondaryTextColor,
+            FontStyle = FontStyle.Italic,
+            Margin = new Thickness(0, 15, 0, 0),
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        return panel;
+    }
+}
+</file>
+
+<file path="Source\Views\SettingsWindowControls\SettingsButtonPanel.cs">
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Layout;
+using Sonorize.Models; // For ThemeColors
+using Sonorize.ViewModels; // For SettingsViewModel
+
+namespace Sonorize.Views.SettingsWindowControls;
+
+public static class SettingsButtonPanel
+{
+    public static StackPanel Create(ThemeColors theme, Window ownerWindow)
+    {
+        var buttonsPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Spacing = 10,
+            Margin = new Thickness(15) // Consistent margin
+        };
+
+        var saveButton = new Button { Content = "Save & Close", Background = theme.B_AccentColor, Foreground = theme.B_AccentForeground, Padding = new Thickness(15, 8), CornerRadius = new CornerRadius(3) };
+        saveButton.Click += (s, e) =>
+        {
+            if (ownerWindow.DataContext is SettingsViewModel vm)
+            {
+                vm.SaveAndCloseCommand.Execute(null);
+            }
+            ownerWindow.Close();
+        };
+
+        var cancelButton = new Button { Content = "Cancel", Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor, Padding = new Thickness(15, 8), CornerRadius = new CornerRadius(3) };
+        cancelButton.Click += (s, e) => ownerWindow.Close();
+
+        buttonsPanel.Children.Add(saveButton);
+        buttonsPanel.Children.Add(cancelButton);
+        return buttonsPanel;
+    }
+}
+</file>
+
+<file path="Source\Views\SettingsWindowControls\SettingsMenuPanel.cs">
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Data;
+using Avalonia.Layout;
+using Sonorize.Models; // For ThemeColors
+
+namespace Sonorize.Views.SettingsWindowControls;
+
+public static class SettingsMenuPanel
+{
+    public static Border Create(ThemeColors theme)
+    {
+        var menuStackPanel = new StackPanel
+        {
+            Spacing = 5
+        };
+
+        var directoriesButton = new Button { Content = "Directories", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
+        directoriesButton.Bind(Button.CommandProperty, new Binding("ShowDirectoriesSettingsCommand"));
+
+        var themeButton = new Button { Content = "Theme", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
+        themeButton.Bind(Button.CommandProperty, new Binding("ShowThemeSettingsCommand"));
+
+        var scrobblingButton = new Button { Content = "Scrobbling", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
+        scrobblingButton.Bind(Button.CommandProperty, new Binding("ShowScrobblingSettingsCommand"));
+
+        menuStackPanel.Children.Add(directoriesButton);
+        menuStackPanel.Children.Add(themeButton);
+        menuStackPanel.Children.Add(scrobblingButton);
+
+        var menuBorder = new Border
+        {
+            Background = theme.B_BackgroundColor,
+            Padding = new Thickness(10),
+            Child = menuStackPanel
+        };
+
+        return menuBorder;
+    }
+}
+</file>
+
+<file path="Source\Views\SettingsWindowControls\ThemeSettingsPanel.cs">
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Data;
+using Avalonia.Layout;
+using Avalonia.Media; // Required for FontStyle, TextWrapping
+using Sonorize.Models; // For ThemeColors
+
+namespace Sonorize.Views.SettingsWindowControls;
+
+public static class ThemeSettingsPanel
+{
+    public static StackPanel Create(ThemeColors theme)
+    {
+        var panel = new StackPanel { Spacing = 10 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Application Theme",
+            FontSize = 18,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = theme.B_TextColor,
+            Margin = new Thickness(0, 0, 0, 10)
+        });
+
+        var themeComboBox = new ComboBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Background = theme.B_ControlBackgroundColor,
+            Foreground = theme.B_TextColor,
+            BorderBrush = theme.B_SecondaryTextColor
+        };
+        themeComboBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("AvailableThemes"));
+        themeComboBox.Bind(ComboBox.SelectedItemProperty, new Binding("SelectedThemeFile", BindingMode.TwoWay));
+        panel.Children.Add(themeComboBox);
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "A restart is required for theme changes to take full effect.",
+            FontSize = 10,
+            Foreground = theme.B_SecondaryTextColor,
+            FontStyle = FontStyle.Italic,
+            Margin = new Thickness(0, 5, 0, 0),
+            TextWrapping = TextWrapping.Wrap
+        });
+        return panel;
     }
 }
 </file>
