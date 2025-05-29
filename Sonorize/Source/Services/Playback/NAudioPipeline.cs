@@ -15,7 +15,11 @@ internal class NAudioPipeline : IDisposable
 
     public NAudioPipeline(string filePath, float initialRate, float initialPitch, EventHandler<StoppedEventArgs> enginePlaybackStoppedHandler)
     {
-        if (string.IsNullOrEmpty(filePath)) throw new ArgumentNullException(nameof(filePath));
+        if (string.IsNullOrEmpty(filePath))
+        {
+            throw new ArgumentNullException(nameof(filePath));
+        }
+
         _enginePlaybackStoppedHandler = enginePlaybackStoppedHandler ?? throw new ArgumentNullException(nameof(enginePlaybackStoppedHandler));
         
         try

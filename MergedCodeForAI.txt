@@ -2863,15 +2863,21 @@ namespace Sonorize.ViewModels;
 
 public class ApplicationWorkflowManager : IDisposable
 {
-    private readonly PlaybackViewModel _playbackViewModel; // Kept for GetCurrentStatusText
-    private readonly LibraryViewModel _libraryViewModel;   // Kept for GetCurrentStatusText
+    private readonly SettingsService _settingsService;
+    private readonly ScrobblingService _scrobblingService;
+    private readonly ThemeColors _currentTheme;
+    private readonly LibraryViewModel _libraryViewModel;
+    private readonly PlaybackViewModel _playbackViewModel;
+    private readonly PlaybackService _playbackService;
 
-    private readonly ApplicationWorkflowServicesFactory _servicesFactory;
     private readonly NextTrackSelectorService _nextTrackSelectorService;
+    private readonly StatusBarTextProvider _statusBarTextProvider;
     private readonly SettingsChangeProcessorService _settingsChangeProcessorService;
     private readonly PlaybackFlowManagerService _playbackFlowManagerService;
     private readonly ApplicationInteractionService _applicationInteractionService;
     private readonly LibraryPlaybackLinkService _libraryPlaybackLinkService;
+    // Removed: private readonly SongMetadataService _songMetadataService; 
+
 
     private readonly Random _shuffleRandom = new();
 
@@ -2881,26 +2887,30 @@ public class ApplicationWorkflowManager : IDisposable
         ThemeColors currentTheme,
         LibraryViewModel libraryViewModel,
         PlaybackViewModel playbackViewModel,
-        PlaybackService playbackService)
+        PlaybackService playbackService,
+        LoopDataService loopDataService)
     {
-        _playbackViewModel = playbackViewModel ?? throw new ArgumentNullException(nameof(playbackViewModel));
+        _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
+        _scrobblingService = scrobblingService ?? throw new ArgumentNullException(nameof(scrobblingService));
+        _currentTheme = currentTheme ?? throw new ArgumentNullException(nameof(currentTheme));
         _libraryViewModel = libraryViewModel ?? throw new ArgumentNullException(nameof(libraryViewModel));
+        _playbackViewModel = playbackViewModel ?? throw new ArgumentNullException(nameof(playbackViewModel));
+        _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
+        // Removed: _songMetadataService = songMetadataService ?? throw new ArgumentNullException(nameof(songMetadataService)); 
 
-        _servicesFactory = new ApplicationWorkflowServicesFactory(
-            settingsService,
-            scrobblingService,
-            currentTheme,
-            libraryViewModel,
-            playbackViewModel,
-            playbackService,
-            _shuffleRandom
-        );
+        // Create internal services
+        _nextTrackSelectorService = new NextTrackSelectorService(_shuffleRandom);
+        _statusBarTextProvider = new StatusBarTextProvider(_playbackViewModel, null!, _libraryViewModel); // Placeholder
 
-        _nextTrackSelectorService = _servicesFactory.NextTrackSelectorService;
-        _settingsChangeProcessorService = _servicesFactory.SettingsChangeProcessorService;
-        _playbackFlowManagerService = _servicesFactory.PlaybackFlowManagerService;
-        _applicationInteractionService = _servicesFactory.ApplicationInteractionService;
-        _libraryPlaybackLinkService = _servicesFactory.LibraryPlaybackLinkService;
+        _settingsChangeProcessorService = new SettingsChangeProcessorService(_libraryViewModel, _scrobblingService);
+        _playbackFlowManagerService = new PlaybackFlowManagerService(_libraryViewModel, _playbackViewModel, _playbackService, _nextTrackSelectorService);
+
+        _applicationInteractionService = new ApplicationInteractionService(
+            _settingsService,
+            _settingsChangeProcessorService,
+            _currentTheme); // Removed _songMetadataService from instantiation
+
+        _libraryPlaybackLinkService = new LibraryPlaybackLinkService(_libraryViewModel, _playbackService, _playbackViewModel);
     }
 
     public async Task<(List<string> statusMessages, bool settingsChanged)> HandleOpenSettingsDialogAsync(Window owner)
@@ -2920,7 +2930,6 @@ public class ApplicationWorkflowManager : IDisposable
 
     public string GetCurrentStatusText(LoopEditorViewModel loopEditorViewModel)
     {
-        // This instantiation remains problematic if LoopEditorViewModel isn't always available/correct context
         var localStatusBarTextProvider = new StatusBarTextProvider(_playbackViewModel, loopEditorViewModel, _libraryViewModel);
         return localStatusBarTextProvider.GetCurrentStatusText();
     }
@@ -2928,49 +2937,6 @@ public class ApplicationWorkflowManager : IDisposable
     public void Dispose()
     {
         _libraryPlaybackLinkService?.Dispose();
-        // The factory itself doesn't implement IDisposable, and its created services
-        // are either also not IDisposable or their lifecycle is tied to this AWM instance.
-    }
-}
-</file>
-
-<file path="Source\ViewModels\ApplicationWorkflowServicesFactory.cs">
-using System;
-using Sonorize.Models;
-using Sonorize.Services;
-
-namespace Sonorize.ViewModels;
-
-public class ApplicationWorkflowServicesFactory
-{
-    public NextTrackSelectorService NextTrackSelectorService { get; }
-    public SettingsChangeProcessorService SettingsChangeProcessorService { get; }
-    public PlaybackFlowManagerService PlaybackFlowManagerService { get; }
-    public ApplicationInteractionService ApplicationInteractionService { get; }
-    public LibraryPlaybackLinkService LibraryPlaybackLinkService { get; }
-
-    public ApplicationWorkflowServicesFactory(
-        SettingsService settingsService,
-        ScrobblingService scrobblingService,
-        ThemeColors currentTheme,
-        LibraryViewModel libraryViewModel,
-        PlaybackViewModel playbackViewModel,
-        PlaybackService playbackService,
-        Random shuffleRandom)
-    {
-        ArgumentNullException.ThrowIfNull(settingsService);
-        ArgumentNullException.ThrowIfNull(scrobblingService);
-        ArgumentNullException.ThrowIfNull(currentTheme);
-        ArgumentNullException.ThrowIfNull(libraryViewModel);
-        ArgumentNullException.ThrowIfNull(playbackViewModel);
-        ArgumentNullException.ThrowIfNull(playbackService);
-        ArgumentNullException.ThrowIfNull(shuffleRandom);
-
-        NextTrackSelectorService = new NextTrackSelectorService(shuffleRandom);
-        SettingsChangeProcessorService = new SettingsChangeProcessorService(libraryViewModel, scrobblingService);
-        PlaybackFlowManagerService = new PlaybackFlowManagerService(libraryViewModel, playbackViewModel, playbackService, NextTrackSelectorService);
-        ApplicationInteractionService = new ApplicationInteractionService(settingsService, SettingsChangeProcessorService, currentTheme);
-        LibraryPlaybackLinkService = new LibraryPlaybackLinkService(libraryViewModel, playbackService, playbackViewModel);
     }
 }
 </file>
@@ -5091,42 +5057,104 @@ public class NAudioEngineController : IDisposable
 }
 </file>
 
-<file path="Source\Services\Playback\NAudioPlaybackEngine.cs">
+<file path="Source\Services\Playback\NAudioPipeline.cs">
 using System;
 using System.Diagnostics;
 using System.IO;
 using NAudio.Wave;
 
+namespace Sonorize.Services.Playback;
+
+internal class NAudioPipeline : IDisposable
+{
+    public AudioFileReader AudioReader { get; private set; }
+    public NAudioEffectsProcessor EffectsProcessor { get; private set; }
+    public IWavePlayer OutputDevice { get; private set; }
+
+    private readonly EventHandler<StoppedEventArgs> _enginePlaybackStoppedHandler;
+
+    public NAudioPipeline(string filePath, float initialRate, float initialPitch, EventHandler<StoppedEventArgs> enginePlaybackStoppedHandler)
+    {
+        if (string.IsNullOrEmpty(filePath)) throw new ArgumentNullException(nameof(filePath));
+        _enginePlaybackStoppedHandler = enginePlaybackStoppedHandler ?? throw new ArgumentNullException(nameof(enginePlaybackStoppedHandler));
+        
+        try
+        {
+            AudioReader = new AudioFileReader(filePath);
+            Debug.WriteLine($"[Pipeline] Loaded AudioFileReader. Channels: {AudioReader.WaveFormat.Channels}, SampleRate: {AudioReader.WaveFormat.SampleRate}, Duration: {AudioReader.TotalTime}");
+
+            EffectsProcessor = new NAudioEffectsProcessor();
+            EffectsProcessor.Initialize(AudioReader.ToSampleProvider());
+            EffectsProcessor.Tempo = initialRate;
+            EffectsProcessor.PitchSemitones = initialPitch;
+            Debug.WriteLine($"[Pipeline] Effects Processor initialized. Tempo: {EffectsProcessor.Tempo}, Pitch: {EffectsProcessor.PitchSemitones}");
+
+            OutputDevice = new WaveOutEvent();
+            OutputDevice.PlaybackStopped += OnOutputDevicePlaybackStopped; // Subscribe to the actual device
+            OutputDevice.Init(EffectsProcessor.OutputProvider.ToWaveProvider());
+            Debug.WriteLine($"[Pipeline] NAudio pipeline created successfully for: {Path.GetFileName(filePath)}.");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Pipeline] CRITICAL ERROR during NAudio pipeline creation for {Path.GetFileName(filePath)}: {ex.ToString()}");
+            Dispose(); // Clean up if constructor fails partially
+            throw; // Re-throw to allow NAudioPlaybackEngine to handle
+        }
+    }
+
+    private void OnOutputDevicePlaybackStopped(object? sender, StoppedEventArgs e)
+    {
+        // Forward the event to the handler provided by NAudioPlaybackEngine
+        _enginePlaybackStoppedHandler.Invoke(this, e); // Pass 'this' (NAudioPipeline) as sender, or OutputDevice
+    }
+
+    public void Dispose()
+    {
+        if (OutputDevice != null)
+        {
+            OutputDevice.PlaybackStopped -= OnOutputDevicePlaybackStopped;
+            OutputDevice.Dispose();
+        }
+        EffectsProcessor?.Dispose();
+        AudioReader?.Dispose();
+        Debug.WriteLine("[Pipeline] Disposed NAudioPipeline resources.");
+    }
+}
+</file>
+
+<file path="Source\Services\Playback\NAudioPlaybackEngine.cs">
+using System;
+using System.Diagnostics;
+using System.IO;
+using NAudio.Wave;
+using Sonorize.Services.Playback; // Added for NAudioPipeline
+
 namespace Sonorize.Services;
 
 public class NAudioPlaybackEngine : IDisposable
 {
-    private IWavePlayer? _waveOutDevice;
-    private AudioFileReader? audioFileReader;
-    private NAudioEffectsProcessor? _effectsProcessor;
-
-    private IWavePlayer? _waveOutDeviceInstanceForEvent;
+    private NAudioPipeline? _pipeline;
 
     public event EventHandler<StoppedEventArgs>? PlaybackStopped;
 
     public TimeSpan CurrentPosition
     {
-        get => audioFileReader?.CurrentTime ?? TimeSpan.Zero;
+        get => _pipeline?.AudioReader?.CurrentTime ?? TimeSpan.Zero;
         set
         {
-            if (audioFileReader != null) audioFileReader.CurrentTime = value;
-            else Debug.WriteLine("[Engine] Attempted to set CurrentPosition on null audioFileReader.");
+            if (_pipeline?.AudioReader != null) _pipeline.AudioReader.CurrentTime = value;
+            else Debug.WriteLine("[Engine] Attempted to set CurrentPosition on null pipeline/audioReader.");
         }
     }
 
-    public TimeSpan CurrentSongDuration => audioFileReader?.TotalTime ?? TimeSpan.Zero;
+    public TimeSpan CurrentSongDuration => _pipeline?.AudioReader?.TotalTime ?? TimeSpan.Zero;
 
     public PlaybackStateStatus CurrentPlaybackStatus
     {
         get
         {
-            if (_waveOutDevice == null) return PlaybackStateStatus.Stopped;
-            return _waveOutDevice.PlaybackState switch
+            if (_pipeline?.OutputDevice == null) return PlaybackStateStatus.Stopped;
+            return _pipeline.OutputDevice.PlaybackState switch
             {
                 NAudio.Wave.PlaybackState.Playing => PlaybackStateStatus.Playing,
                 NAudio.Wave.PlaybackState.Paused => PlaybackStateStatus.Paused,
@@ -5136,27 +5164,25 @@ public class NAudioPlaybackEngine : IDisposable
         }
     }
 
-    private float _playbackRate = 1.0f;
     public float PlaybackRate
     {
-        get => _playbackRate;
+        get;
         set
         {
-            _playbackRate = value;
-            if (_effectsProcessor != null) _effectsProcessor.Tempo = value;
+            field = value;
+            if (_pipeline?.EffectsProcessor != null) _pipeline.EffectsProcessor.Tempo = value;
         }
-    }
+    } = 1.0f;
 
-    private float _pitchSemitones = 0f;
     public float PitchSemitones
     {
-        get => _pitchSemitones;
+        get;
         set
         {
-            _pitchSemitones = value;
-            if (_effectsProcessor != null) _effectsProcessor.PitchSemitones = value;
+            field = value;
+            if (_pipeline?.EffectsProcessor != null) _pipeline.EffectsProcessor.PitchSemitones = value;
         }
-    }
+    } = 0f;
 
 
     public NAudioPlaybackEngine()
@@ -5174,32 +5200,18 @@ public class NAudioPlaybackEngine : IDisposable
             throw new FileNotFoundException("Audio file not found.", filePath);
         }
 
-        Dispose(disposing: true);
+        Dispose(disposing: true); // Dispose existing pipeline first
 
         try
         {
-            audioFileReader = new AudioFileReader(filePath);
-            Debug.WriteLine($"[Engine] Loaded AudioFileReader. Channels: {audioFileReader.WaveFormat.Channels}, SampleRate: {audioFileReader.WaveFormat.SampleRate}, Duration: {audioFileReader.TotalTime}");
-
-            _effectsProcessor = new NAudioEffectsProcessor();
-            _effectsProcessor.Initialize(audioFileReader.ToSampleProvider());
-
-            _effectsProcessor.Tempo = PlaybackRate;
-            _effectsProcessor.PitchSemitones = PitchSemitones;
-            Debug.WriteLine($"[Engine] Effects Processor initialized. Applied Tempo: {_effectsProcessor.Tempo}, Pitch: {_effectsProcessor.PitchSemitones}");
-
-            _waveOutDevice = new WaveOutEvent();
-            _waveOutDeviceInstanceForEvent = _waveOutDevice;
-            _waveOutDevice.PlaybackStopped += OnWaveOutPlaybackStopped;
-
-            _waveOutDevice.Init(_effectsProcessor.OutputProvider.ToWaveProvider());
-
-            Debug.WriteLine($"[Engine] NAudio pipeline loaded successfully for: {Path.GetFileName(filePath)}.");
+            _pipeline = new NAudioPipeline(filePath, PlaybackRate, PitchSemitones, OnPipelinePlaybackStopped);
+            Debug.WriteLine($"[Engine] NAudio pipeline loaded successfully via NAudioPipeline for: {Path.GetFileName(filePath)}.");
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[Engine] CRITICAL ERROR during NAudio pipeline Load for {Path.GetFileName(filePath)}: {ex.ToString()}");
-            Dispose(disposing: true);
+            // NAudioPipeline constructor re-throws on failure after its own cleanup.
+            Debug.WriteLine($"[Engine] CRITICAL ERROR during NAudioPipeline creation for {Path.GetFileName(filePath)}: {ex.ToString()}");
+            Dispose(disposing: true); // Ensure engine's _pipeline is null
             throw new Exception($"Failed to load audio pipeline for {Path.GetFileName(filePath)}", ex);
         }
     }
@@ -5207,12 +5219,12 @@ public class NAudioPlaybackEngine : IDisposable
     public void Play()
     {
         Debug.WriteLine("[Engine] Play requested.");
-        if (_waveOutDevice != null && (_waveOutDevice.PlaybackState == NAudio.Wave.PlaybackState.Paused || _waveOutDevice.PlaybackState == NAudio.Wave.PlaybackState.Stopped))
+        if (_pipeline?.OutputDevice != null && (_pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Paused || _pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Stopped))
         {
             Debug.WriteLine("[Engine] Calling device.Play().");
             try
             {
-                _waveOutDevice.Play();
+                _pipeline.OutputDevice.Play();
                 Debug.WriteLine($"[Engine] Playback started/resumed. State: {CurrentPlaybackStatus}");
             }
             catch (Exception ex)
@@ -5220,25 +5232,25 @@ public class NAudioPlaybackEngine : IDisposable
                 Debug.WriteLine($"[Engine] Error during device.Play(): {ex.Message}");
             }
         }
-        else if (_waveOutDevice != null && _waveOutDevice.PlaybackState == NAudio.Wave.PlaybackState.Playing)
+        else if (_pipeline?.OutputDevice != null && _pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Playing)
         {
             Debug.WriteLine("[Engine] Already playing. Doing nothing.");
         }
         else
         {
-            Debug.WriteLine("[Engine] Cannot Play: Device not initialized.");
+            Debug.WriteLine("[Engine] Cannot Play: Device not initialized via pipeline.");
         }
     }
 
     public void Pause()
     {
         Debug.WriteLine("[Engine] Pause requested.");
-        if (_waveOutDevice != null && _waveOutDevice.PlaybackState == NAudio.Wave.PlaybackState.Playing)
+        if (_pipeline?.OutputDevice != null && _pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Playing)
         {
             Debug.WriteLine("[Engine] Calling device.Pause().");
             try
             {
-                _waveOutDevice.Pause();
+                _pipeline.OutputDevice.Pause();
                 Debug.WriteLine($"[Engine] Playback paused. State: {CurrentPlaybackStatus}");
             }
             catch (Exception ex)
@@ -5248,20 +5260,20 @@ public class NAudioPlaybackEngine : IDisposable
         }
         else
         {
-            Debug.WriteLine($"[Engine] Cannot Pause: Device state is {_waveOutDevice?.PlaybackState ?? NAudio.Wave.PlaybackState.Stopped}.");
+            Debug.WriteLine($"[Engine] Cannot Pause: Device state is {_pipeline?.OutputDevice?.PlaybackState ?? NAudio.Wave.PlaybackState.Stopped}.");
         }
     }
 
     public void Stop()
     {
         Debug.WriteLine("[Engine] Stop requested.");
-        if (_waveOutDevice != null && _waveOutDevice.PlaybackState != NAudio.Wave.PlaybackState.Stopped)
+        if (_pipeline?.OutputDevice != null && _pipeline.OutputDevice.PlaybackState != NAudio.Wave.PlaybackState.Stopped)
         {
             Debug.WriteLine("[Engine] Calling device.Stop().");
             try
             {
-                _waveOutDevice.Stop();
-                Debug.WriteLine($"[Engine] Stop initiated. Device state: {_waveOutDevice?.PlaybackState}. PlaybackStopped event should follow.");
+                _pipeline.OutputDevice.Stop();
+                Debug.WriteLine($"[Engine] Stop initiated. Device state: {_pipeline?.OutputDevice?.PlaybackState}. PlaybackStopped event should follow.");
             }
             catch (Exception ex)
             {
@@ -5277,12 +5289,12 @@ public class NAudioPlaybackEngine : IDisposable
     public void Seek(TimeSpan position)
     {
         Debug.WriteLine($"[Engine] Seek requested to {position:mm\\:ss\\.ff}.");
-        if (audioFileReader != null)
+        if (_pipeline?.AudioReader != null)
         {
             try
             {
-                audioFileReader.CurrentTime = position;
-                Debug.WriteLine($"[Engine] Seek successful. Actual position: {audioFileReader.CurrentTime:mm\\:ss\\.ff}");
+                _pipeline.AudioReader.CurrentTime = position;
+                Debug.WriteLine($"[Engine] Seek successful. Actual position: {_pipeline.AudioReader.CurrentTime:mm\\:ss\\.ff}");
             }
             catch (Exception ex)
             {
@@ -5291,21 +5303,16 @@ public class NAudioPlaybackEngine : IDisposable
         }
         else
         {
-            Debug.WriteLine("[Engine] Cannot Seek: AudioFileReader not initialized.");
+            Debug.WriteLine("[Engine] Cannot Seek: AudioFileReader (via pipeline) not initialized.");
         }
     }
 
-    private void OnWaveOutPlaybackStopped(object? sender, StoppedEventArgs e)
+    private void OnPipelinePlaybackStopped(object? sender, StoppedEventArgs e)
     {
-        if (sender == _waveOutDeviceInstanceForEvent)
-        {
-            Debug.WriteLine("[Engine] OnWaveOutPlaybackStopped event received from current device.");
-            PlaybackStopped?.Invoke(this, e);
-        }
-        else
-        {
-            Debug.WriteLine("[Engine] OnWaveOutPlaybackStopped event received from old device instance. Ignoring.");
-        }
+        // The sender here will be the NAudioPipeline instance, or its OutputDevice.
+        // We trust that NAudioPipeline correctly manages its event subscriptions.
+        Debug.WriteLine("[Engine] OnPipelinePlaybackStopped event received from NAudioPipeline.");
+        PlaybackStopped?.Invoke(this, e); // Raise engine's own event
     }
 
 
@@ -5321,33 +5328,8 @@ public class NAudioPlaybackEngine : IDisposable
     {
         if (disposing)
         {
-            if (_waveOutDevice != null && _waveOutDeviceInstanceForEvent == _waveOutDevice)
-            {
-                _waveOutDevice.PlaybackStopped -= OnWaveOutPlaybackStopped;
-                Debug.WriteLine("[Engine] Detached PlaybackStopped handler.");
-            }
-            _waveOutDeviceInstanceForEvent = null;
-
-            if (_waveOutDevice != null)
-            {
-                Debug.WriteLine($"[Engine] Disposing WaveOutDevice (State: {_waveOutDevice.PlaybackState}).");
-                try { _waveOutDevice.Dispose(); } catch (Exception ex) { Debug.WriteLine($"[Engine] Error disposing WaveOutDevice: {ex.Message}"); }
-                _waveOutDevice = null;
-            }
-
-            if (_effectsProcessor != null)
-            {
-                Debug.WriteLine("[Engine] Disposing Effects Processor.");
-                try { _effectsProcessor.Dispose(); } catch (Exception ex) { Debug.WriteLine($"[Engine] Error disposing Effects Processor: {ex.Message}"); }
-                _effectsProcessor = null;
-            }
-
-            if (audioFileReader != null)
-            {
-                Debug.WriteLine("[Engine] Disposing AudioFileReader.");
-                try { audioFileReader.Dispose(); } catch (Exception ex) { Debug.WriteLine($"[Engine] Error disposing AudioFileReader: {ex.Message}"); }
-                audioFileReader = null;
-            }
+            _pipeline?.Dispose();
+            _pipeline = null;
         }
     }
 
@@ -6922,8 +6904,8 @@ public class ArtistAlbumCollectionManager
             .GroupBy(keySelector, AlbumArtistTupleComparer.Instance)
             .Select(g => new
             {
-                AlbumTitle = g.Key.Item1,
-                ArtistName = g.Key.Item2,
+                AlbumTitle = g.Key.Album,
+                ArtistName = g.Key.Artist,
                 SongsInAlbum = g.ToList()
             })
             .OrderBy(a => a.ArtistName, StringComparer.OrdinalIgnoreCase).ThenBy(a => a.AlbumTitle, StringComparer.OrdinalIgnoreCase)
