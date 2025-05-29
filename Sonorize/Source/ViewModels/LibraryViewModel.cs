@@ -18,7 +18,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     private readonly MusicLibraryService _musicLibraryService;
     // private readonly LoopDataService _loopDataService; // LoopDataService is used by SongFactory, not directly here anymore.
     private readonly MainWindowViewModel _parentViewModel;
-    private readonly ArtistAlbumCollectionManager _artistAlbumManager;
     private readonly SongFilteringService _songFilteringService; // Passed to SongListManager
     private readonly LibraryStatusTextGenerator _statusTextGenerator;
     private readonly LibraryDataOrchestrator _libraryDataOrchestrator;
@@ -26,6 +25,8 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     private readonly LibraryDisplayModeService _displayModeService; // New dependency
     private readonly LibraryFilterStateManager _filterStateManager; // New dependency
     private readonly SongListManager _songListManager; // New dependency
+
+    public LibraryGroupingsViewModel Groupings { get; } // New ViewModel for Artists/Albums
 
     // Proxied properties from SongListManager
     public ObservableCollection<Song> FilteredSongs => _songListManager.FilteredSongs;
@@ -101,6 +102,8 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         // _loopDataService = loopDataService; // Not directly used here
         _displayModeService = displayModeService ?? throw new ArgumentNullException(nameof(displayModeService));
 
+        Groupings = new LibraryGroupingsViewModel(_musicLibraryService); // Instantiate new VM
+
         _filterStateManager = new LibraryFilterStateManager();
         _filterStateManager.FilterCriteriaChanged += (s, e) => ApplyFilter();
         _filterStateManager.RequestTabSwitchToLibrary += (s, e) => _parentViewModel.ActiveTabIndex = 0;
@@ -115,9 +118,11 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
         _trackNavigationManager = new TrackNavigationManager(FilteredSongs); // FilteredSongs is now from _songListManager
 
-        _artistAlbumManager = new ArtistAlbumCollectionManager(Artists, Albums, _musicLibraryService);
+        // _artistAlbumManager is now encapsulated in Groupings
         _statusTextGenerator = new LibraryStatusTextGenerator();
-        _libraryDataOrchestrator = new LibraryDataOrchestrator(_musicLibraryService, _artistAlbumManager, _settingsService);
+        // Pass Groupings VM's ArtistAlbumManager instance to LibraryDataOrchestrator
+        _libraryDataOrchestrator = new LibraryDataOrchestrator(_musicLibraryService, Groupings.ArtistAlbumManager, _settingsService);
+
 
         _musicLibraryService.SongThumbnailUpdated += MusicLibraryService_SongThumbnailUpdated;
 
@@ -160,19 +165,13 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         }
     }
 
-    // Collections for Artists and Albums are still managed directly by LibraryViewModel
-    // for simplicity, as they are primarily populated once by ArtistAlbumCollectionManager.
-    public ObservableCollection<ArtistViewModel> Artists { get; } = [];
-    public ObservableCollection<AlbumViewModel> Albums { get; } = [];
-
-
     private async void MusicLibraryService_SongThumbnailUpdated(Song updatedSong)
     {
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            _artistAlbumManager.UpdateCollectionsForSongThumbnail(updatedSong, _songListManager.GetAllSongsReadOnly());
-            OnPropertyChanged(nameof(Artists)); // These are still direct properties of LibraryVM
-            OnPropertyChanged(nameof(Albums));
+            Groupings.HandleSongThumbnailUpdate(updatedSong, _songListManager.GetAllSongsReadOnly());
+            // OnPropertyChanged for Groupings.Artists and Groupings.Albums will be handled by LibraryGroupingsViewModel
+            // if the collections themselves are replaced, or by ObservableCollection if items are modified.
         });
     }
 
@@ -190,8 +189,8 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             _songListManager.ClearAllSongs(); // Clears all songs, filtered songs, and selected song
-            Artists.Clear();
-            Albums.Clear();
+            Groupings.Artists.Clear(); // Clear collections in Groupings VM
+            Groupings.Albums.Clear();
             LibraryStatusText = "Preparing to load music...";
         });
 
@@ -199,19 +198,14 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         Action<Song> songAddedCallback = song => loadedRawSongs.Add(song); // Collect raw songs
         Action<string> statusUpdateCallback = status => LibraryStatusText = status;
 
-        // _libraryDataOrchestrator now uses the songAddedCallback to populate the list it returns
-        // instead of directly adding to LibraryViewModel's _allSongs.
-        // We pass a callback that just collects them temporarily.
         var allLoadedSongsFromOrchestrator = await _libraryDataOrchestrator.LoadAndProcessLibraryDataAsync(statusUpdateCallback, songAddedCallback);
         _songListManager.SetAllSongs(allLoadedSongsFromOrchestrator); // Set all songs in the manager
 
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            // ArtistAlbumManager populates Artists and Albums collections using the master list from SongListManager
-            _artistAlbumManager.PopulateCollections(_songListManager.GetAllSongsReadOnly());
-            OnPropertyChanged(nameof(Artists));
-            OnPropertyChanged(nameof(Albums));
+            // Groupings VM populates its collections
+            Groupings.PopulateCollections(_songListManager.GetAllSongsReadOnly());
             ApplyFilter(); // Apply initial filter
         });
 
@@ -294,5 +288,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
             _songListManager.PropertyChanged -= SongListManager_PropertyChanged;
             // If SongListManager implemented IDisposable, dispose it here.
         }
+        // Groupings VM does not currently implement IDisposable
     }
 }
