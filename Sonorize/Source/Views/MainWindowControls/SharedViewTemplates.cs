@@ -6,19 +6,18 @@ using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
-using Avalonia.Styling; // Required for Style
-using Avalonia.VisualTree; // Required for FindAncestorOfType
-using Sonorize.Models; // For Song, ArtistViewModel, AlbumViewModel, ThemeColors
-using Sonorize.ViewModels; // For SongDisplayMode (though not directly used here, context is relevant)
-using System.Diagnostics; // For Debug messages
+using Sonorize.Models;
+using Sonorize.ViewModels;
+using System.Diagnostics;
 
 namespace Sonorize.Views.MainWindowControls
 {
     public class SharedViewTemplates
     {
         private readonly ThemeColors _theme;
-        // _libraryVM field is kept for potential direct setting, but dynamic lookup is preferred for ContextMenu
         private LibraryViewModel? _libraryVM;
+        private readonly SongContextMenuHelper _contextMenuHelper;
+
 
         // Song Templates
         public FuncDataTemplate<Song> DetailedSongTemplate { get; private set; }
@@ -43,6 +42,8 @@ namespace Sonorize.Views.MainWindowControls
         public SharedViewTemplates(ThemeColors theme)
         {
             _theme = theme;
+            // Pass a lambda to SongContextMenuHelper that will retrieve the current _libraryVM
+            _contextMenuHelper = new SongContextMenuHelper(_theme, () => _libraryVM);
             Debug.WriteLine("[SharedViewTemplates] Constructor called.");
             InitializeSongTemplates();
             InitializeArtistTemplates();
@@ -50,110 +51,11 @@ namespace Sonorize.Views.MainWindowControls
             InitializePanelTemplates();
         }
 
-        // This method is still useful if MainWindow explicitly sets it.
         public void SetLibraryViewModel(LibraryViewModel? libraryVM)
         {
             _libraryVM = libraryVM;
-            Debug.WriteLine($"[SharedViewTemplates] SetLibraryViewModel explicitly called. _libraryVM is now {(_libraryVM == null ? "NULL" : "NOT NULL")}.");
+            Debug.WriteLine($"[SharedViewTemplates] SetLibraryViewModel explicitly called. _libraryVM (for helper's fallback func) is now {(_libraryVM == null ? "NULL" : "NOT NULL")}.");
         }
-
-        private ContextMenu CreateSongContextMenu(Song songDataContext)
-        {
-            var contextMenu = new ContextMenu();
-
-            // Apply styles
-            contextMenu.Styles.Add(new Style(s => s.OfType<ContextMenu>())
-            {
-                Setters =
-                {
-                    new Setter(ContextMenu.BackgroundProperty, _theme.B_SlightlyLighterBackground),
-                    new Setter(ContextMenu.BorderBrushProperty, _theme.B_ControlBackgroundColor),
-                    new Setter(ContextMenu.BorderThicknessProperty, new Thickness(1)),
-                }
-            });
-            contextMenu.Styles.Add(new Style(s => s.OfType<MenuItem>())
-            {
-                Setters =
-                {
-                    new Setter(MenuItem.ForegroundProperty, _theme.B_TextColor),
-                    new Setter(MenuItem.BackgroundProperty, Brushes.Transparent)
-                }
-            });
-            contextMenu.Styles.Add(new Style(s => s.OfType<MenuItem>().Class(":pointerover"))
-            {
-                Setters =
-                {
-                    new Setter(MenuItem.BackgroundProperty, _theme.B_ControlBackgroundColor.Multiply(1.2))
-                }
-            });
-
-            contextMenu.Opening += (sender, e) =>
-            {
-                if (sender is not ContextMenu cm) return;
-
-                Debug.WriteLine($"[ContextMenu.Opening] Event fired for song: {songDataContext.Title}. Attempting to resolve LibraryVM.");
-                LibraryViewModel? resolvedLibraryVM = null;
-
-                if (cm.PlacementTarget is Control placementTarget)
-                {
-                    Debug.WriteLine($"[ContextMenu.Opening] PlacementTarget is '{placementTarget.GetType().Name}'.");
-                    var listBox = placementTarget.FindAncestorOfType<ListBox>();
-                    if (listBox != null)
-                    {
-                        Debug.WriteLine($"[ContextMenu.Opening] Found ancestor ListBox '{listBox.Name}'. Its DataContext is '{listBox.DataContext?.GetType().Name ?? "null"}'.");
-                        if (listBox.DataContext is MainWindowViewModel mwvm && mwvm.Library != null)
-                        {
-                            resolvedLibraryVM = mwvm.Library;
-                            Debug.WriteLine($"[ContextMenu.Opening] Successfully resolved LibraryVM from ListBox.DataContext (MainWindowViewModel).");
-                        }
-                        else
-                        {
-                            Debug.WriteLine($"[ContextMenu.Opening] ListBox.DataContext is not MainWindowViewModel or Library is null.");
-                        }
-                    }
-                    else
-                    {
-                        Debug.WriteLine($"[ContextMenu.Opening] Could not find ancestor ListBox from PlacementTarget.");
-                    }
-                }
-                else
-                {
-                    Debug.WriteLine($"[ContextMenu.Opening] PlacementTarget is null. Cannot resolve LibraryVM dynamically.");
-                }
-
-                // Fallback to the cached _libraryVM if dynamic lookup failed and _libraryVM was set.
-                if (resolvedLibraryVM == null && _libraryVM != null)
-                {
-                    resolvedLibraryVM = _libraryVM;
-                    Debug.WriteLine($"[ContextMenu.Opening] Using explicitly set _libraryVM as fallback for song: {songDataContext.Title}.");
-                }
-
-
-                cm.Items.Clear(); // Clear previous items
-                if (resolvedLibraryVM != null)
-                {
-                    cm.DataContext = resolvedLibraryVM;
-
-                    var editMetadataMenuItem = new MenuItem
-                    {
-                        Header = "Edit Metadata",
-                        CommandParameter = songDataContext
-                    };
-                    editMetadataMenuItem.Bind(MenuItem.CommandProperty, new Binding("EditSongMetadataCommand"));
-                    cm.Items.Add(editMetadataMenuItem);
-                    Debug.WriteLine($"[ContextMenu.Opening] ContextMenu DataContext set to LibraryVM. Command should bind for song: {songDataContext.Title}.");
-                }
-                else
-                {
-                    Debug.WriteLine($"[ContextMenu.Opening] CRITICAL: LibraryViewModel could not be resolved for song: {songDataContext.Title}. ContextMenu will be disabled.");
-                    cm.DataContext = null;
-                    cm.Items.Add(new MenuItem { Header = "Menu Error: Cannot find ViewModel", IsEnabled = false });
-                }
-            };
-
-            return contextMenu;
-        }
-
 
         private void InitializeSongTemplates()
         {
@@ -178,7 +80,7 @@ namespace Sonorize.Views.MainWindowControls
                 Grid.SetColumn(image, 0); Grid.SetColumn(textStack, 1); Grid.SetColumn(durationBlock, 2);
 
                 var rootBorder = new Border { Padding = new Thickness(10, 6, 10, 6), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
-                rootBorder.ContextMenu = CreateSongContextMenu(dataContext);
+                rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
                 return rootBorder;
             }, supportsRecycling: true);
 
@@ -202,7 +104,7 @@ namespace Sonorize.Views.MainWindowControls
                 Grid.SetColumn(titleArtistPanel, 0); Grid.SetColumn(durationBlock, 1);
 
                 var rootBorder = new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = itemGrid };
-                rootBorder.ContextMenu = CreateSongContextMenu(dataContext);
+                rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
                 return rootBorder;
             }, supportsRecycling: true);
 
@@ -218,8 +120,8 @@ namespace Sonorize.Views.MainWindowControls
                     FontSize = 12,
                     FontWeight = FontWeight.SemiBold,
                     TextWrapping = TextWrapping.Wrap,
-                    Height = 32, // Adjusted height for two lines
-                    MaxLines = 2, // Explicitly set max lines
+                    Height = 32,
+                    MaxLines = 2,
                     TextAlignment = TextAlignment.Center,
                     HorizontalAlignment = HorizontalAlignment.Center,
                     Margin = new Thickness(0, 3, 0, 0),
@@ -233,7 +135,7 @@ namespace Sonorize.Views.MainWindowControls
                 var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { image, titleBlock, artistBlock } };
 
                 var rootBorder = new Border { Width = 120, Height = 150, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-                rootBorder.ContextMenu = CreateSongContextMenu(dataContext);
+                rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
                 return rootBorder;
             }, supportsRecycling: true);
         }
@@ -298,10 +200,6 @@ namespace Sonorize.Views.MainWindowControls
                 for (int i = 0; i < 4; i++)
                 {
                     var img = new Image { Width = 28, Height = 28, Stretch = Stretch.UniformToFill };
-                    // Binding to an indexed property of a List<Bitmap?>.
-                    // This relies on AlbumViewModel.SongThumbnailsForGrid property itself raising PropertyChanged if the list instance changes,
-                    // or if AlbumViewModel.SongThumbnailsForGrid was an ObservableCollection and its items change.
-                    // Given current AlbumViewModel setup, this will show initial state.
                     img.Bind(Image.SourceProperty, new Binding($"SongThumbnailsForGrid[{i}]"));
                     RenderOptions.SetBitmapInterpolationMode(img, BitmapInterpolationMode.HighQuality);
                     Grid.SetRow(img, i / 2);
@@ -347,25 +245,13 @@ namespace Sonorize.Views.MainWindowControls
                     Spacing = 3
                 };
 
-                // Logic to decide 2x2 or single image based on bound data needs to be cleaner if done in C# template.
-                // For simplicity, binding to RepresentativeThumbnail (which AlbumViewModel should prepare).
-                // A more complex template might use a ContentControl with a StyleSelector or multiple DataTemplates.
-
-                // Create a placeholder for the image part, could be a Grid or single Image
                 var imagePresenter = new Panel { Width = 80, Height = 80, HorizontalAlignment = HorizontalAlignment.Center };
-
-
-                // Attempting a dynamic switch based on data. This is complex in FuncDataTemplate.
-                // A common approach is to have the ViewModel provide a single "display-ready" thumbnail or a type indicator.
-                // Here, we'll just bind to RepresentativeThumbnail for grid view.
-                // If more complex logic (like showing 2x2) is needed, it should ideally be handled by ViewModel state
-                // or a custom control / more sophisticated templating.
 
                 if (dataContext != null && dataContext.SongThumbnailsForGrid != null && dataContext.SongThumbnailsForGrid.Count(t => t != null) > 1)
                 {
                     var imageGrid = new Grid
                     {
-                        Width = 80, // Keep overall size consistent
+                        Width = 80,
                         Height = 80,
                         HorizontalAlignment = HorizontalAlignment.Center,
                         ColumnDefinitions = new ColumnDefinitions("*,*"),
@@ -374,7 +260,7 @@ namespace Sonorize.Views.MainWindowControls
 
                     for (int i = 0; i < 4; i++)
                     {
-                        var img = new Image { Width = 38, Height = 38, Stretch = Stretch.UniformToFill, Margin = new Thickness(1) }; // Smaller images for grid
+                        var img = new Image { Width = 38, Height = 38, Stretch = Stretch.UniformToFill, Margin = new Thickness(1) };
                         img.Bind(Image.SourceProperty, new Binding($"SongThumbnailsForGrid[{i}]"));
                         RenderOptions.SetBitmapInterpolationMode(img, BitmapInterpolationMode.HighQuality);
                         Grid.SetRow(img, i / 2);
@@ -383,7 +269,7 @@ namespace Sonorize.Views.MainWindowControls
                     }
                     imagePresenter.Children.Add(imageGrid);
                 }
-                else // Show single representative thumbnail
+                else
                 {
                     var singleImage = new Image
                     {
@@ -397,7 +283,6 @@ namespace Sonorize.Views.MainWindowControls
                     imagePresenter.Children.Add(singleImage);
                 }
                 contentStack.Children.Add(imagePresenter);
-
 
                 var albumTitleBlock = new TextBlock
                 {
@@ -440,7 +325,7 @@ namespace Sonorize.Views.MainWindowControls
         private void InitializePanelTemplates()
         {
             StackPanelItemsPanelTemplate = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel { Orientation = Orientation.Vertical });
-            WrapPanelItemsPanelTemplate = new FuncTemplate<Panel?>(() => new WrapPanel { Orientation = Orientation.Horizontal, ItemWidth = 130, ItemHeight = 160 }); // Adjusted ItemWidth/Height for grid items
+            WrapPanelItemsPanelTemplate = new FuncTemplate<Panel?>(() => new WrapPanel { Orientation = Orientation.Horizontal, ItemWidth = 130, ItemHeight = 160 });
         }
     }
 }
