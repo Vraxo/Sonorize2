@@ -13,7 +13,7 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
     private readonly PlaybackCompletionHandler _completionHandler;
     private readonly ScrobblingService _scrobblingService;
     private readonly PlaybackSessionState _sessionState;
-    private readonly PlaybackSessionLoader _sessionLoader; // New helper
+    private readonly PlaybackSessionLoader _sessionLoader;
 
     // Delegated Properties to PlaybackSessionState
     public Song? CurrentSong => _sessionState.CurrentSong;
@@ -52,7 +52,6 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
     }
 
     private volatile bool _explicitStopRequested = false;
-    private bool _isEngineReleaseExpected = false;
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? SessionEndedNaturally;
@@ -66,7 +65,7 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
         var engineController = new NAudioEngineController();
         _playbackEngineCoordinator = new PlaybackEngineCoordinator(engineController, loopHandler, new PlaybackMonitor(engineController, loopHandler));
         _completionHandler = new PlaybackCompletionHandler(this, _scrobblingService);
-        _sessionLoader = new PlaybackSessionLoader(_playbackEngineCoordinator, _sessionState, _scrobblingService); // Initialize new helper
+        _sessionLoader = new PlaybackSessionLoader(_playbackEngineCoordinator, _sessionState, _scrobblingService);
 
 
         _playbackEngineCoordinator.EnginePlaybackStopped += OnEngineCoordinatorPlaybackStopped;
@@ -86,8 +85,6 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
 
     private void UpdatePlaybackPositionAndDuration(TimeSpan position, TimeSpan duration)
     {
-        // This logic is now primarily handled by PlaybackSessionLoader post-load
-        // and by this method for runtime updates.
         _sessionState.CurrentPosition = position;
         _sessionState.CurrentSongDuration = duration;
     }
@@ -98,11 +95,11 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
 
         if (CurrentPlaybackStatus != PlaybackStateStatus.Stopped && CurrentSong != null && CurrentSong != song)
         {
-            _playbackEngineCoordinator.Stop(); // Stop previous different song
+            _playbackEngineCoordinator.Stop();
         }
         else if (CurrentPlaybackStatus != PlaybackStateStatus.Stopped && CurrentSong == song)
         {
-            _playbackEngineCoordinator.Stop(); // Stop and restart same song
+            _playbackEngineCoordinator.Stop();
         }
 
         if (song == null || string.IsNullOrEmpty(song.FilePath) || !File.Exists(song.FilePath))
@@ -116,22 +113,6 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
 
         _explicitStopRequested = false;
         return _sessionLoader.LoadNewSession(song);
-    }
-
-    public bool ReinitializePlayback(Song song, TimeSpan position, bool shouldBePlaying)
-    {
-        Debug.WriteLine($"[SessionManager] ReinitializePlayback for: {song.Title}, Position: {position}, ShouldPlay: {shouldBePlaying}");
-        _explicitStopRequested = false;
-
-        // Ensure any previous engine state is cleared if it was for a different song or needs full reload
-        // This might be implicitly handled by PlaybackEngineCoordinator.Load if it disposes previous
-        // For safety, if the song is different, ensure a full stop.
-        if (CurrentSong != song && CurrentPlaybackStatus != PlaybackStateStatus.Stopped)
-        {
-            _playbackEngineCoordinator.Stop();
-        }
-
-        return _sessionLoader.ReloadSession(song, position, shouldBePlaying);
     }
 
     public void PauseSession()
@@ -155,7 +136,6 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
         }
         else if (CurrentPlaybackStatus == PlaybackStateStatus.Stopped)
         {
-            // ReinitializePlayback handles loading, seeking, and starting play
             _sessionLoader.ReloadSession(CurrentSong, CurrentPosition, true);
         }
     }
@@ -165,42 +145,18 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
         _explicitStopRequested = isExplicit;
         if (CurrentPlaybackStatus != PlaybackStateStatus.Stopped)
         {
-            _playbackEngineCoordinator.Stop(); // This will trigger OnEngineCoordinatorPlaybackStopped
+            _playbackEngineCoordinator.Stop();
         }
-        else if (isExplicit) // If already stopped but an explicit stop is requested
+        else if (isExplicit)
         {
             _completionHandler.Handle(
-              new StoppedEventArgs(), // Empty args as it's an artificial stop event
+              new StoppedEventArgs(),
               CurrentSong,
-              this.CurrentPosition, // Use current state's position/duration
+              this.CurrentPosition,
               this.CurrentSongDuration,
               _explicitStopRequested
           );
         }
-    }
-
-    public (bool WasPlaying, TimeSpan Position)? StopAndReleaseFileResources()
-    {
-        if (CurrentSong == null)
-        {
-            Debug.WriteLine("[SessionManager] StopAndReleaseFileResources: No current song. Nothing to release.");
-            return null;
-        }
-
-        Debug.WriteLine($"[SessionManager] StopAndReleaseFileResources for: {CurrentSong.Title}");
-        bool wasPlaying = IsPlaying;
-        TimeSpan position = CurrentPosition;
-
-        _isEngineReleaseExpected = true; // Signal that the upcoming PlaybackStopped event is expected
-        _playbackEngineCoordinator.DisposeCurrentEngineInternals();
-        _isEngineReleaseExpected = false;
-
-        // Manually update state as the engine is gone and won't report stopped.
-        SetPlaybackState(false, PlaybackStateStatus.Stopped);
-        // _sessionState.CurrentPosition remains as it was, which is correct.
-
-        Debug.WriteLine($"[SessionManager] File resources released for {CurrentSong.Title}. WasPlaying: {wasPlaying}, Position: {position}");
-        return (wasPlaying, position);
     }
 
     public void SeekSession(TimeSpan requestedPosition)
@@ -209,6 +165,27 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
         _playbackEngineCoordinator.Seek(requestedPosition);
     }
 
+    internal void ForceReleaseEngineForCurrentSong()
+    {
+        if (CurrentSong == null)
+        {
+            Debug.WriteLine("[SessionManager] ForceReleaseEngineForCurrentSong: No current song. Nothing to release.");
+            return;
+        }
+        Debug.WriteLine($"[SessionManager] ForceReleaseEngineForCurrentSong for: {CurrentSong.Title}");
+        _playbackEngineCoordinator.DisposeCurrentEngineInternals();
+        SetPlaybackState(false, PlaybackStateStatus.Stopped); // Position remains, state is stopped
+        Debug.WriteLine($"[SessionManager] Engine resources released for {CurrentSong.Title}. State set to Stopped.");
+    }
+
+    internal bool ForceReloadAndPlayEngine(Song song, TimeSpan position, bool shouldBePlaying)
+    {
+        Debug.WriteLine($"[SessionManager] ForceReloadAndPlayEngine for: {song.Title}, Position: {position}, ShouldPlay: {shouldBePlaying}");
+        _explicitStopRequested = false;
+        return _sessionLoader.ReloadSession(song, position, shouldBePlaying);
+    }
+
+
     private void OnEngineCoordinatorPositionUpdated(object? sender, PositionEventArgs e)
     {
         UpdatePlaybackPositionAndDuration(e.Position, e.Duration);
@@ -216,17 +193,10 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
 
     private void OnEngineCoordinatorPlaybackStopped(object? sender, StoppedEventArgs e)
     {
-        if (_isEngineReleaseExpected)
-        {
-            Debug.WriteLine("[SessionManager] OnEngineCoordinatorPlaybackStopped: Event ignored as engine release was expected.");
-            return; // Don't process if we explicitly disposed the engine
-        }
-
         Song? songThatJustStopped = CurrentSong;
-        TimeSpan actualStoppedPosition = _playbackEngineCoordinator.CurrentPosition; // Get final position from engine
+        TimeSpan actualStoppedPosition = _playbackEngineCoordinator.CurrentPosition;
         TimeSpan actualStoppedSongDuration = _playbackEngineCoordinator.CurrentSongDuration;
 
-        // If duration from engine is zero (e.g., error before full load), use song's metadata duration
         if (songThatJustStopped != null && actualStoppedSongDuration == TimeSpan.Zero)
         {
             actualStoppedSongDuration = songThatJustStopped.Duration;
@@ -242,21 +212,19 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
     }
 
     // Methods called by PlaybackCompletionHandler
-    internal void StopUiUpdateMonitor() => _playbackEngineCoordinator.Stop(); // This might be too aggressive; monitor stops itself. Consider if this is needed.
+    internal void StopUiUpdateMonitor() => _playbackEngineCoordinator.Stop();
     internal void UpdateStateForNaturalPlaybackEnd()
     {
         SetPlaybackState(false, PlaybackStateStatus.Stopped);
-        // Position should remain at end of song or be reset by PlaybackSessionState.ResetToDefault
-        // _sessionState.CurrentPosition = _sessionState.CurrentSongDuration; // or _sessionState.ResetToDefault();
     }
     internal void FinalizeCurrentSong(Song? song)
     {
-        _sessionState.CurrentSong = song; // This will trigger HasCurrentSong update
+        _sessionState.CurrentSong = song;
         if (song == null)
         {
             _sessionState.ResetToDefault();
         }
-        _playbackEngineCoordinator.SetSong(song); // Keep coordinator in sync
+        _playbackEngineCoordinator.SetSong(song);
     }
     internal Song? GetCurrentSongForCompletion() => CurrentSong;
     internal void SetPlaybackState(bool isPlaying, PlaybackStateStatus status)
@@ -286,8 +254,6 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
             _playbackEngineCoordinator.EnginePositionUpdated -= OnEngineCoordinatorPositionUpdated;
             _playbackEngineCoordinator.Dispose();
         }
-        // _completionHandler does not currently implement IDisposable
-        // _sessionLoader does not currently implement IDisposable
         GC.SuppressFinalize(this);
         Debug.WriteLine("[PlaybackSessionManager] Dispose completed.");
     }

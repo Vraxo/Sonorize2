@@ -3821,12 +3821,7 @@ using Avalonia.Controls.Templates;
 using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Threading; // Required for Dispatcher
-// Removed: using Avalonia.Media.Imaging; 
-// Removed: using Avalonia.Styling;
-// Removed: using Sonorize.Controls;
-// Removed: using Sonorize.Converters;
 using Sonorize.Models;
-// Removed: using Sonorize.Services;
 using Sonorize.ViewModels;
 using Sonorize.Views.MainWindowControls;
 
@@ -3901,25 +3896,22 @@ public class MainWindow : Window
 
     private void MainWindow_DataContextChanged(object? sender, EventArgs e)
     {
-        // Previous LibraryVM cleanup
         if (_currentLibraryVM != null)
         {
             _currentLibraryVM.PropertyChanged -= LibraryViewModel_PropertyChanged;
-            _sharedViewTemplates.SetLibraryViewModel(null); // Reset in shared templates
+            _sharedViewTemplates.SetLibraryViewModel(null);
             _currentLibraryVM = null;
         }
 
-        // New LibraryVM setup
         if (DataContext is MainWindowViewModel vm && vm.Library != null)
         {
-            vm.SetOwnerView(this); // Pass the window instance to the ViewModel
+            vm.SetOwnerView(this);
 
             _currentLibraryVM = vm.Library;
             _currentLibraryVM.PropertyChanged += LibraryViewModel_PropertyChanged;
-            _sharedViewTemplates.SetLibraryViewModel(_currentLibraryVM); // Set in shared templates
+            _sharedViewTemplates.SetLibraryViewModel(_currentLibraryVM);
 
-            // Apply initial display modes for each list
-            ApplyListViewDisplayMode(_songListBox, _currentLibraryVM.LibraryViewMode, _sharedViewTemplates.DetailedSongTemplate, _sharedViewTemplates.CompactSongTemplate, _sharedViewTemplates.GridSongTemplate);
+            ApplyListViewDisplayMode(_songListBox, _currentLibraryVM.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate);
             ApplyListViewDisplayMode(_artistsListBox, _currentLibraryVM.ArtistViewMode, _sharedViewTemplates.DetailedArtistTemplate, _sharedViewTemplates.CompactArtistTemplate, _sharedViewTemplates.GridArtistTemplate);
             ApplyListViewDisplayMode(_albumsListBox, _currentLibraryVM.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate);
         }
@@ -3931,7 +3923,7 @@ public class MainWindow : Window
         {
             if (e.PropertyName == nameof(LibraryViewModel.LibraryViewMode))
             {
-                Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_songListBox, lvm.LibraryViewMode, _sharedViewTemplates.DetailedSongTemplate, _sharedViewTemplates.CompactSongTemplate, _sharedViewTemplates.GridSongTemplate));
+                Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_songListBox, lvm.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate));
             }
             else if (e.PropertyName == nameof(LibraryViewModel.ArtistViewMode))
             {
@@ -3944,7 +3936,6 @@ public class MainWindow : Window
         }
     }
 
-    // Renamed for clarity
     private void ApplyListViewDisplayMode(ListBox listBox, SongDisplayMode mode, IDataTemplate detailedTemplate, IDataTemplate compactTemplate, IDataTemplate gridTemplate)
     {
         if (listBox == null)
@@ -3969,11 +3960,11 @@ public class MainWindow : Window
         if (_currentLibraryVM != null)
         {
             _currentLibraryVM.PropertyChanged -= LibraryViewModel_PropertyChanged;
-            _sharedViewTemplates.SetLibraryViewModel(null); // Also clear on close
+            _sharedViewTemplates.SetLibraryViewModel(null);
         }
         if (DataContext is MainWindowViewModel vm)
         {
-            vm.SetOwnerView(null!); // Clear the owner view reference
+            vm.SetOwnerView(null!);
         }
         base.OnClosed(e);
     }
@@ -8573,202 +8564,199 @@ using Avalonia.Styling;
 using Sonorize.Models;
 using Sonorize.ViewModels;
 
-namespace Sonorize.Views.MainWindowControls
+namespace Sonorize.Views.MainWindowControls;
+
+public class MainTabViewControls
 {
-    public class MainTabViewControls
+    private readonly ThemeColors _theme;
+    private readonly SharedViewTemplates _sharedViewTemplates;
+    private ListBox? _songListBoxInstance;
+    private ListBox? _artistsListBoxInstance;
+    private ListBox? _albumsListBoxInstance;
+
+    public MainTabViewControls(ThemeColors theme, SharedViewTemplates sharedViewTemplates)
     {
-        private readonly ThemeColors _theme;
-        private readonly SharedViewTemplates _sharedViewTemplates; // Changed from SongListTemplates
-        private ListBox? _songListBoxInstance;
-        private ListBox? _artistsListBoxInstance; // Added
-        private ListBox? _albumsListBoxInstance;  // Added
+        _theme = theme;
+        _sharedViewTemplates = sharedViewTemplates;
+    }
 
-        public MainTabViewControls(ThemeColors theme, SharedViewTemplates sharedViewTemplates) // Changed parameter type
+    public TabControl CreateMainTabView(out ListBox songListBox, out ListBox artistsListBox, out ListBox albumsListBox)
+    {
+        var tabControl = new TabControl
         {
-            _theme = theme;
-            _sharedViewTemplates = sharedViewTemplates;
-        }
+            Background = _theme.B_BackgroundColor,
+            Margin = new Thickness(10, 5, 10, 5),
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0)
+        };
+        tabControl.Bind(TabControl.SelectedIndexProperty, new Binding("ActiveTabIndex", BindingMode.TwoWay));
 
-        public TabControl CreateMainTabView(out ListBox songListBox, out ListBox artistsListBox, out ListBox albumsListBox) // Added out params
+        var tabItemStyle = new Style(s => s.Is<TabItem>());
+        tabItemStyle.Setters.Add(new Setter(TabItem.BackgroundProperty, _theme.B_BackgroundColor));
+        tabItemStyle.Setters.Add(new Setter(TabItem.ForegroundProperty, _theme.B_SecondaryTextColor));
+        tabItemStyle.Setters.Add(new Setter(TabItem.PaddingProperty, new Thickness(12, 7)));
+        tabItemStyle.Setters.Add(new Setter(TabItem.FontSizeProperty, 13.0));
+        tabItemStyle.Setters.Add(new Setter(TabItem.FontWeightProperty, FontWeight.SemiBold));
+        tabItemStyle.Setters.Add(new Setter(TabItem.BorderThicknessProperty, new Thickness(0)));
+        tabItemStyle.Setters.Add(new Setter(TabItem.BorderBrushProperty, Brushes.Transparent));
+
+        var selectedTabItemStyle = new Style(s => s.Is<TabItem>().Class(":selected"));
+        selectedTabItemStyle.Setters.Add(new Setter(TabItem.BackgroundProperty, _theme.B_BackgroundColor));
+        selectedTabItemStyle.Setters.Add(new Setter(TabItem.ForegroundProperty, _theme.B_TextColor));
+
+        var pointerOverTabItemStyle = new Style(s => s.Is<TabItem>().Class(":pointerover").Not(x => x.Class(":selected")));
+        pointerOverTabItemStyle.Setters.Add(new Setter(TabItem.BackgroundProperty, _theme.B_SlightlyLighterBackground));
+        pointerOverTabItemStyle.Setters.Add(new Setter(TabItem.ForegroundProperty, _theme.B_TextColor));
+
+        tabControl.Styles.Add(tabItemStyle);
+        tabControl.Styles.Add(selectedTabItemStyle);
+        tabControl.Styles.Add(pointerOverTabItemStyle);
+
+        var libraryTab = new TabItem
         {
-            var tabControl = new TabControl
-            {
-                Background = _theme.B_BackgroundColor,
-                Margin = new Thickness(10, 5, 10, 5),
-                BorderThickness = new Thickness(0),
-                Padding = new Thickness(0)
-            };
-            tabControl.Bind(TabControl.SelectedIndexProperty, new Binding("ActiveTabIndex", BindingMode.TwoWay));
+            Header = "LIBRARY",
+            Content = CreateSongListScrollViewer()
+        };
 
-            var tabItemStyle = new Style(s => s.Is<TabItem>());
-            tabItemStyle.Setters.Add(new Setter(TabItem.BackgroundProperty, _theme.B_BackgroundColor));
-            tabItemStyle.Setters.Add(new Setter(TabItem.ForegroundProperty, _theme.B_SecondaryTextColor));
-            tabItemStyle.Setters.Add(new Setter(TabItem.PaddingProperty, new Thickness(12, 7)));
-            tabItemStyle.Setters.Add(new Setter(TabItem.FontSizeProperty, 13.0));
-            tabItemStyle.Setters.Add(new Setter(TabItem.FontWeightProperty, FontWeight.SemiBold));
-            tabItemStyle.Setters.Add(new Setter(TabItem.BorderThicknessProperty, new Thickness(0)));
-            tabItemStyle.Setters.Add(new Setter(TabItem.BorderBrushProperty, Brushes.Transparent));
-
-            var selectedTabItemStyle = new Style(s => s.Is<TabItem>().Class(":selected"));
-            selectedTabItemStyle.Setters.Add(new Setter(TabItem.BackgroundProperty, _theme.B_BackgroundColor));
-            selectedTabItemStyle.Setters.Add(new Setter(TabItem.ForegroundProperty, _theme.B_TextColor));
-
-            var pointerOverTabItemStyle = new Style(s => s.Is<TabItem>().Class(":pointerover").Not(x => x.Class(":selected")));
-            pointerOverTabItemStyle.Setters.Add(new Setter(TabItem.BackgroundProperty, _theme.B_SlightlyLighterBackground));
-            pointerOverTabItemStyle.Setters.Add(new Setter(TabItem.ForegroundProperty, _theme.B_TextColor));
-
-            tabControl.Styles.Add(tabItemStyle);
-            tabControl.Styles.Add(selectedTabItemStyle);
-            tabControl.Styles.Add(pointerOverTabItemStyle);
-
-            var libraryTab = new TabItem
-            {
-                Header = "LIBRARY",
-                Content = CreateSongListScrollViewer()
-            };
-
-            var artistsTab = new TabItem
-            {
-                Header = "ARTISTS",
-                Content = CreateArtistsListScrollViewer()
-            };
-
-            var albumsTab = new TabItem
-            {
-                Header = "ALBUMS",
-                Content = CreateAlbumsListScrollViewer()
-            };
-
-            tabControl.Items.Add(libraryTab);
-            tabControl.Items.Add(artistsTab);
-            tabControl.Items.Add(albumsTab);
-
-            songListBox = _songListBoxInstance!;
-            artistsListBox = _artistsListBoxInstance!; // Assign out param
-            albumsListBox = _albumsListBoxInstance!;   // Assign out param
-            return tabControl;
-        }
-
-        private ScrollViewer CreateSongListScrollViewer()
+        var artistsTab = new TabItem
         {
-            _songListBoxInstance = new ListBox
-            {
-                Background = _theme.B_ListBoxBackground,
-                BorderThickness = new Thickness(0),
-                Margin = new Thickness(10),
-                Name = "SongListBox"
-            };
+            Header = "ARTISTS",
+            Content = CreateArtistsListScrollViewer()
+        };
 
-            // Common ListBoxItem styles
-            ApplyListBoxItemStyles(_songListBoxInstance);
-
-            _songListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.FilteredSongs"));
-            _songListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.SelectedSong", BindingMode.TwoWay));
-
-            _songListBoxInstance.ItemTemplate = _sharedViewTemplates.DetailedSongTemplate;
-            _songListBoxInstance.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
-
-            return new ScrollViewer { Content = _songListBoxInstance, Padding = new Thickness(0, 0, 0, 5), HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        }
-
-        private ScrollViewer CreateArtistsListScrollViewer()
+        var albumsTab = new TabItem
         {
-            _artistsListBoxInstance = new ListBox
-            {
-                Background = _theme.B_ListBoxBackground,
-                BorderThickness = new Thickness(0),
-                Margin = new Thickness(10),
-                Name = "ArtistsListBox"
-            };
-            ApplyListBoxItemStyles(_artistsListBoxInstance);
+            Header = "ALBUMS",
+            Content = CreateAlbumsListScrollViewer()
+        };
 
-            _artistsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Artists"));
-            _artistsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.FilterState.SelectedArtist", BindingMode.TwoWay));
+        tabControl.Items.Add(libraryTab);
+        tabControl.Items.Add(artistsTab);
+        tabControl.Items.Add(albumsTab);
 
-            _artistsListBoxInstance.ItemTemplate = _sharedViewTemplates.DetailedArtistTemplate;
-            _artistsListBoxInstance.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
+        songListBox = _songListBoxInstance!;
+        artistsListBox = _artistsListBoxInstance!;
+        albumsListBox = _albumsListBoxInstance!;
+        return tabControl;
+    }
 
-            return new ScrollViewer { Content = _artistsListBoxInstance, Padding = new Thickness(0, 0, 0, 5), HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        }
-
-        private ScrollViewer CreateAlbumsListScrollViewer()
+    private ScrollViewer CreateSongListScrollViewer()
+    {
+        _songListBoxInstance = new ListBox
         {
-            _albumsListBoxInstance = new ListBox
-            {
-                Background = _theme.B_ListBoxBackground,
-                BorderThickness = new Thickness(0),
-                Margin = new Thickness(10),
-                Name = "AlbumsListBox"
-            };
-            ApplyListBoxItemStyles(_albumsListBoxInstance);
+            Background = _theme.B_ListBoxBackground,
+            BorderThickness = new Thickness(0),
+            Margin = new Thickness(10),
+            Name = "SongListBox"
+        };
 
-            _albumsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Albums"));
-            _albumsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.FilterState.SelectedAlbum", BindingMode.TwoWay));
+        ApplyListBoxItemStyles(_songListBoxInstance);
 
-            _albumsListBoxInstance.ItemTemplate = _sharedViewTemplates.DetailedAlbumTemplate;
-            _albumsListBoxInstance.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
+        _songListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.FilteredSongs"));
+        _songListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.SelectedSong", BindingMode.TwoWay));
 
-            return new ScrollViewer { Content = _albumsListBoxInstance, Padding = new Thickness(0, 0, 0, 5), HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        }
+        _songListBoxInstance.ItemTemplate = _sharedViewTemplates.SongTemplates.DetailedSongTemplate; // Updated path
+        _songListBoxInstance.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
 
-        private void ApplyListBoxItemStyles(ListBox listBox)
+        return new ScrollViewer { Content = _songListBoxInstance, Padding = new Thickness(0, 0, 0, 5), HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+    }
+
+    private ScrollViewer CreateArtistsListScrollViewer()
+    {
+        _artistsListBoxInstance = new ListBox
         {
-            listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>())
-            {
-                Setters = {
-                    new Setter(TemplatedControl.BackgroundProperty, _theme.B_ListBoxBackground),
-                    new Setter(TextBlock.ForegroundProperty, _theme.B_TextColor),
-                    new Setter(ListBoxItem.PaddingProperty, new Thickness(3)) // Default padding, templates can override
-                }
-            });
-            listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":pointerover").Not(xx => xx.Class(":selected")))
-            { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_ControlBackgroundColor) } });
-            listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected"))
-            {
-                Setters = {
-                    new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
-                    new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
-                }
-            });
-            listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected").Class(":pointerover"))
-            {
-                Setters = {
-                    new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor), // Keep accent when selected and hovered
-                    new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
-                }
-            });
-        }
+            Background = _theme.B_ListBoxBackground,
+            BorderThickness = new Thickness(0),
+            Margin = new Thickness(10),
+            Name = "ArtistsListBox"
+        };
+        ApplyListBoxItemStyles(_artistsListBoxInstance);
 
-        // Renamed and generalized
-        public void UpdateListViewMode(SongDisplayMode mode, ListBox listBox, IDataTemplate detailedTemplate, IDataTemplate compactTemplate, IDataTemplate gridTemplate)
+        _artistsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Artists"));
+        _artistsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.FilterState.SelectedArtist", BindingMode.TwoWay));
+
+        _artistsListBoxInstance.ItemTemplate = _sharedViewTemplates.DetailedArtistTemplate;
+        _artistsListBoxInstance.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
+
+        return new ScrollViewer { Content = _artistsListBoxInstance, Padding = new Thickness(0, 0, 0, 5), HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+    }
+
+    private ScrollViewer CreateAlbumsListScrollViewer()
+    {
+        _albumsListBoxInstance = new ListBox
         {
-            if (listBox == null)
-            {
-                Debug.WriteLine($"[MainTabViewControls] UpdateListViewMode called but target ListBox is null.");
-                return;
+            Background = _theme.B_ListBoxBackground,
+            BorderThickness = new Thickness(0),
+            Margin = new Thickness(10),
+            Name = "AlbumsListBox"
+        };
+        ApplyListBoxItemStyles(_albumsListBoxInstance);
+
+        _albumsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Albums"));
+        _albumsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.FilterState.SelectedAlbum", BindingMode.TwoWay));
+
+        _albumsListBoxInstance.ItemTemplate = _sharedViewTemplates.DetailedAlbumTemplate;
+        _albumsListBoxInstance.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
+
+        return new ScrollViewer { Content = _albumsListBoxInstance, Padding = new Thickness(0, 0, 0, 5), HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+    }
+
+    private void ApplyListBoxItemStyles(ListBox listBox)
+    {
+        listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>())
+        {
+            Setters = {
+                new Setter(TemplatedControl.BackgroundProperty, _theme.B_ListBoxBackground),
+                new Setter(TextBlock.ForegroundProperty, _theme.B_TextColor),
+                new Setter(ListBoxItem.PaddingProperty, new Thickness(3))
             }
-
-            Debug.WriteLine($"[MainTabViewControls] Applying display mode: {mode} to ListBox: {listBox.Name}");
-            var scrollViewer = listBox.Parent as ScrollViewer;
-
-            switch (mode)
-            {
-                case SongDisplayMode.Detailed:
-                    listBox.ItemTemplate = detailedTemplate;
-                    listBox.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
-                    if (scrollViewer != null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
-                    break;
-                case SongDisplayMode.Compact:
-                    listBox.ItemTemplate = compactTemplate;
-                    listBox.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
-                    if (scrollViewer != null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
-                    break;
-                case SongDisplayMode.Grid:
-                    listBox.ItemTemplate = gridTemplate;
-                    listBox.ItemsPanel = _sharedViewTemplates.WrapPanelItemsPanelTemplate;
-                    if (scrollViewer != null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
-                    break;
+        });
+        listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":pointerover").Not(xx => xx.Class(":selected")))
+        { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_ControlBackgroundColor) } });
+        listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected"))
+        {
+            Setters = {
+                new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
+                new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
             }
+        });
+        listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected").Class(":pointerover"))
+        {
+            Setters = {
+                new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
+                new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
+            }
+        });
+    }
+
+    public void UpdateListViewMode(SongDisplayMode mode, ListBox listBox, IDataTemplate detailedTemplate, IDataTemplate compactTemplate, IDataTemplate gridTemplate)
+    {
+        if (listBox == null)
+        {
+            Debug.WriteLine($"[MainTabViewControls] UpdateListViewMode called but target ListBox is null.");
+            return;
+        }
+
+        Debug.WriteLine($"[MainTabViewControls] Applying display mode: {mode} to ListBox: {listBox.Name}");
+        var scrollViewer = listBox.Parent as ScrollViewer;
+
+        switch (mode)
+        {
+            case SongDisplayMode.Detailed:
+                listBox.ItemTemplate = detailedTemplate;
+                listBox.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
+                if (scrollViewer != null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                break;
+            case SongDisplayMode.Compact:
+                listBox.ItemTemplate = compactTemplate;
+                listBox.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
+                if (scrollViewer != null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                break;
+            case SongDisplayMode.Grid:
+                listBox.ItemTemplate = gridTemplate;
+                listBox.ItemsPanel = _sharedViewTemplates.WrapPanelItemsPanelTemplate;
+                if (scrollViewer != null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                break;
         }
     }
 }
@@ -9194,442 +9182,387 @@ using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
-using Avalonia.Styling; // Required for Style
-using Avalonia.VisualTree; // Required for FindAncestorOfType
-using Sonorize.Models; // For Song, ArtistViewModel, AlbumViewModel, ThemeColors
-using Sonorize.ViewModels; // For SongDisplayMode (though not directly used here, context is relevant)
-using System.Diagnostics; // For Debug messages
+using Sonorize.Models;
+using Sonorize.ViewModels;
+using System.Diagnostics;
 
-namespace Sonorize.Views.MainWindowControls
+namespace Sonorize.Views.MainWindowControls;
+
+public class SharedViewTemplates
 {
-    public class SharedViewTemplates
+    private readonly ThemeColors _theme;
+    private LibraryViewModel? _libraryVM;
+    private readonly SongContextMenuHelper _contextMenuHelper;
+
+    // Expose the provider for Song templates
+    public SongItemTemplateProvider SongTemplates { get; private set; }
+
+    // Artist Templates
+    public FuncDataTemplate<ArtistViewModel> DetailedArtistTemplate { get; private set; }
+    public FuncDataTemplate<ArtistViewModel> CompactArtistTemplate { get; private set; }
+    public FuncDataTemplate<ArtistViewModel> GridArtistTemplate { get; private set; }
+
+    // Album Templates
+    public FuncDataTemplate<AlbumViewModel> DetailedAlbumTemplate { get; private set; }
+    public FuncDataTemplate<AlbumViewModel> CompactAlbumTemplate { get; private set; }
+    public FuncDataTemplate<AlbumViewModel> GridAlbumTemplate { get; private set; }
+
+
+    // Panel Templates (reusable)
+    public ITemplate<Panel?> StackPanelItemsPanelTemplate { get; private set; }
+    public ITemplate<Panel?> WrapPanelItemsPanelTemplate { get; private set; }
+
+    public SharedViewTemplates(ThemeColors theme)
     {
-        private readonly ThemeColors _theme;
-        // _libraryVM field is kept for potential direct setting, but dynamic lookup is preferred for ContextMenu
-        private LibraryViewModel? _libraryVM;
+        _theme = theme;
+        _contextMenuHelper = new SongContextMenuHelper(_theme, () => _libraryVM);
+        SongTemplates = new SongItemTemplateProvider(_theme, _contextMenuHelper); // Instantiate the new provider
 
-        // Song Templates
-        public FuncDataTemplate<Song> DetailedSongTemplate { get; private set; }
-        public FuncDataTemplate<Song> CompactSongTemplate { get; private set; }
-        public FuncDataTemplate<Song> GridSongTemplate { get; private set; }
+        Debug.WriteLine("[SharedViewTemplates] Constructor called.");
+        // InitializeSongTemplates(); // This is now done by SongItemTemplateProvider
+        InitializeArtistTemplates();
+        InitializeAlbumTemplates();
+        InitializePanelTemplates();
+    }
 
-        // Artist Templates
-        public FuncDataTemplate<ArtistViewModel> DetailedArtistTemplate { get; private set; }
-        public FuncDataTemplate<ArtistViewModel> CompactArtistTemplate { get; private set; }
-        public FuncDataTemplate<ArtistViewModel> GridArtistTemplate { get; private set; }
+    public void SetLibraryViewModel(LibraryViewModel? libraryVM)
+    {
+        _libraryVM = libraryVM;
+        Debug.WriteLine($"[SharedViewTemplates] SetLibraryViewModel explicitly called. _libraryVM (for helper's fallback func) is now {(_libraryVM == null ? "NULL" : "NOT NULL")}.");
+    }
 
-        // Album Templates
-        public FuncDataTemplate<AlbumViewModel> DetailedAlbumTemplate { get; private set; }
-        public FuncDataTemplate<AlbumViewModel> CompactAlbumTemplate { get; private set; }
-        public FuncDataTemplate<AlbumViewModel> GridAlbumTemplate { get; private set; }
-
-
-        // Panel Templates (reusable)
-        public ITemplate<Panel?> StackPanelItemsPanelTemplate { get; private set; }
-        public ITemplate<Panel?> WrapPanelItemsPanelTemplate { get; private set; }
-
-        public SharedViewTemplates(ThemeColors theme)
+    private void InitializeArtistTemplates()
+    {
+        DetailedArtistTemplate = new FuncDataTemplate<ArtistViewModel>((dataContext, nameScope) =>
         {
-            _theme = theme;
-            Debug.WriteLine("[SharedViewTemplates] Constructor called.");
-            InitializeSongTemplates();
-            InitializeArtistTemplates();
-            InitializeAlbumTemplates();
-            InitializePanelTemplates();
-        }
+            var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 10, 0), Stretch = Stretch.UniformToFill };
+            image.Bind(Image.SourceProperty, new Binding(nameof(ArtistViewModel.Thumbnail)));
+            RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
 
-        // This method is still useful if MainWindow explicitly sets it.
-        public void SetLibraryViewModel(LibraryViewModel? libraryVM)
+            var artistNameBlock = new TextBlock { FontSize = 14, VerticalAlignment = VerticalAlignment.Center };
+            artistNameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(ArtistViewModel.Name)));
+
+            var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), VerticalAlignment = VerticalAlignment.Center };
+            itemGrid.Children.Add(image); itemGrid.Children.Add(artistNameBlock);
+            Grid.SetColumn(image, 0); Grid.SetColumn(artistNameBlock, 1);
+            return new Border { Padding = new Thickness(10, 8), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
+        }, supportsRecycling: true);
+
+        CompactArtistTemplate = new FuncDataTemplate<ArtistViewModel>((dataContext, nameScope) =>
         {
-            _libraryVM = libraryVM;
-            Debug.WriteLine($"[SharedViewTemplates] SetLibraryViewModel explicitly called. _libraryVM is now {(_libraryVM == null ? "NULL" : "NOT NULL")}.");
-        }
+            var artistNameBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+            artistNameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(ArtistViewModel.Name)));
+            return new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = artistNameBlock };
+        }, supportsRecycling: true);
 
-        private ContextMenu CreateSongContextMenu(Song songDataContext)
+        GridArtistTemplate = new FuncDataTemplate<ArtistViewModel>((dataContext, nameScope) =>
         {
-            var contextMenu = new ContextMenu();
+            var image = new Image { Width = 80, Height = 80, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center };
+            image.Bind(Image.SourceProperty, new Binding(nameof(ArtistViewModel.Thumbnail)));
+            RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
 
-            // Apply styles
-            contextMenu.Styles.Add(new Style(s => s.OfType<ContextMenu>())
+            var artistNameBlock = new TextBlock { FontSize = 12, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, MaxHeight = 30, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 3, 0, 0) };
+            artistNameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(ArtistViewModel.Name)));
+
+            var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { image, artistNameBlock } };
+            return new Border { Width = 120, Height = 130, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        }, supportsRecycling: true);
+    }
+
+    private void InitializeAlbumTemplates()
+    {
+        DetailedAlbumTemplate = new FuncDataTemplate<AlbumViewModel>((dataContext, nameScope) =>
+        {
+            var itemGrid = new Grid
             {
-                Setters =
-                {
-                    new Setter(ContextMenu.BackgroundProperty, _theme.B_SlightlyLighterBackground),
-                    new Setter(ContextMenu.BorderBrushProperty, _theme.B_ControlBackgroundColor),
-                    new Setter(ContextMenu.BorderThicknessProperty, new Thickness(1)),
-                }
-            });
-            contextMenu.Styles.Add(new Style(s => s.OfType<MenuItem>())
-            {
-                Setters =
-                {
-                    new Setter(MenuItem.ForegroundProperty, _theme.B_TextColor),
-                    new Setter(MenuItem.BackgroundProperty, Brushes.Transparent)
-                }
-            });
-            contextMenu.Styles.Add(new Style(s => s.OfType<MenuItem>().Class(":pointerover"))
-            {
-                Setters =
-                {
-                    new Setter(MenuItem.BackgroundProperty, _theme.B_ControlBackgroundColor.Multiply(1.2))
-                }
-            });
-
-            contextMenu.Opening += (sender, e) =>
-            {
-                if (sender is not ContextMenu cm) return;
-
-                Debug.WriteLine($"[ContextMenu.Opening] Event fired for song: {songDataContext.Title}. Attempting to resolve LibraryVM.");
-                LibraryViewModel? resolvedLibraryVM = null;
-
-                if (cm.PlacementTarget is Control placementTarget)
-                {
-                    Debug.WriteLine($"[ContextMenu.Opening] PlacementTarget is '{placementTarget.GetType().Name}'.");
-                    var listBox = placementTarget.FindAncestorOfType<ListBox>();
-                    if (listBox != null)
-                    {
-                        Debug.WriteLine($"[ContextMenu.Opening] Found ancestor ListBox '{listBox.Name}'. Its DataContext is '{listBox.DataContext?.GetType().Name ?? "null"}'.");
-                        if (listBox.DataContext is MainWindowViewModel mwvm && mwvm.Library != null)
-                        {
-                            resolvedLibraryVM = mwvm.Library;
-                            Debug.WriteLine($"[ContextMenu.Opening] Successfully resolved LibraryVM from ListBox.DataContext (MainWindowViewModel).");
-                        }
-                        else
-                        {
-                            Debug.WriteLine($"[ContextMenu.Opening] ListBox.DataContext is not MainWindowViewModel or Library is null.");
-                        }
-                    }
-                    else
-                    {
-                        Debug.WriteLine($"[ContextMenu.Opening] Could not find ancestor ListBox from PlacementTarget.");
-                    }
-                }
-                else
-                {
-                    Debug.WriteLine($"[ContextMenu.Opening] PlacementTarget is null. Cannot resolve LibraryVM dynamically.");
-                }
-
-                // Fallback to the cached _libraryVM if dynamic lookup failed and _libraryVM was set.
-                if (resolvedLibraryVM == null && _libraryVM != null)
-                {
-                    resolvedLibraryVM = _libraryVM;
-                    Debug.WriteLine($"[ContextMenu.Opening] Using explicitly set _libraryVM as fallback for song: {songDataContext.Title}.");
-                }
-
-
-                cm.Items.Clear(); // Clear previous items
-                if (resolvedLibraryVM != null)
-                {
-                    cm.DataContext = resolvedLibraryVM;
-
-                    var editMetadataMenuItem = new MenuItem
-                    {
-                        Header = "Edit Metadata",
-                        CommandParameter = songDataContext
-                    };
-                    editMetadataMenuItem.Bind(MenuItem.CommandProperty, new Binding("EditSongMetadataCommand"));
-                    cm.Items.Add(editMetadataMenuItem);
-                    Debug.WriteLine($"[ContextMenu.Opening] ContextMenu DataContext set to LibraryVM. Command should bind for song: {songDataContext.Title}.");
-                }
-                else
-                {
-                    Debug.WriteLine($"[ContextMenu.Opening] CRITICAL: LibraryViewModel could not be resolved for song: {songDataContext.Title}. ContextMenu will be disabled.");
-                    cm.DataContext = null;
-                    cm.Items.Add(new MenuItem { Header = "Menu Error: Cannot find ViewModel", IsEnabled = false });
-                }
+                ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+                VerticalAlignment = VerticalAlignment.Center
             };
 
-            return contextMenu;
-        }
+            var imageGrid = new Grid
+            {
+                Width = 58,
+                Height = 58,
+                Margin = new Thickness(5, 0, 10, 0),
+                ColumnDefinitions = new ColumnDefinitions("*,*"),
+                RowDefinitions = new RowDefinitions("*,*")
+            };
 
+            for (int i = 0; i < 4; i++)
+            {
+                var img = new Image { Width = 28, Height = 28, Stretch = Stretch.UniformToFill };
+                img.Bind(Image.SourceProperty, new Binding($"SongThumbnailsForGrid[{i}]"));
+                RenderOptions.SetBitmapInterpolationMode(img, BitmapInterpolationMode.HighQuality);
+                Grid.SetRow(img, i / 2);
+                Grid.SetColumn(img, i % 2);
+                imageGrid.Children.Add(img);
+            }
 
-        private void InitializeSongTemplates()
+            Grid.SetColumn(imageGrid, 0);
+            itemGrid.Children.Add(imageGrid);
+
+            var albumTitleBlock = new TextBlock { FontSize = 14, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center };
+            albumTitleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(AlbumViewModel.Title)));
+
+            var albumArtistBlock = new TextBlock { FontSize = 11, Foreground = _theme.B_SecondaryTextColor, VerticalAlignment = VerticalAlignment.Center };
+            albumArtistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(AlbumViewModel.Artist)));
+
+            var textStack = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center, Children = { albumTitleBlock, albumArtistBlock } };
+
+            Grid.SetColumn(textStack, 1);
+            itemGrid.Children.Add(textStack);
+
+            return new Border { Padding = new Thickness(10, 6), MinHeight = 68, Background = Brushes.Transparent, Child = itemGrid };
+        }, supportsRecycling: true);
+
+        CompactAlbumTemplate = new FuncDataTemplate<AlbumViewModel>((dataContext, nameScope) =>
         {
-            // Detailed Song Template
-            DetailedSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) =>
-            {
-                var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 5, 0), Stretch = Stretch.UniformToFill };
-                image.Bind(Image.SourceProperty, new Binding(nameof(Song.Thumbnail)));
-                RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
+            var albumTitleBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+            albumTitleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(AlbumViewModel.Title)));
 
-                var titleBlock = new TextBlock { FontSize = 14, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 1) };
-                titleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Title)));
+            var albumArtistBlock = new TextBlock { FontSize = 11, Foreground = _theme.B_SecondaryTextColor, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(5, 0, 0, 0) };
+            albumArtistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(AlbumViewModel.Artist)) { StringFormat = " - {0}" });
 
-                var artistBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
-                artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
+            var panel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { albumTitleBlock, albumArtistBlock } };
+            return new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = panel };
+        }, supportsRecycling: true);
 
-                var durationBlock = new TextBlock { FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
-                durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
-
-                var textStack = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Children = { titleBlock, artistBlock } };
-                var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), VerticalAlignment = VerticalAlignment.Center, Children = { image, textStack, durationBlock } };
-                Grid.SetColumn(image, 0); Grid.SetColumn(textStack, 1); Grid.SetColumn(durationBlock, 2);
-
-                var rootBorder = new Border { Padding = new Thickness(10, 6, 10, 6), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
-                rootBorder.ContextMenu = CreateSongContextMenu(dataContext);
-                return rootBorder;
-            }, supportsRecycling: true);
-
-            // Compact Song Template
-            CompactSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) =>
-            {
-                var titleBlock = new TextBlock { FontSize = 12, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
-                titleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Title)));
-
-                var artistBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(5, 0, 0, 0) };
-                artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)) { StringFormat = " - {0}" });
-
-
-                var titleArtistPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { titleBlock, artistBlock } };
-
-                var durationBlock = new TextBlock { FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, Margin = new Thickness(5, 0, 0, 0) };
-                durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
-
-                var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), VerticalAlignment = VerticalAlignment.Center };
-                itemGrid.Children.Add(titleArtistPanel); itemGrid.Children.Add(durationBlock);
-                Grid.SetColumn(titleArtistPanel, 0); Grid.SetColumn(durationBlock, 1);
-
-                var rootBorder = new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = itemGrid };
-                rootBorder.ContextMenu = CreateSongContextMenu(dataContext);
-                return rootBorder;
-            }, supportsRecycling: true);
-
-            // Grid Song Template
-            GridSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) =>
-            {
-                var image = new Image { Width = 80, Height = 80, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center };
-                image.Bind(Image.SourceProperty, new Binding(nameof(Song.Thumbnail)));
-                RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
-
-                var titleBlock = new TextBlock
-                {
-                    FontSize = 12,
-                    FontWeight = FontWeight.SemiBold,
-                    TextWrapping = TextWrapping.Wrap,
-                    Height = 32, // Adjusted height for two lines
-                    MaxLines = 2, // Explicitly set max lines
-                    TextAlignment = TextAlignment.Center,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    Margin = new Thickness(0, 3, 0, 0),
-                    VerticalAlignment = VerticalAlignment.Top
-                };
-                titleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Title)));
-
-                var artistBlock = new TextBlock { FontSize = 10, Foreground = _theme.B_SecondaryTextColor, TextWrapping = TextWrapping.Wrap, MaxHeight = 15, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 1, 0, 0) };
-                artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
-
-                var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { image, titleBlock, artistBlock } };
-
-                var rootBorder = new Border { Width = 120, Height = 150, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-                rootBorder.ContextMenu = CreateSongContextMenu(dataContext);
-                return rootBorder;
-            }, supportsRecycling: true);
-        }
-
-        private void InitializeArtistTemplates()
+        GridAlbumTemplate = new FuncDataTemplate<AlbumViewModel>((dataContext, nameScope) =>
         {
-            DetailedArtistTemplate = new FuncDataTemplate<ArtistViewModel>((dataContext, nameScope) =>
+            var contentStack = new StackPanel
             {
-                var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 10, 0), Stretch = Stretch.UniformToFill };
-                image.Bind(Image.SourceProperty, new Binding(nameof(ArtistViewModel.Thumbnail)));
-                RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
+                Orientation = Orientation.Vertical,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Spacing = 3
+            };
 
-                var artistNameBlock = new TextBlock { FontSize = 14, VerticalAlignment = VerticalAlignment.Center };
-                artistNameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(ArtistViewModel.Name)));
+            var imagePresenter = new Panel { Width = 80, Height = 80, HorizontalAlignment = HorizontalAlignment.Center };
 
-                var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), VerticalAlignment = VerticalAlignment.Center };
-                itemGrid.Children.Add(image); itemGrid.Children.Add(artistNameBlock);
-                Grid.SetColumn(image, 0); Grid.SetColumn(artistNameBlock, 1);
-                return new Border { Padding = new Thickness(10, 8), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
-            }, supportsRecycling: true);
-
-            CompactArtistTemplate = new FuncDataTemplate<ArtistViewModel>((dataContext, nameScope) =>
+            if (dataContext != null && dataContext.SongThumbnailsForGrid != null && dataContext.SongThumbnailsForGrid.Count(t => t != null) > 1)
             {
-                var artistNameBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
-                artistNameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(ArtistViewModel.Name)));
-                return new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = artistNameBlock };
-            }, supportsRecycling: true);
-
-            GridArtistTemplate = new FuncDataTemplate<ArtistViewModel>((dataContext, nameScope) =>
-            {
-                var image = new Image { Width = 80, Height = 80, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center };
-                image.Bind(Image.SourceProperty, new Binding(nameof(ArtistViewModel.Thumbnail)));
-                RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
-
-                var artistNameBlock = new TextBlock { FontSize = 12, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, MaxHeight = 30, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 3, 0, 0) };
-                artistNameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(ArtistViewModel.Name)));
-
-                var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { image, artistNameBlock } };
-                return new Border { Width = 120, Height = 130, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-            }, supportsRecycling: true);
-        }
-
-        private void InitializeAlbumTemplates()
-        {
-            DetailedAlbumTemplate = new FuncDataTemplate<AlbumViewModel>((dataContext, nameScope) =>
-            {
-                var itemGrid = new Grid
-                {
-                    ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-
                 var imageGrid = new Grid
                 {
-                    Width = 58,
-                    Height = 58,
-                    Margin = new Thickness(5, 0, 10, 0),
+                    Width = 80,
+                    Height = 80,
+                    HorizontalAlignment = HorizontalAlignment.Center,
                     ColumnDefinitions = new ColumnDefinitions("*,*"),
                     RowDefinitions = new RowDefinitions("*,*")
                 };
 
                 for (int i = 0; i < 4; i++)
                 {
-                    var img = new Image { Width = 28, Height = 28, Stretch = Stretch.UniformToFill };
-                    // Binding to an indexed property of a List<Bitmap?>.
-                    // This relies on AlbumViewModel.SongThumbnailsForGrid property itself raising PropertyChanged if the list instance changes,
-                    // or if AlbumViewModel.SongThumbnailsForGrid was an ObservableCollection and its items change.
-                    // Given current AlbumViewModel setup, this will show initial state.
+                    var img = new Image { Width = 38, Height = 38, Stretch = Stretch.UniformToFill, Margin = new Thickness(1) };
                     img.Bind(Image.SourceProperty, new Binding($"SongThumbnailsForGrid[{i}]"));
                     RenderOptions.SetBitmapInterpolationMode(img, BitmapInterpolationMode.HighQuality);
                     Grid.SetRow(img, i / 2);
                     Grid.SetColumn(img, i % 2);
                     imageGrid.Children.Add(img);
                 }
-
-                Grid.SetColumn(imageGrid, 0);
-                itemGrid.Children.Add(imageGrid);
-
-                var albumTitleBlock = new TextBlock { FontSize = 14, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center };
-                albumTitleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(AlbumViewModel.Title)));
-
-                var albumArtistBlock = new TextBlock { FontSize = 11, Foreground = _theme.B_SecondaryTextColor, VerticalAlignment = VerticalAlignment.Center };
-                albumArtistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(AlbumViewModel.Artist)));
-
-                var textStack = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center, Children = { albumTitleBlock, albumArtistBlock } };
-
-                Grid.SetColumn(textStack, 1);
-                itemGrid.Children.Add(textStack);
-
-                return new Border { Padding = new Thickness(10, 6), MinHeight = 68, Background = Brushes.Transparent, Child = itemGrid };
-            }, supportsRecycling: true);
-
-            CompactAlbumTemplate = new FuncDataTemplate<AlbumViewModel>((dataContext, nameScope) =>
+                imagePresenter.Children.Add(imageGrid);
+            }
+            else
             {
-                var albumTitleBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
-                albumTitleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(AlbumViewModel.Title)));
-
-                var albumArtistBlock = new TextBlock { FontSize = 11, Foreground = _theme.B_SecondaryTextColor, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(5, 0, 0, 0) };
-                albumArtistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(AlbumViewModel.Artist)) { StringFormat = " - {0}" });
-
-                var panel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { albumTitleBlock, albumArtistBlock } };
-                return new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = panel };
-            }, supportsRecycling: true);
-
-            GridAlbumTemplate = new FuncDataTemplate<AlbumViewModel>((dataContext, nameScope) =>
-            {
-                var contentStack = new StackPanel
+                var singleImage = new Image
                 {
-                    Orientation = Orientation.Vertical,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    Spacing = 3
-                };
-
-                // Logic to decide 2x2 or single image based on bound data needs to be cleaner if done in C# template.
-                // For simplicity, binding to RepresentativeThumbnail (which AlbumViewModel should prepare).
-                // A more complex template might use a ContentControl with a StyleSelector or multiple DataTemplates.
-
-                // Create a placeholder for the image part, could be a Grid or single Image
-                var imagePresenter = new Panel { Width = 80, Height = 80, HorizontalAlignment = HorizontalAlignment.Center };
-
-
-                // Attempting a dynamic switch based on data. This is complex in FuncDataTemplate.
-                // A common approach is to have the ViewModel provide a single "display-ready" thumbnail or a type indicator.
-                // Here, we'll just bind to RepresentativeThumbnail for grid view.
-                // If more complex logic (like showing 2x2) is needed, it should ideally be handled by ViewModel state
-                // or a custom control / more sophisticated templating.
-
-                if (dataContext != null && dataContext.SongThumbnailsForGrid != null && dataContext.SongThumbnailsForGrid.Count(t => t != null) > 1)
-                {
-                    var imageGrid = new Grid
-                    {
-                        Width = 80, // Keep overall size consistent
-                        Height = 80,
-                        HorizontalAlignment = HorizontalAlignment.Center,
-                        ColumnDefinitions = new ColumnDefinitions("*,*"),
-                        RowDefinitions = new RowDefinitions("*,*")
-                    };
-
-                    for (int i = 0; i < 4; i++)
-                    {
-                        var img = new Image { Width = 38, Height = 38, Stretch = Stretch.UniformToFill, Margin = new Thickness(1) }; // Smaller images for grid
-                        img.Bind(Image.SourceProperty, new Binding($"SongThumbnailsForGrid[{i}]"));
-                        RenderOptions.SetBitmapInterpolationMode(img, BitmapInterpolationMode.HighQuality);
-                        Grid.SetRow(img, i / 2);
-                        Grid.SetColumn(img, i % 2);
-                        imageGrid.Children.Add(img);
-                    }
-                    imagePresenter.Children.Add(imageGrid);
-                }
-                else // Show single representative thumbnail
-                {
-                    var singleImage = new Image
-                    {
-                        Width = 80,
-                        Height = 80,
-                        Stretch = Stretch.UniformToFill,
-                        HorizontalAlignment = HorizontalAlignment.Center
-                    };
-                    singleImage.Bind(Image.SourceProperty, new Binding(nameof(AlbumViewModel.RepresentativeThumbnail)));
-                    RenderOptions.SetBitmapInterpolationMode(singleImage, BitmapInterpolationMode.HighQuality);
-                    imagePresenter.Children.Add(singleImage);
-                }
-                contentStack.Children.Add(imagePresenter);
-
-
-                var albumTitleBlock = new TextBlock
-                {
-                    FontSize = 12,
-                    FontWeight = FontWeight.SemiBold,
-                    TextWrapping = TextWrapping.Wrap,
-                    MaxHeight = 30,
-                    TextAlignment = TextAlignment.Center,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    Margin = new Thickness(0, 2, 0, 0)
-                };
-                albumTitleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(AlbumViewModel.Title)));
-                contentStack.Children.Add(albumTitleBlock);
-
-                var albumArtistBlock = new TextBlock
-                {
-                    FontSize = 10,
-                    Foreground = _theme.B_SecondaryTextColor,
-                    TextWrapping = TextWrapping.Wrap,
-                    MaxHeight = 15,
-                    TextAlignment = TextAlignment.Center,
+                    Width = 80,
+                    Height = 80,
+                    Stretch = Stretch.UniformToFill,
                     HorizontalAlignment = HorizontalAlignment.Center
                 };
-                albumArtistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(AlbumViewModel.Artist)));
-                contentStack.Children.Add(albumArtistBlock);
+                singleImage.Bind(Image.SourceProperty, new Binding(nameof(AlbumViewModel.RepresentativeThumbnail)));
+                RenderOptions.SetBitmapInterpolationMode(singleImage, BitmapInterpolationMode.HighQuality);
+                imagePresenter.Children.Add(singleImage);
+            }
+            contentStack.Children.Add(imagePresenter);
 
-                return new Border
-                {
-                    Width = 120,
-                    Height = 150,
-                    Background = Brushes.Transparent,
-                    Padding = new Thickness(5),
-                    Child = contentStack,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-            }, supportsRecycling: true);
-        }
+            var albumTitleBlock = new TextBlock
+            {
+                FontSize = 12,
+                FontWeight = FontWeight.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+                MaxHeight = 30,
+                TextAlignment = TextAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 2, 0, 0)
+            };
+            albumTitleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(AlbumViewModel.Title)));
+            contentStack.Children.Add(albumTitleBlock);
 
-        private void InitializePanelTemplates()
+            var albumArtistBlock = new TextBlock
+            {
+                FontSize = 10,
+                Foreground = _theme.B_SecondaryTextColor,
+                TextWrapping = TextWrapping.Wrap,
+                MaxHeight = 15,
+                TextAlignment = TextAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+            albumArtistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(AlbumViewModel.Artist)));
+            contentStack.Children.Add(albumArtistBlock);
+
+            return new Border
+            {
+                Width = 120,
+                Height = 150,
+                Background = Brushes.Transparent,
+                Padding = new Thickness(5),
+                Child = contentStack,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+        }, supportsRecycling: true);
+    }
+
+    private void InitializePanelTemplates()
+    {
+        StackPanelItemsPanelTemplate = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel { Orientation = Orientation.Vertical });
+        WrapPanelItemsPanelTemplate = new FuncTemplate<Panel?>(() => new WrapPanel { Orientation = Orientation.Horizontal, ItemWidth = 130, ItemHeight = 160 });
+    }
+}
+</file>
+
+<file path="Source\Views\MainWindowControls\SongContextMenuHelper.cs">
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Data;
+using Avalonia.Media;
+using Avalonia.Styling;
+using Avalonia.VisualTree;
+using Sonorize.Models;
+using Sonorize.ViewModels;
+using System;
+using System.Diagnostics;
+
+namespace Sonorize.Views.MainWindowControls;
+
+public class SongContextMenuHelper
+{
+    private readonly ThemeColors _theme;
+    private readonly Func<LibraryViewModel?> _getFallbackLibraryVmFunc;
+
+    public SongContextMenuHelper(ThemeColors theme, Func<LibraryViewModel?> getFallbackLibraryVmFunc)
+    {
+        _theme = theme;
+        _getFallbackLibraryVmFunc = getFallbackLibraryVmFunc ?? throw new ArgumentNullException(nameof(getFallbackLibraryVmFunc));
+        Debug.WriteLine($"[SongContextMenuHelper] Initialized.");
+    }
+
+    public ContextMenu CreateContextMenu(Song songDataContext)
+    {
+        var contextMenu = new ContextMenu();
+
+        // Apply styles
+        contextMenu.Styles.Add(new Style(s => s.OfType<ContextMenu>())
         {
-            StackPanelItemsPanelTemplate = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel { Orientation = Orientation.Vertical });
-            WrapPanelItemsPanelTemplate = new FuncTemplate<Panel?>(() => new WrapPanel { Orientation = Orientation.Horizontal, ItemWidth = 130, ItemHeight = 160 }); // Adjusted ItemWidth/Height for grid items
-        }
+            Setters =
+            {
+                new Setter(ContextMenu.BackgroundProperty, _theme.B_SlightlyLighterBackground),
+                new Setter(ContextMenu.BorderBrushProperty, _theme.B_ControlBackgroundColor),
+                new Setter(ContextMenu.BorderThicknessProperty, new Thickness(1)),
+            }
+        });
+        contextMenu.Styles.Add(new Style(s => s.OfType<MenuItem>())
+        {
+            Setters =
+            {
+                new Setter(MenuItem.ForegroundProperty, _theme.B_TextColor),
+                new Setter(MenuItem.BackgroundProperty, Brushes.Transparent)
+            }
+        });
+        contextMenu.Styles.Add(new Style(s => s.OfType<MenuItem>().Class(":pointerover"))
+        {
+            Setters =
+            {
+                new Setter(MenuItem.BackgroundProperty, _theme.B_ControlBackgroundColor.Multiply(1.3))
+            }
+        });
+        contextMenu.Styles.Add(new Style(s => s.OfType<MenuItem>().Class(":pressed"))
+        {
+            Setters =
+            {
+                new Setter(MenuItem.BackgroundProperty, _theme.B_AccentColor.Multiply(0.8))
+            }
+        });
+
+
+        contextMenu.Opening += (sender, e) =>
+        {
+            if (sender is not ContextMenu cm) return;
+
+            Debug.WriteLine($"[ContextMenuHelper.Opening] Event fired for song: {songDataContext.Title}. Attempting to resolve LibraryVM.");
+            LibraryViewModel? resolvedLibraryVM = null;
+
+            if (cm.PlacementTarget is Control placementTarget)
+            {
+                Debug.WriteLine($"[ContextMenuHelper.Opening] PlacementTarget is '{placementTarget.GetType().Name}'.");
+                var listBoxItem = placementTarget.FindAncestorOfType<ListBoxItem>();
+                Control? targetForVmSearch = listBoxItem ?? placementTarget;
+
+                var listBox = targetForVmSearch.FindAncestorOfType<ListBox>();
+                if (listBox != null)
+                {
+                    Debug.WriteLine($"[ContextMenuHelper.Opening] Found ancestor ListBox '{listBox.Name}'. Its DataContext is '{listBox.DataContext?.GetType().Name ?? "null"}'.");
+                    if (listBox.DataContext is MainWindowViewModel mwvm && mwvm.Library != null)
+                    {
+                        resolvedLibraryVM = mwvm.Library;
+                        Debug.WriteLine($"[ContextMenuHelper.Opening] Successfully resolved LibraryVM from ListBox.DataContext (MainWindowViewModel).");
+                    }
+                    else if (listBox.DataContext is LibraryViewModel lvm)
+                    {
+                        resolvedLibraryVM = lvm;
+                        Debug.WriteLine($"[ContextMenuHelper.Opening] Successfully resolved LibraryVM directly from ListBox.DataContext.");
+                    }
+                    else
+                    {
+                        Debug.WriteLine($"[ContextMenuHelper.Opening] ListBox.DataContext is not MainWindowViewModel or LibraryViewModel, or Library is null.");
+                    }
+                }
+                else
+                {
+                    Debug.WriteLine($"[ContextMenuHelper.Opening] Could not find ancestor ListBox from PlacementTarget or its ListBoxItem ancestor.");
+                }
+            }
+            else
+            {
+                Debug.WriteLine($"[ContextMenuHelper.Opening] PlacementTarget is null. Cannot resolve LibraryVM dynamically.");
+            }
+
+            // Fallback to the explicitly provided _libraryVM if dynamic lookup failed.
+            if (resolvedLibraryVM == null)
+            {
+                resolvedLibraryVM = _getFallbackLibraryVmFunc();
+                if (resolvedLibraryVM != null)
+                {
+                    Debug.WriteLine($"[ContextMenuHelper.Opening] Using fallback LibraryVM for song: {songDataContext.Title}.");
+                }
+                else
+                {
+                    Debug.WriteLine($"[ContextMenuHelper.Opening] Fallback LibraryVM is also null for song: {songDataContext.Title}.");
+                }
+            }
+
+            cm.Items.Clear();
+            if (resolvedLibraryVM != null)
+            {
+                cm.DataContext = resolvedLibraryVM;
+
+                var editMetadataMenuItem = new MenuItem
+                {
+                    Header = "Edit Metadata",
+                    CommandParameter = songDataContext
+                };
+                editMetadataMenuItem.Bind(MenuItem.CommandProperty, new Binding("EditSongMetadataCommand"));
+                cm.Items.Add(editMetadataMenuItem);
+                Debug.WriteLine($"[ContextMenuHelper.Opening] ContextMenu DataContext set to LibraryVM. Command should bind for song: {songDataContext.Title}.");
+            }
+            else
+            {
+                Debug.WriteLine($"[ContextMenuHelper.Opening] CRITICAL: LibraryViewModel could not be resolved for song: {songDataContext.Title}. ContextMenu will be disabled or show error.");
+                cm.DataContext = null;
+                cm.Items.Add(new MenuItem { Header = " (Error: Menu commands unavailable) ", IsEnabled = false, Foreground = Brushes.Gray });
+            }
+        };
+        return contextMenu;
     }
 }
 </file>
@@ -9707,6 +9640,122 @@ public static class SongInfoDisplayPanel
         songInfoPanel.Children.Add(textStack);
 
         return songInfoPanel;
+    }
+}
+</file>
+
+<file path="Source\Views\MainWindowControls\SongItemTemplateProvider.cs">
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Templates;
+using Avalonia.Data;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Sonorize.Models;
+using Sonorize.ViewModels; // For Song model if not already included via Sonorize.Models
+using System.Diagnostics;
+
+namespace Sonorize.Views.MainWindowControls;
+
+public class SongItemTemplateProvider
+{
+    private readonly ThemeColors _theme;
+    private readonly SongContextMenuHelper _contextMenuHelper;
+
+    public FuncDataTemplate<Song> DetailedSongTemplate { get; private set; }
+    public FuncDataTemplate<Song> CompactSongTemplate { get; private set; }
+    public FuncDataTemplate<Song> GridSongTemplate { get; private set; }
+
+    public SongItemTemplateProvider(ThemeColors theme, SongContextMenuHelper contextMenuHelper)
+    {
+        _theme = theme;
+        _contextMenuHelper = contextMenuHelper ?? throw new System.ArgumentNullException(nameof(contextMenuHelper));
+        Debug.WriteLine("[SongItemTemplateProvider] Initialized.");
+        InitializeSongTemplates();
+    }
+
+    private void InitializeSongTemplates()
+    {
+        // Detailed Song Template
+        DetailedSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) =>
+        {
+            var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 5, 0), Stretch = Stretch.UniformToFill };
+            image.Bind(Image.SourceProperty, new Binding(nameof(Song.Thumbnail)));
+            RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
+
+            var titleBlock = new TextBlock { FontSize = 14, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 1) };
+            titleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Title)));
+
+            var artistBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
+            artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
+
+            var durationBlock = new TextBlock { FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
+            durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
+
+            var textStack = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Children = { titleBlock, artistBlock } };
+            var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), VerticalAlignment = VerticalAlignment.Center, Children = { image, textStack, durationBlock } };
+            Grid.SetColumn(image, 0); Grid.SetColumn(textStack, 1); Grid.SetColumn(durationBlock, 2);
+
+            var rootBorder = new Border { Padding = new Thickness(10, 6, 10, 6), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
+            rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
+            return rootBorder;
+        }, supportsRecycling: true);
+
+        // Compact Song Template
+        CompactSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) =>
+        {
+            var titleBlock = new TextBlock { FontSize = 12, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+            titleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Title)));
+
+            var artistBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(5, 0, 0, 0) };
+            artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)) { StringFormat = " - {0}" });
+
+
+            var titleArtistPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { titleBlock, artistBlock } };
+
+            var durationBlock = new TextBlock { FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, Margin = new Thickness(5, 0, 0, 0) };
+            durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
+
+            var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), VerticalAlignment = VerticalAlignment.Center };
+            itemGrid.Children.Add(titleArtistPanel); itemGrid.Children.Add(durationBlock);
+            Grid.SetColumn(titleArtistPanel, 0); Grid.SetColumn(durationBlock, 1);
+
+            var rootBorder = new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = itemGrid };
+            rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
+            return rootBorder;
+        }, supportsRecycling: true);
+
+        // Grid Song Template
+        GridSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) =>
+        {
+            var image = new Image { Width = 80, Height = 80, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center };
+            image.Bind(Image.SourceProperty, new Binding(nameof(Song.Thumbnail)));
+            RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
+
+            var titleBlock = new TextBlock
+            {
+                FontSize = 12,
+                FontWeight = FontWeight.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+                Height = 32,
+                MaxLines = 2,
+                TextAlignment = TextAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 3, 0, 0),
+                VerticalAlignment = VerticalAlignment.Top
+            };
+            titleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Title)));
+
+            var artistBlock = new TextBlock { FontSize = 10, Foreground = _theme.B_SecondaryTextColor, TextWrapping = TextWrapping.Wrap, MaxHeight = 15, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 1, 0, 0) };
+            artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
+
+            var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { image, titleBlock, artistBlock } };
+
+            var rootBorder = new Border { Width = 120, Height = 150, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
+            return rootBorder;
+        }, supportsRecycling: true);
     }
 }
 </file>

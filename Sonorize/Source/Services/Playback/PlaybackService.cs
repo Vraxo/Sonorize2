@@ -42,21 +42,23 @@ public class PlaybackService : ViewModelBase, IDisposable
         remove => _sessionManager.SessionEndedNaturally -= value;
     }
 
+    // Expose PlaybackSessionManager for PlaybackResourceInterlockService
+    internal PlaybackSessionManager SessionManager => _sessionManager;
+
+
     public PlaybackService(ScrobblingService scrobblingService)
     {
         Debug.WriteLine("[PlaybackService] Constructor called.");
-        _loopHandler = new PlaybackLoopHandler(this); // LoopHandler now takes this simplified PlaybackService
+        _loopHandler = new PlaybackLoopHandler(this);
         _sessionManager = new PlaybackSessionManager(scrobblingService, _loopHandler);
         _sessionManager.PropertyChanged += SessionManager_PropertyChanged;
     }
 
     private void SessionManager_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        // Forward property changes from SessionManager to this service's listeners
         OnPropertyChanged(e.PropertyName);
         if (e.PropertyName == nameof(PlaybackSessionManager.CurrentSong))
         {
-            // Explicitly notify HasCurrentSong if CurrentSong changes
             OnPropertyChanged(nameof(HasCurrentSong));
         }
     }
@@ -94,27 +96,6 @@ public class PlaybackService : ViewModelBase, IDisposable
         }
         _sessionManager.SeekSession(requestedPosition);
     }
-
-    public (bool WasPlaying, TimeSpan Position)? StopAndReleaseFileResourcesForSong(Song song)
-    {
-        if (song == null || _sessionManager.CurrentSong != song)
-        {
-            Debug.WriteLine($"[PlaybackService] StopAndReleaseFileResourcesForSong: Song '{song?.Title}' is not the current playing/loaded song ('{_sessionManager.CurrentSong?.Title}'). No action taken.");
-            return null;
-        }
-        return _sessionManager.StopAndReleaseFileResources();
-    }
-
-    public bool ReinitializePlaybackForSong(Song song, TimeSpan position, bool play)
-    {
-        if (song == null)
-        {
-            Debug.WriteLine("[PlaybackService] ReinitializePlaybackForSong: Song is null. Cannot reinitialize.");
-            return false;
-        }
-        return _sessionManager.ReinitializePlayback(song, position, play);
-    }
-
 
     internal void PerformSeekInternal(TimeSpan position)
     {
