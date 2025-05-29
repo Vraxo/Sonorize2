@@ -100,7 +100,7 @@ public class MainTabViewControls
         _songListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.FilteredSongs"));
         _songListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.SelectedSong", BindingMode.TwoWay));
 
-        _songListBoxInstance.ItemTemplate = _sharedViewTemplates.SongTemplates.DetailedSongTemplate; // Updated path
+        _songListBoxInstance.ItemTemplate = _sharedViewTemplates.SongTemplates.DetailedSongTemplate;
         _songListBoxInstance.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
 
         return new ScrollViewer { Content = _songListBoxInstance, Padding = new Thickness(0, 0, 0, 5), HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
@@ -120,7 +120,7 @@ public class MainTabViewControls
         _artistsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Artists"));
         _artistsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.FilterState.SelectedArtist", BindingMode.TwoWay));
 
-        _artistsListBoxInstance.ItemTemplate = _sharedViewTemplates.DetailedArtistTemplate;
+        _artistsListBoxInstance.ItemTemplate = _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate; // Updated path
         _artistsListBoxInstance.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
 
         return new ScrollViewer { Content = _artistsListBoxInstance, Padding = new Thickness(0, 0, 0, 5), HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };

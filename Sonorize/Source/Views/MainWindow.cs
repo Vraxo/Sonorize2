@@ -98,7 +98,7 @@ public class MainWindow : Window
             _sharedViewTemplates.SetLibraryViewModel(_currentLibraryVM);
 
             ApplyListViewDisplayMode(_songListBox, _currentLibraryVM.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate);
-            ApplyListViewDisplayMode(_artistsListBox, _currentLibraryVM.ArtistViewMode, _sharedViewTemplates.DetailedArtistTemplate, _sharedViewTemplates.CompactArtistTemplate, _sharedViewTemplates.GridArtistTemplate);
+            ApplyListViewDisplayMode(_artistsListBox, _currentLibraryVM.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate);
             ApplyListViewDisplayMode(_albumsListBox, _currentLibraryVM.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate);
         }
     }
@@ -113,7 +113,7 @@ public class MainWindow : Window
             }
             else if (e.PropertyName == nameof(LibraryViewModel.ArtistViewMode))
             {
-                Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_artistsListBox, lvm.ArtistViewMode, _sharedViewTemplates.DetailedArtistTemplate, _sharedViewTemplates.CompactArtistTemplate, _sharedViewTemplates.GridArtistTemplate));
+                Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_artistsListBox, lvm.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate));
             }
             else if (e.PropertyName == nameof(LibraryViewModel.AlbumViewMode))
             {

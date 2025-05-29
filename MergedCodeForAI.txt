@@ -629,23 +629,23 @@ public class Song : ViewModelBase
         get;
         set => SetProperty(ref field, value);
     } = string.Empty;
-    
+
     public string Title
     {
         get;
         set => SetProperty(ref field, value);
     } = "Unknown Title";
-    
+
     public string Artist
     {
         get;
         set => SetProperty(ref field, value);
     } = "Unknown Artist";
-    
-    public string Album 
-    { 
-        get; 
-        set => SetProperty(ref field, value); 
+
+    public string Album
+    {
+        get;
+        set => SetProperty(ref field, value);
     } = "Unknown Album";
 
     public TimeSpan Duration
@@ -672,6 +672,8 @@ public class Song : ViewModelBase
 
         set
         {
+            // Setter is now a standard property setter.
+            // Persistence is handled by SongLoopService.
             if (!SetProperty(ref field, value))
             {
                 return;
@@ -1709,6 +1711,100 @@ public class SongFactory
         }
 
         return song;
+    }
+}
+</file>
+
+<file path="Source\Services\SongLoopService.cs">
+using System;
+using System.Diagnostics;
+using Sonorize.Models;
+
+namespace Sonorize.Services;
+
+public class SongLoopService
+{
+    private readonly LoopDataService _loopDataService;
+
+    public SongLoopService(LoopDataService loopDataService)
+    {
+        _loopDataService = loopDataService ?? throw new ArgumentNullException(nameof(loopDataService));
+        Debug.WriteLine("[SongLoopService] Initialized.");
+    }
+
+    public void SaveLoop(Song song, TimeSpan start, TimeSpan end, bool activate)
+    {
+        if (song == null)
+        {
+            Debug.WriteLine("[SongLoopService] SaveLoop: Song is null.");
+            return;
+        }
+
+        song.SavedLoop = new LoopRegion(start, end, "User Loop");
+        song.IsLoopActive = activate; // This will raise PropertyChanged on the Song model
+
+        _loopDataService.SetLoop(song.FilePath, start, end, activate);
+        Debug.WriteLine($"[SongLoopService] Loop saved and persisted for {song.Title}. Start: {start}, End: {end}, Active: {activate}");
+    }
+
+    public void ClearLoop(Song song)
+    {
+        if (song == null)
+        {
+            Debug.WriteLine("[SongLoopService] ClearLoop: Song is null.");
+            return;
+        }
+
+        var filePath = song.FilePath;
+        // Update model first
+        song.IsLoopActive = false;
+        song.SavedLoop = null; // This will raise PropertyChanged on the Song model
+
+        if (!string.IsNullOrEmpty(filePath))
+        {
+            _loopDataService.ClearLoop(filePath);
+        }
+        Debug.WriteLine($"[SongLoopService] Loop cleared and persistence updated for {song.Title}.");
+    }
+
+    public void SetLoopActiveState(Song song, bool isActive)
+    {
+        if (song == null)
+        {
+            Debug.WriteLine("[SongLoopService] SetLoopActiveState: Song is null.");
+            return;
+        }
+
+        if (song.SavedLoop == null && isActive)
+        {
+            Debug.WriteLine($"[SongLoopService] SetLoopActiveState: Cannot activate loop for {song.Title} as no loop is defined. No change made.");
+            return; // Do not change IsLoopActive if no loop is defined and trying to activate.
+        }
+
+        if (song.IsLoopActive == isActive) // No change needed
+        {
+            return;
+        }
+
+        song.IsLoopActive = isActive; // This will raise PropertyChanged on the Song model
+
+        // Persist only if a loop actually exists
+        if (song.SavedLoop != null)
+        {
+            _loopDataService.UpdateLoopActiveState(song.FilePath, isActive);
+            Debug.WriteLine($"[SongLoopService] Loop active state for {song.Title} set to {isActive} and persisted.");
+        }
+        else
+        {
+            // This case should ideally be caught by the check above, 
+            // but as a safeguard: if IsLoopActive was true and loop became null, ensure it's set to false.
+            if (isActive) // Should not happen if SavedLoop is null
+            {
+                song.IsLoopActive = false; // Correct the model state
+                Debug.WriteLine($"[SongLoopService] Corrected IsLoopActive to false for {song.Title} as SavedLoop is null.");
+            }
+            // No persistence needed if SavedLoop is null, IsLoopActive should be false.
+        }
     }
 }
 </file>
@@ -4398,17 +4494,17 @@ public class ApplicationServicesBootstrapper
     {
         // Create all services
         var lastfmAuthenticatorService = new LastfmAuthenticatorService(settingsService);
-        var scrobbleEligibilityService = new ScrobbleEligibilityService(); // New
-        var scrobblingService = new ScrobblingService(settingsService, lastfmAuthenticatorService, scrobbleEligibilityService); // Modified
-        var playbackService = new PlaybackService(scrobblingService); // PlaybackService creates its SessionManager
+        var scrobbleEligibilityService = new ScrobbleEligibilityService();
+        var scrobblingService = new ScrobblingService(settingsService, lastfmAuthenticatorService, scrobbleEligibilityService);
+        var playbackService = new PlaybackService(scrobblingService);
         var loopDataService = new LoopDataService();
         var thumbnailService = new ThumbnailService();
         var songFactory = new SongFactory(loopDataService);
         var musicLibraryService = new MusicLibraryService(loopDataService, thumbnailService, songFactory);
         var waveformService = new WaveformService();
         var songMetadataService = new SongMetadataService();
+        var songLoopService = new SongLoopService(loopDataService); // New service
 
-        // Create PlaybackResourceInterlockService, requires PlaybackSessionManager from PlaybackService
         var playbackResourceInterlockService = new PlaybackResourceInterlockService(playbackService.SessionManager);
 
         var songEditInteractionService = new SongEditInteractionService(playbackResourceInterlockService, songMetadataService, currentCustomTheme);
@@ -4423,7 +4519,8 @@ public class ApplicationServicesBootstrapper
             loopDataService,
             scrobblingService,
             songMetadataService,
-            songEditInteractionService);
+            songEditInteractionService,
+            songLoopService); // Pass new service
 
         return mainWindowViewModel;
     }
@@ -7304,7 +7401,7 @@ namespace Sonorize.ViewModels;
 public class LoopEditorViewModel : ViewModelBase, IDisposable
 {
     private readonly PlaybackService _playbackService;
-    private readonly LoopDataService _loopDataService;
+    private readonly SongLoopService _songLoopService; // New service
     private Song? _currentSongInternal; // Holds the Song instance from PlaybackService.CurrentSong
 
     public LoopCandidateViewModel CandidateLoop { get; }
@@ -7318,18 +7415,12 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
         get => _isCurrentLoopActiveUiBinding;
         set
         {
+            // Setter now calls SongLoopService to update model and persist
             if (SetProperty(ref _isCurrentLoopActiveUiBinding, value))
             {
-                if (_currentSongInternal != null && _currentSongInternal.SavedLoop != null)
+                if (_currentSongInternal != null)
                 {
-                    _currentSongInternal.IsLoopActive = value;
-                    Debug.WriteLine($"[LoopEdVM] UI binding set IsLoopActive on Song '{_currentSongInternal.Title}' to: {value}");
-                }
-                else if (_currentSongInternal != null && _currentSongInternal.SavedLoop == null && value == true)
-                {
-                    _isCurrentLoopActiveUiBinding = false;
-                    OnPropertyChanged(nameof(IsCurrentLoopActiveUiBinding));
-                    Debug.WriteLine($"[LoopEdVM] Attempted to activate loop via UI, but no loop is defined for {_currentSongInternal.Title}.");
+                    _songLoopService.SetLoopActiveState(_currentSongInternal, value);
                 }
             }
         }
@@ -7353,13 +7444,13 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
     public ICommand WaveformSeekCommand { get; }
 
 
-    public LoopEditorViewModel(PlaybackService playbackService, LoopDataService loopDataService)
+    public LoopEditorViewModel(PlaybackService playbackService, LoopDataService loopDataService, SongLoopService songLoopService) // Added SongLoopService
     {
         _playbackService = playbackService;
-        _loopDataService = loopDataService;
+        _songLoopService = songLoopService; // Store new service
 
         CandidateLoop = new LoopCandidateViewModel(playbackService, () => _currentSongInternal);
-        CandidateLoop.ParentLoopEditor = this; // Allow child to notify parent
+        CandidateLoop.ParentLoopEditor = this;
 
         SaveLoopCommand = new RelayCommand(SaveLoopAction, _ => CanSaveLoopRegion);
         ClearLoopCommand = new RelayCommand(ClearSavedLoopAction, _ => _currentSongInternal?.SavedLoop != null);
@@ -7400,14 +7491,13 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
                 case nameof(PlaybackService.CurrentPosition):
                 case nameof(PlaybackService.CurrentSongDuration):
                     RaiseCanSaveLoopRegionChanged();
-                    CandidateLoop.RaiseCaptureCommandsCanExecuteChanged(); // Capture commands depend on playback status/song
+                    CandidateLoop.RaiseCaptureCommandsCanExecuteChanged();
                     UpdateActiveLoopDisplayText();
                     break;
                 case nameof(PlaybackService.CurrentPlaybackStatus):
                     CandidateLoop.RaiseCaptureCommandsCanExecuteChanged();
                     break;
             }
-            // All commands might be affected by song or playback state changes
             RaiseMainLoopCommandsCanExecuteChanged();
         });
     }
@@ -7421,19 +7511,16 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
                 switch (e.PropertyName)
                 {
                     case nameof(Song.SavedLoop):
-                        Debug.WriteLine($"[LoopEdVM] CurrentSong.SavedLoop changed for {song.Title}. Updating loop state.");
-                        UpdateStateForCurrentSong(song);
+                        Debug.WriteLine($"[LoopEdVM] CurrentSong.SavedLoop changed for {song.Title}. Updating UI state.");
+                        UpdateStateForCurrentSong(song); // Reflects model change to UI
                         break;
                     case nameof(Song.IsLoopActive):
-                        Debug.WriteLine($"[LoopEdVM] CurrentSong.IsLoopActive changed to {song.IsLoopActive} for {song.Title}. Updating UI binding and persisting.");
+                        Debug.WriteLine($"[LoopEdVM] CurrentSong.IsLoopActive changed to {song.IsLoopActive} for {song.Title}. Updating UI binding.");
+                        // Update UI binding if it's out of sync with model (e.g., model changed externally)
                         if (_isCurrentLoopActiveUiBinding != song.IsLoopActive)
                         {
                             _isCurrentLoopActiveUiBinding = song.IsLoopActive;
                             OnPropertyChanged(nameof(IsCurrentLoopActiveUiBinding));
-                        }
-                        if (song.SavedLoop != null)
-                        {
-                            _loopDataService.UpdateLoopActiveState(song.FilePath, song.IsLoopActive);
                         }
                         UpdateActiveLoopDisplayText();
                         break;
@@ -7449,12 +7536,21 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
         {
             CandidateLoop.NewLoopStartCandidate = song.SavedLoop.Start;
             CandidateLoop.NewLoopEndCandidate = song.SavedLoop.End;
-            IsCurrentLoopActiveUiBinding = song.IsLoopActive;
+            // Sync IsCurrentLoopActiveUiBinding with the song's actual IsLoopActive state
+            if (_isCurrentLoopActiveUiBinding != song.IsLoopActive)
+            {
+                _isCurrentLoopActiveUiBinding = song.IsLoopActive;
+                OnPropertyChanged(nameof(IsCurrentLoopActiveUiBinding));
+            }
         }
         else
         {
             CandidateLoop.ClearCandidates();
-            IsCurrentLoopActiveUiBinding = false;
+            if (_isCurrentLoopActiveUiBinding != false) // Ensure UI binding is false if no loop
+            {
+                _isCurrentLoopActiveUiBinding = false;
+                OnPropertyChanged(nameof(IsCurrentLoopActiveUiBinding));
+            }
         }
         UpdateActiveLoopDisplayText();
         RaiseCanSaveLoopRegionChanged();
@@ -7471,20 +7567,15 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        var newLoop = new LoopRegion(CandidateLoop.NewLoopStartCandidate.Value, CandidateLoop.NewLoopEndCandidate.Value, "User Loop");
+        TimeSpan start = CandidateLoop.NewLoopStartCandidate.Value;
+        TimeSpan end = CandidateLoop.NewLoopEndCandidate.Value;
+
+        // Determine if the loop should be active after saving.
+        // It should be active if a loop was already active, or if no loop existed before.
         bool shouldBeActive = (currentSong.SavedLoop != null && currentSong.IsLoopActive) || currentSong.SavedLoop == null;
 
-        currentSong.SavedLoop = newLoop;
-        if (currentSong.IsLoopActive != shouldBeActive)
-        {
-            currentSong.IsLoopActive = shouldBeActive;
-        }
-        else
-        {
-            _loopDataService.SetLoop(currentSong.FilePath, newLoop.Start, newLoop.End, currentSong.IsLoopActive);
-        }
-        Debug.WriteLine($"[LoopEdVM] Loop saved for {currentSong.Title}. Start: {newLoop.Start}, End: {newLoop.End}, Active: {currentSong.IsLoopActive}");
-        UpdateStateForCurrentSong(currentSong);
+        _songLoopService.SaveLoop(currentSong, start, end, shouldBeActive);
+        // UpdateStateForCurrentSong will be called via PropertyChanged events from Song model
     }
 
     private void ClearSavedLoopAction(object? param)
@@ -7492,25 +7583,19 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
         var currentSong = _currentSongInternal;
         if (currentSong != null)
         {
-            var filePath = currentSong.FilePath;
-            Debug.WriteLine($"[LoopEdVM] Clearing loop for {currentSong.Title}.");
-            currentSong.SavedLoop = null;
-            currentSong.IsLoopActive = false;
-            if (!string.IsNullOrEmpty(filePath))
-            {
-                _loopDataService.ClearLoop(filePath);
-            }
+            _songLoopService.ClearLoop(currentSong);
         }
-        CandidateLoop.ClearCandidates();
-        UpdateStateForCurrentSong(currentSong);
+        // CandidateLoop.ClearCandidates(); // SongLoopService.ClearLoop modifies song, which triggers UpdateStateForCurrentSong, which calls ClearCandidates.
+        // UpdateStateForCurrentSong will be called via PropertyChanged events from Song model
     }
 
     private void ToggleCurrentSongLoopActive(object? parameter)
     {
-        if (_currentSongInternal != null && _currentSongInternal.SavedLoop != null)
+        if (_currentSongInternal?.SavedLoop != null)
         {
-            Debug.WriteLine($"[LoopEdVM] Toggling loop active state for {_currentSongInternal.Title}. Current: {_currentSongInternal.IsLoopActive}");
-            IsCurrentLoopActiveUiBinding = !_isCurrentLoopActiveUiBinding;
+            Debug.WriteLine($"[LoopEdVM] Toggling loop active state for {_currentSongInternal.Title} via command. Current UI binding: {_isCurrentLoopActiveUiBinding}");
+            // This will trigger the IsCurrentLoopActiveUiBinding setter, which calls the service.
+            IsCurrentLoopActiveUiBinding = !IsCurrentLoopActiveUiBinding;
         }
     }
 
@@ -7544,8 +7629,8 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
             _currentSongInternal.PropertyChanged -= CurrentSong_PropertyChanged;
         }
         _playbackService.PropertyChanged -= PlaybackService_PropertyChanged;
-        CandidateLoop.Dispose(); // Dispose the child ViewModel
-        CandidateLoop.ParentLoopEditor = null; // Break cycle if any strict GC needs it
+        CandidateLoop.Dispose();
+        CandidateLoop.ParentLoopEditor = null;
     }
 }
 </file>
@@ -7681,11 +7766,12 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private readonly ScrobblingService _scrobblingService;
     private readonly SongMetadataService _songMetadataService;
     private readonly SongEditInteractionService _songEditInteractionService;
+    private readonly SongLoopService _songLoopService; // New service
 
     private readonly MainWindowViewModelOrchestrator _orchestrator;
     private readonly ApplicationWorkflowManager _workflowManager;
     private readonly LibraryDisplayModeService _libraryDisplayModeService;
-    private readonly MainWindowInteractionCoordinator _interactionCoordinator; // New
+    private readonly MainWindowInteractionCoordinator _interactionCoordinator;
 
     private Window? _ownerView;
 
@@ -7736,7 +7822,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         LoopDataService loopDataService,
         ScrobblingService scrobblingService,
         SongMetadataService songMetadataService,
-        SongEditInteractionService songEditInteractionService)
+        SongEditInteractionService songEditInteractionService,
+        SongLoopService songLoopService) // Added songLoopService
     {
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
@@ -7747,11 +7834,12 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         _scrobblingService = scrobblingService;
         _songMetadataService = songMetadataService;
         _songEditInteractionService = songEditInteractionService;
+        _songLoopService = songLoopService; // Store new service
 
         _libraryDisplayModeService = new LibraryDisplayModeService(_settingsService);
         Library = new LibraryViewModel(this, _settingsService, _musicLibraryService, _loopDataService, _libraryDisplayModeService);
         Playback = new PlaybackViewModel(PlaybackService, _waveformService);
-        LoopEditor = new LoopEditorViewModel(PlaybackService, _loopDataService);
+        LoopEditor = new LoopEditorViewModel(PlaybackService, _loopDataService, _songLoopService); // Pass new service
         AdvancedPanel = new AdvancedPanelViewModel(Playback, Library);
 
         _workflowManager = new ApplicationWorkflowManager(
@@ -7761,7 +7849,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             Library,
             Playback,
             PlaybackService,
-            _loopDataService); // Corrected: _songMetadataService removed
+            _loopDataService);
 
         _interactionCoordinator = new MainWindowInteractionCoordinator(
             () => _ownerView,
@@ -7857,7 +7945,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
         else
         {
-            UpdateStatusBarText(); // Default update if no specific message from coordinator
+            UpdateStatusBarText();
         }
     }
 
@@ -7868,9 +7956,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         if (refreshNeeded)
         {
-            await Library.LoadLibraryAsync(); // Library loading itself updates status text
+            await Library.LoadLibraryAsync();
         }
-        else if (string.IsNullOrEmpty(statusMessage)) // If no specific message and no refresh, update general status
+        else if (string.IsNullOrEmpty(statusMessage))
         {
             UpdateStatusBarText();
         }
@@ -7880,7 +7968,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     {
         string statusMessage = await _interactionCoordinator.CoordinateEditSongMetadataAsync(songObject as Song);
         StatusBarText = statusMessage;
-        if (string.IsNullOrEmpty(statusMessage)) // Default status if none provided by service on non-save
+        if (string.IsNullOrEmpty(statusMessage))
         {
             UpdateStatusBarText();
         }
