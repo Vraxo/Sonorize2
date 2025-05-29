@@ -109,6 +109,10 @@ public class MainWindowViewModel : ViewModelBase
 
         Library.PropertyChanged += Library_PropertyChanged;
         Playback.PropertyChanged += Playback_PropertyChanged;
+        // Also listen to changes on the child ViewModels of PlaybackViewModel if necessary
+        Playback.ModeControls.PropertyChanged += PlaybackModeControls_PropertyChanged;
+        // Playback.EffectsControls has no commands/properties that MainWindowViewModel directly reacts to yet.
+
         // Listen to PropertyChanged on Playback.WaveformDisplay as well
         if (Playback.WaveformDisplay != null)
         {
@@ -211,14 +215,30 @@ public class MainWindowViewModel : ViewModelBase
                     OnPropertyChanged(nameof(Playback.TotalTimeDisplay));
                     RaiseAllCommandsCanExecuteChanged();
                     break;
-                case nameof(PlaybackViewModel.ShuffleEnabled):
-                case nameof(PlaybackViewModel.RepeatMode):
-                    Playback.RaisePlaybackCommandCanExecuteChanged(); // PlaybackVM commands might depend on these
+                    // ShuffleEnabled and RepeatMode are now on Playback.ModeControls
+                    // Their changes will be handled by PlaybackModeControls_PropertyChanged
+            }
+        });
+    }
+
+    private void PlaybackModeControls_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            switch (e.PropertyName)
+            {
+                case nameof(PlaybackModeViewModel.ShuffleEnabled):
+                case nameof(PlaybackModeViewModel.RepeatMode):
+                    // MainWindowViewModel itself doesn't directly bind to these for its own properties,
+                    // but PlaybackViewModel's commands might depend on them indirectly (via ModeControls),
+                    // and StatusBarText definitely depends on them.
+                    Playback.RaisePlaybackCommandCanExecuteChanged();
                     UpdateStatusBarText();
                     break;
             }
         });
     }
+
 
     private void UpdateAllUIDependentStates()
     {

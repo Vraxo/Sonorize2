@@ -32,16 +32,16 @@ public static class AdvancedPlaybackPanelControls
         var speedLabel = new TextBlock { Text = "Tempo:", VerticalAlignment = VerticalAlignment.Center, Foreground = theme.B_TextColor, Margin = new Thickness(0, 0, 5, 0) };
         var speedSlider = new Slider { Minimum = 0.5, Maximum = 2.0, SmallChange = 0.05, LargeChange = 0.25, TickFrequency = 0.25, Foreground = theme.B_AccentColor, Background = theme.B_SecondaryTextColor };
         speedSlider.Styles.Add(new Style(s => s.Is<Thumb>()) { Setters = { new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor) } });
-        speedSlider.Bind(Slider.ValueProperty, new Binding("Playback.PlaybackSpeed", BindingMode.TwoWay));
+        speedSlider.Bind(Slider.ValueProperty, new Binding("Playback.EffectsControls.PlaybackSpeed", BindingMode.TwoWay)); // Updated binding
         var speedDisplay = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0), Foreground = theme.B_TextColor, MinWidth = 35, HorizontalAlignment = HorizontalAlignment.Right };
-        speedDisplay.Bind(TextBlock.TextProperty, new Binding("Playback.PlaybackSpeedDisplay"));
+        speedDisplay.Bind(TextBlock.TextProperty, new Binding("Playback.EffectsControls.PlaybackSpeedDisplay")); // Updated binding
 
         var pitchLabel = new TextBlock { Text = "Pitch:", VerticalAlignment = VerticalAlignment.Center, Foreground = theme.B_TextColor, Margin = new Thickness(0, 0, 5, 0) };
         var pitchSlider = new Slider { Minimum = -4, Maximum = 4, SmallChange = 0.1, LargeChange = 0.5, TickFrequency = 0.5, Foreground = theme.B_AccentColor, Background = theme.B_SecondaryTextColor };
         pitchSlider.Styles.Add(new Style(s => s.Is<Thumb>()) { Setters = { new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor) } });
-        pitchSlider.Bind(Slider.ValueProperty, new Binding("Playback.PlaybackPitch", BindingMode.TwoWay));
+        pitchSlider.Bind(Slider.ValueProperty, new Binding("Playback.EffectsControls.PlaybackPitch", BindingMode.TwoWay)); // Updated binding
         var pitchDisplay = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0), Foreground = theme.B_TextColor, MinWidth = 45, HorizontalAlignment = HorizontalAlignment.Right };
-        pitchDisplay.Bind(TextBlock.TextProperty, new Binding("Playback.PlaybackPitchDisplay"));
+        pitchDisplay.Bind(TextBlock.TextProperty, new Binding("Playback.EffectsControls.PlaybackPitchDisplay")); // Updated binding
 
         Grid.SetColumn(speedLabel, 0); Grid.SetColumn(speedSlider, 1); Grid.SetColumn(speedDisplay, 2);
         Grid.SetColumn(pitchLabel, 4); Grid.SetColumn(pitchSlider, 5); Grid.SetColumn(pitchDisplay, 6);

@@ -39,11 +39,11 @@ public class StatusBarTextProvider
             }
 
             string modeStatus = "";
-            if (_playbackViewModel.ShuffleEnabled)
+            if (_playbackViewModel.ModeControls.ShuffleEnabled) // Corrected access
             {
                 modeStatus += " | Shuffle";
             }
-            modeStatus += _playbackViewModel.RepeatMode switch
+            modeStatus += _playbackViewModel.ModeControls.RepeatMode switch // Corrected access
             {
                 RepeatMode.None => " | Do Nothing",
                 RepeatMode.PlayOnce => " | Play Once",

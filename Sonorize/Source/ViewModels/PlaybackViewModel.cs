@@ -15,7 +15,8 @@ public class PlaybackViewModel : ViewModelBase
     public PlaybackService PlaybackService { get; } // Keep reference to the service
 
     public WaveformDisplayViewModel WaveformDisplay { get; }
-    public PlaybackModeViewModel ModeControls { get; } // Extracted mode controls
+    public PlaybackModeViewModel ModeControls { get; }
+    public PlaybackEffectsViewModel EffectsControls { get; } // New child VM
 
     public Song? CurrentSong => PlaybackService.CurrentSong;
 
@@ -44,30 +45,11 @@ public class PlaybackViewModel : ViewModelBase
 
     public bool IsPlaying => PlaybackService.IsPlaying;
 
-    public double PlaybackSpeed { get; set { value = Math.Clamp(value, 0.5, 2.0); if (SetProperty(ref field, value)) { PlaybackService.PlaybackRate = (float)value; OnPropertyChanged(nameof(PlaybackSpeedDisplay)); } } } = 1.0;
-
-    public string PlaybackSpeedDisplay => $"{PlaybackSpeed:F2}x";
-
-    public double PlaybackPitch
-    {
-        get;
-
-        set
-        {
-            value = double.Round(value * 2, MidpointRounding.AwayFromZero) / 2.0;
-            value = double.Clamp(value, -4.0, 4.0);
-
-            if (!SetProperty(ref field, value))
-            {
-                return;
-            }
-
-            PlaybackService.PitchSemitones = (float)field;
-            OnPropertyChanged(nameof(PlaybackPitchDisplay));
-        }
-    } = 0.0;
-
-    public string PlaybackPitchDisplay => $"{PlaybackPitch:+0.0;-0.0;0} st";
+    // PlaybackSpeed and PlaybackPitch are now managed by PlaybackEffectsViewModel
+    // public double PlaybackSpeed { get; set { value = Math.Clamp(value, 0.5, 2.0); if (SetProperty(ref field, value)) { PlaybackService.PlaybackRate = (float)value; OnPropertyChanged(nameof(PlaybackSpeedDisplay)); } } } = 1.0;
+    // public string PlaybackSpeedDisplay => $"{PlaybackSpeed:F2}x";
+    // public double PlaybackPitch { /* ... */ } = 0.0;
+    // public string PlaybackPitchDisplay => $"{PlaybackPitch:+0.0;-0.0;0} st";
 
     public string CurrentTimeDisplay
     {
@@ -102,10 +84,11 @@ public class PlaybackViewModel : ViewModelBase
     {
         PlaybackService = playbackService;
         WaveformDisplay = new WaveformDisplayViewModel(playbackService, waveformService);
-        ModeControls = new PlaybackModeViewModel(this); // Instantiate extracted VM
+        ModeControls = new PlaybackModeViewModel(this);
+        EffectsControls = new PlaybackEffectsViewModel(playbackService); // Instantiate new VM
 
-        PlaybackSpeed = 1.0;
-        PlaybackPitch = 0.0;
+        // PlaybackSpeed = 1.0; // Now managed by EffectsControls
+        // PlaybackPitch = 0.0; // Now managed by EffectsControls
 
         PlayPauseResumeCommand = new RelayCommand(
             _ => TogglePlayPauseResume(),
@@ -124,6 +107,8 @@ public class PlaybackViewModel : ViewModelBase
         PlaybackService.PropertyChanged += PlaybackService_PropertyChanged;
         PropertyChanged += PlaybackViewModel_PropertyChanged; // For HasCurrentSong affecting ModeControls
         WaveformDisplay.PropertyChanged += WaveformDisplay_PropertyChanged;
+        // EffectsControls does not currently raise events that PlaybackViewModel needs to listen to directly.
+        // If it did, we would subscribe here: EffectsControls.PropertyChanged += EffectsControls_PropertyChanged;
     }
 
     private void WaveformDisplay_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -186,6 +171,13 @@ public class PlaybackViewModel : ViewModelBase
                     OnPropertyChanged(nameof(IsPlaying));
                     RaisePlaybackCommandCanExecuteChanged();
                     break;
+                    // If PlaybackRate or PitchSemitones from PlaybackService were to update EffectsControls:
+                    // case nameof(PlaybackService.PlaybackRate):
+                    //    EffectsControls.PlaybackSpeed = PlaybackService.PlaybackRate; // Or some sync logic
+                    //    break;
+                    // case nameof(PlaybackService.PitchSemitones):
+                    //    EffectsControls.PlaybackPitch = PlaybackService.PitchSemitones;
+                    //    break;
             }
         });
     }
@@ -206,6 +198,7 @@ public class PlaybackViewModel : ViewModelBase
         (PlayPauseResumeCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (SeekCommand as RelayCommand)?.RaiseCanExecuteChanged();
         ModeControls.RaiseCommandCanExecuteChanged(); // Delegate to the extracted VM
+        // EffectsControls currently has no commands.
     }
 
     public void Dispose()
@@ -220,5 +213,6 @@ public class PlaybackViewModel : ViewModelBase
             // If WaveformDisplay implements IDisposable, call it
         }
         ModeControls?.Dispose(); // Dispose the extracted VM
+        // EffectsControls does not currently implement IDisposable or hold resources.
     }
 }

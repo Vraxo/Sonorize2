@@ -31,8 +31,8 @@ public class PlaybackFlowManagerService
 
         Song? currentSong = _libraryViewModel.SelectedSong;
         List<Song> currentList = [.. _libraryViewModel.FilteredSongs];
-        RepeatMode repeatMode = _playbackViewModel.RepeatMode;
-        bool shuffleEnabled = _playbackViewModel.ShuffleEnabled;
+        RepeatMode repeatMode = _playbackViewModel.ModeControls.RepeatMode; // Corrected access
+        bool shuffleEnabled = _playbackViewModel.ModeControls.ShuffleEnabled; // Corrected access
 
         Song? nextSong = _nextTrackSelectorService.GetNextSong(currentSong, currentList, repeatMode, shuffleEnabled);
 
