@@ -3669,16 +3669,20 @@ public class MainWindow : Window
 
     private void MainWindow_DataContextChanged(object? sender, EventArgs e)
     {
+        // Previous LibraryVM cleanup
         if (_currentLibraryVM != null)
         {
             _currentLibraryVM.PropertyChanged -= LibraryViewModel_PropertyChanged;
+            _sharedViewTemplates.SetLibraryViewModel(null); // Reset in shared templates
             _currentLibraryVM = null;
         }
 
+        // New LibraryVM setup
         if (DataContext is MainWindowViewModel vm && vm.Library != null)
         {
             _currentLibraryVM = vm.Library;
             _currentLibraryVM.PropertyChanged += LibraryViewModel_PropertyChanged;
+            _sharedViewTemplates.SetLibraryViewModel(_currentLibraryVM); // Set in shared templates
 
             // Apply initial display modes for each list
             ApplyListViewDisplayMode(_songListBox, _currentLibraryVM.LibraryViewMode, _sharedViewTemplates.DetailedSongTemplate, _sharedViewTemplates.CompactSongTemplate, _sharedViewTemplates.GridSongTemplate);
@@ -3731,6 +3735,7 @@ public class MainWindow : Window
         if (_currentLibraryVM != null)
         {
             _currentLibraryVM.PropertyChanged -= LibraryViewModel_PropertyChanged;
+            _sharedViewTemplates.SetLibraryViewModel(null); // Also clear on close
         }
         base.OnClosed(e);
     }

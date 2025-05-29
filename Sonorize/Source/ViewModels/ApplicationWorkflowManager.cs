@@ -23,6 +23,8 @@ public class ApplicationWorkflowManager : IDisposable
     private readonly PlaybackFlowManagerService _playbackFlowManagerService;
     private readonly ApplicationInteractionService _applicationInteractionService;
     private readonly LibraryPlaybackLinkService _libraryPlaybackLinkService;
+    private readonly SongMetadataService _songMetadataService; // Added
+
 
     private readonly Random _shuffleRandom = new();
 
@@ -33,7 +35,8 @@ public class ApplicationWorkflowManager : IDisposable
         LibraryViewModel libraryViewModel,
         PlaybackViewModel playbackViewModel,
         PlaybackService playbackService,
-        LoopDataService loopDataService) // LoopDataService needed by LoopEditor, indirectly for status
+        LoopDataService loopDataService,
+        SongMetadataService songMetadataService) // Added SongMetadataService
     {
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
         _scrobblingService = scrobblingService ?? throw new ArgumentNullException(nameof(scrobblingService));
@@ -41,22 +44,11 @@ public class ApplicationWorkflowManager : IDisposable
         _libraryViewModel = libraryViewModel ?? throw new ArgumentNullException(nameof(libraryViewModel));
         _playbackViewModel = playbackViewModel ?? throw new ArgumentNullException(nameof(playbackViewModel));
         _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
+        _songMetadataService = songMetadataService ?? throw new ArgumentNullException(nameof(songMetadataService)); // Added
 
         // Create internal services
         _nextTrackSelectorService = new NextTrackSelectorService(_shuffleRandom);
-
-        // Assuming LoopEditorViewModel is accessible or its relevant state for status bar is handled differently
-        // For StatusBarTextProvider, we might need LoopEditorViewModel or a subset of its state.
-        // For simplicity here, if LoopEditor is a direct child of MainWindowViewModel, it could be passed too.
-        // Or StatusBarTextProvider could be simplified if LoopEditor state isn't strictly needed or handled via PlaybackViewModel.
-        // Let's assume MainWindowViewModel will pass its LoopEditorViewModel instance to GetCurrentStatusText.
-        // For now, StatusBarTextProvider is created here.
-        // If LoopEditorViewModel is critical, it should be passed in constructor.
-        // Let's pass LoopEditorViewModel's required data if possible, or the VM itself.
-        // For now, creating it with what's available.
-        // LoopEditorViewModel is created in MainWindowViewModel, so we can't easily pass it here without a circular setup.
-        // Solution: MainWindowViewModel passes its instance of LoopEditorViewModel to GetCurrentStatusText.
-        _statusBarTextProvider = new StatusBarTextProvider(_playbackViewModel, null!, _libraryViewModel); // Placeholder for LoopEditorViewModel
+        _statusBarTextProvider = new StatusBarTextProvider(_playbackViewModel, null!, _libraryViewModel); // Placeholder
 
         _settingsChangeProcessorService = new SettingsChangeProcessorService(_libraryViewModel, _scrobblingService);
         _playbackFlowManagerService = new PlaybackFlowManagerService(_libraryViewModel, _playbackViewModel, _playbackService, _nextTrackSelectorService);
@@ -64,7 +56,8 @@ public class ApplicationWorkflowManager : IDisposable
         _applicationInteractionService = new ApplicationInteractionService(
             _settingsService,
             _settingsChangeProcessorService,
-            _currentTheme);
+            _currentTheme,
+            _songMetadataService); // Pass SongMetadataService
 
         _libraryPlaybackLinkService = new LibraryPlaybackLinkService(_libraryViewModel, _playbackService, _playbackViewModel);
     }
@@ -79,20 +72,18 @@ public class ApplicationWorkflowManager : IDisposable
         return await _applicationInteractionService.HandleAddMusicDirectoryAsync(owner);
     }
 
+    public async Task<bool> HandleEditSongMetadataDialogAsync(Song song, Window owner)
+    {
+        return await _applicationInteractionService.HandleEditSongMetadataDialogAsync(song, owner);
+    }
+
     public void HandlePlaybackEndedNaturally()
     {
         _playbackFlowManagerService.HandlePlaybackEndedNaturally();
     }
 
-    public string GetCurrentStatusText(LoopEditorViewModel loopEditorViewModel) // Accept LoopEditorViewModel here
+    public string GetCurrentStatusText(LoopEditorViewModel loopEditorViewModel)
     {
-        // Temporarily create a new StatusBarTextProvider if we can't store LoopEditorViewModel
-        // This is not ideal. Better to have StatusBarTextProvider take LoopEditorViewModel in its constructor.
-        // For this refactor, we'll assume the existing StatusBarTextProvider in MainWindowViewModel is used,
-        // and this method would reconstruct the string or MainWindowViewModel calls its own provider.
-        // To make this class fully responsible, it needs LoopEditorViewModel.
-        // Let's refine _statusBarTextProvider initialization or GetCurrentStatusText method.
-        // A simple way is for this method to reconstruct the provider instance or update it.
         var localStatusBarTextProvider = new StatusBarTextProvider(_playbackViewModel, loopEditorViewModel, _libraryViewModel);
         return localStatusBarTextProvider.GetCurrentStatusText();
     }

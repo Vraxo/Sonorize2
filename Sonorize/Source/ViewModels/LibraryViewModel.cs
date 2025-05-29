@@ -64,6 +64,7 @@ public class LibraryViewModel : ViewModelBase
 
             Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"}");
             _trackNavigationManager.UpdateSelectedSong(value);
+            (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged(); // Update CanExecute for Edit
         }
     }
 
@@ -314,16 +315,20 @@ public class LibraryViewModel : ViewModelBase
 
     private void ExecuteEditSongMetadata(object? parameter)
     {
-        if (parameter is Song song)
+        if (parameter is Song song && _parentViewModel.OpenEditSongMetadataDialogCommand.CanExecute(song))
         {
-            Debug.WriteLine($"[LibraryVM] Edit metadata requested for: {song.Title}");
-            // Future: Open metadata editing dialog here
+            Debug.WriteLine($"[LibraryVM] Delegating Edit metadata for: {song.Title} to MainWindowViewModel.");
+            _parentViewModel.OpenEditSongMetadataDialogCommand.Execute(song);
+        }
+        else
+        {
+            Debug.WriteLine($"[LibraryVM] Edit metadata requested but parameter is not a Song or parent command cannot execute.");
         }
     }
 
     private bool CanExecuteEditSongMetadata(object? parameter)
     {
-        return parameter is Song;
+        return parameter is Song && _parentViewModel.OpenEditSongMetadataDialogCommand.CanExecute(parameter);
     }
 
 
@@ -344,6 +349,10 @@ public class LibraryViewModel : ViewModelBase
         {
             _displayModeService.PropertyChanged -= DisplayModeService_PropertyChanged;
             // If LibraryDisplayModeService becomes IDisposable, dispose it here.
+        }
+        if (_parentViewModel != null && EditSongMetadataCommand != null)
+        {
+            // Clean up if necessary, though RelayCommand doesn't typically need explicit disposal
         }
     }
 }

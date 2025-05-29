@@ -98,6 +98,8 @@ public class MainWindow : Window
         // New LibraryVM setup
         if (DataContext is MainWindowViewModel vm && vm.Library != null)
         {
+            vm.SetOwnerView(this); // Pass the window instance to the ViewModel
+
             _currentLibraryVM = vm.Library;
             _currentLibraryVM.PropertyChanged += LibraryViewModel_PropertyChanged;
             _sharedViewTemplates.SetLibraryViewModel(_currentLibraryVM); // Set in shared templates
@@ -154,6 +156,10 @@ public class MainWindow : Window
         {
             _currentLibraryVM.PropertyChanged -= LibraryViewModel_PropertyChanged;
             _sharedViewTemplates.SetLibraryViewModel(null); // Also clear on close
+        }
+        if (DataContext is MainWindowViewModel vm)
+        {
+            vm.SetOwnerView(null!); // Clear the owner view reference
         }
         base.OnClosed(e);
     }

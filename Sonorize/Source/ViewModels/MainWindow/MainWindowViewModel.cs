@@ -7,7 +7,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Controls;
-using Avalonia.Platform.Storage;
+// Removed: using Avalonia.Platform.Storage; // No longer directly used here for Application.Current
 using Avalonia.Threading;
 using Sonorize.Models;
 using Sonorize.Services;
@@ -23,10 +23,13 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private readonly WaveformService _waveformService;
     private readonly LoopDataService _loopDataService;
     private readonly ScrobblingService _scrobblingService;
+    private readonly SongMetadataService _songMetadataService;
 
     private readonly MainWindowViewModelOrchestrator _orchestrator;
-    private readonly ApplicationWorkflowManager _workflowManager; // New workflow manager
+    private readonly ApplicationWorkflowManager _workflowManager;
     private readonly LibraryDisplayModeService _libraryDisplayModeService;
+
+    private Window? _ownerView; // Added to store the owner window
 
 
     // Expose the Services directly for child VMs or public properties
@@ -63,6 +66,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public ICommand OpenSettingsCommand { get; }
     public ICommand ExitCommand { get; }
     public ICommand AddDirectoryAndRefreshCommand { get; }
+    public ICommand OpenEditSongMetadataDialogCommand { get; }
+
 
     public MainWindowViewModel(
         SettingsService settingsService,
@@ -71,7 +76,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         ThemeColors theme,
         WaveformService waveformService,
         LoopDataService loopDataService,
-        ScrobblingService scrobblingService)
+        ScrobblingService scrobblingService,
+        SongMetadataService songMetadataService)
     {
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
@@ -80,6 +86,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         _waveformService = waveformService;
         _loopDataService = loopDataService;
         _scrobblingService = scrobblingService;
+        _songMetadataService = songMetadataService;
 
         _libraryDisplayModeService = new LibraryDisplayModeService(_settingsService);
         Library = new LibraryViewModel(this, _settingsService, _musicLibraryService, _loopDataService, _libraryDisplayModeService);
@@ -87,7 +94,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         LoopEditor = new LoopEditorViewModel(PlaybackService, _loopDataService);
         AdvancedPanel = new AdvancedPanelViewModel(Playback, Library);
 
-        // Instantiate the workflow manager, passing necessary dependencies
         _workflowManager = new ApplicationWorkflowManager(
             _settingsService,
             _scrobblingService,
@@ -95,7 +101,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             Library,
             Playback,
             PlaybackService,
-            _loopDataService); // Pass LoopDataService, though ApplicationWorkflowManager might not use it directly currently
+            _loopDataService,
+            _songMetadataService);
 
         _orchestrator = new MainWindowViewModelOrchestrator(
             Library,
@@ -112,8 +119,16 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         OpenSettingsCommand = new RelayCommand(async owner => await OpenSettingsDialogAsync(owner), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
         ExitCommand = new RelayCommand(_ => Environment.Exit(0));
         AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefreshAsync(owner), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
+        OpenEditSongMetadataDialogCommand = new RelayCommand(async song => await OpenEditSongMetadataDialogAsync(song), CanOpenEditSongMetadataDialog);
+
 
         Dispatcher.UIThread.InvokeAsync(UpdateAllUIDependentStates);
+    }
+
+    // Method for the View to set itself as the owner
+    public void SetOwnerView(Window ownerView)
+    {
+        _ownerView = ownerView;
     }
 
     private void PlaybackService_PlaybackEndedNaturally(object? sender, EventArgs e)
@@ -147,6 +162,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             (OpenSettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (ExitCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (OpenEditSongMetadataDialogCommand as RelayCommand)?.RaiseCanExecuteChanged();
+
 
             Library.RaiseLibraryCommandsCanExecuteChanged();
             Playback.RaisePlaybackCommandCanExecuteChanged();
@@ -164,9 +181,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         });
     }
 
-    private async Task OpenSettingsDialogAsync(object? ownerWindow)
+    private async Task OpenSettingsDialogAsync(object? ownerWindowObj)
     {
-        if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
+        if (ownerWindowObj is not Window owner || Library.IsLoadingLibrary) return;
         IsAdvancedPanelVisible = false;
 
         var (statusMessages, settingsChanged) = await _workflowManager.HandleOpenSettingsDialogAsync(owner);
@@ -189,9 +206,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         RaiseAllCommandsCanExecuteChanged();
     }
 
-    private async Task AddMusicDirectoryAndRefreshAsync(object? ownerWindow)
+    private async Task AddMusicDirectoryAndRefreshAsync(object? ownerWindowObj)
     {
-        if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
+        if (ownerWindowObj is not Window owner || Library.IsLoadingLibrary) return;
         IsAdvancedPanelVisible = false;
 
         var (directoryAdded, statusMessage) = await _workflowManager.HandleAddMusicDirectoryAsync(owner);
@@ -209,6 +226,43 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         RaiseAllCommandsCanExecuteChanged();
     }
 
+    private async Task OpenEditSongMetadataDialogAsync(object? songObject)
+    {
+        if (songObject is not Song songToEdit)
+        {
+            Debug.WriteLine("[MainVM] OpenEditSongMetadataDialogAsync: songObject is not a Song.");
+            return;
+        }
+
+        Window? ownerWindow = _ownerView; // Use the stored owner view
+
+        if (ownerWindow == null)
+        {
+            Debug.WriteLine("[MainVM] OpenEditSongMetadataDialogAsync: Owner window is not set.");
+            return;
+        }
+
+        IsAdvancedPanelVisible = false;
+
+        bool metadataSaved = await _workflowManager.HandleEditSongMetadataDialogAsync(songToEdit, ownerWindow);
+
+        if (metadataSaved)
+        {
+            StatusBarText = $"Metadata for '{songToEdit.Title}' updated.";
+        }
+        else
+        {
+            UpdateStatusBarText();
+        }
+        RaiseAllCommandsCanExecuteChanged();
+    }
+
+    private bool CanOpenEditSongMetadataDialog(object? songObject)
+    {
+        return songObject is Song && !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading);
+    }
+
+
     public void Dispose()
     {
         if (PlaybackService != null)
@@ -216,11 +270,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             PlaybackService.PlaybackEndedNaturally -= PlaybackService_PlaybackEndedNaturally;
         }
         _orchestrator?.Dispose();
-        _workflowManager?.Dispose(); // Dispose the new manager
-        // _libraryPlaybackLinkService was moved into _workflowManager
+        _workflowManager?.Dispose();
         Library?.Dispose();
         Playback?.Dispose();
         AdvancedPanel?.Dispose();
         LoopEditor?.Dispose();
+        _ownerView = null; // Clear the view reference
     }
 }
