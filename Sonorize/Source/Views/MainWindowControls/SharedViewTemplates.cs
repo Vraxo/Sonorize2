@@ -9,7 +9,6 @@ using Avalonia.Media.Imaging;
 using Sonorize.Models; // For Song, ArtistViewModel, AlbumViewModel, ThemeColors
 using Sonorize.ViewModels; // For SongDisplayMode (though not directly used here, context is relevant)
 using Avalonia.VisualTree; // Required for FindAncestorOfType
-using System.Diagnostics; // For Debug.WriteLine
 
 namespace Sonorize.Views.MainWindowControls
 {
@@ -51,44 +50,31 @@ namespace Sonorize.Views.MainWindowControls
             var contextMenu = new ContextMenu();
             var editMenuItem = new MenuItem { Header = "View/Edit Metadata" };
 
-            // Command will bind to EditSongMetadataCommand on the LibraryViewModel
-            // (which will be set as ContextMenu.DataContext or MenuItem.DataContext)
+            // Command is on LibraryViewModel (which will be ContextMenu.DataContext)
             editMenuItem.Bind(MenuItem.CommandProperty, new Binding("EditSongMetadataCommand"));
 
-            // CommandParameter will be set directly in the Opening event.
-            // So, no binding needed here for CommandParameterProperty.
+            // CommandParameter is the Song object.
+            // Song is DataContext of PlacementTarget (the control the ContextMenu is attached to).
+            // The RelativeSource finds the ContextMenu itself to access its PlacementTarget.DataContext.
+            editMenuItem.Bind(MenuItem.CommandParameterProperty,
+                new Binding("PlacementTarget.DataContext")
+                {
+                    RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(ContextMenu) }
+                });
 
             contextMenu.Items.Add(editMenuItem);
 
+            // Set DataContext of ContextMenu when it's opening.
+            // This ensures it gets the LibraryViewModel from the ListBox.
             contextMenu.Opening += (sender, args) => {
                 var cm = sender as ContextMenu;
-                if (cm == null) return;
-
-                MenuItem? currentEditMenuItem = cm.Items.OfType<MenuItem>().FirstOrDefault(mi => mi.Header?.ToString() == "View/Edit Metadata");
-                if (currentEditMenuItem == null) return;
-
-                if (cm.PlacementTarget is Control placementTarget)
+                if (cm?.PlacementTarget is Control placementTarget)
                 {
-                    var songObject = placementTarget.DataContext;
-                    currentEditMenuItem.CommandParameter = songObject;
-
-                    var window = placementTarget.FindAncestorOfType<Window>();
-                    if (window?.DataContext is MainWindowViewModel mwvm && mwvm.Library != null)
+                    var listBox = placementTarget.FindAncestorOfType<ListBox>();
+                    if (listBox != null)
                     {
-                        // Set DataContext directly on the MenuItem for more robust binding resolution
-                        currentEditMenuItem.DataContext = mwvm.Library;
+                        cm.DataContext = listBox.DataContext; // Should be LibraryViewModel
                     }
-                    else
-                    {
-                        Debug.WriteLine("[ContextMenuOpening] Failed to find LibraryViewModel for MenuItem.DataContext. EditSongMetadataCommand might not work.");
-                        currentEditMenuItem.DataContext = null; // Ensure DataContext is cleared if source is not found
-                        currentEditMenuItem.CommandParameter = null;
-                    }
-                }
-                else
-                {
-                    currentEditMenuItem.DataContext = null;
-                    currentEditMenuItem.CommandParameter = null;
                 }
             };
 
