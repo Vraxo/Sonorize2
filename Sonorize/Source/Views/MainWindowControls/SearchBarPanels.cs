@@ -22,8 +22,8 @@ public static class SearchBarPanel
             CornerRadius = new CornerRadius(4),
             FontSize = 14
         };
-        // Bind to Library.SearchQuery
-        searchBox.Bind(TextBox.TextProperty, new Binding("Library.SearchQuery", BindingMode.TwoWay));
+        // Bind to Library.FilterState.SearchQuery
+        searchBox.Bind(TextBox.TextProperty, new Binding("Library.FilterState.SearchQuery", BindingMode.TwoWay));
 
         searchBox.Styles.Add(new Style(s => s.Is<TextBox>().Class(":focus"))
         {

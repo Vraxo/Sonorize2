@@ -23,6 +23,7 @@ public class LibraryViewModel : ViewModelBase
     private readonly LibraryDataOrchestrator _libraryDataOrchestrator;
     private readonly TrackNavigationManager _trackNavigationManager;
     private readonly LibraryDisplayModeService _displayModeService; // New dependency
+    private readonly LibraryFilterStateManager _filterStateManager; // New dependency
 
     private readonly ObservableCollection<Song> _allSongs = [];
 
@@ -30,26 +31,15 @@ public class LibraryViewModel : ViewModelBase
     public ObservableCollection<ArtistViewModel> Artists { get; } = [];
     public ObservableCollection<AlbumViewModel> Albums { get; } = [];
 
+    // Expose FilterStateManager for binding
+    public LibraryFilterStateManager FilterState => _filterStateManager;
+
+
     // Display mode command is now proxied from LibraryDisplayModeService
     public ICommand SetDisplayModeCommand => _displayModeService.SetDisplayModeCommand;
     public ICommand PreviousTrackCommand => _trackNavigationManager.PreviousTrackCommand;
     public ICommand NextTrackCommand => _trackNavigationManager.NextTrackCommand;
     public ICommand EditSongMetadataCommand { get; }
-
-
-    public string SearchQuery
-    {
-        get;
-
-        set
-        {
-            if (!SetProperty(ref field, value))
-            {
-                return;
-            }
-            ApplyFilter();
-        }
-    } = string.Empty;
 
     public Song? SelectedSong
     {
@@ -65,50 +55,6 @@ public class LibraryViewModel : ViewModelBase
             Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"}");
             _trackNavigationManager.UpdateSelectedSong(value);
             (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged(); // Update CanExecute for Edit
-        }
-    }
-
-    public ArtistViewModel? SelectedArtist
-    {
-        get;
-
-        set
-        {
-            if (!SetProperty(ref field, value))
-            {
-                return;
-            }
-
-            if (value != null)
-            {
-                OnArtistSelected(value);
-            }
-            else
-            {
-                ApplyFilter();
-            }
-        }
-    }
-
-    public AlbumViewModel? SelectedAlbum
-    {
-        get;
-
-        set
-        {
-            if (!SetProperty(ref field, value))
-            {
-                return;
-            }
-
-            if (value != null)
-            {
-                OnAlbumSelected(value);
-            }
-            else
-            {
-                ApplyFilter();
-            }
         }
     }
 
@@ -145,13 +91,18 @@ public class LibraryViewModel : ViewModelBase
         SettingsService settingsService,
         MusicLibraryService musicLibraryService,
         LoopDataService loopDataService,
-        LibraryDisplayModeService displayModeService) // Added LibraryDisplayModeService
+        LibraryDisplayModeService displayModeService)
     {
         _parentViewModel = parentViewModel ?? throw new ArgumentNullException(nameof(parentViewModel));
-        _settingsService = settingsService; // Still needed for status text generator
+        _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
         _loopDataService = loopDataService;
         _displayModeService = displayModeService ?? throw new ArgumentNullException(nameof(displayModeService));
+
+        _filterStateManager = new LibraryFilterStateManager();
+        _filterStateManager.FilterCriteriaChanged += (s, e) => ApplyFilter();
+        _filterStateManager.RequestTabSwitchToLibrary += (s, e) => _parentViewModel.ActiveTabIndex = 0;
+
 
         // Subscribe to PropertyChanged on _displayModeService to update proxied properties
         _displayModeService.PropertyChanged += DisplayModeService_PropertyChanged;
@@ -207,9 +158,7 @@ public class LibraryViewModel : ViewModelBase
         }
 
         IsLoadingLibrary = true;
-        SearchQuery = string.Empty;
-        SelectedArtist = null;
-        SelectedAlbum = null;
+        _filterStateManager.ClearSelectionsAndSearch(); // Resets SearchQuery, SelectedArtist, SelectedAlbum
         SelectedSong = null;
 
         await Dispatcher.UIThread.InvokeAsync(() =>
@@ -237,44 +186,17 @@ public class LibraryViewModel : ViewModelBase
         UpdateStatusBarText();
     }
 
-    private void OnArtistSelected(ArtistViewModel artist)
-    {
-        if (artist?.Name is null)
-        {
-            return;
-        }
-
-        Debug.WriteLine($"[LibraryVM] Artist selected: {artist.Name}");
-
-        SelectedAlbum = null;
-        OnPropertyChanged(nameof(SelectedAlbum));
-        SearchQuery = artist.Name;
-
-        _parentViewModel.ActiveTabIndex = 0;
-    }
-
-    private void OnAlbumSelected(AlbumViewModel album)
-    {
-        if (album?.Title == null || album.Artist == null)
-        {
-            return;
-        }
-
-        Debug.WriteLine($"[LibraryVM] Album selected: {album.Title} by {album.Artist}");
-
-        SelectedArtist = null;
-        OnPropertyChanged(nameof(SelectedArtist));
-        SearchQuery = album.Title;
-
-        _parentViewModel.ActiveTabIndex = 0;
-    }
-
     private void ApplyFilter()
     {
         var currentSelectedSongBeforeFilter = SelectedSong;
 
         FilteredSongs.Clear();
-        var filtered = _songFilteringService.ApplyFilter(_allSongs, SearchQuery, SelectedArtist, SelectedAlbum);
+        var filtered = _songFilteringService.ApplyFilter(
+            _allSongs,
+            _filterStateManager.SearchQuery,
+            _filterStateManager.SelectedArtist,
+            _filterStateManager.SelectedAlbum);
+
         foreach (var song in filtered)
         {
             FilteredSongs.Add(song);
@@ -305,9 +227,9 @@ public class LibraryViewModel : ViewModelBase
                 IsLoadingLibrary,
                 _allSongs.Count,
                 FilteredSongs.Count,
-                SelectedArtist,
-                SelectedAlbum,
-                SearchQuery,
+                _filterStateManager.SelectedArtist,
+                _filterStateManager.SelectedAlbum,
+                _filterStateManager.SearchQuery,
                 _settingsService
             );
         }
@@ -350,9 +272,11 @@ public class LibraryViewModel : ViewModelBase
             _displayModeService.PropertyChanged -= DisplayModeService_PropertyChanged;
             // If LibraryDisplayModeService becomes IDisposable, dispose it here.
         }
-        if (_parentViewModel != null && EditSongMetadataCommand != null)
+        if (_filterStateManager != null)
         {
-            // Clean up if necessary, though RelayCommand doesn't typically need explicit disposal
+            _filterStateManager.FilterCriteriaChanged -= (s, e) => ApplyFilter();
+            _filterStateManager.RequestTabSwitchToLibrary -= (s, e) => _parentViewModel.ActiveTabIndex = 0;
         }
+        // Clean up if necessary, though RelayCommand doesn't typically need explicit disposal
     }
 }

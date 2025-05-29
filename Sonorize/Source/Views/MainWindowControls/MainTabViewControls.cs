@@ -119,7 +119,7 @@ namespace Sonorize.Views.MainWindowControls
             ApplyListBoxItemStyles(_artistsListBoxInstance);
 
             _artistsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Artists"));
-            _artistsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.SelectedArtist", BindingMode.TwoWay));
+            _artistsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.FilterState.SelectedArtist", BindingMode.TwoWay));
 
             _artistsListBoxInstance.ItemTemplate = _sharedViewTemplates.DetailedArtistTemplate;
             _artistsListBoxInstance.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
@@ -139,7 +139,7 @@ namespace Sonorize.Views.MainWindowControls
             ApplyListBoxItemStyles(_albumsListBoxInstance);
 
             _albumsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Albums"));
-            _albumsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.SelectedAlbum", BindingMode.TwoWay));
+            _albumsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.FilterState.SelectedAlbum", BindingMode.TwoWay));
 
             _albumsListBoxInstance.ItemTemplate = _sharedViewTemplates.DetailedAlbumTemplate;
             _albumsListBoxInstance.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
