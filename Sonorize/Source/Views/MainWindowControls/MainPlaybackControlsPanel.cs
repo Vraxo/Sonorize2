@@ -1,108 +1,48 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Data;
-using Avalonia.Data.Converters; // Added required using directive for FuncValueConverter
 using Avalonia.Layout;
 using Avalonia.Media;
-using Sonorize.Models;
+using Sonorize.Models; // For ThemeColors
 
 namespace Sonorize.Views.MainWindowControls;
 
 public static class MainPlaybackControlsPanel
 {
-    public static Grid Create(ThemeColors theme) // Root is a Grid
+    public static Border Create(ThemeColors theme)
     {
-        // --- Playback Navigation Buttons Panel (Extracted) ---
-        var combinedPlaybackButtonControlsPanel = PlaybackNavigationButtonsPanel.Create(theme);
-
-        var toggleAdvPanelButton = new Button
+        var mainControlsGrid = new Grid
         {
-            Content = "+",
-            Background = theme.B_SlightlyLighterBackground,
-            Foreground = theme.B_TextColor, // Default color
-            BorderBrush = theme.B_ControlBackgroundColor, // Default border color
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(3),
-            Padding = new Thickness(8, 4),
-            MinWidth = 30, // Give it a minimum size to occupy space
-            FontWeight = FontWeight.Bold,
-            Width = 32, // Fixed width for consistency
-            Height = 32, // Fixed height for consistency
-            HorizontalContentAlignment = HorizontalAlignment.Center, // Center content horizontally
-            VerticalContentAlignment = VerticalAlignment.Center     // Center content vertically
+            // Background is now handled by the wrapping Border
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,*"), // SongInfo (stretches), Buttons (auto), TimeSlider (stretches)
+            HorizontalAlignment = HorizontalAlignment.Stretch // Grid should stretch within the Border's content area
+            // MinHeight is now handled by the wrapping Border
         };
-        // Change BorderBrush color based on IsAdvancedPanelVisible
-        toggleAdvPanelButton[!Button.BorderBrushProperty] = new Binding("IsAdvancedPanelVisible")
-        {
-            Converter = new FuncValueConverter<bool, IBrush>(isVisible => isVisible ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
-        };
-        toggleAdvPanelButton[!Button.ForegroundProperty] = new Binding("IsAdvancedPanelVisible")
-        {
-            Converter = new FuncValueConverter<bool, IBrush>(isVisible => isVisible ? theme.B_AccentColor : theme.B_TextColor)
-        };
-        toggleAdvPanelButton.Bind(Button.CommandProperty, new Binding("ToggleAdvancedPanelCommand"));
-        toggleAdvPanelButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
-
-        var rightControlsPanel = new StackPanel // Holds toggle button
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 5,
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Right, // Align to the right within its grid cell
-            Margin = new Thickness(0, 0, 10, 0) // Margin from the right edge of the grid cell
-            // MinWidth/Width could be added here if needed to reserve space even when invisible
-        };
-        rightControlsPanel.Children.Add(toggleAdvPanelButton);
-
-        // --- Playback Time Slider Panel (Extracted) ---
-        var timeSliderGrid = PlaybackTimeSliderPanel.Create(theme);
-
-
-        // --- Center Playback Controls Stack (Combined Buttons Panel + Slider) ---
-        // This stack panel contains the combined button panel (now includes shuffle/loop, prev/play/next) and the time/slider grid.
-        var centerPlaybackControlsStack = new StackPanel
-        {
-            Orientation = Orientation.Vertical,
-            Margin = new Thickness(0, 5, 0, 0),
-            Spacing = 8, // Space between the button row and the slider row
-            HorizontalAlignment = HorizontalAlignment.Center, // Center this stack panel within its parent grid cell
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        // Add the combined button panel (now includes shuffle/loop, prev/play/next)
-        centerPlaybackControlsStack.Children.Add(combinedPlaybackButtonControlsPanel);
-        centerPlaybackControlsStack.Children.Add(timeSliderGrid);
-
-
-        // --- Currently Playing Song Info Panel (Extracted) ---
+        // Song Info Panel (Left Aligned in its column)
         var songInfoPanel = SongInfoDisplayPanel.Create(theme);
+        Grid.SetColumn(songInfoPanel, 0);
+        mainControlsGrid.Children.Add(songInfoPanel);
 
+        // Playback Buttons (Center Aligned in its column)
+        var playbackButtonsPanel = PlaybackNavigationButtonsPanel.Create(theme);
+        playbackButtonsPanel.HorizontalAlignment = HorizontalAlignment.Center;
+        Grid.SetColumn(playbackButtonsPanel, 1);
+        mainControlsGrid.Children.Add(playbackButtonsPanel);
 
-        // --- Main Grid Layout (Restored Single Column Centering) ---
-        // Use a single star (*) column. All children are placed in this column.
-        // Their HorizontalAlignment determines their position within the column.
-        // The centerPlaybackControlsStack has HorizontalAlignment.Center, ensuring it's centered
-        // regardless of the width of the left (songInfoPanel) or right (rightControlsPanel) elements.
-        var outerGrid = new Grid // This is the root panel
+        // Time Slider Panel (Stretches in its column)
+        var timeSliderPanel = PlaybackTimeSliderPanel.Create(theme);
+        Grid.SetColumn(timeSliderPanel, 2);
+        mainControlsGrid.Children.Add(timeSliderPanel);
+
+        var panelRoot = new Border
         {
             Background = theme.B_BackgroundColor,
-            Margin = new Thickness(0, 5, 0, 5), // Vertical margin for the whole control
+            Padding = new Thickness(10, 5),
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            RowDefinitions = new RowDefinitions("Auto"), // Single row, height is Auto based on content
-            ColumnDefinitions = new ColumnDefinitions("*") // Single column spanning the width
+            MinHeight = 70,
+            Child = mainControlsGrid
         };
 
-        // Place all panels in the single column (column 0).
-        // Their HorizontalAlignment will handle horizontal positioning.
-        Grid.SetColumn(songInfoPanel, 0);
-        Grid.SetColumn(centerPlaybackControlsStack, 0);
-        Grid.SetColumn(rightControlsPanel, 0);
-
-        // Add children in any order; their position is determined by grid layout and alignment.
-        outerGrid.Children.Add(songInfoPanel);
-        outerGrid.Children.Add(centerPlaybackControlsStack);
-        outerGrid.Children.Add(rightControlsPanel);
-
-        return outerGrid;
+        return panelRoot;
     }
 }
