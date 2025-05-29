@@ -33,7 +33,7 @@ public class StatusBarTextProvider
             status = $"{stateStr}: {_playbackViewModel.CurrentSong?.Title ?? "Unknown Song"}";
 
             // Playback.CurrentSong is the same instance as LoopEditor's internal current song reference
-            if (_loopEditorViewModel.IsCurrentLoopActiveUiBinding && _playbackViewModel.CurrentSong?.SavedLoop != null)
+            if (_loopEditorViewModel.ActiveLoop.IsLoopActive && _playbackViewModel.CurrentSong?.SavedLoop != null)
             {
                 status += $" (Loop Active)";
             }

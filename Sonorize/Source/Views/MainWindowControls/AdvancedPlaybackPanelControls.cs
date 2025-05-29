@@ -86,12 +86,12 @@ public static class AdvancedPlaybackPanelControls
         var setStartBtn = new Button { Content = "A", FontSize = 12, Padding = new Thickness(10, 5), MinWidth = 40, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         setStartBtn.Bind(Button.CommandProperty, new Binding("LoopEditor.CaptureLoopStartCandidateCommand"));
         var startDisp = new TextBlock { FontSize = 11, Margin = new Thickness(3, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = theme.B_SecondaryTextColor, MinWidth = 60 };
-        startDisp.Bind(TextBlock.TextProperty, new Binding("LoopEditor.NewLoopStartCandidateDisplay"));
+        startDisp.Bind(TextBlock.TextProperty, new Binding("LoopEditor.CandidateLoop.NewLoopStartCandidateDisplay")); // Points to CandidateLoop
 
         var setEndBtn = new Button { Content = "B", FontSize = 12, Padding = new Thickness(10, 5), MinWidth = 40, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         setEndBtn.Bind(Button.CommandProperty, new Binding("LoopEditor.CaptureLoopEndCandidateCommand"));
         var endDisp = new TextBlock { FontSize = 11, Margin = new Thickness(3, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = theme.B_SecondaryTextColor, MinWidth = 60 };
-        endDisp.Bind(TextBlock.TextProperty, new Binding("LoopEditor.NewLoopEndCandidateDisplay"));
+        endDisp.Bind(TextBlock.TextProperty, new Binding("LoopEditor.CandidateLoop.NewLoopEndCandidateDisplay")); // Points to CandidateLoop
 
         var saveLoopBtn = new Button { Content = "Save Loop", FontSize = 11, Padding = new Thickness(10, 5), Background = theme.B_AccentColor, Foreground = theme.B_AccentForeground };
         saveLoopBtn.Bind(Button.CommandProperty, new Binding("LoopEditor.SaveLoopCommand"));
@@ -108,9 +108,10 @@ public static class AdvancedPlaybackPanelControls
 
         var loopActiveTogglePanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0), Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
         var loopActiveCheckBox = new CheckBox { Content = "Activate Loop", Foreground = theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
-        loopActiveCheckBox.Bind(ToggleButton.IsCheckedProperty, new Binding("LoopEditor.IsCurrentLoopActiveUiBinding", BindingMode.TwoWay));
+        // Bind to the new ActiveLoopViewModel
+        loopActiveCheckBox.Bind(ToggleButton.IsCheckedProperty, new Binding("LoopEditor.ActiveLoop.IsLoopActive", BindingMode.TwoWay));
         var loopActiveCheckBoxIsEnabledBinding = new Binding("PlaybackService.CurrentSong.SavedLoop") { Converter = NotNullToBooleanConverter.Instance };
-        loopActiveCheckBox.Bind(Control.IsEnabledProperty, loopActiveCheckBoxIsEnabledBinding); // Corrected: Control.IsEnabledProperty
+        loopActiveCheckBox.Bind(Control.IsEnabledProperty, loopActiveCheckBoxIsEnabledBinding);
         loopActiveTogglePanel.Children.Add(loopActiveCheckBox);
 
         loopControlsOuterPanel.Children.Add(loopDefinitionLabel);

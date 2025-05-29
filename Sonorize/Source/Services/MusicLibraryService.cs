@@ -48,7 +48,7 @@ public class MusicLibraryService
         Bitmap? defaultIcon = GetDefaultThumbnail();
         int filesProcessed = 0;
 
-        foreach (var dir in directories)
+        foreach (string dir in directories)
         {
             if (!Directory.Exists(dir))
             {
