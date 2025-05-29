@@ -117,7 +117,7 @@ public class MainTabViewControls
         };
         ApplyListBoxItemStyles(_artistsListBoxInstance);
 
-        _artistsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Artists"));
+        _artistsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Groupings.Artists"));
         _artistsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.FilterState.SelectedArtist", BindingMode.TwoWay));
 
         _artistsListBoxInstance.ItemTemplate = _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate; // Updated path
@@ -137,7 +137,7 @@ public class MainTabViewControls
         };
         ApplyListBoxItemStyles(_albumsListBoxInstance);
 
-        _albumsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Albums"));
+        _albumsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Groupings.Albums"));
         _albumsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.FilterState.SelectedAlbum", BindingMode.TwoWay));
 
         _albumsListBoxInstance.ItemTemplate = _sharedViewTemplates.DetailedAlbumTemplate;
