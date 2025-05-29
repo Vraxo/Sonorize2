@@ -15,6 +15,7 @@ public class SettingsViewModel : ViewModelBase
 {
     private readonly SettingsService _settingsService;
     private readonly ThemeService _themeService;
+    private readonly SettingsPersistenceManager _settingsPersistenceManager;
 
     public ObservableCollection<string> MusicDirectories { get; } = new();
     public List<string> InitialMusicDirectories { get; private set; }
@@ -58,6 +59,7 @@ public class SettingsViewModel : ViewModelBase
     {
         _settingsService = settingsService;
         _themeService = new ThemeService(null); // ThemeService used for GetAvailableThemeFiles
+        _settingsPersistenceManager = new SettingsPersistenceManager(settingsService);
 
         var settings = _settingsService.LoadSettings();
         InitialMusicDirectories = new List<string>(settings.MusicDirectories);
@@ -106,7 +108,7 @@ public class SettingsViewModel : ViewModelBase
         if (!SettingsChanged)
         {
             SettingsChanged = true;
-            Debug.WriteLine("[SettingsVM] Settings marked as changed.");
+            Debug.WriteLine("[SettingsVM] Settings marked as changed (UI interaction).");
         }
     }
 
@@ -151,76 +153,34 @@ public class SettingsViewModel : ViewModelBase
 
     private void SaveSettings(object? parameter)
     {
-        // Load the settings as they are currently on disk to compare against
         AppSettings settingsOnDisk = _settingsService.LoadSettings();
-        // Create a new AppSettings object or clone to store the new state
-        AppSettings newSettingsToSave = new AppSettings
-        {
-            // Copy non-UI managed settings or settings that are not part of this VM directly
-            LibraryViewModePreference = settingsOnDisk.LibraryViewModePreference,
-            ArtistViewModePreference = settingsOnDisk.ArtistViewModePreference,
-            AlbumViewModePreference = settingsOnDisk.AlbumViewModePreference,
-            LastfmSessionKey = settingsOnDisk.LastfmSessionKey // Preserve session key
-        };
 
-        bool actualChangesMade = false;
+        bool changesPersisted = _settingsPersistenceManager.ApplyAndSaveChanges(
+            settingsOnDisk,
+            this.MusicDirectories,
+            this.InitialMusicDirectories,
+            this.SelectedThemeFile,
+            this.LastfmSettings
+        );
 
-        // Music Directories
-        if (!InitialMusicDirectories.SequenceEqual(MusicDirectories) || // If they were initially different
-            !settingsOnDisk.MusicDirectories.SequenceEqual(MusicDirectories)) // Or different from current disk state
+        if (changesPersisted)
         {
-            newSettingsToSave.MusicDirectories = new List<string>(MusicDirectories);
-            InitialMusicDirectories = new List<string>(MusicDirectories); // Update initial state for next open
-            actualChangesMade = true;
-            Debug.WriteLine($"[SettingsVM] Saved directories count: {newSettingsToSave.MusicDirectories.Count}");
+            // Update the baseline for future comparisons if changes were actually saved
+            this.InitialMusicDirectories = new List<string>(this.MusicDirectories);
+            // SettingsChanged flag is used by ApplicationInteractionService to determine if post-save processing is needed.
+            // If ApplyAndSaveChanges persisted anything, then SettingsChanged should be true.
+            // If MarkSettingsChanged() was called due to UI interaction but no actual changes were persisted,
+            // then SettingsChanged should reflect that no *persistent* change happened.
+            this.SettingsChanged = true;
+            Debug.WriteLine("[SettingsVM] Changes were persisted by SettingsPersistenceManager.");
         }
         else
         {
-            newSettingsToSave.MusicDirectories = new List<string>(settingsOnDisk.MusicDirectories);
-        }
-
-        // Theme
-        if (settingsOnDisk.PreferredThemeFileName != SelectedThemeFile)
-        {
-            newSettingsToSave.PreferredThemeFileName = SelectedThemeFile;
-            actualChangesMade = true;
-            Debug.WriteLine($"[SettingsVM] Saved theme: {SelectedThemeFile}");
-        }
-        else
-        {
-            newSettingsToSave.PreferredThemeFileName = settingsOnDisk.PreferredThemeFileName;
-        }
-
-        // Last.fm Settings - Compare with disk state and apply LastfmSettings VM state
-        if (settingsOnDisk.LastfmScrobblingEnabled != LastfmSettings.LastfmScrobblingEnabled) { actualChangesMade = true; }
-        if (settingsOnDisk.LastfmUsername != LastfmSettings.LastfmUsername) { actualChangesMade = true; }
-        if (settingsOnDisk.LastfmPassword != LastfmSettings.LastfmPassword && !string.IsNullOrEmpty(LastfmSettings.LastfmPassword)) { actualChangesMade = true; }
-        if (settingsOnDisk.ScrobbleThresholdPercentage != LastfmSettings.ScrobbleThresholdPercentage) { actualChangesMade = true; }
-        if (settingsOnDisk.ScrobbleThresholdAbsoluteSeconds != LastfmSettings.ScrobbleThresholdAbsoluteSeconds) { actualChangesMade = true; }
-
-        // Apply changes from LastfmSettingsViewModel to newSettingsToSave
-        LastfmSettings.UpdateAppSettings(newSettingsToSave);
-        if (actualChangesMade)
-        {
-            Debug.WriteLine($"[SettingsVM] Last.fm settings updated: " +
-                           $"Scrobbling={newSettingsToSave.LastfmScrobblingEnabled}, " +
-                           $"User={newSettingsToSave.LastfmUsername}, " +
-                           $"PassLen={(newSettingsToSave.LastfmPassword?.Length ?? 0)}, " +
-                           $"Thresh%={newSettingsToSave.ScrobbleThresholdPercentage}, " +
-                           $"ThreshAbsSec={newSettingsToSave.ScrobbleThresholdAbsoluteSeconds}");
-        }
-
-
-        if (actualChangesMade)
-        {
-            _settingsService.SaveSettings(newSettingsToSave);
-            SettingsChanged = true; // This signals that persistent changes were made
-        }
-        else
-        {
-            // Even if MarkSettingsChanged was called (UI was touched), if the final state
-            // matches what's on disk, then no "actual change" for the purpose of post-save actions.
-            SettingsChanged = false;
+            // If no changes were persisted, ensure SettingsChanged reflects this,
+            // even if UI interactions previously set it to true.
+            // This is important because SettingsChanged is checked *after* this method by the caller.
+            this.SettingsChanged = false;
+            Debug.WriteLine("[SettingsVM] No changes were persisted by SettingsPersistenceManager.");
         }
     }
 }
