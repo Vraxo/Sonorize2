@@ -1563,6 +1563,85 @@ public class SongFactory
 }
 </file>
 
+<file path="Source\Services\SongMetadataService.cs">
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Threading.Tasks;
+using Avalonia.Media.Imaging; // Required for Bitmap
+using Sonorize.Models;
+using TagLib;
+
+namespace Sonorize.Services;
+
+public class SongMetadataService
+{
+    public async Task<bool> SaveMetadataAsync(Song song)
+    {
+        if (song == null || string.IsNullOrEmpty(song.FilePath) || !System.IO.File.Exists(song.FilePath))
+        {
+            Debug.WriteLine("[SongMetadataService] SaveMetadataAsync: Invalid song or file path.");
+            return false;
+        }
+
+        try
+        {
+            await Task.Run(() =>
+            {
+                using var tagFile = TagLib.File.Create(song.FilePath);
+
+                tagFile.Tag.Title = song.Title;
+                tagFile.Tag.Performers = new[] { song.Artist };
+                tagFile.Tag.AlbumArtists = new[] { song.Artist };
+                tagFile.Tag.Album = song.Album;
+
+                // Handle Thumbnail
+                if (song.Thumbnail != null)
+                {
+                    using var ms = new MemoryStream();
+                    // Save the Avalonia Bitmap to a stream (defaults to PNG format)
+                    song.Thumbnail.Save(ms);
+                    ms.Position = 0;
+                    var pictureData = ms.ToArray();
+
+                    var newPicture = new TagLib.Picture(new TagLib.ByteVector(pictureData))
+                    {
+                        Type = TagLib.PictureType.FrontCover,
+                        MimeType = "image/png" // Assuming PNG, as Avalonia's Bitmap.Save default
+                        // Description = "Cover" // Optional
+                    };
+                    tagFile.Tag.Pictures = new IPicture[] { newPicture };
+                    Debug.WriteLine($"[SongMetadataService] Thumbnail data prepared for saving for: {Path.GetFileName(song.FilePath)}");
+                }
+                else
+                {
+                    // If song.Thumbnail is null, clear existing pictures from the file
+                    tagFile.Tag.Pictures = Array.Empty<IPicture>();
+                    Debug.WriteLine($"[SongMetadataService] Thumbnail is null. Clearing existing pictures for: {Path.GetFileName(song.FilePath)}");
+                }
+
+                tagFile.Save();
+                Debug.WriteLine($"[SongMetadataService] Metadata (and potentially thumbnail) saved successfully for: {Path.GetFileName(song.FilePath)}");
+            });
+            return true;
+        }
+        catch (CorruptFileException cfe)
+        {
+            Debug.WriteLine($"[SongMetadataService] Corrupt file when saving metadata for \"{Path.GetFileName(song.FilePath)}\": {cfe.Message}");
+        }
+        catch (UnsupportedFormatException ufe)
+        {
+            Debug.WriteLine($"[SongMetadataService] Unsupported format when saving metadata for \"{Path.GetFileName(song.FilePath)}\": {ufe.Message}");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[SongMetadataService] Error saving metadata for \"{Path.GetFileName(song.FilePath)}\": {ex.Message} - Stack: {ex.StackTrace}");
+        }
+        return false;
+    }
+}
+</file>
+
 <file path="Source\Services\ThemeService.cs">
 using System;
 using System.Collections.Generic;
@@ -2292,6 +2371,8 @@ public class ApplicationWorkflowManager : IDisposable
     private readonly PlaybackFlowManagerService _playbackFlowManagerService;
     private readonly ApplicationInteractionService _applicationInteractionService;
     private readonly LibraryPlaybackLinkService _libraryPlaybackLinkService;
+    private readonly SongMetadataService _songMetadataService; // Added
+
 
     private readonly Random _shuffleRandom = new();
 
@@ -2302,7 +2383,8 @@ public class ApplicationWorkflowManager : IDisposable
         LibraryViewModel libraryViewModel,
         PlaybackViewModel playbackViewModel,
         PlaybackService playbackService,
-        LoopDataService loopDataService) // LoopDataService needed by LoopEditor, indirectly for status
+        LoopDataService loopDataService,
+        SongMetadataService songMetadataService) // Added SongMetadataService
     {
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
         _scrobblingService = scrobblingService ?? throw new ArgumentNullException(nameof(scrobblingService));
@@ -2310,22 +2392,11 @@ public class ApplicationWorkflowManager : IDisposable
         _libraryViewModel = libraryViewModel ?? throw new ArgumentNullException(nameof(libraryViewModel));
         _playbackViewModel = playbackViewModel ?? throw new ArgumentNullException(nameof(playbackViewModel));
         _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
+        _songMetadataService = songMetadataService ?? throw new ArgumentNullException(nameof(songMetadataService)); // Added
 
         // Create internal services
         _nextTrackSelectorService = new NextTrackSelectorService(_shuffleRandom);
-
-        // Assuming LoopEditorViewModel is accessible or its relevant state for status bar is handled differently
-        // For StatusBarTextProvider, we might need LoopEditorViewModel or a subset of its state.
-        // For simplicity here, if LoopEditor is a direct child of MainWindowViewModel, it could be passed too.
-        // Or StatusBarTextProvider could be simplified if LoopEditor state isn't strictly needed or handled via PlaybackViewModel.
-        // Let's assume MainWindowViewModel will pass its LoopEditorViewModel instance to GetCurrentStatusText.
-        // For now, StatusBarTextProvider is created here.
-        // If LoopEditorViewModel is critical, it should be passed in constructor.
-        // Let's pass LoopEditorViewModel's required data if possible, or the VM itself.
-        // For now, creating it with what's available.
-        // LoopEditorViewModel is created in MainWindowViewModel, so we can't easily pass it here without a circular setup.
-        // Solution: MainWindowViewModel passes its instance of LoopEditorViewModel to GetCurrentStatusText.
-        _statusBarTextProvider = new StatusBarTextProvider(_playbackViewModel, null!, _libraryViewModel); // Placeholder for LoopEditorViewModel
+        _statusBarTextProvider = new StatusBarTextProvider(_playbackViewModel, null!, _libraryViewModel); // Placeholder
 
         _settingsChangeProcessorService = new SettingsChangeProcessorService(_libraryViewModel, _scrobblingService);
         _playbackFlowManagerService = new PlaybackFlowManagerService(_libraryViewModel, _playbackViewModel, _playbackService, _nextTrackSelectorService);
@@ -2333,7 +2404,8 @@ public class ApplicationWorkflowManager : IDisposable
         _applicationInteractionService = new ApplicationInteractionService(
             _settingsService,
             _settingsChangeProcessorService,
-            _currentTheme);
+            _currentTheme,
+            _songMetadataService); // Pass SongMetadataService
 
         _libraryPlaybackLinkService = new LibraryPlaybackLinkService(_libraryViewModel, _playbackService, _playbackViewModel);
     }
@@ -2348,20 +2420,18 @@ public class ApplicationWorkflowManager : IDisposable
         return await _applicationInteractionService.HandleAddMusicDirectoryAsync(owner);
     }
 
+    public async Task<bool> HandleEditSongMetadataDialogAsync(Song song, Window owner)
+    {
+        return await _applicationInteractionService.HandleEditSongMetadataDialogAsync(song, owner);
+    }
+
     public void HandlePlaybackEndedNaturally()
     {
         _playbackFlowManagerService.HandlePlaybackEndedNaturally();
     }
 
-    public string GetCurrentStatusText(LoopEditorViewModel loopEditorViewModel) // Accept LoopEditorViewModel here
+    public string GetCurrentStatusText(LoopEditorViewModel loopEditorViewModel)
     {
-        // Temporarily create a new StatusBarTextProvider if we can't store LoopEditorViewModel
-        // This is not ideal. Better to have StatusBarTextProvider take LoopEditorViewModel in its constructor.
-        // For this refactor, we'll assume the existing StatusBarTextProvider in MainWindowViewModel is used,
-        // and this method would reconstruct the string or MainWindowViewModel calls its own provider.
-        // To make this class fully responsible, it needs LoopEditorViewModel.
-        // Let's refine _statusBarTextProvider initialization or GetCurrentStatusText method.
-        // A simple way is for this method to reconstruct the provider instance or update it.
         var localStatusBarTextProvider = new StatusBarTextProvider(_playbackViewModel, loopEditorViewModel, _libraryViewModel);
         return localStatusBarTextProvider.GetCurrentStatusText();
     }
@@ -2543,6 +2613,7 @@ public class LibraryViewModel : ViewModelBase
 
             Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"}");
             _trackNavigationManager.UpdateSelectedSong(value);
+            (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged(); // Update CanExecute for Edit
         }
     }
 
@@ -2793,16 +2864,20 @@ public class LibraryViewModel : ViewModelBase
 
     private void ExecuteEditSongMetadata(object? parameter)
     {
-        if (parameter is Song song)
+        if (parameter is Song song && _parentViewModel.OpenEditSongMetadataDialogCommand.CanExecute(song))
         {
-            Debug.WriteLine($"[LibraryVM] Edit metadata requested for: {song.Title}");
-            // Future: Open metadata editing dialog here
+            Debug.WriteLine($"[LibraryVM] Delegating Edit metadata for: {song.Title} to MainWindowViewModel.");
+            _parentViewModel.OpenEditSongMetadataDialogCommand.Execute(song);
+        }
+        else
+        {
+            Debug.WriteLine($"[LibraryVM] Edit metadata requested but parameter is not a Song or parent command cannot execute.");
         }
     }
 
     private bool CanExecuteEditSongMetadata(object? parameter)
     {
-        return parameter is Song;
+        return parameter is Song && _parentViewModel.OpenEditSongMetadataDialogCommand.CanExecute(parameter);
     }
 
 
@@ -2823,6 +2898,10 @@ public class LibraryViewModel : ViewModelBase
         {
             _displayModeService.PropertyChanged -= DisplayModeService_PropertyChanged;
             // If LibraryDisplayModeService becomes IDisposable, dispose it here.
+        }
+        if (_parentViewModel != null && EditSongMetadataCommand != null)
+        {
+            // Clean up if necessary, though RelayCommand doesn't typically need explicit disposal
         }
     }
 }
@@ -3286,6 +3365,129 @@ public enum SongDisplayMode
 }
 </file>
 
+<file path="Source\ViewModels\SongMetadataEditorViewModel.cs">
+using System.Windows.Input;
+using Sonorize.Models;
+using Avalonia.Media.Imaging; // For Bitmap
+using System.IO; // For MemoryStream, File
+using Avalonia.Platform.Storage; // For FilePicker
+using Avalonia.Controls; // For Window (as command parameter)
+using System.Linq; // For FirstOrDefault
+using System.Diagnostics; // For Debug
+
+namespace Sonorize.ViewModels;
+
+public class SongMetadataEditorViewModel : ViewModelBase
+{
+    public Song SongToEdit { get; }
+
+    private Bitmap? _currentDisplayThumbnail;
+    public Bitmap? CurrentDisplayThumbnail
+    {
+        get => _currentDisplayThumbnail;
+        private set => SetProperty(ref _currentDisplayThumbnail, value);
+    }
+
+    public string Title
+    {
+        get => SongToEdit.Title;
+        set
+        {
+            if (SongToEdit.Title != value)
+            {
+                SongToEdit.Title = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string Artist
+    {
+        get => SongToEdit.Artist;
+        set
+        {
+            if (SongToEdit.Artist != value)
+            {
+                SongToEdit.Artist = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string Album
+    {
+        get => SongToEdit.Album;
+        set
+        {
+            if (SongToEdit.Album != value)
+            {
+                SongToEdit.Album = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public bool DialogResult { get; private set; } = false;
+
+    public ICommand SaveCommand { get; }
+    public ICommand CancelCommand { get; }
+    public ICommand ChangeThumbnailCommand { get; }
+
+    public System.Action? CloseWindowAction { get; set; }
+
+
+    public SongMetadataEditorViewModel(Song songToEdit)
+    {
+        SongToEdit = songToEdit ?? throw new System.ArgumentNullException(nameof(songToEdit));
+        _currentDisplayThumbnail = songToEdit.Thumbnail; // Initialize with current song's thumbnail
+
+        SaveCommand = new RelayCommand(_ =>
+        {
+            SongToEdit.Thumbnail = CurrentDisplayThumbnail; // Commit the potentially changed thumbnail
+            DialogResult = true;
+            CloseWindowAction?.Invoke();
+        });
+
+        CancelCommand = new RelayCommand(_ =>
+        {
+            DialogResult = false;
+            CloseWindowAction?.Invoke();
+        });
+
+        ChangeThumbnailCommand = new RelayCommand(async owner =>
+        {
+            if (owner is not Window ownerWindow) return;
+
+            var filePickerOptions = new FilePickerOpenOptions
+            {
+                Title = "Select Cover Image",
+                AllowMultiple = false,
+                FileTypeFilter = new[] { FilePickerFileTypes.ImageAll }
+            };
+
+            var result = await ownerWindow.StorageProvider.OpenFilePickerAsync(filePickerOptions);
+            if (result.Count > 0)
+            {
+                var selectedFile = result.FirstOrDefault();
+                if (selectedFile != null)
+                {
+                    try
+                    {
+                        await using var stream = await selectedFile.OpenReadAsync();
+                        CurrentDisplayThumbnail = new Bitmap(stream);
+                    }
+                    catch (System.Exception ex)
+                    {
+                        Debug.WriteLine($"[SongMetaEditorVM] Error loading image: {ex.Message}");
+                        // Optionally show an error to the user
+                    }
+                }
+            }
+        });
+    }
+}
+</file>
+
 <file path="Source\ViewModels\StatusBarTextProvider.cs">
 using Sonorize.Services; // For PlaybackStateStatus
 
@@ -3680,6 +3882,8 @@ public class MainWindow : Window
         // New LibraryVM setup
         if (DataContext is MainWindowViewModel vm && vm.Library != null)
         {
+            vm.SetOwnerView(this); // Pass the window instance to the ViewModel
+
             _currentLibraryVM = vm.Library;
             _currentLibraryVM.PropertyChanged += LibraryViewModel_PropertyChanged;
             _sharedViewTemplates.SetLibraryViewModel(_currentLibraryVM); // Set in shared templates
@@ -3736,6 +3940,10 @@ public class MainWindow : Window
         {
             _currentLibraryVM.PropertyChanged -= LibraryViewModel_PropertyChanged;
             _sharedViewTemplates.SetLibraryViewModel(null); // Also clear on close
+        }
+        if (DataContext is MainWindowViewModel vm)
+        {
+            vm.SetOwnerView(null!); // Clear the owner view reference
         }
         base.OnClosed(e);
     }
@@ -3846,6 +4054,160 @@ public class SettingsWindow : Window
 }
 </file>
 
+<file path="Source\Views\SongMetadataEditorWindow.cs">
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Data;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging; // Required for BitmapInterpolationMode
+using Sonorize.Models; // For ThemeColors
+using Sonorize.ViewModels; // For SongMetadataEditorViewModel
+
+namespace Sonorize.Views;
+
+public class SongMetadataEditorWindow : Window
+{
+    private readonly ThemeColors _theme;
+
+    public SongMetadataEditorWindow(ThemeColors theme)
+    {
+        _theme = theme;
+        InitializeComponent();
+    }
+
+    private void InitializeComponent()
+    {
+        Title = "Edit Song Metadata";
+        Width = 450; MinWidth = 400;
+        Height = 430; MinHeight = 380; // Increased height for thumbnail
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        CanResize = true;
+        Background = _theme.B_SlightlyLighterBackground;
+        Foreground = _theme.B_TextColor;
+
+        this.DataContextChanged += (sender, args) =>
+        {
+            if (DataContext is SongMetadataEditorViewModel vm)
+            {
+                vm.CloseWindowAction = this.Close;
+            }
+        };
+
+        var mainPanel = new StackPanel { Margin = new Thickness(15), Spacing = 10 };
+
+        // Thumbnail Display and Change Button
+        var thumbnailImage = new Image
+        {
+            Width = 100,
+            Height = 100,
+            Stretch = Stretch.UniformToFill
+            // Removed Background property from Image
+        };
+        thumbnailImage.Bind(Image.SourceProperty, new Binding("CurrentDisplayThumbnail"));
+        RenderOptions.SetBitmapInterpolationMode(thumbnailImage, BitmapInterpolationMode.HighQuality);
+
+        var thumbnailBorder = new Border // Wrap Image in a Border
+        {
+            Width = 100,
+            Height = 100,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, 5),
+            Background = _theme.B_ControlBackgroundColor, // Set Background on the Border
+            Child = thumbnailImage
+        };
+        mainPanel.Children.Add(thumbnailBorder);
+
+
+        var changeCoverButton = new Button
+        {
+            Content = "Change Cover",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Background = _theme.B_ControlBackgroundColor,
+            Foreground = _theme.B_TextColor,
+            Padding = new Thickness(10, 5),
+            Margin = new Thickness(0, 0, 0, 10)
+        };
+        changeCoverButton.Bind(Button.CommandProperty, new Binding("ChangeThumbnailCommand"));
+        // Pass the window itself as the command parameter for StorageProvider access
+        changeCoverButton.CommandParameter = this;
+        mainPanel.Children.Add(changeCoverButton);
+
+
+        // Title
+        mainPanel.Children.Add(new TextBlock { Text = "Title:", Foreground = _theme.B_TextColor });
+        var titleBox = new TextBox
+        {
+            Background = _theme.B_ControlBackgroundColor,
+            Foreground = _theme.B_TextColor,
+            BorderBrush = _theme.B_SecondaryTextColor,
+            Watermark = "Song Title"
+        };
+        titleBox.Bind(TextBox.TextProperty, new Binding("Title", BindingMode.TwoWay));
+        mainPanel.Children.Add(titleBox);
+
+        // Artist
+        mainPanel.Children.Add(new TextBlock { Text = "Artist:", Foreground = _theme.B_TextColor });
+        var artistBox = new TextBox
+        {
+            Background = _theme.B_ControlBackgroundColor,
+            Foreground = _theme.B_TextColor,
+            BorderBrush = _theme.B_SecondaryTextColor,
+            Watermark = "Artist Name"
+        };
+        artistBox.Bind(TextBox.TextProperty, new Binding("Artist", BindingMode.TwoWay));
+        mainPanel.Children.Add(artistBox);
+
+        // Album
+        mainPanel.Children.Add(new TextBlock { Text = "Album:", Foreground = _theme.B_TextColor });
+        var albumBox = new TextBox
+        {
+            Background = _theme.B_ControlBackgroundColor,
+            Foreground = _theme.B_TextColor,
+            BorderBrush = _theme.B_SecondaryTextColor,
+            Watermark = "Album Name"
+        };
+        albumBox.Bind(TextBox.TextProperty, new Binding("Album", BindingMode.TwoWay));
+        mainPanel.Children.Add(albumBox);
+
+        // Buttons
+        var buttonPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Spacing = 10,
+            Margin = new Thickness(0, 15, 0, 0)
+        };
+
+        var saveButton = new Button
+        {
+            Content = "Save",
+            Background = _theme.B_AccentColor,
+            Foreground = _theme.B_AccentForeground,
+            Padding = new Thickness(15, 8),
+            CornerRadius = new CornerRadius(3)
+        };
+        saveButton.Bind(Button.CommandProperty, new Binding("SaveCommand"));
+
+        var cancelButton = new Button
+        {
+            Content = "Cancel",
+            Background = _theme.B_ControlBackgroundColor,
+            Foreground = _theme.B_TextColor,
+            Padding = new Thickness(15, 8),
+            CornerRadius = new CornerRadius(3)
+        };
+        cancelButton.Bind(Button.CommandProperty, new Binding("CancelCommand"));
+
+        buttonPanel.Children.Add(saveButton);
+        buttonPanel.Children.Add(cancelButton);
+        mainPanel.Children.Add(buttonPanel);
+
+        Content = mainPanel;
+    }
+}
+</file>
+
 <file path="Source\Services\Application\ApplicationInteractionService.cs">
 using System;
 using System.Collections.Generic;
@@ -3865,15 +4227,18 @@ public class ApplicationInteractionService
     private readonly SettingsService _settingsService;
     private readonly SettingsChangeProcessorService _settingsChangeProcessorService;
     private readonly ThemeColors _currentTheme;
+    private readonly SongMetadataService _songMetadataService; // Added
 
     public ApplicationInteractionService(
         SettingsService settingsService,
         SettingsChangeProcessorService settingsChangeProcessorService,
-        ThemeColors currentTheme)
+        ThemeColors currentTheme,
+        SongMetadataService songMetadataService) // Added
     {
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
         _settingsChangeProcessorService = settingsChangeProcessorService ?? throw new ArgumentNullException(nameof(settingsChangeProcessorService));
         _currentTheme = currentTheme ?? throw new ArgumentNullException(nameof(currentTheme));
+        _songMetadataService = songMetadataService ?? throw new ArgumentNullException(nameof(songMetadataService)); // Added
     }
 
     public async Task<(List<string> statusMessages, bool settingsChanged)> HandleOpenSettingsDialogAsync(Window owner)
@@ -3946,6 +4311,46 @@ public class ApplicationInteractionService
             return (false, "Directory already in library.");
         }
     }
+
+    public async Task<bool> HandleEditSongMetadataDialogAsync(Song song, Window owner)
+    {
+        if (song == null)
+        {
+            Debug.WriteLine("[AppInteractionService] HandleEditSongMetadataDialogAsync: Song is null.");
+            return false;
+        }
+
+        var editorViewModel = new SongMetadataEditorViewModel(song);
+        var editorDialog = new Sonorize.Views.SongMetadataEditorWindow(_currentTheme)
+        {
+            DataContext = editorViewModel
+        };
+
+        await editorDialog.ShowDialog(owner);
+
+        if (editorViewModel.DialogResult) // True if "Save" was clicked
+        {
+            Debug.WriteLine($"[AppInteractionService] Metadata editor closed with Save. Attempting to save metadata for {song.Title}.");
+            bool success = await _songMetadataService.SaveMetadataAsync(song);
+            if (success)
+            {
+                // The song object's properties (Title, Artist, Album) were already updated
+                // by the two-way binding in SongMetadataEditorViewModel.
+                // These changes will be reflected in the UI because Song is a ViewModelBase.
+                Debug.WriteLine($"[AppInteractionService] Metadata for {song.Title} saved to file successfully.");
+                // Note: If Artist/Album names change, Artists/Albums collections in LibraryVM are not auto-updated here.
+                // This would require more complex logic or a library re-scan for full consistency.
+            }
+            else
+            {
+                Debug.WriteLine($"[AppInteractionService] Failed to save metadata for {song.Title} to file.");
+            }
+            return success;
+        }
+
+        Debug.WriteLine($"[AppInteractionService] Metadata editor for {song.Title} closed without saving (Cancelled or closed).");
+        return false;
+    }
 }
 </file>
 
@@ -3968,6 +4373,7 @@ public class ApplicationServicesBootstrapper
         var songFactory = new SongFactory(loopDataService); // Create SongFactory
         var musicLibraryService = new MusicLibraryService(loopDataService, thumbnailService, songFactory); // Inject SongFactory
         var waveformService = new WaveformService();
+        var songMetadataService = new SongMetadataService(); // Create SongMetadataService
 
         // Create MainWindowViewModel
         var mainWindowViewModel = new MainWindowViewModel(
@@ -3977,7 +4383,8 @@ public class ApplicationServicesBootstrapper
             currentCustomTheme,
             waveformService,
             loopDataService,
-            scrobblingService);
+            scrobblingService,
+            songMetadataService); // Pass SongMetadataService
 
         return mainWindowViewModel;
     }
@@ -4242,14 +4649,23 @@ public class NAudioEngineController : IDisposable
         if (_playbackEngine == null)
         {
             Debug.WriteLine("[EngineController] Stop ignored: Engine not loaded.");
-            // If no engine, there's nothing to stop that would raise an event.
-            // If an event is expected even without an engine, it needs to be simulated.
-            // For now, assume Stop only applies if an engine exists.
             return;
         }
         _playbackEngine.Stop(); // This will trigger the engine's PlaybackStopped event, then ours
         Debug.WriteLine("[EngineController] Stop initiated on engine.");
     }
+
+    public void DisposeEngineInternalsOnly() // New method
+    {
+        if (_playbackEngine != null)
+        {
+            Debug.WriteLine("[EngineController] DisposeEngineInternalsOnly called. Disposing NAudioPlaybackEngine.");
+            _playbackEngine.PlaybackStopped -= OnEnginePlaybackStopped;
+            _playbackEngine.Dispose();
+            _playbackEngine = null;
+        }
+    }
+
 
     public void Seek(TimeSpan position)
     {
@@ -4758,6 +5174,13 @@ public class PlaybackEngineCoordinator : IDisposable
         _playbackMonitor.Stop();
         _engineController.Stop(); // This will trigger the EnginePlaybackStopped event
         Debug.WriteLine("[PlaybackEngineCoordinator] Stop initiated.");
+    }
+
+    public void DisposeCurrentEngineInternals() // New method
+    {
+        _playbackMonitor.Stop(); // Stop monitor before disposing engine
+        _engineController.DisposeEngineInternalsOnly();
+        Debug.WriteLine("[PlaybackEngineCoordinator] Disposed current engine internals.");
     }
 
     public void Seek(TimeSpan requestedPosition)
@@ -5275,10 +5698,28 @@ public class PlaybackService : ViewModelBase, IDisposable
         _sessionManager.SeekSession(requestedPosition);
     }
 
-    // This method might be called by PlaybackLoopHandler
-    // Ensure PlaybackLoopHandler has the correct reference or adjust its design.
-    // For now, assuming LoopHandler might still need a way to trigger seek on the service layer.
-    internal void PerformSeekInternal(TimeSpan position) // Example if LoopHandler calls back
+    public (bool WasPlaying, TimeSpan Position)? StopAndReleaseFileResourcesForSong(Song song)
+    {
+        if (song == null || _sessionManager.CurrentSong != song)
+        {
+            Debug.WriteLine($"[PlaybackService] StopAndReleaseFileResourcesForSong: Song '{song?.Title}' is not the current playing/loaded song ('{_sessionManager.CurrentSong?.Title}'). No action taken.");
+            return null;
+        }
+        return _sessionManager.StopAndReleaseFileResources();
+    }
+
+    public bool ReinitializePlaybackForSong(Song song, TimeSpan position, bool play)
+    {
+        if (song == null)
+        {
+            Debug.WriteLine("[PlaybackService] ReinitializePlaybackForSong: Song is null. Cannot reinitialize.");
+            return false;
+        }
+        return _sessionManager.ReinitializePlayback(song, position, play);
+    }
+
+
+    internal void PerformSeekInternal(TimeSpan position)
     {
         Seek(position);
     }
@@ -5335,7 +5776,6 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
 
                 if (value == null)
                 {
-                    // This state reset is crucial when the song becomes null
                     IsPlaying = false;
                     CurrentPlaybackStatus = PlaybackStateStatus.Stopped;
                     UpdatePlaybackPositionAndDuration(TimeSpan.Zero, TimeSpan.Zero);
@@ -5437,6 +5877,8 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
     }
 
     private volatile bool _explicitStopRequested = false;
+    private bool _isEngineReleaseExpected = false;
+
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? SessionEndedNaturally;
@@ -5500,7 +5942,7 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
             UpdatePlaybackPositionAndDuration(TimeSpan.Zero, _playbackEngineCoordinator.CurrentSongDuration);
             _playbackEngineCoordinator.Play(startMonitor: true);
             SetPlaybackState(true, PlaybackStateStatus.Playing);
-            _ = _scrobblingService.UpdateNowPlayingAsync(CurrentSong); // Fire and forget NowPlaying update
+            _ = _scrobblingService.UpdateNowPlayingAsync(CurrentSong);
             return true;
         }
         catch (Exception ex)
@@ -5511,6 +5953,55 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
             return false;
         }
     }
+
+    public bool ReinitializePlayback(Song song, TimeSpan position, bool shouldBePlaying)
+    {
+        Debug.WriteLine($"[SessionManager] ReinitializePlayback for: {song.Title}, Position: {position}, ShouldPlay: {shouldBePlaying}");
+        _explicitStopRequested = false; // Reset any explicit stop flag
+
+        CurrentSong = song; // Ensure current song is set (might be redundant if not nulled before)
+
+        try
+        {
+            if (!_playbackEngineCoordinator.Load(song.FilePath, PlaybackRate, PitchSemitones))
+            {
+                Debug.WriteLine($"[SessionManager] ReinitializePlayback: Failed to load '{song.Title}'.");
+                CurrentSong = null; // Clear song if load fails
+                SetPlaybackState(false, PlaybackStateStatus.Stopped);
+                return false;
+            }
+
+            UpdatePlaybackPositionAndDuration(position, _playbackEngineCoordinator.CurrentSongDuration);
+            _playbackEngineCoordinator.Seek(position); // Seek after load
+
+            if (shouldBePlaying)
+            {
+                _playbackEngineCoordinator.Play(startMonitor: true);
+                SetPlaybackState(true, PlaybackStateStatus.Playing);
+                _ = _scrobblingService.UpdateNowPlayingAsync(CurrentSong);
+            }
+            else
+            {
+                // For a paused state, we might need to ensure the engine is truly paused.
+                // If Load implicitly starts, we might need to Pause immediately.
+                // However, NAudio usually loads into a stopped state.
+                // Manually setting position might be enough for a paused-like state.
+                // If PlaybackEngineCoordinator.Play is not called, it remains stopped.
+                // If it was paused, we set the status to paused.
+                SetPlaybackState(false, PlaybackStateStatus.Paused);
+            }
+            Debug.WriteLine($"[SessionManager] ReinitializePlayback successful for '{song.Title}'. State: {CurrentPlaybackStatus}, IsPlaying: {IsPlaying}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[SessionManager] Error during ReinitializePlayback for '{song.FilePath}': {ex}");
+            CurrentSong = null;
+            SetPlaybackState(false, PlaybackStateStatus.Stopped);
+            return false;
+        }
+    }
+
 
     public void PauseSession()
     {
@@ -5529,11 +6020,12 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
         {
             _playbackEngineCoordinator.Resume(startMonitor: true);
             SetPlaybackState(true, PlaybackStateStatus.Playing);
-            _ = _scrobblingService.UpdateNowPlayingAsync(CurrentSong); // Fire and forget NowPlaying update
+            _ = _scrobblingService.UpdateNowPlayingAsync(CurrentSong);
         }
         else if (CurrentPlaybackStatus == PlaybackStateStatus.Stopped)
         {
-            StartNewSession(CurrentSong);
+            // If stopped, re-start the session from the current position
+            ReinitializePlayback(CurrentSong, CurrentPosition, true);
         }
     }
 
@@ -5542,19 +6034,47 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
         _explicitStopRequested = isExplicit;
         if (CurrentPlaybackStatus != PlaybackStateStatus.Stopped)
         {
-            _playbackEngineCoordinator.Stop();
+            _playbackEngineCoordinator.Stop(); // This will trigger OnEngineCoordinatorPlaybackStopped
         }
-        else if (isExplicit)
+        else if (isExplicit) // If already stopped but an explicit stop is requested again
         {
+            // Manually trigger completion handler if already stopped and an explicit stop is requested
             _completionHandler.Handle(
-               new StoppedEventArgs(),
-               CurrentSong,
+               new StoppedEventArgs(), // No actual exception
+               CurrentSong, // Pass current song if any
                this.CurrentPosition,
                this.CurrentSongDuration,
                _explicitStopRequested
            );
         }
     }
+
+    public (bool WasPlaying, TimeSpan Position)? StopAndReleaseFileResources()
+    {
+        if (CurrentSong == null)
+        {
+            Debug.WriteLine("[SessionManager] StopAndReleaseFileResources: No current song. Nothing to release.");
+            return null;
+        }
+
+        Debug.WriteLine($"[SessionManager] StopAndReleaseFileResources for: {CurrentSong.Title}");
+        bool wasPlaying = IsPlaying;
+        TimeSpan position = CurrentPosition;
+
+        _isEngineReleaseExpected = true; // Signal that the upcoming stop is for file release
+        _playbackEngineCoordinator.DisposeCurrentEngineInternals(); // This stops playback and disposes NAudio components
+        _isEngineReleaseExpected = false;
+
+        // Update state after release
+        SetPlaybackState(false, PlaybackStateStatus.Stopped);
+        // Keep CurrentPosition as is, CurrentSong is also kept.
+        // CurrentSongDuration might become zero if engine is disposed; consider preserving it or re-fetching.
+        // For simplicity, we'll re-fetch duration upon reinitialization.
+
+        Debug.WriteLine($"[SessionManager] File resources released for {CurrentSong.Title}. WasPlaying: {wasPlaying}, Position: {position}");
+        return (wasPlaying, position);
+    }
+
 
     public void SeekSession(TimeSpan requestedPosition)
     {
@@ -5569,10 +6089,18 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
 
     private void OnEngineCoordinatorPlaybackStopped(object? sender, StoppedEventArgs e)
     {
+        if (_isEngineReleaseExpected)
+        {
+            Debug.WriteLine("[SessionManager] OnEngineCoordinatorPlaybackStopped: Event ignored as engine release was expected.");
+            // Do not process completion if it's due to explicit file release
+            return;
+        }
+
         Song? songThatJustStopped = CurrentSong;
-        TimeSpan actualStoppedPosition = _playbackEngineCoordinator.CurrentPosition;
+        TimeSpan actualStoppedPosition = _playbackEngineCoordinator.CurrentPosition; // Get position before it's reset
         TimeSpan actualStoppedSongDuration = _playbackEngineCoordinator.CurrentSongDuration;
 
+        // If the duration became zero (e.g., engine disposed), try to use the song's original duration
         if (songThatJustStopped != null && actualStoppedSongDuration == TimeSpan.Zero)
         {
             actualStoppedSongDuration = songThatJustStopped.Duration;
@@ -5588,11 +6116,10 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
     }
 
     // Methods for PlaybackCompletionHandler to call
-    internal void StopUiUpdateMonitor() => _playbackEngineCoordinator.Stop();
+    internal void StopUiUpdateMonitor() => _playbackEngineCoordinator.Stop(); // This might be redundant if playback stops monitor
     internal void UpdateStateForNaturalPlaybackEnd()
     {
         SetPlaybackState(false, PlaybackStateStatus.Stopped);
-        // Position reset when CurrentSong becomes null
     }
     internal void FinalizeCurrentSong(Song? song)
     {
@@ -6728,7 +7255,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Controls;
-using Avalonia.Platform.Storage;
+// Removed: using Avalonia.Platform.Storage; // No longer directly used here for Application.Current
 using Avalonia.Threading;
 using Sonorize.Models;
 using Sonorize.Services;
@@ -6744,10 +7271,13 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private readonly WaveformService _waveformService;
     private readonly LoopDataService _loopDataService;
     private readonly ScrobblingService _scrobblingService;
+    private readonly SongMetadataService _songMetadataService;
 
     private readonly MainWindowViewModelOrchestrator _orchestrator;
-    private readonly ApplicationWorkflowManager _workflowManager; // New workflow manager
+    private readonly ApplicationWorkflowManager _workflowManager;
     private readonly LibraryDisplayModeService _libraryDisplayModeService;
+
+    private Window? _ownerView;
 
 
     // Expose the Services directly for child VMs or public properties
@@ -6784,6 +7314,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public ICommand OpenSettingsCommand { get; }
     public ICommand ExitCommand { get; }
     public ICommand AddDirectoryAndRefreshCommand { get; }
+    public ICommand OpenEditSongMetadataDialogCommand { get; }
+
 
     public MainWindowViewModel(
         SettingsService settingsService,
@@ -6792,7 +7324,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         ThemeColors theme,
         WaveformService waveformService,
         LoopDataService loopDataService,
-        ScrobblingService scrobblingService)
+        ScrobblingService scrobblingService,
+        SongMetadataService songMetadataService)
     {
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
@@ -6801,6 +7334,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         _waveformService = waveformService;
         _loopDataService = loopDataService;
         _scrobblingService = scrobblingService;
+        _songMetadataService = songMetadataService;
 
         _libraryDisplayModeService = new LibraryDisplayModeService(_settingsService);
         Library = new LibraryViewModel(this, _settingsService, _musicLibraryService, _loopDataService, _libraryDisplayModeService);
@@ -6808,7 +7342,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         LoopEditor = new LoopEditorViewModel(PlaybackService, _loopDataService);
         AdvancedPanel = new AdvancedPanelViewModel(Playback, Library);
 
-        // Instantiate the workflow manager, passing necessary dependencies
         _workflowManager = new ApplicationWorkflowManager(
             _settingsService,
             _scrobblingService,
@@ -6816,7 +7349,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             Library,
             Playback,
             PlaybackService,
-            _loopDataService); // Pass LoopDataService, though ApplicationWorkflowManager might not use it directly currently
+            _loopDataService,
+            _songMetadataService);
 
         _orchestrator = new MainWindowViewModelOrchestrator(
             Library,
@@ -6833,8 +7367,15 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         OpenSettingsCommand = new RelayCommand(async owner => await OpenSettingsDialogAsync(owner), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
         ExitCommand = new RelayCommand(_ => Environment.Exit(0));
         AddDirectoryAndRefreshCommand = new RelayCommand(async owner => await AddMusicDirectoryAndRefreshAsync(owner), _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
+        OpenEditSongMetadataDialogCommand = new RelayCommand(async song => await OpenEditSongMetadataDialogAsync(song), CanOpenEditSongMetadataDialog);
+
 
         Dispatcher.UIThread.InvokeAsync(UpdateAllUIDependentStates);
+    }
+
+    public void SetOwnerView(Window ownerView)
+    {
+        _ownerView = ownerView;
     }
 
     private void PlaybackService_PlaybackEndedNaturally(object? sender, EventArgs e)
@@ -6868,6 +7409,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             (OpenSettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (ExitCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (OpenEditSongMetadataDialogCommand as RelayCommand)?.RaiseCanExecuteChanged();
+
 
             Library.RaiseLibraryCommandsCanExecuteChanged();
             Playback.RaisePlaybackCommandCanExecuteChanged();
@@ -6885,9 +7428,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         });
     }
 
-    private async Task OpenSettingsDialogAsync(object? ownerWindow)
+    private async Task OpenSettingsDialogAsync(object? ownerWindowObj)
     {
-        if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
+        if (ownerWindowObj is not Window owner || Library.IsLoadingLibrary) return;
         IsAdvancedPanelVisible = false;
 
         var (statusMessages, settingsChanged) = await _workflowManager.HandleOpenSettingsDialogAsync(owner);
@@ -6910,9 +7453,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         RaiseAllCommandsCanExecuteChanged();
     }
 
-    private async Task AddMusicDirectoryAndRefreshAsync(object? ownerWindow)
+    private async Task AddMusicDirectoryAndRefreshAsync(object? ownerWindowObj)
     {
-        if (ownerWindow is not Window owner || Library.IsLoadingLibrary) return;
+        if (ownerWindowObj is not Window owner || Library.IsLoadingLibrary) return;
         IsAdvancedPanelVisible = false;
 
         var (directoryAdded, statusMessage) = await _workflowManager.HandleAddMusicDirectoryAsync(owner);
@@ -6930,6 +7473,103 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         RaiseAllCommandsCanExecuteChanged();
     }
 
+    private async Task OpenEditSongMetadataDialogAsync(object? songObject)
+    {
+        if (songObject is not Song songToEdit)
+        {
+            Debug.WriteLine("[MainVM] OpenEditSongMetadataDialogAsync: songObject is not a Song.");
+            return;
+        }
+
+        Window? ownerWindow = _ownerView;
+
+        if (ownerWindow == null)
+        {
+            Debug.WriteLine("[MainVM] OpenEditSongMetadataDialogAsync: Owner window is not set.");
+            return;
+        }
+
+        IsAdvancedPanelVisible = false;
+
+        // Store playback state if the song being edited is the current one
+        (bool WasPlaying, TimeSpan Position)? previousPlaybackState = null;
+        if (PlaybackService.CurrentSong == songToEdit)
+        {
+            previousPlaybackState = PlaybackService.StopAndReleaseFileResourcesForSong(songToEdit);
+            if (previousPlaybackState == null)
+            {
+                Debug.WriteLine($"[MainVM] Failed to release file for {songToEdit.Title}. Aborting metadata edit.");
+                // Optionally show an error to the user
+                StatusBarText = $"Error: Could not prepare '{songToEdit.Title}' for editing.";
+                return;
+            }
+            Debug.WriteLine($"[MainVM] Playback for {songToEdit.Title} stopped and file released. WasPlaying: {previousPlaybackState.Value.WasPlaying}, Position: {previousPlaybackState.Value.Position}");
+        }
+
+        bool metadataSaved = false;
+        try
+        {
+            // Show the dialog (this part is synchronous within this async method after await)
+            // The dialog itself is modal (await ShowDialog)
+            var editorViewModel = new SongMetadataEditorViewModel(songToEdit);
+            var editorDialog = new Sonorize.Views.SongMetadataEditorWindow(CurrentTheme)
+            {
+                DataContext = editorViewModel
+            };
+            await editorDialog.ShowDialog(ownerWindow); // This makes the dialog modal
+
+            if (editorViewModel.DialogResult) // True if "Save" was clicked in dialog
+            {
+                Debug.WriteLine($"[MainVM] Metadata editor for {songToEdit.Title} closed with Save. Attempting to save to file.");
+                metadataSaved = await _songMetadataService.SaveMetadataAsync(songToEdit); // Pass the Song object which now has the new thumbnail from ViewModel
+                if (metadataSaved)
+                {
+                    Debug.WriteLine($"[MainVM] Metadata (and thumbnail) for {songToEdit.Title} saved to file successfully.");
+                    StatusBarText = $"Metadata for '{songToEdit.Title}' updated.";
+                    // The Song object's properties are already updated due to binding in SongMetadataEditorViewModel
+                    // This will reflect in UI. Artist/Album list might be stale if names changed.
+                }
+                else
+                {
+                    Debug.WriteLine($"[MainVM] Failed to save metadata for {songToEdit.Title} to file.");
+                    StatusBarText = $"Error saving metadata for '{songToEdit.Title}'.";
+                }
+            }
+            else
+            {
+                Debug.WriteLine($"[MainVM] Metadata editor for {songToEdit.Title} closed without saving (Cancelled or closed).");
+                UpdateStatusBarText();
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[MainVM] Exception during metadata edit/save for {songToEdit.Title}: {ex.Message}");
+            StatusBarText = $"Error during metadata edit for '{songToEdit.Title}'.";
+        }
+        finally
+        {
+            // Restore playback state if it was affected
+            if (previousPlaybackState.HasValue)
+            {
+                Debug.WriteLine($"[MainVM] Reinitializing playback for {songToEdit.Title} to WasPlaying: {previousPlaybackState.Value.WasPlaying}, Position: {previousPlaybackState.Value.Position}");
+                bool reinitSuccess = PlaybackService.ReinitializePlaybackForSong(songToEdit, previousPlaybackState.Value.Position, previousPlaybackState.Value.WasPlaying);
+                if (!reinitSuccess)
+                {
+                    Debug.WriteLine($"[MainVM] Failed to reinitialize playback for {songToEdit.Title}.");
+                    StatusBarText = $"Playback error after editing '{songToEdit.Title}'.";
+                }
+            }
+        }
+
+        RaiseAllCommandsCanExecuteChanged();
+    }
+
+    private bool CanOpenEditSongMetadataDialog(object? songObject)
+    {
+        return songObject is Song && !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading);
+    }
+
+
     public void Dispose()
     {
         if (PlaybackService != null)
@@ -6937,12 +7577,12 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             PlaybackService.PlaybackEndedNaturally -= PlaybackService_PlaybackEndedNaturally;
         }
         _orchestrator?.Dispose();
-        _workflowManager?.Dispose(); // Dispose the new manager
-        // _libraryPlaybackLinkService was moved into _workflowManager
+        _workflowManager?.Dispose();
         Library?.Dispose();
         Playback?.Dispose();
         AdvancedPanel?.Dispose();
         LoopEditor?.Dispose();
+        _ownerView = null;
     }
 }
 </file>
