@@ -7,12 +7,7 @@ using Avalonia.Controls.Templates;
 using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Threading; // Required for Dispatcher
-// Removed: using Avalonia.Media.Imaging; 
-// Removed: using Avalonia.Styling;
-// Removed: using Sonorize.Controls;
-// Removed: using Sonorize.Converters;
 using Sonorize.Models;
-// Removed: using Sonorize.Services;
 using Sonorize.ViewModels;
 using Sonorize.Views.MainWindowControls;
 
@@ -87,25 +82,22 @@ public class MainWindow : Window
 
     private void MainWindow_DataContextChanged(object? sender, EventArgs e)
     {
-        // Previous LibraryVM cleanup
         if (_currentLibraryVM != null)
         {
             _currentLibraryVM.PropertyChanged -= LibraryViewModel_PropertyChanged;
-            _sharedViewTemplates.SetLibraryViewModel(null); // Reset in shared templates
+            _sharedViewTemplates.SetLibraryViewModel(null);
             _currentLibraryVM = null;
         }
 
-        // New LibraryVM setup
         if (DataContext is MainWindowViewModel vm && vm.Library != null)
         {
-            vm.SetOwnerView(this); // Pass the window instance to the ViewModel
+            vm.SetOwnerView(this);
 
             _currentLibraryVM = vm.Library;
             _currentLibraryVM.PropertyChanged += LibraryViewModel_PropertyChanged;
-            _sharedViewTemplates.SetLibraryViewModel(_currentLibraryVM); // Set in shared templates
+            _sharedViewTemplates.SetLibraryViewModel(_currentLibraryVM);
 
-            // Apply initial display modes for each list
-            ApplyListViewDisplayMode(_songListBox, _currentLibraryVM.LibraryViewMode, _sharedViewTemplates.DetailedSongTemplate, _sharedViewTemplates.CompactSongTemplate, _sharedViewTemplates.GridSongTemplate);
+            ApplyListViewDisplayMode(_songListBox, _currentLibraryVM.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate);
             ApplyListViewDisplayMode(_artistsListBox, _currentLibraryVM.ArtistViewMode, _sharedViewTemplates.DetailedArtistTemplate, _sharedViewTemplates.CompactArtistTemplate, _sharedViewTemplates.GridArtistTemplate);
             ApplyListViewDisplayMode(_albumsListBox, _currentLibraryVM.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate);
         }
@@ -117,7 +109,7 @@ public class MainWindow : Window
         {
             if (e.PropertyName == nameof(LibraryViewModel.LibraryViewMode))
             {
-                Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_songListBox, lvm.LibraryViewMode, _sharedViewTemplates.DetailedSongTemplate, _sharedViewTemplates.CompactSongTemplate, _sharedViewTemplates.GridSongTemplate));
+                Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_songListBox, lvm.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate));
             }
             else if (e.PropertyName == nameof(LibraryViewModel.ArtistViewMode))
             {
@@ -130,7 +122,6 @@ public class MainWindow : Window
         }
     }
 
-    // Renamed for clarity
     private void ApplyListViewDisplayMode(ListBox listBox, SongDisplayMode mode, IDataTemplate detailedTemplate, IDataTemplate compactTemplate, IDataTemplate gridTemplate)
     {
         if (listBox == null)
@@ -155,11 +146,11 @@ public class MainWindow : Window
         if (_currentLibraryVM != null)
         {
             _currentLibraryVM.PropertyChanged -= LibraryViewModel_PropertyChanged;
-            _sharedViewTemplates.SetLibraryViewModel(null); // Also clear on close
+            _sharedViewTemplates.SetLibraryViewModel(null);
         }
         if (DataContext is MainWindowViewModel vm)
         {
-            vm.SetOwnerView(null!); // Clear the owner view reference
+            vm.SetOwnerView(null!);
         }
         base.OnClosed(e);
     }
