@@ -2863,21 +2863,15 @@ namespace Sonorize.ViewModels;
 
 public class ApplicationWorkflowManager : IDisposable
 {
-    private readonly SettingsService _settingsService;
-    private readonly ScrobblingService _scrobblingService;
-    private readonly ThemeColors _currentTheme;
-    private readonly LibraryViewModel _libraryViewModel;
-    private readonly PlaybackViewModel _playbackViewModel;
-    private readonly PlaybackService _playbackService;
+    private readonly PlaybackViewModel _playbackViewModel; // Kept for GetCurrentStatusText
+    private readonly LibraryViewModel _libraryViewModel;   // Kept for GetCurrentStatusText
 
+    private readonly ApplicationWorkflowServicesFactory _servicesFactory;
     private readonly NextTrackSelectorService _nextTrackSelectorService;
-    private readonly StatusBarTextProvider _statusBarTextProvider;
     private readonly SettingsChangeProcessorService _settingsChangeProcessorService;
     private readonly PlaybackFlowManagerService _playbackFlowManagerService;
     private readonly ApplicationInteractionService _applicationInteractionService;
     private readonly LibraryPlaybackLinkService _libraryPlaybackLinkService;
-    // Removed: private readonly SongMetadataService _songMetadataService; 
-
 
     private readonly Random _shuffleRandom = new();
 
@@ -2887,30 +2881,26 @@ public class ApplicationWorkflowManager : IDisposable
         ThemeColors currentTheme,
         LibraryViewModel libraryViewModel,
         PlaybackViewModel playbackViewModel,
-        PlaybackService playbackService,
-        LoopDataService loopDataService)
+        PlaybackService playbackService)
     {
-        _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
-        _scrobblingService = scrobblingService ?? throw new ArgumentNullException(nameof(scrobblingService));
-        _currentTheme = currentTheme ?? throw new ArgumentNullException(nameof(currentTheme));
-        _libraryViewModel = libraryViewModel ?? throw new ArgumentNullException(nameof(libraryViewModel));
         _playbackViewModel = playbackViewModel ?? throw new ArgumentNullException(nameof(playbackViewModel));
-        _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
-        // Removed: _songMetadataService = songMetadataService ?? throw new ArgumentNullException(nameof(songMetadataService)); 
+        _libraryViewModel = libraryViewModel ?? throw new ArgumentNullException(nameof(libraryViewModel));
 
-        // Create internal services
-        _nextTrackSelectorService = new NextTrackSelectorService(_shuffleRandom);
-        _statusBarTextProvider = new StatusBarTextProvider(_playbackViewModel, null!, _libraryViewModel); // Placeholder
+        _servicesFactory = new ApplicationWorkflowServicesFactory(
+            settingsService,
+            scrobblingService,
+            currentTheme,
+            libraryViewModel,
+            playbackViewModel,
+            playbackService,
+            _shuffleRandom
+        );
 
-        _settingsChangeProcessorService = new SettingsChangeProcessorService(_libraryViewModel, _scrobblingService);
-        _playbackFlowManagerService = new PlaybackFlowManagerService(_libraryViewModel, _playbackViewModel, _playbackService, _nextTrackSelectorService);
-
-        _applicationInteractionService = new ApplicationInteractionService(
-            _settingsService,
-            _settingsChangeProcessorService,
-            _currentTheme); // Removed _songMetadataService from instantiation
-
-        _libraryPlaybackLinkService = new LibraryPlaybackLinkService(_libraryViewModel, _playbackService, _playbackViewModel);
+        _nextTrackSelectorService = _servicesFactory.NextTrackSelectorService;
+        _settingsChangeProcessorService = _servicesFactory.SettingsChangeProcessorService;
+        _playbackFlowManagerService = _servicesFactory.PlaybackFlowManagerService;
+        _applicationInteractionService = _servicesFactory.ApplicationInteractionService;
+        _libraryPlaybackLinkService = _servicesFactory.LibraryPlaybackLinkService;
     }
 
     public async Task<(List<string> statusMessages, bool settingsChanged)> HandleOpenSettingsDialogAsync(Window owner)
@@ -2930,6 +2920,7 @@ public class ApplicationWorkflowManager : IDisposable
 
     public string GetCurrentStatusText(LoopEditorViewModel loopEditorViewModel)
     {
+        // This instantiation remains problematic if LoopEditorViewModel isn't always available/correct context
         var localStatusBarTextProvider = new StatusBarTextProvider(_playbackViewModel, loopEditorViewModel, _libraryViewModel);
         return localStatusBarTextProvider.GetCurrentStatusText();
     }
@@ -2937,6 +2928,49 @@ public class ApplicationWorkflowManager : IDisposable
     public void Dispose()
     {
         _libraryPlaybackLinkService?.Dispose();
+        // The factory itself doesn't implement IDisposable, and its created services
+        // are either also not IDisposable or their lifecycle is tied to this AWM instance.
+    }
+}
+</file>
+
+<file path="Source\ViewModels\ApplicationWorkflowServicesFactory.cs">
+using System;
+using Sonorize.Models;
+using Sonorize.Services;
+
+namespace Sonorize.ViewModels;
+
+public class ApplicationWorkflowServicesFactory
+{
+    public NextTrackSelectorService NextTrackSelectorService { get; }
+    public SettingsChangeProcessorService SettingsChangeProcessorService { get; }
+    public PlaybackFlowManagerService PlaybackFlowManagerService { get; }
+    public ApplicationInteractionService ApplicationInteractionService { get; }
+    public LibraryPlaybackLinkService LibraryPlaybackLinkService { get; }
+
+    public ApplicationWorkflowServicesFactory(
+        SettingsService settingsService,
+        ScrobblingService scrobblingService,
+        ThemeColors currentTheme,
+        LibraryViewModel libraryViewModel,
+        PlaybackViewModel playbackViewModel,
+        PlaybackService playbackService,
+        Random shuffleRandom)
+    {
+        ArgumentNullException.ThrowIfNull(settingsService);
+        ArgumentNullException.ThrowIfNull(scrobblingService);
+        ArgumentNullException.ThrowIfNull(currentTheme);
+        ArgumentNullException.ThrowIfNull(libraryViewModel);
+        ArgumentNullException.ThrowIfNull(playbackViewModel);
+        ArgumentNullException.ThrowIfNull(playbackService);
+        ArgumentNullException.ThrowIfNull(shuffleRandom);
+
+        NextTrackSelectorService = new NextTrackSelectorService(shuffleRandom);
+        SettingsChangeProcessorService = new SettingsChangeProcessorService(libraryViewModel, scrobblingService);
+        PlaybackFlowManagerService = new PlaybackFlowManagerService(libraryViewModel, playbackViewModel, playbackService, NextTrackSelectorService);
+        ApplicationInteractionService = new ApplicationInteractionService(settingsService, SettingsChangeProcessorService, currentTheme);
+        LibraryPlaybackLinkService = new LibraryPlaybackLinkService(libraryViewModel, playbackService, playbackViewModel);
     }
 }
 </file>
@@ -3061,34 +3095,27 @@ namespace Sonorize.ViewModels;
 
 public class LibraryViewModel : ViewModelBase, IDisposable
 {
-    private readonly SettingsService _settingsService; // Kept for LibraryStatusTextGenerator
+    private readonly SettingsService _settingsService;
     private readonly MusicLibraryService _musicLibraryService;
-    // private readonly LoopDataService _loopDataService; // LoopDataService is used by SongFactory, not directly here anymore.
     private readonly MainWindowViewModel _parentViewModel;
-    private readonly SongFilteringService _songFilteringService; // Passed to SongListManager
-    private readonly LibraryStatusTextGenerator _statusTextGenerator;
-    private readonly LibraryDataOrchestrator _libraryDataOrchestrator;
+    private readonly LibraryDisplayModeService _displayModeService;
     private readonly TrackNavigationManager _trackNavigationManager;
-    private readonly LibraryDisplayModeService _displayModeService; // New dependency
-    private readonly LibraryFilterStateManager _filterStateManager; // New dependency
-    private readonly SongListManager _songListManager; // New dependency
+    private readonly LibraryComponentProvider _components;
 
-    public LibraryGroupingsViewModel Groupings { get; } // New ViewModel for Artists/Albums
+    // Proxied properties using _components
+    public LibraryGroupingsViewModel Groupings => _components.Groupings;
+    public ObservableCollection<Song> FilteredSongs => _components.SongList.FilteredSongs;
+    public LibraryFilterStateManager FilterState => _components.FilterState;
 
-    // Proxied properties from SongListManager
-    public ObservableCollection<Song> FilteredSongs => _songListManager.FilteredSongs;
     public Song? SelectedSong
     {
-        get => _songListManager.SelectedSong;
+        get => _components.SongList.SelectedSong;
         set
         {
-            // Forward to SongListManager, which handles INotifyPropertyChanged for its SelectedSong
-            if (_songListManager.SelectedSong != value)
+            if (_components.SongList.SelectedSong != value)
             {
-                _songListManager.SelectedSong = value;
-                // We still need to notify that LibraryViewModel.SelectedSong has changed for its bindings
-                OnPropertyChanged();
-                // Let TrackNavigationManager know
+                _components.SongList.SelectedSong = value;
+                OnPropertyChanged(); // Notify that LibraryViewModel.SelectedSong has changed
                 _trackNavigationManager.UpdateSelectedSong(value);
                 (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"} (via SongListManager)");
@@ -3096,12 +3123,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         }
     }
 
-
-    // Expose FilterStateManager for binding
-    public LibraryFilterStateManager FilterState => _filterStateManager;
-
-
-    // Display mode command is now proxied from LibraryDisplayModeService
     public ICommand SetDisplayModeCommand => _displayModeService.SetDisplayModeCommand;
     public ICommand PreviousTrackCommand => _trackNavigationManager.PreviousTrackCommand;
     public ICommand NextTrackCommand => _trackNavigationManager.NextTrackCommand;
@@ -3131,7 +3152,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     private string _libraryStatusText = "";
 
 
-    // Display mode properties are now proxies to LibraryDisplayModeService
     public SongDisplayMode LibraryViewMode => _displayModeService.LibraryViewMode;
     public SongDisplayMode ArtistViewMode => _displayModeService.ArtistViewMode;
     public SongDisplayMode AlbumViewMode => _displayModeService.AlbumViewMode;
@@ -3140,37 +3160,23 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         MainWindowViewModel parentViewModel,
         SettingsService settingsService,
         MusicLibraryService musicLibraryService,
-        LoopDataService loopDataService, // Still needed for SongFactory used by MusicLibraryService indirectly
+        LoopDataService loopDataService,
         LibraryDisplayModeService displayModeService)
     {
         _parentViewModel = parentViewModel ?? throw new ArgumentNullException(nameof(parentViewModel));
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
-        // _loopDataService = loopDataService; // Not directly used here
         _displayModeService = displayModeService ?? throw new ArgumentNullException(nameof(displayModeService));
 
-        Groupings = new LibraryGroupingsViewModel(_musicLibraryService); // Instantiate new VM
+        _components = new LibraryComponentProvider(musicLibraryService, settingsService);
+        _trackNavigationManager = new TrackNavigationManager(_components.SongList.FilteredSongs);
 
-        _filterStateManager = new LibraryFilterStateManager();
-        _filterStateManager.FilterCriteriaChanged += (s, e) => ApplyFilter();
-        _filterStateManager.RequestTabSwitchToLibrary += (s, e) => _parentViewModel.ActiveTabIndex = 0;
+        // Subscribe to events from components provided by _components
+        _components.FilterState.FilterCriteriaChanged += (s, e) => ApplyFilter();
+        _components.FilterState.RequestTabSwitchToLibrary += (s, e) => _parentViewModel.ActiveTabIndex = 0;
+        _components.SongList.PropertyChanged += SongListManager_PropertyChanged;
 
-        _songFilteringService = new SongFilteringService();
-        _songListManager = new SongListManager(_songFilteringService);
-        _songListManager.PropertyChanged += SongListManager_PropertyChanged;
-
-
-        // Subscribe to PropertyChanged on _displayModeService to update proxied properties
         _displayModeService.PropertyChanged += DisplayModeService_PropertyChanged;
-
-        _trackNavigationManager = new TrackNavigationManager(FilteredSongs); // FilteredSongs is now from _songListManager
-
-        // _artistAlbumManager is now encapsulated in Groupings
-        _statusTextGenerator = new LibraryStatusTextGenerator();
-        // Pass Groupings VM's ArtistAlbumManager instance to LibraryDataOrchestrator
-        _libraryDataOrchestrator = new LibraryDataOrchestrator(_musicLibraryService, Groupings.ArtistAlbumManager, _settingsService);
-
-
         _musicLibraryService.SongThumbnailUpdated += MusicLibraryService_SongThumbnailUpdated;
 
         EditSongMetadataCommand = new RelayCommand(ExecuteEditSongMetadata, CanExecuteEditSongMetadata);
@@ -3182,11 +3188,10 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     {
         if (e.PropertyName == nameof(SongListManager.SelectedSong))
         {
-            // Relay the property change for LibraryViewModel.SelectedSong
             OnPropertyChanged(nameof(SelectedSong));
-            _trackNavigationManager.UpdateSelectedSong(_songListManager.SelectedSong);
+            _trackNavigationManager.UpdateSelectedSong(_components.SongList.SelectedSong);
             (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            Debug.WriteLine($"[LibraryVM] SongListManager.SelectedSong changed to: {_songListManager.SelectedSong?.Title ?? "null"}. Updated own SelectedSong.");
+            Debug.WriteLine($"[LibraryVM] SongListManager.SelectedSong changed to: {_components.SongList.SelectedSong?.Title ?? "null"}. Updated own SelectedSong.");
         }
         else if (e.PropertyName == nameof(SongListManager.FilteredSongs))
         {
@@ -3197,7 +3202,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
     private void DisplayModeService_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        // Raise PropertyChanged for our proxy properties when the service's properties change
         switch (e.PropertyName)
         {
             case nameof(LibraryDisplayModeService.LibraryViewMode):
@@ -3216,9 +3220,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     {
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            Groupings.HandleSongThumbnailUpdate(updatedSong, _songListManager.GetAllSongsReadOnly());
-            // OnPropertyChanged for Groupings.Artists and Groupings.Albums will be handled by LibraryGroupingsViewModel
-            // if the collections themselves are replaced, or by ObservableCollection if items are modified.
+            _components.Groupings.HandleSongThumbnailUpdate(updatedSong, _components.SongList.GetAllSongsReadOnly());
         });
     }
 
@@ -3230,30 +3232,28 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         }
 
         IsLoadingLibrary = true;
-        _filterStateManager.ClearSelectionsAndSearch(); // Resets SearchQuery, SelectedArtist, SelectedAlbum
-        // SelectedSong will be cleared by SongListManager.ClearAllSongs or during filter application
+        _components.FilterState.ClearSelectionsAndSearch();
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            _songListManager.ClearAllSongs(); // Clears all songs, filtered songs, and selected song
-            Groupings.Artists.Clear(); // Clear collections in Groupings VM
-            Groupings.Albums.Clear();
+            _components.SongList.ClearAllSongs();
+            _components.Groupings.Artists.Clear();
+            _components.Groupings.Albums.Clear();
             LibraryStatusText = "Preparing to load music...";
         });
 
         List<Song> loadedRawSongs = new List<Song>();
-        Action<Song> songAddedCallback = song => loadedRawSongs.Add(song); // Collect raw songs
+        Action<Song> songAddedCallback = song => loadedRawSongs.Add(song);
         Action<string> statusUpdateCallback = status => LibraryStatusText = status;
 
-        var allLoadedSongsFromOrchestrator = await _libraryDataOrchestrator.LoadAndProcessLibraryDataAsync(statusUpdateCallback, songAddedCallback);
-        _songListManager.SetAllSongs(allLoadedSongsFromOrchestrator); // Set all songs in the manager
+        var allLoadedSongsFromOrchestrator = await _components.DataOrchestrator.LoadAndProcessLibraryDataAsync(statusUpdateCallback, songAddedCallback);
+        _components.SongList.SetAllSongs(allLoadedSongsFromOrchestrator);
 
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            // Groupings VM populates its collections
-            Groupings.PopulateCollections(_songListManager.GetAllSongsReadOnly());
-            ApplyFilter(); // Apply initial filter
+            _components.Groupings.PopulateCollections(_components.SongList.GetAllSongsReadOnly());
+            ApplyFilter();
         });
 
         IsLoadingLibrary = false;
@@ -3262,14 +3262,12 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
     private void ApplyFilter()
     {
-        _songListManager.ApplyFilter(
-            _filterStateManager.SearchQuery,
-            _filterStateManager.SelectedArtist,
-            _filterStateManager.SelectedAlbum);
-        // SelectedSong management is now inside _songListManager.ApplyFilter
+        _components.SongList.ApplyFilter(
+            _components.FilterState.SearchQuery,
+            _components.FilterState.SelectedArtist,
+            _components.FilterState.SelectedAlbum);
 
-        // Ensure TrackNavigationManager is aware of the potentially changed SelectedSong from SongListManager
-        _trackNavigationManager.UpdateSelectedSong(_songListManager.SelectedSong);
+        _trackNavigationManager.UpdateSelectedSong(_components.SongList.SelectedSong);
         UpdateStatusBarText();
     }
 
@@ -3277,13 +3275,13 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     {
         if (!IsLoadingLibrary)
         {
-            LibraryStatusText = _statusTextGenerator.GenerateStatusText(
+            LibraryStatusText = _components.StatusTextGenerator.GenerateStatusText(
                 IsLoadingLibrary,
-                _songListManager.AllSongsCount, // Use count from SongListManager
-                FilteredSongs.Count, // FilteredSongs is a direct proxy
-                _filterStateManager.SelectedArtist,
-                _filterStateManager.SelectedAlbum,
-                _filterStateManager.SearchQuery,
+                _components.SongList.AllSongsCount,
+                FilteredSongs.Count,
+                _components.FilterState.SelectedArtist,
+                _components.FilterState.SelectedAlbum,
+                _components.FilterState.SearchQuery,
                 _settingsService
             );
         }
@@ -3310,8 +3308,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
     public void RaiseLibraryCommandsCanExecuteChanged()
     {
-        // SetDisplayModeCommand CanExecute is handled by LibraryDisplayModeService
-        // Navigation commands are handled by TrackNavigationManager
         (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
@@ -3325,17 +3321,15 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         {
             _displayModeService.PropertyChanged -= DisplayModeService_PropertyChanged;
         }
-        if (_filterStateManager != null)
+        if (_components?.FilterState != null)
         {
-            _filterStateManager.FilterCriteriaChanged -= (s, e) => ApplyFilter();
-            _filterStateManager.RequestTabSwitchToLibrary -= (s, e) => _parentViewModel.ActiveTabIndex = 0;
+            _components.FilterState.FilterCriteriaChanged -= (s, e) => ApplyFilter();
+            _components.FilterState.RequestTabSwitchToLibrary -= (s, e) => _parentViewModel.ActiveTabIndex = 0;
         }
-        if (_songListManager != null)
+        if (_components?.SongList != null)
         {
-            _songListManager.PropertyChanged -= SongListManager_PropertyChanged;
-            // If SongListManager implemented IDisposable, dispose it here.
+            _components.SongList.PropertyChanged -= SongListManager_PropertyChanged;
         }
-        // Groupings VM does not currently implement IDisposable
     }
 }
 </file>
@@ -7015,6 +7009,33 @@ public class ArtistAlbumCollectionManager
 }
 </file>
 
+<file path="Source\ViewModels\LibraryManagement\LibraryComponentProvider.cs">
+using Sonorize.Services;
+
+namespace Sonorize.ViewModels.LibraryManagement;
+
+public class LibraryComponentProvider
+{
+    public LibraryGroupingsViewModel Groupings { get; }
+    public LibraryFilterStateManager FilterState { get; }
+    public SongListManager SongList { get; }
+    public LibraryDataOrchestrator DataOrchestrator { get; }
+    public LibraryStatusTextGenerator StatusTextGenerator { get; }
+
+    private readonly SongFilteringService _songFilteringService;
+
+    public LibraryComponentProvider(MusicLibraryService musicLibraryService, SettingsService settingsService)
+    {
+        Groupings = new(musicLibraryService);
+        FilterState = new();
+        _songFilteringService = new();
+        SongList = new(_songFilteringService);
+        DataOrchestrator = new(musicLibraryService, Groupings.ArtistAlbumManager, settingsService);
+        StatusTextGenerator = new();
+    }
+}
+</file>
+
 <file path="Source\ViewModels\LibraryManagement\LibraryDataOrchestrator.cs">
 using System;
 using System.Collections.Generic;
@@ -8792,33 +8813,32 @@ public class MainWindowComponentsManager : IDisposable
 {
     // Keep direct service references if they are passed to multiple components
     // or if MainWindowViewModel needs them directly (though preferably through properties here)
-    // private readonly SettingsService _settingsService; // No longer needed directly if factory handles it
-    // private readonly MusicLibraryService _musicLibraryService; // No longer needed directly
+    private readonly SettingsService _settingsService;
+    private readonly MusicLibraryService _musicLibraryService;
+    // PlaybackService is now a property for MainWindowViewModel to expose
     public PlaybackService PlaybackServiceProperty { get; }
-    // private readonly ThemeColors _currentTheme; // No longer needed directly
-    // private readonly WaveformService _waveformService; // No longer needed directly
-    // private readonly LoopDataService _loopDataService; // No longer needed directly
-    // private readonly ScrobblingService _scrobblingService; // No longer needed directly
-    // private readonly SongMetadataService _songMetadataService; // No longer needed directly
-    // private readonly SongEditInteractionService _songEditInteractionService; // No longer needed directly
-    // private readonly SongLoopService _songLoopService; // No longer needed directly
+    private readonly ThemeColors _currentTheme;
+    private readonly WaveformService _waveformService;
+    private readonly LoopDataService _loopDataService;
+    private readonly ScrobblingService _scrobblingService;
+    private readonly SongMetadataService _songMetadataService;
+    private readonly SongEditInteractionService _songEditInteractionService;
+    private readonly SongLoopService _songLoopService;
 
-    private readonly MainWindowViewModelSubComponentsFactory _subComponentsFactory;
-
-    public LibraryViewModel Library => _subComponentsFactory.Library;
-    public PlaybackViewModel Playback => _subComponentsFactory.Playback;
-    public LoopEditorViewModel LoopEditor => _subComponentsFactory.LoopEditor;
-    public AdvancedPanelViewModel AdvancedPanel => _subComponentsFactory.AdvancedPanel;
-    public LibraryDisplayModeService LibraryDisplayModeService => _subComponentsFactory.LibraryDisplayModeService;
-    public ApplicationWorkflowManager WorkflowManager => _subComponentsFactory.WorkflowManager;
-    public MainWindowInteractionCoordinator InteractionCoordinator => _subComponentsFactory.InteractionCoordinator;
-    public MainWindowViewModelOrchestrator ViewModelOrchestrator => _subComponentsFactory.ViewModelOrchestrator;
+    public LibraryViewModel Library { get; }
+    public PlaybackViewModel Playback { get; }
+    public LoopEditorViewModel LoopEditor { get; }
+    public AdvancedPanelViewModel AdvancedPanel { get; }
+    public LibraryDisplayModeService LibraryDisplayModeService { get; }
+    public ApplicationWorkflowManager WorkflowManager { get; }
+    public MainWindowInteractionCoordinator InteractionCoordinator { get; }
+    public MainWindowViewModelOrchestrator ViewModelOrchestrator { get; }
 
     public MainWindowComponentsManager(
         MainWindowViewModel parentMainWindowViewModel,
         SettingsService settingsService,
         MusicLibraryService musicLibraryService,
-        PlaybackService playbackService,
+        PlaybackService playbackService, // Renamed for clarity from _playbackService
         ThemeColors currentTheme,
         WaveformService waveformService,
         LoopDataService loopDataService,
@@ -8831,20 +8851,46 @@ public class MainWindowComponentsManager : IDisposable
         Action updateStatusBarTextCallback,
         Action<string> notifyMainWindowVMPropertyChangedCallback)
     {
-        PlaybackServiceProperty = playbackService;
+        _settingsService = settingsService;
+        _musicLibraryService = musicLibraryService;
+        PlaybackServiceProperty = playbackService; // Store the passed service
+        _currentTheme = currentTheme;
+        _waveformService = waveformService;
+        _loopDataService = loopDataService;
+        _scrobblingService = scrobblingService;
+        _songMetadataService = songMetadataService;
+        _songEditInteractionService = songEditInteractionService;
+        _songLoopService = songLoopService;
 
-        _subComponentsFactory = new MainWindowViewModelSubComponentsFactory(
-            parentMainWindowViewModel,
-            settingsService,
-            musicLibraryService,
-            playbackService,
-            currentTheme,
-            waveformService,
-            loopDataService,
-            scrobblingService,
-            songEditInteractionService,
-            songLoopService,
+        LibraryDisplayModeService = new LibraryDisplayModeService(_settingsService);
+        // Pass parentMainWindowViewModel to LibraryViewModel as per its constructor
+        Library = new LibraryViewModel(parentMainWindowViewModel, _settingsService, _musicLibraryService, _loopDataService, LibraryDisplayModeService);
+        Playback = new PlaybackViewModel(PlaybackServiceProperty, _waveformService); // Use the stored PlaybackService
+        LoopEditor = new LoopEditorViewModel(PlaybackServiceProperty, _loopDataService, _songLoopService); // Use stored PlaybackService
+        AdvancedPanel = new AdvancedPanelViewModel(Playback, Library);
+
+        WorkflowManager = new ApplicationWorkflowManager(
+            _settingsService,
+            _scrobblingService,
+            _currentTheme,
+            Library,
+            Playback,
+            PlaybackServiceProperty, // Use stored PlaybackService
+            _loopDataService);
+
+        InteractionCoordinator = new MainWindowInteractionCoordinator(
             getOwnerViewFunc,
+            Library,
+            AdvancedPanel,
+            WorkflowManager,
+            _songEditInteractionService,
+            raiseAllCommandsCanExecuteChangedCallback
+        );
+
+        ViewModelOrchestrator = new MainWindowViewModelOrchestrator(
+            Library,
+            Playback,
+            AdvancedPanel,
             raiseAllCommandsCanExecuteChangedCallback,
             updateStatusBarTextCallback,
             notifyMainWindowVMPropertyChangedCallback
@@ -8856,7 +8902,7 @@ public class MainWindowComponentsManager : IDisposable
 
     private void PlaybackService_PlaybackEndedNaturally(object? sender, EventArgs e)
     {
-        // WorkflowManager is instantiated and owned by this ComponentsManager via the factory
+        // WorkflowManager is instantiated and owned by this ComponentsManager
         WorkflowManager.HandlePlaybackEndedNaturally();
     }
 

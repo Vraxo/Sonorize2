@@ -2,37 +2,34 @@
 using System.Diagnostics;
 using System.IO;
 using NAudio.Wave;
+using Sonorize.Services.Playback; // Added for NAudioPipeline
 
 namespace Sonorize.Services;
 
 public class NAudioPlaybackEngine : IDisposable
 {
-    private IWavePlayer? _waveOutDevice;
-    private AudioFileReader? audioFileReader;
-    private NAudioEffectsProcessor? _effectsProcessor;
-
-    private IWavePlayer? _waveOutDeviceInstanceForEvent;
+    private NAudioPipeline? _pipeline;
 
     public event EventHandler<StoppedEventArgs>? PlaybackStopped;
 
     public TimeSpan CurrentPosition
     {
-        get => audioFileReader?.CurrentTime ?? TimeSpan.Zero;
+        get => _pipeline?.AudioReader?.CurrentTime ?? TimeSpan.Zero;
         set
         {
-            if (audioFileReader != null) audioFileReader.CurrentTime = value;
-            else Debug.WriteLine("[Engine] Attempted to set CurrentPosition on null audioFileReader.");
+            if (_pipeline?.AudioReader != null) _pipeline.AudioReader.CurrentTime = value;
+            else Debug.WriteLine("[Engine] Attempted to set CurrentPosition on null pipeline/audioReader.");
         }
     }
 
-    public TimeSpan CurrentSongDuration => audioFileReader?.TotalTime ?? TimeSpan.Zero;
+    public TimeSpan CurrentSongDuration => _pipeline?.AudioReader?.TotalTime ?? TimeSpan.Zero;
 
     public PlaybackStateStatus CurrentPlaybackStatus
     {
         get
         {
-            if (_waveOutDevice == null) return PlaybackStateStatus.Stopped;
-            return _waveOutDevice.PlaybackState switch
+            if (_pipeline?.OutputDevice == null) return PlaybackStateStatus.Stopped;
+            return _pipeline.OutputDevice.PlaybackState switch
             {
                 NAudio.Wave.PlaybackState.Playing => PlaybackStateStatus.Playing,
                 NAudio.Wave.PlaybackState.Paused => PlaybackStateStatus.Paused,
@@ -42,27 +39,25 @@ public class NAudioPlaybackEngine : IDisposable
         }
     }
 
-    private float _playbackRate = 1.0f;
     public float PlaybackRate
     {
-        get => _playbackRate;
+        get;
         set
         {
-            _playbackRate = value;
-            if (_effectsProcessor != null) _effectsProcessor.Tempo = value;
+            field = value;
+            if (_pipeline?.EffectsProcessor != null) _pipeline.EffectsProcessor.Tempo = value;
         }
-    }
+    } = 1.0f;
 
-    private float _pitchSemitones = 0f;
     public float PitchSemitones
     {
-        get => _pitchSemitones;
+        get;
         set
         {
-            _pitchSemitones = value;
-            if (_effectsProcessor != null) _effectsProcessor.PitchSemitones = value;
+            field = value;
+            if (_pipeline?.EffectsProcessor != null) _pipeline.EffectsProcessor.PitchSemitones = value;
         }
-    }
+    } = 0f;
 
 
     public NAudioPlaybackEngine()
@@ -80,32 +75,18 @@ public class NAudioPlaybackEngine : IDisposable
             throw new FileNotFoundException("Audio file not found.", filePath);
         }
 
-        Dispose(disposing: true);
+        Dispose(disposing: true); // Dispose existing pipeline first
 
         try
         {
-            audioFileReader = new AudioFileReader(filePath);
-            Debug.WriteLine($"[Engine] Loaded AudioFileReader. Channels: {audioFileReader.WaveFormat.Channels}, SampleRate: {audioFileReader.WaveFormat.SampleRate}, Duration: {audioFileReader.TotalTime}");
-
-            _effectsProcessor = new NAudioEffectsProcessor();
-            _effectsProcessor.Initialize(audioFileReader.ToSampleProvider());
-
-            _effectsProcessor.Tempo = PlaybackRate;
-            _effectsProcessor.PitchSemitones = PitchSemitones;
-            Debug.WriteLine($"[Engine] Effects Processor initialized. Applied Tempo: {_effectsProcessor.Tempo}, Pitch: {_effectsProcessor.PitchSemitones}");
-
-            _waveOutDevice = new WaveOutEvent();
-            _waveOutDeviceInstanceForEvent = _waveOutDevice;
-            _waveOutDevice.PlaybackStopped += OnWaveOutPlaybackStopped;
-
-            _waveOutDevice.Init(_effectsProcessor.OutputProvider.ToWaveProvider());
-
-            Debug.WriteLine($"[Engine] NAudio pipeline loaded successfully for: {Path.GetFileName(filePath)}.");
+            _pipeline = new NAudioPipeline(filePath, PlaybackRate, PitchSemitones, OnPipelinePlaybackStopped);
+            Debug.WriteLine($"[Engine] NAudio pipeline loaded successfully via NAudioPipeline for: {Path.GetFileName(filePath)}.");
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[Engine] CRITICAL ERROR during NAudio pipeline Load for {Path.GetFileName(filePath)}: {ex.ToString()}");
-            Dispose(disposing: true);
+            // NAudioPipeline constructor re-throws on failure after its own cleanup.
+            Debug.WriteLine($"[Engine] CRITICAL ERROR during NAudioPipeline creation for {Path.GetFileName(filePath)}: {ex.ToString()}");
+            Dispose(disposing: true); // Ensure engine's _pipeline is null
             throw new Exception($"Failed to load audio pipeline for {Path.GetFileName(filePath)}", ex);
         }
     }
@@ -113,12 +94,12 @@ public class NAudioPlaybackEngine : IDisposable
     public void Play()
     {
         Debug.WriteLine("[Engine] Play requested.");
-        if (_waveOutDevice != null && (_waveOutDevice.PlaybackState == NAudio.Wave.PlaybackState.Paused || _waveOutDevice.PlaybackState == NAudio.Wave.PlaybackState.Stopped))
+        if (_pipeline?.OutputDevice != null && (_pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Paused || _pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Stopped))
         {
             Debug.WriteLine("[Engine] Calling device.Play().");
             try
             {
-                _waveOutDevice.Play();
+                _pipeline.OutputDevice.Play();
                 Debug.WriteLine($"[Engine] Playback started/resumed. State: {CurrentPlaybackStatus}");
             }
             catch (Exception ex)
@@ -126,25 +107,25 @@ public class NAudioPlaybackEngine : IDisposable
                 Debug.WriteLine($"[Engine] Error during device.Play(): {ex.Message}");
             }
         }
-        else if (_waveOutDevice != null && _waveOutDevice.PlaybackState == NAudio.Wave.PlaybackState.Playing)
+        else if (_pipeline?.OutputDevice != null && _pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Playing)
         {
             Debug.WriteLine("[Engine] Already playing. Doing nothing.");
         }
         else
         {
-            Debug.WriteLine("[Engine] Cannot Play: Device not initialized.");
+            Debug.WriteLine("[Engine] Cannot Play: Device not initialized via pipeline.");
         }
     }
 
     public void Pause()
     {
         Debug.WriteLine("[Engine] Pause requested.");
-        if (_waveOutDevice != null && _waveOutDevice.PlaybackState == NAudio.Wave.PlaybackState.Playing)
+        if (_pipeline?.OutputDevice != null && _pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Playing)
         {
             Debug.WriteLine("[Engine] Calling device.Pause().");
             try
             {
-                _waveOutDevice.Pause();
+                _pipeline.OutputDevice.Pause();
                 Debug.WriteLine($"[Engine] Playback paused. State: {CurrentPlaybackStatus}");
             }
             catch (Exception ex)
@@ -154,20 +135,20 @@ public class NAudioPlaybackEngine : IDisposable
         }
         else
         {
-            Debug.WriteLine($"[Engine] Cannot Pause: Device state is {_waveOutDevice?.PlaybackState ?? NAudio.Wave.PlaybackState.Stopped}.");
+            Debug.WriteLine($"[Engine] Cannot Pause: Device state is {_pipeline?.OutputDevice?.PlaybackState ?? NAudio.Wave.PlaybackState.Stopped}.");
         }
     }
 
     public void Stop()
     {
         Debug.WriteLine("[Engine] Stop requested.");
-        if (_waveOutDevice != null && _waveOutDevice.PlaybackState != NAudio.Wave.PlaybackState.Stopped)
+        if (_pipeline?.OutputDevice != null && _pipeline.OutputDevice.PlaybackState != NAudio.Wave.PlaybackState.Stopped)
         {
             Debug.WriteLine("[Engine] Calling device.Stop().");
             try
             {
-                _waveOutDevice.Stop();
-                Debug.WriteLine($"[Engine] Stop initiated. Device state: {_waveOutDevice?.PlaybackState}. PlaybackStopped event should follow.");
+                _pipeline.OutputDevice.Stop();
+                Debug.WriteLine($"[Engine] Stop initiated. Device state: {_pipeline?.OutputDevice?.PlaybackState}. PlaybackStopped event should follow.");
             }
             catch (Exception ex)
             {
@@ -183,12 +164,12 @@ public class NAudioPlaybackEngine : IDisposable
     public void Seek(TimeSpan position)
     {
         Debug.WriteLine($"[Engine] Seek requested to {position:mm\\:ss\\.ff}.");
-        if (audioFileReader != null)
+        if (_pipeline?.AudioReader != null)
         {
             try
             {
-                audioFileReader.CurrentTime = position;
-                Debug.WriteLine($"[Engine] Seek successful. Actual position: {audioFileReader.CurrentTime:mm\\:ss\\.ff}");
+                _pipeline.AudioReader.CurrentTime = position;
+                Debug.WriteLine($"[Engine] Seek successful. Actual position: {_pipeline.AudioReader.CurrentTime:mm\\:ss\\.ff}");
             }
             catch (Exception ex)
             {
@@ -197,21 +178,16 @@ public class NAudioPlaybackEngine : IDisposable
         }
         else
         {
-            Debug.WriteLine("[Engine] Cannot Seek: AudioFileReader not initialized.");
+            Debug.WriteLine("[Engine] Cannot Seek: AudioFileReader (via pipeline) not initialized.");
         }
     }
 
-    private void OnWaveOutPlaybackStopped(object? sender, StoppedEventArgs e)
+    private void OnPipelinePlaybackStopped(object? sender, StoppedEventArgs e)
     {
-        if (sender == _waveOutDeviceInstanceForEvent)
-        {
-            Debug.WriteLine("[Engine] OnWaveOutPlaybackStopped event received from current device.");
-            PlaybackStopped?.Invoke(this, e);
-        }
-        else
-        {
-            Debug.WriteLine("[Engine] OnWaveOutPlaybackStopped event received from old device instance. Ignoring.");
-        }
+        // The sender here will be the NAudioPipeline instance, or its OutputDevice.
+        // We trust that NAudioPipeline correctly manages its event subscriptions.
+        Debug.WriteLine("[Engine] OnPipelinePlaybackStopped event received from NAudioPipeline.");
+        PlaybackStopped?.Invoke(this, e); // Raise engine's own event
     }
 
 
@@ -227,33 +203,8 @@ public class NAudioPlaybackEngine : IDisposable
     {
         if (disposing)
         {
-            if (_waveOutDevice != null && _waveOutDeviceInstanceForEvent == _waveOutDevice)
-            {
-                _waveOutDevice.PlaybackStopped -= OnWaveOutPlaybackStopped;
-                Debug.WriteLine("[Engine] Detached PlaybackStopped handler.");
-            }
-            _waveOutDeviceInstanceForEvent = null;
-
-            if (_waveOutDevice != null)
-            {
-                Debug.WriteLine($"[Engine] Disposing WaveOutDevice (State: {_waveOutDevice.PlaybackState}).");
-                try { _waveOutDevice.Dispose(); } catch (Exception ex) { Debug.WriteLine($"[Engine] Error disposing WaveOutDevice: {ex.Message}"); }
-                _waveOutDevice = null;
-            }
-
-            if (_effectsProcessor != null)
-            {
-                Debug.WriteLine("[Engine] Disposing Effects Processor.");
-                try { _effectsProcessor.Dispose(); } catch (Exception ex) { Debug.WriteLine($"[Engine] Error disposing Effects Processor: {ex.Message}"); }
-                _effectsProcessor = null;
-            }
-
-            if (audioFileReader != null)
-            {
-                Debug.WriteLine("[Engine] Disposing AudioFileReader.");
-                try { audioFileReader.Dispose(); } catch (Exception ex) { Debug.WriteLine($"[Engine] Error disposing AudioFileReader: {ex.Message}"); }
-                audioFileReader = null;
-            }
+            _pipeline?.Dispose();
+            _pipeline = null;
         }
     }
 

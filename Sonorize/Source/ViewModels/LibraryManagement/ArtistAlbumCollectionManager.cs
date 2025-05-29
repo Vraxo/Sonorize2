@@ -52,8 +52,8 @@ public class ArtistAlbumCollectionManager
             .GroupBy(keySelector, AlbumArtistTupleComparer.Instance)
             .Select(g => new
             {
-                AlbumTitle = g.Key.Item1,
-                ArtistName = g.Key.Item2,
+                AlbumTitle = g.Key.Album,
+                ArtistName = g.Key.Artist,
                 SongsInAlbum = g.ToList()
             })
             .OrderBy(a => a.ArtistName, StringComparer.OrdinalIgnoreCase).ThenBy(a => a.AlbumTitle, StringComparer.OrdinalIgnoreCase)
