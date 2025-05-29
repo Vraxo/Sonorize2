@@ -114,14 +114,23 @@ public class NAudioEngineController : IDisposable
         if (_playbackEngine == null)
         {
             Debug.WriteLine("[EngineController] Stop ignored: Engine not loaded.");
-            // If no engine, there's nothing to stop that would raise an event.
-            // If an event is expected even without an engine, it needs to be simulated.
-            // For now, assume Stop only applies if an engine exists.
             return;
         }
         _playbackEngine.Stop(); // This will trigger the engine's PlaybackStopped event, then ours
         Debug.WriteLine("[EngineController] Stop initiated on engine.");
     }
+
+    public void DisposeEngineInternalsOnly() // New method
+    {
+        if (_playbackEngine != null)
+        {
+            Debug.WriteLine("[EngineController] DisposeEngineInternalsOnly called. Disposing NAudioPlaybackEngine.");
+            _playbackEngine.PlaybackStopped -= OnEnginePlaybackStopped;
+            _playbackEngine.Dispose();
+            _playbackEngine = null;
+        }
+    }
+
 
     public void Seek(TimeSpan position)
     {

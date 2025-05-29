@@ -95,10 +95,28 @@ public class PlaybackService : ViewModelBase, IDisposable
         _sessionManager.SeekSession(requestedPosition);
     }
 
-    // This method might be called by PlaybackLoopHandler
-    // Ensure PlaybackLoopHandler has the correct reference or adjust its design.
-    // For now, assuming LoopHandler might still need a way to trigger seek on the service layer.
-    internal void PerformSeekInternal(TimeSpan position) // Example if LoopHandler calls back
+    public (bool WasPlaying, TimeSpan Position)? StopAndReleaseFileResourcesForSong(Song song)
+    {
+        if (song == null || _sessionManager.CurrentSong != song)
+        {
+            Debug.WriteLine($"[PlaybackService] StopAndReleaseFileResourcesForSong: Song '{song?.Title}' is not the current playing/loaded song ('{_sessionManager.CurrentSong?.Title}'). No action taken.");
+            return null;
+        }
+        return _sessionManager.StopAndReleaseFileResources();
+    }
+
+    public bool ReinitializePlaybackForSong(Song song, TimeSpan position, bool play)
+    {
+        if (song == null)
+        {
+            Debug.WriteLine("[PlaybackService] ReinitializePlaybackForSong: Song is null. Cannot reinitialize.");
+            return false;
+        }
+        return _sessionManager.ReinitializePlayback(song, position, play);
+    }
+
+
+    internal void PerformSeekInternal(TimeSpan position)
     {
         Seek(position);
     }

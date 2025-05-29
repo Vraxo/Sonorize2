@@ -114,6 +114,13 @@ public class PlaybackEngineCoordinator : IDisposable
         Debug.WriteLine("[PlaybackEngineCoordinator] Stop initiated.");
     }
 
+    public void DisposeCurrentEngineInternals() // New method
+    {
+        _playbackMonitor.Stop(); // Stop monitor before disposing engine
+        _engineController.DisposeEngineInternalsOnly();
+        Debug.WriteLine("[PlaybackEngineCoordinator] Disposed current engine internals.");
+    }
+
     public void Seek(TimeSpan requestedPosition)
     {
         if (_currentSong == null || _engineController.CurrentSongDuration == TimeSpan.Zero) return;

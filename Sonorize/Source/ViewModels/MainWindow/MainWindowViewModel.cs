@@ -29,7 +29,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private readonly ApplicationWorkflowManager _workflowManager;
     private readonly LibraryDisplayModeService _libraryDisplayModeService;
 
-    private Window? _ownerView; // Added to store the owner window
+    private Window? _ownerView;
 
 
     // Expose the Services directly for child VMs or public properties
@@ -125,7 +125,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         Dispatcher.UIThread.InvokeAsync(UpdateAllUIDependentStates);
     }
 
-    // Method for the View to set itself as the owner
     public void SetOwnerView(Window ownerView)
     {
         _ownerView = ownerView;
@@ -234,7 +233,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        Window? ownerWindow = _ownerView; // Use the stored owner view
+        Window? ownerWindow = _ownerView;
 
         if (ownerWindow == null)
         {
@@ -244,16 +243,76 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         IsAdvancedPanelVisible = false;
 
-        bool metadataSaved = await _workflowManager.HandleEditSongMetadataDialogAsync(songToEdit, ownerWindow);
+        // Store playback state if the song being edited is the current one
+        (bool WasPlaying, TimeSpan Position)? previousPlaybackState = null;
+        if (PlaybackService.CurrentSong == songToEdit)
+        {
+            previousPlaybackState = PlaybackService.StopAndReleaseFileResourcesForSong(songToEdit);
+            if (previousPlaybackState == null)
+            {
+                Debug.WriteLine($"[MainVM] Failed to release file for {songToEdit.Title}. Aborting metadata edit.");
+                // Optionally show an error to the user
+                StatusBarText = $"Error: Could not prepare '{songToEdit.Title}' for editing.";
+                return;
+            }
+            Debug.WriteLine($"[MainVM] Playback for {songToEdit.Title} stopped and file released. WasPlaying: {previousPlaybackState.Value.WasPlaying}, Position: {previousPlaybackState.Value.Position}");
+        }
 
-        if (metadataSaved)
+        bool metadataSaved = false;
+        try
         {
-            StatusBarText = $"Metadata for '{songToEdit.Title}' updated.";
+            // Show the dialog (this part is synchronous within this async method after await)
+            // The dialog itself is modal (await ShowDialog)
+            var editorViewModel = new SongMetadataEditorViewModel(songToEdit);
+            var editorDialog = new Sonorize.Views.SongMetadataEditorWindow(CurrentTheme)
+            {
+                DataContext = editorViewModel
+            };
+            await editorDialog.ShowDialog(ownerWindow); // This makes the dialog modal
+
+            if (editorViewModel.DialogResult) // True if "Save" was clicked in dialog
+            {
+                Debug.WriteLine($"[MainVM] Metadata editor for {songToEdit.Title} closed with Save. Attempting to save to file.");
+                metadataSaved = await _songMetadataService.SaveMetadataAsync(songToEdit); // Pass the Song object which now has the new thumbnail from ViewModel
+                if (metadataSaved)
+                {
+                    Debug.WriteLine($"[MainVM] Metadata (and thumbnail) for {songToEdit.Title} saved to file successfully.");
+                    StatusBarText = $"Metadata for '{songToEdit.Title}' updated.";
+                    // The Song object's properties are already updated due to binding in SongMetadataEditorViewModel
+                    // This will reflect in UI. Artist/Album list might be stale if names changed.
+                }
+                else
+                {
+                    Debug.WriteLine($"[MainVM] Failed to save metadata for {songToEdit.Title} to file.");
+                    StatusBarText = $"Error saving metadata for '{songToEdit.Title}'.";
+                }
+            }
+            else
+            {
+                Debug.WriteLine($"[MainVM] Metadata editor for {songToEdit.Title} closed without saving (Cancelled or closed).");
+                UpdateStatusBarText();
+            }
         }
-        else
+        catch (Exception ex)
         {
-            UpdateStatusBarText();
+            Debug.WriteLine($"[MainVM] Exception during metadata edit/save for {songToEdit.Title}: {ex.Message}");
+            StatusBarText = $"Error during metadata edit for '{songToEdit.Title}'.";
         }
+        finally
+        {
+            // Restore playback state if it was affected
+            if (previousPlaybackState.HasValue)
+            {
+                Debug.WriteLine($"[MainVM] Reinitializing playback for {songToEdit.Title} to WasPlaying: {previousPlaybackState.Value.WasPlaying}, Position: {previousPlaybackState.Value.Position}");
+                bool reinitSuccess = PlaybackService.ReinitializePlaybackForSong(songToEdit, previousPlaybackState.Value.Position, previousPlaybackState.Value.WasPlaying);
+                if (!reinitSuccess)
+                {
+                    Debug.WriteLine($"[MainVM] Failed to reinitialize playback for {songToEdit.Title}.");
+                    StatusBarText = $"Playback error after editing '{songToEdit.Title}'.";
+                }
+            }
+        }
+
         RaiseAllCommandsCanExecuteChanged();
     }
 
@@ -275,6 +334,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         Playback?.Dispose();
         AdvancedPanel?.Dispose();
         LoopEditor?.Dispose();
-        _ownerView = null; // Clear the view reference
+        _ownerView = null;
     }
 }
