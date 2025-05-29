@@ -4,7 +4,7 @@ using Sonorize.ViewModels;
 
 namespace Sonorize.ViewModels;
 
-internal class MainWindowViewModelOrchestrator : IDisposable
+public class MainWindowViewModelOrchestrator : IDisposable
 {
     private readonly LibraryViewModel _libraryViewModel;
     private readonly PlaybackViewModel _playbackViewModel;

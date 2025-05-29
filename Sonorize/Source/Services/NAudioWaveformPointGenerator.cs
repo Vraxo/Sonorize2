@@ -1,8 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO; // Required for Path.GetFileName
-using System.Linq;
+using System.IO;
 using NAudio.Wave;
 
 namespace Sonorize.Services;
@@ -21,16 +20,19 @@ public class NAudioWaveformPointGenerator
         try
         {
             using var reader = TryInitializeReader(filePath, out long totalSampleFrames);
-            if (reader == null || totalSampleFrames == 0)
+            
+            if (reader is null || totalSampleFrames == 0)
             {
-                // Error messages are logged within TryInitializeReader
                 return [];
             }
 
-            if (!CalculateProcessingParameters(totalSampleFrames, targetPoints, reader.WaveFormat.Channels,
-                out int samplesPerFrameToProcessPerPoint, out int bufferSizeInSamples, out var paramErrorPoints))
+            if (!CalculateProcessingParameters(totalSampleFrames,
+                targetPoints,
+                reader.WaveFormat.Channels,
+                out int samplesPerFrameToProcessPerPoint,
+                out int bufferSizeInSamples,
+                out var paramErrorPoints))
             {
-                // Error messages are logged within CalculateProcessingParameters
                 return paramErrorPoints;
             }
 
@@ -39,28 +41,31 @@ public class NAudioWaveformPointGenerator
         catch (Exception ex)
         {
             Debug.WriteLine($"[NAudioWaveformPointGenerator] CRITICAL Error generating waveform for \"{Path.GetFileName(filePath)}\": {ex.ToString()}");
-            return []; // Return empty list on error
+            return [];
         }
     }
 
-    private bool ValidateInput(string filePath, int targetPoints, out List<WaveformPoint> errorResult)
+    private static bool ValidateInput(string filePath, int targetPoints, out List<WaveformPoint> errorResult)
     {
         errorResult = [];
+
         if (string.IsNullOrEmpty(filePath) || targetPoints <= 0)
         {
             Debug.WriteLine($"[NAudioWaveformPointGenerator] Invalid input: filePath is null/empty or targetPoints <= 0. File: '{filePath}', Points: {targetPoints}");
             return false;
         }
+
         return true;
     }
 
-    private AudioFileReader? TryInitializeReader(string filePath, out long totalSampleFrames)
+    private static AudioFileReader? TryInitializeReader(string filePath, out long totalSampleFrames)
     {
         totalSampleFrames = 0;
         AudioFileReader? reader;
+
         try
         {
-            reader = new AudioFileReader(filePath);
+            reader = new(filePath);
         }
         catch (Exception ex)
         {
@@ -78,18 +83,24 @@ public class NAudioWaveformPointGenerator
         }
 
         totalSampleFrames = reader.Length / reader.WaveFormat.BlockAlign;
+
         if (totalSampleFrames == 0)
         {
             Debug.WriteLine($"[NAudioWaveformPointGeneratorReader] File \"{Path.GetFileName(filePath)}\" has 0 sample frames (Length: {reader.Length}, BlockAlign: {reader.WaveFormat.BlockAlign}). Cannot generate waveform.");
             reader.Dispose();
             return null;
         }
+
         return reader;
     }
 
-    private bool CalculateProcessingParameters(long totalSampleFrames, int targetPoints, int channels,
-                                               out int samplesPerFrameToProcessPerPoint, out int bufferSizeInSamples,
-                                               out List<WaveformPoint> errorResult)
+    private static bool CalculateProcessingParameters(
+        long totalSampleFrames,
+        int targetPoints,
+        int channels,
+        out int samplesPerFrameToProcessPerPoint,
+        out int bufferSizeInSamples,
+        out List<WaveformPoint> errorResult)
     {
         errorResult = [];
         samplesPerFrameToProcessPerPoint = (int)Math.Max(1, totalSampleFrames / targetPoints);
@@ -100,13 +111,14 @@ public class NAudioWaveformPointGenerator
             Debug.WriteLine($"[NAudioWaveformPointGeneratorReader] Calculated bufferSizeInSamples is 0. TotalSampleFrames: {totalSampleFrames}, TargetPoints: {targetPoints}, Channels: {channels}, SamplesPerFrameToProcessPerPoint: {samplesPerFrameToProcessPerPoint}. Cannot generate.");
             return false;
         }
+
         return true;
     }
 
-    private List<WaveformPoint> ProcessAudioStream(AudioFileReader reader, int targetPoints, int samplesPerFrameToProcessPerPoint, int bufferSizeInSamples, string filePath)
+    private static List<WaveformPoint> ProcessAudioStream(AudioFileReader reader, int targetPoints, int samplesPerFrameToProcessPerPoint, int bufferSizeInSamples, string filePath)
     {
-        var points = new List<WaveformPoint>();
-        var buffer = new float[bufferSizeInSamples];
+        List<WaveformPoint> points = [];
+        float[] buffer = [bufferSizeInSamples];
         double currentX = 0;
         double xIncrement = 1.0 / targetPoints;
         int pointsGeneratedCount = 0;
@@ -126,20 +138,25 @@ public class NAudioWaveformPointGenerator
 
             for (int n = 0; n < samplesReadFromAudioFile; n++)
             {
-                maxPeakInChunk = Math.Max(maxPeakInChunk, Math.Abs(buffer[n]));
+                maxPeakInChunk = float.Max(maxPeakInChunk, float.Abs(buffer[n]));
             }
 
             points.Add(new WaveformPoint(currentX, maxPeakInChunk));
             pointsGeneratedCount++;
 
-            if (i < 5 || (i > 0 && i % Math.Max(1, (targetPoints / 10)) == 0) || i == targetPoints - 1) // Ensure targetPoints/10 is at least 1
+            if (i < 5 || (i > 0 && i % int.Max(1, (targetPoints / 10)) == 0) || i == targetPoints - 1)
             {
                 Debug.WriteLine($"[NAudioWaveformPointGeneratorReader] Point {i}: X={currentX:F3}, Calculated YPeak={maxPeakInChunk:F4}, SamplesInThisChunk={samplesReadFromAudioFile}");
             }
 
             currentX += xIncrement;
-            if (currentX > 1.0) currentX = 1.0;
+
+            if (currentX > 1.0)
+            {
+                currentX = 1.0;
+            }
         }
+
         Debug.WriteLine($"[NAudioWaveformPointGeneratorReader] Loop finished for \"{Path.GetFileName(filePath)}\". Total waveform points generated: {pointsGeneratedCount}. (Target was {targetPoints})");
         return points;
     }
