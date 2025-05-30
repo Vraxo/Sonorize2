@@ -18,8 +18,8 @@ public class SettingsPersistenceManager
     public bool ApplyAndSaveChanges(
         AppSettings settingsOnDisk,
         IEnumerable<string> currentUiMusicDirs,
-        IEnumerable<string> initialUiMusicDirs, // Used to detect if UI list changed from its initial state
-        string? currentUiSelectedTheme,
+        IEnumerable<string> initialUiMusicDirs,
+        string? currentUiSelectedThemeFile, // Changed parameter name for clarity
         LastfmSettingsViewModel currentUiLastfmSettings)
     {
         AppSettings newSettingsToSave = new();
@@ -34,7 +34,6 @@ public class SettingsPersistenceManager
         bool actualChangesMade = false;
 
         // Music Directories
-        // A change is made if the current UI list is different from its initial state OR different from disk state
         if (!initialUiMusicDirs.SequenceEqual(currentUiMusicDirs) ||
             !settingsOnDisk.MusicDirectories.SequenceEqual(currentUiMusicDirs))
         {
@@ -48,11 +47,11 @@ public class SettingsPersistenceManager
         }
 
         // Theme
-        if (settingsOnDisk.PreferredThemeFileName != currentUiSelectedTheme)
+        if (settingsOnDisk.PreferredThemeFileName != currentUiSelectedThemeFile)
         {
-            newSettingsToSave.PreferredThemeFileName = currentUiSelectedTheme;
+            newSettingsToSave.PreferredThemeFileName = currentUiSelectedThemeFile;
             actualChangesMade = true;
-            Debug.WriteLine($"[SettingsPersistence] Theme changed to: {currentUiSelectedTheme}");
+            Debug.WriteLine($"[SettingsPersistence] Theme changed to: {currentUiSelectedThemeFile}");
         }
         else
         {
@@ -62,11 +61,7 @@ public class SettingsPersistenceManager
         // Last.fm Settings - Compare UI state against disk state for change detection
         if (settingsOnDisk.LastfmScrobblingEnabled != currentUiLastfmSettings.LastfmScrobblingEnabled) actualChangesMade = true;
         if (settingsOnDisk.LastfmUsername != currentUiLastfmSettings.LastfmUsername) actualChangesMade = true;
-        // Password comparison: change if UI has a new password (and it's different from disk, though disk doesn't store it long-term)
-        // Or, more simply, if the password field in UI was touched and is not null.
-        // The original logic was: settingsOnDisk.LastfmPassword != LastfmSettings.LastfmPassword && !string.IsNullOrEmpty(LastfmSettings.LastfmPassword)
-        // This implies if LastfmSettings.LastfmPassword is set, it's a change (as disk password is nulled after session key).
-        if (!string.IsNullOrEmpty(currentUiLastfmSettings.LastfmPassword)) actualChangesMade = true; // If a password was entered, consider it a change for re-auth.
+        if (!string.IsNullOrEmpty(currentUiLastfmSettings.LastfmPassword)) actualChangesMade = true;
         if (settingsOnDisk.ScrobbleThresholdPercentage != currentUiLastfmSettings.ScrobbleThresholdPercentage) actualChangesMade = true;
         if (settingsOnDisk.ScrobbleThresholdAbsoluteSeconds != currentUiLastfmSettings.ScrobbleThresholdAbsoluteSeconds) actualChangesMade = true;
 

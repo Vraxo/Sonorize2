@@ -28,8 +28,9 @@ public static class ThemeSettingsPanel
             Foreground = theme.B_TextColor,
             BorderBrush = theme.B_SecondaryTextColor
         };
-        themeComboBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("AvailableThemes"));
-        themeComboBox.Bind(ComboBox.SelectedItemProperty, new Binding("SelectedThemeFile", BindingMode.TwoWay));
+        // Updated binding paths
+        themeComboBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("ThemeSettings.AvailableThemes"));
+        themeComboBox.Bind(ComboBox.SelectedItemProperty, new Binding("ThemeSettings.SelectedThemeFile", BindingMode.TwoWay));
         panel.Children.Add(themeComboBox);
 
         panel.Children.Add(new TextBlock
