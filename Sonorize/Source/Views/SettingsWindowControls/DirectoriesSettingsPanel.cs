@@ -26,12 +26,14 @@ public static class DirectoriesSettingsPanel
         var dirManagementButtons = new StackPanel { Orientation = Orientation.Vertical, Spacing = 5, Margin = new Thickness(0, 0, 10, 0) };
         DockPanel.SetDock(dirManagementButtons, Dock.Right);
         var addButton = new Button { Content = "Add", Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor, HorizontalAlignment = HorizontalAlignment.Stretch };
-        addButton.Bind(Button.CommandProperty, new Binding("AddDirectoryCommand"));
+        // Updated binding path
+        addButton.Bind(Button.CommandProperty, new Binding("MusicDirectoriesSettings.AddDirectoryCommand"));
         addButton.CommandParameter = ownerWindow; // Pass the owner window for the dialog
 
         var removeButton = new Button { Content = "Remove", Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor, HorizontalAlignment = HorizontalAlignment.Stretch };
-        removeButton.Bind(Button.CommandProperty, new Binding("RemoveDirectoryCommand"));
-        removeButton.Bind(Button.IsEnabledProperty, new Binding("CanRemoveDirectory"));
+        // Updated binding paths
+        removeButton.Bind(Button.CommandProperty, new Binding("MusicDirectoriesSettings.RemoveDirectoryCommand"));
+        removeButton.Bind(Button.IsEnabledProperty, new Binding("MusicDirectoriesSettings.CanRemoveDirectory"));
         dirManagementButtons.Children.Add(addButton);
         dirManagementButtons.Children.Add(removeButton);
 
@@ -44,8 +46,9 @@ public static class DirectoriesSettingsPanel
             Height = 150,
             MaxHeight = 200
         };
-        directoryListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("MusicDirectories"));
-        directoryListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedDirectory", BindingMode.TwoWay));
+        // Updated binding paths
+        directoryListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("MusicDirectoriesSettings.MusicDirectories"));
+        directoryListBox.Bind(ListBox.SelectedItemProperty, new Binding("MusicDirectoriesSettings.SelectedDirectory", BindingMode.TwoWay));
         directoriesManagementPanel.Children.Add(dirManagementButtons);
         directoriesManagementPanel.Children.Add(directoryListBox);
 

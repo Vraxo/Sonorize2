@@ -5,7 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Controls;
-using Avalonia.Platform.Storage;
+// Removed: using Avalonia.Platform.Storage; // No longer directly used here
 using Sonorize.Models; // Required for AppSettings type
 using Sonorize.Services;
 
@@ -24,15 +24,8 @@ public class SettingsViewModel : ViewModelBase
     private readonly ThemeService _themeService;
     private readonly SettingsPersistenceManager _settingsPersistenceManager;
 
-    public ObservableCollection<string> MusicDirectories { get; } = new();
-    public List<string> InitialMusicDirectories { get; private set; }
-
-    public string? SelectedDirectory
-    {
-        get;
-
-        set => SetProperty(ref field, value, nameof(CanRemoveDirectory));
-    }
+    // Music Directories are now managed by a child ViewModel
+    public MusicDirectoriesSettingsViewModel MusicDirectoriesSettings { get; }
 
     public ObservableCollection<string> AvailableThemes { get; } = new();
 
@@ -63,15 +56,15 @@ public class SettingsViewModel : ViewModelBase
         set => SetProperty(ref _currentSettingsViewSection, value);
     }
 
-    public ICommand AddDirectoryCommand { get; }
-    public ICommand RemoveDirectoryCommand { get; }
+    // Commands related to music directories are now in MusicDirectoriesSettingsViewModel
+    // public ICommand AddDirectoryCommand { get; } // Moved
+    // public ICommand RemoveDirectoryCommand { get; } // Moved
     public ICommand SaveAndCloseCommand { get; }
     public ICommand ShowDirectoriesSettingsCommand { get; }
     public ICommand ShowThemeSettingsCommand { get; }
     public ICommand ShowScrobblingSettingsCommand { get; }
 
-
-    public bool CanRemoveDirectory => SelectedDirectory != null;
+    // public bool CanRemoveDirectory => SelectedDirectory != null; // Moved
 
     public SettingsViewModel(SettingsService settingsService)
     {
@@ -80,12 +73,9 @@ public class SettingsViewModel : ViewModelBase
         _settingsPersistenceManager = new SettingsPersistenceManager(settingsService);
 
         var settings = _settingsService.LoadSettings();
-        InitialMusicDirectories = new List<string>(settings.MusicDirectories);
 
-        foreach (var dir in settings.MusicDirectories)
-        {
-            MusicDirectories.Add(dir);
-        }
+        // Initialize the new child ViewModel for music directories
+        MusicDirectoriesSettings = new MusicDirectoriesSettingsViewModel(settings.MusicDirectories, MarkSettingsChanged);
 
         foreach (var themeFile in _themeService.GetAvailableThemeFiles())
         {
@@ -106,24 +96,15 @@ public class SettingsViewModel : ViewModelBase
 
         SettingsChanged = false; // Initial state is unchanged
 
-        AddDirectoryCommand = new RelayCommand(async owner => await AddDirectory(owner as Window));
-        RemoveDirectoryCommand = new RelayCommand(RemoveSelectedDirectory, _ => CanRemoveDirectory);
+        // AddDirectoryCommand and RemoveDirectoryCommand are now part of MusicDirectoriesSettings
         SaveAndCloseCommand = new RelayCommand(SaveSettings);
 
         ShowDirectoriesSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Directories);
         ShowThemeSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Theme);
         ShowScrobblingSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Scrobbling);
 
-
-        PropertyChanged += (s, e) =>
-        {
-            if (e.PropertyName == nameof(SelectedDirectory))
-            {
-                (RemoveDirectoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            }
-            // Changes to SelectedThemeFile already call MarkSettingsChanged in their setter
-        };
-        MusicDirectories.CollectionChanged += (s, e) => MarkSettingsChanged();
+        // PropertyChanged handler for SelectedDirectory is now within MusicDirectoriesSettingsViewModel
+        // MusicDirectories.CollectionChanged is now handled by MusicDirectoriesSettingsViewModel
     }
 
     private void MarkSettingsChanged()
@@ -131,77 +112,37 @@ public class SettingsViewModel : ViewModelBase
         if (!SettingsChanged)
         {
             SettingsChanged = true;
-            Debug.WriteLine("[SettingsVM] Settings marked as changed (UI interaction).");
+            Debug.WriteLine("[SettingsVM] Settings marked as changed (UI interaction or child VM).");
         }
     }
 
-
-    private async Task AddDirectory(Window? owner)
-    {
-        if (owner?.StorageProvider == null)
-        {
-            Debug.WriteLine("StorageProvider is not available.");
-            return;
-        }
-
-        var options = new FolderPickerOpenOptions
-        {
-            Title = "Select Music Directory",
-            AllowMultiple = false
-        };
-
-        var result = await owner.StorageProvider.OpenFolderPickerAsync(options);
-
-        if (result != null && result.Count > 0)
-        {
-            var folder = result.FirstOrDefault();
-            if (folder == null) return;
-
-            var path = folder.Path.LocalPath;
-            if (string.IsNullOrEmpty(path) || MusicDirectories.Contains(path)) return;
-
-            MusicDirectories.Add(path);
-            // MarkSettingsChanged() is called by CollectionChanged handler
-        }
-    }
-
-    private void RemoveSelectedDirectory(object? parameter)
-    {
-        if (SelectedDirectory == null) return;
-
-        MusicDirectories.Remove(SelectedDirectory);
-        SelectedDirectory = null;
-        // MarkSettingsChanged() is called by CollectionChanged handler
-    }
+    // AddDirectory method moved to MusicDirectoriesSettingsViewModel
+    // RemoveSelectedDirectory method moved to MusicDirectoriesSettingsViewModel
 
     private void SaveSettings(object? parameter)
     {
         AppSettings settingsOnDisk = _settingsService.LoadSettings();
 
+        // Pass data from the child MusicDirectoriesSettingsViewModel
         bool changesPersisted = _settingsPersistenceManager.ApplyAndSaveChanges(
             settingsOnDisk,
-            this.MusicDirectories,
-            this.InitialMusicDirectories,
+            MusicDirectoriesSettings.MusicDirectories, // From child VM
+            MusicDirectoriesSettings.InitialMusicDirectories, // From child VM
             this.SelectedThemeFile,
             this.LastfmSettings
         );
 
         if (changesPersisted)
         {
-            // Update the baseline for future comparisons if changes were actually saved
-            this.InitialMusicDirectories = new List<string>(this.MusicDirectories);
             // SettingsChanged flag is used by ApplicationInteractionService to determine if post-save processing is needed.
             // If ApplyAndSaveChanges persisted anything, then SettingsChanged should be true.
-            // If MarkSettingsChanged() was called due to UI interaction but no actual changes were persisted,
-            // then SettingsChanged should reflect that no *persistent* change happened.
-            this.SettingsChanged = true;
+            this.SettingsChanged = true; // Ensure this reflects that persistent changes were made
             Debug.WriteLine("[SettingsVM] Changes were persisted by SettingsPersistenceManager.");
         }
         else
         {
             // If no changes were persisted, ensure SettingsChanged reflects this,
             // even if UI interactions previously set it to true.
-            // This is important because SettingsChanged is checked *after* this method by the caller.
             this.SettingsChanged = false;
             Debug.WriteLine("[SettingsVM] No changes were persisted by SettingsPersistenceManager.");
         }
