@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.ObjectModel;
+using System.ComponentModel; // Required for PropertyChangedEventArgs
 using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -7,8 +8,6 @@ using Avalonia.Threading;
 using Sonorize.Models;
 using Sonorize.Services;
 using Sonorize.ViewModels.LibraryManagement;
-using System.ComponentModel; // Required for PropertyChangedEventArgs
-using System.Collections.Generic; // Required for IReadOnlyList
 
 namespace Sonorize.ViewModels;
 
@@ -20,6 +19,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     private readonly LibraryDisplayModeService _displayModeService;
     private readonly TrackNavigationManager _trackNavigationManager;
     private readonly LibraryComponentProvider _components;
+    private readonly LibraryLoadProcess _libraryLoadProcess; // New field
 
     // Proxied properties using _components
     public LibraryGroupingsViewModel Groupings => _components.Groupings;
@@ -90,6 +90,16 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         _components = new LibraryComponentProvider(musicLibraryService, settingsService);
         _trackNavigationManager = new TrackNavigationManager(_components.SongList.FilteredSongs);
 
+        // Instantiate the new LibraryLoadProcess
+        _libraryLoadProcess = new LibraryLoadProcess(
+            _components,
+            ApplyFilter, // Pass private method as delegate
+            UpdateStatusBarText, // Pass private method as delegate
+            isLoading => IsLoadingLibrary = isLoading, // Lambda to set property
+            status => LibraryStatusText = status,       // Lambda to set property
+            Dispatcher.UIThread                         // Pass dispatcher
+        );
+
         // Subscribe to events from components provided by _components
         _components.FilterState.FilterCriteriaChanged += (s, e) => ApplyFilter();
         _components.FilterState.RequestTabSwitchToLibrary += (s, e) => _parentViewModel.ActiveTabIndex = 0;
@@ -149,34 +159,8 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         {
             return;
         }
-
-        IsLoadingLibrary = true;
-        _components.FilterState.ClearSelectionsAndSearch();
-
-        await Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            _components.SongList.ClearAllSongs();
-            _components.Groupings.Artists.Clear();
-            _components.Groupings.Albums.Clear();
-            LibraryStatusText = "Preparing to load music...";
-        });
-
-        List<Song> loadedRawSongs = new List<Song>();
-        Action<Song> songAddedCallback = song => loadedRawSongs.Add(song);
-        Action<string> statusUpdateCallback = status => LibraryStatusText = status;
-
-        var allLoadedSongsFromOrchestrator = await _components.DataOrchestrator.LoadAndProcessLibraryDataAsync(statusUpdateCallback, songAddedCallback);
-        _components.SongList.SetAllSongs(allLoadedSongsFromOrchestrator);
-
-
-        await Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            _components.Groupings.PopulateCollections(_components.SongList.GetAllSongsReadOnly());
-            ApplyFilter();
-        });
-
-        IsLoadingLibrary = false;
-        UpdateStatusBarText();
+        // Delegate the loading process to the new class
+        await _libraryLoadProcess.ExecuteLoadAsync();
     }
 
     private void ApplyFilter()

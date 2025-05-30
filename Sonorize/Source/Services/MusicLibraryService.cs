@@ -1,18 +1,9 @@
 ﻿using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
-using System.IO;
-using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
-using Avalonia;
-using Avalonia.Media;
 using Avalonia.Media.Imaging;
-using Avalonia.Threading;
 using Sonorize.Models;
-using TagLib;
 
 namespace Sonorize.Services;
 

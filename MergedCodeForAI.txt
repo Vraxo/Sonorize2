@@ -1339,6 +1339,120 @@ public class LoopDataService
 }
 </file>
 
+<file path="Source\Services\MusicDirectoryScanner.cs">
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
+using Sonorize.Models;
+
+namespace Sonorize.Services;
+
+public class MusicDirectoryScanner
+{
+    private readonly SongFactory _songFactory;
+    private readonly ThumbnailService _thumbnailService;
+
+    public MusicDirectoryScanner(SongFactory songFactory, ThumbnailService thumbnailService)
+    {
+        _songFactory = songFactory ?? throw new ArgumentNullException(nameof(songFactory));
+        _thumbnailService = thumbnailService ?? throw new ArgumentNullException(nameof(thumbnailService));
+    }
+
+    public async Task ScanAsync(
+        IEnumerable<string> directories,
+        Action<Song> songAddedCallback,
+        Action<string> statusUpdateCallback,
+        Bitmap? defaultIcon,
+        Action<Song, Bitmap?> thumbnailReadyCallback)
+    {
+        Debug.WriteLine("[MusicDirScanner] ScanAsync started.");
+        var supportedExtensions = new[] { ".mp3", ".wav", ".flac", ".m4a", ".ogg" };
+        int totalFilesProcessed = 0;
+        int directoriesScanned = 0;
+
+        foreach (string dir in directories)
+        {
+            int filesProcessedInDir = await ProcessDirectoryAsync(
+                dir,
+                supportedExtensions,
+                songAddedCallback,
+                statusUpdateCallback,
+                defaultIcon,
+                thumbnailReadyCallback
+            );
+
+            totalFilesProcessed += filesProcessedInDir;
+            directoriesScanned++;
+
+            // Batch update for UI responsiveness, especially with many small directories
+            if (directoriesScanned % 5 == 0 || filesProcessedInDir > 0) // Update status if files were found or after every 5 dirs
+            {
+                await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Processed {totalFilesProcessed} songs from {directoriesScanned} directories..."));
+            }
+        }
+
+        await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Metadata scan complete. {totalFilesProcessed} songs found. Thumbnails loading in background..."));
+        Debug.WriteLine("[MusicDirScanner] ScanAsync finished.");
+    }
+
+    private async Task<int> ProcessDirectoryAsync(
+        string directoryPath,
+        string[] supportedExtensions,
+        Action<Song> songAddedCallback,
+        Action<string> statusUpdateCallback,
+        Bitmap? defaultIcon,
+        Action<Song, Bitmap?> thumbnailReadyCallback)
+    {
+        if (!Directory.Exists(directoryPath))
+        {
+            Debug.WriteLine($"[MusicDirScanner] Directory not found: {directoryPath}");
+            await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Directory not found: {directoryPath}"));
+            return 0;
+        }
+
+        await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Scanning: {Path.GetFileName(directoryPath)}..."));
+
+        List<string> filesInDir;
+        try
+        {
+            filesInDir = Directory.EnumerateFiles(directoryPath, "*.*", SearchOption.AllDirectories)
+                .Where(f => supportedExtensions.Any(ext => f.EndsWith(ext, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[MusicDirScanner] Error enumerating files in {directoryPath}: {ex.Message}");
+            await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Error scanning {Path.GetFileName(directoryPath)}"));
+            return 0;
+        }
+
+        int filesProcessedInThisDirectory = 0;
+        foreach (var file in filesInDir)
+        {
+            await ProcessMusicFileAsync(file, defaultIcon, songAddedCallback, thumbnailReadyCallback);
+            filesProcessedInThisDirectory++;
+        }
+        return filesProcessedInThisDirectory;
+    }
+
+    private async Task ProcessMusicFileAsync(
+        string filePath,
+        Bitmap? defaultIcon,
+        Action<Song> songAddedCallback,
+        Action<Song, Bitmap?> thumbnailReadyCallback)
+    {
+        Song song = _songFactory.CreateSongFromFile(filePath, defaultIcon);
+        await Dispatcher.UIThread.InvokeAsync(() => songAddedCallback(song));
+        _thumbnailService.QueueThumbnailRequest(song, thumbnailReadyCallback);
+    }
+}
+</file>
+
 <file path="Source\Services\MusicLibraryService.cs">
 using System;
 using System.Collections.Concurrent;
@@ -1362,91 +1476,48 @@ public class MusicLibraryService
 {
     private readonly LoopDataService _loopDataService;
     private readonly ThumbnailService _thumbnailService;
-    private readonly SongFactory _songFactory; // Added SongFactory dependency
-    private const int UI_UPDATE_BATCH_SIZE = 50;
+    private readonly SongFactory _songFactory;
+    private readonly MusicDirectoryScanner _directoryScanner; // Added MusicDirectoryScanner
 
     public event Action<Song>? SongThumbnailUpdated;
 
-
-    public MusicLibraryService(LoopDataService loopDataService, ThumbnailService thumbnailService, SongFactory songFactory) // Modified constructor
+    public MusicLibraryService(LoopDataService loopDataService, ThumbnailService thumbnailService, SongFactory songFactory)
     {
         _loopDataService = loopDataService ?? throw new ArgumentNullException(nameof(loopDataService));
         _thumbnailService = thumbnailService ?? throw new ArgumentNullException(nameof(thumbnailService));
-        _songFactory = songFactory ?? throw new ArgumentNullException(nameof(songFactory)); // Store dependency
+        _songFactory = songFactory ?? throw new ArgumentNullException(nameof(songFactory));
+        _directoryScanner = new MusicDirectoryScanner(_songFactory, _thumbnailService); // Initialize scanner
         Debug.WriteLine("[MusicLibService] Constructor called.");
     }
 
-    // Delegated to ThumbnailService
     public Bitmap? GetDefaultThumbnail() => _thumbnailService.GetDefaultThumbnail();
-
 
     public async Task LoadMusicFromDirectoriesAsync(
         IEnumerable<string> directories,
         Action<Song> songAddedCallback,
         Action<string> statusUpdateCallback)
     {
-        Debug.WriteLine("[MusicLibService] LoadMusicFromDirectoriesAsync");
-        var supportedExtensions = new[] { ".mp3", ".wav", ".flac", ".m4a", ".ogg" };
+        Debug.WriteLine("[MusicLibService] LoadMusicFromDirectoriesAsync called, delegating to MusicDirectoryScanner.");
         Bitmap? defaultIcon = GetDefaultThumbnail();
-        int filesProcessed = 0;
 
-        foreach (string dir in directories)
-        {
-            if (!Directory.Exists(dir))
-            {
-                Debug.WriteLine($"[LibScan] Directory not found: {dir}");
-                await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Directory not found: {dir}"));
-                continue;
-            }
-
-            await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Scanning: {Path.GetFileName(dir)}..."));
-
-            List<string> filesInDir;
-            try
-            {
-                filesInDir = Directory.EnumerateFiles(dir, "*.*", SearchOption.AllDirectories)
-                    .Where(f => supportedExtensions.Any(ext => f.EndsWith(ext, StringComparison.OrdinalIgnoreCase)))
-                    .ToList();
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[LibScan] Error enumerating files: {dir} - {ex.Message}");
-                await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Error scanning {Path.GetFileName(dir)}"));
-                continue;
-            }
-
-            foreach (var file in filesInDir)
-            {
-                // Use SongFactory to create and populate the song object
-                Song song = _songFactory.CreateSongFromFile(file, defaultIcon);
-
-                await Dispatcher.UIThread.InvokeAsync(() => songAddedCallback(song));
-
-                // Request thumbnail processing via ThumbnailService
-                _thumbnailService.QueueThumbnailRequest(song, HandleThumbnailReady);
-
-                filesProcessed++;
-                if (filesProcessed % (UI_UPDATE_BATCH_SIZE * 2) == 0) // Increased batch size for status updates
-                {
-                    await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Loaded {filesProcessed} songs..."));
-                }
-            }
-        }
-        // Final status update after metadata scan, thumbnail loading is now managed by ThumbnailService
-        await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Metadata scan complete. {filesProcessed} songs found. Thumbnails loading in background..."));
+        await _directoryScanner.ScanAsync(
+            directories,
+            songAddedCallback,
+            statusUpdateCallback,
+            defaultIcon,
+            HandleThumbnailReady // Pass the local callback method
+        );
+        Debug.WriteLine("[MusicLibService] LoadMusicFromDirectoriesAsync delegation completed.");
     }
 
-    // Callback for when ThumbnailService has processed a thumbnail
+    // Callback for when ThumbnailService has processed a thumbnail (called by MusicDirectoryScanner via ThumbnailService)
     private void HandleThumbnailReady(Song song, Bitmap? loadedThumbnail)
     {
         // This callback is invoked on the UI thread by ThumbnailService
         if (loadedThumbnail != null)
         {
-            song.Thumbnail = loadedThumbnail; // Update the song's thumbnail if a new one was loaded
+            song.Thumbnail = loadedThumbnail;
         }
-        // Even if loadedThumbnail is null (meaning no specific art found, or error),
-        // the song.Thumbnail already holds the default icon.
-        // We still invoke SongThumbnailUpdated to notify that processing for this song's thumbnail is complete.
         SongThumbnailUpdated?.Invoke(song);
     }
 }
