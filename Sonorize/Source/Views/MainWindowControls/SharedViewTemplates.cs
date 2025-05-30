@@ -30,9 +30,9 @@ public class SharedViewTemplates
     public FuncDataTemplate<AlbumViewModel> GridAlbumTemplate { get; private set; }
 
 
-    // Panel Templates (reusable)
-    public ITemplate<Panel?> StackPanelItemsPanelTemplate { get; private set; }
-    public ITemplate<Panel?> WrapPanelItemsPanelTemplate { get; private set; }
+    // Panel Templates (reusable) - Corrected to ITemplate<Panel>
+    public ITemplate<Panel> StackPanelItemsPanelTemplate { get; private set; }
+    public ITemplate<Panel> WrapPanelItemsPanelTemplate { get; private set; }
 
     public SharedViewTemplates(ThemeColors theme)
     {
@@ -198,7 +198,7 @@ public class SharedViewTemplates
 
     private void InitializePanelTemplates()
     {
-        StackPanelItemsPanelTemplate = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel { Orientation = Orientation.Vertical });
-        WrapPanelItemsPanelTemplate = new FuncTemplate<Panel?>(() => new WrapPanel { Orientation = Orientation.Horizontal, ItemWidth = 130, ItemHeight = 160 });
+        StackPanelItemsPanelTemplate = new FuncTemplate<Panel>(() => new VirtualizingStackPanel { Orientation = Orientation.Vertical });
+        WrapPanelItemsPanelTemplate = new FuncTemplate<Panel>(() => new WrapPanel { Orientation = Orientation.Horizontal, ItemWidth = 130, ItemHeight = 160 });
     }
 }

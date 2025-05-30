@@ -57,22 +57,40 @@ public class MainTabViewControls
         tabControl.Styles.Add(selectedTabItemStyle);
         tabControl.Styles.Add(pointerOverTabItemStyle);
 
+        var (songListScrollViewer, slb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            _theme, _sharedViewTemplates, "SongListBox", "Library.FilteredSongs", "Library.SelectedSong",
+            _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
+            lb => _songListBoxInstance = lb);
+        _songListBoxInstance = slb;
+
         var libraryTab = new TabItem
         {
             Header = "LIBRARY",
-            Content = CreateSongListScrollViewer()
+            Content = songListScrollViewer
         };
+
+        var (artistsListScrollViewer, alb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            _theme, _sharedViewTemplates, "ArtistsListBox", "Library.Groupings.Artists", "Library.FilterState.SelectedArtist",
+            _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
+            lb => _artistsListBoxInstance = lb);
+        _artistsListBoxInstance = alb;
 
         var artistsTab = new TabItem
         {
             Header = "ARTISTS",
-            Content = CreateArtistsListScrollViewer()
+            Content = artistsListScrollViewer
         };
+
+        var (albumsListScrollViewer, alblb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            _theme, _sharedViewTemplates, "AlbumsListBox", "Library.Groupings.Albums", "Library.FilterState.SelectedAlbum",
+            _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
+            lb => _albumsListBoxInstance = lb);
+        _albumsListBoxInstance = alblb;
 
         var albumsTab = new TabItem
         {
             Header = "ALBUMS",
-            Content = CreateAlbumsListScrollViewer()
+            Content = albumsListScrollViewer
         };
 
         tabControl.Items.Add(libraryTab);
@@ -83,95 +101,6 @@ public class MainTabViewControls
         artistsListBox = _artistsListBoxInstance!;
         albumsListBox = _albumsListBoxInstance!;
         return tabControl;
-    }
-
-    private ScrollViewer CreateSongListScrollViewer()
-    {
-        _songListBoxInstance = new ListBox
-        {
-            Background = _theme.B_ListBoxBackground,
-            BorderThickness = new Thickness(0),
-            Margin = new Thickness(10),
-            Name = "SongListBox"
-        };
-
-        ApplyListBoxItemStyles(_songListBoxInstance);
-
-        _songListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.FilteredSongs"));
-        _songListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.SelectedSong", BindingMode.TwoWay));
-
-        _songListBoxInstance.ItemTemplate = _sharedViewTemplates.SongTemplates.DetailedSongTemplate;
-        _songListBoxInstance.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
-
-        return new ScrollViewer { Content = _songListBoxInstance, Padding = new Thickness(0, 0, 0, 5), HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-    }
-
-    private ScrollViewer CreateArtistsListScrollViewer()
-    {
-        _artistsListBoxInstance = new ListBox
-        {
-            Background = _theme.B_ListBoxBackground,
-            BorderThickness = new Thickness(0),
-            Margin = new Thickness(10),
-            Name = "ArtistsListBox"
-        };
-        ApplyListBoxItemStyles(_artistsListBoxInstance);
-
-        _artistsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Groupings.Artists"));
-        _artistsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.FilterState.SelectedArtist", BindingMode.TwoWay));
-
-        _artistsListBoxInstance.ItemTemplate = _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate; // Updated path
-        _artistsListBoxInstance.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
-
-        return new ScrollViewer { Content = _artistsListBoxInstance, Padding = new Thickness(0, 0, 0, 5), HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-    }
-
-    private ScrollViewer CreateAlbumsListScrollViewer()
-    {
-        _albumsListBoxInstance = new ListBox
-        {
-            Background = _theme.B_ListBoxBackground,
-            BorderThickness = new Thickness(0),
-            Margin = new Thickness(10),
-            Name = "AlbumsListBox"
-        };
-        ApplyListBoxItemStyles(_albumsListBoxInstance);
-
-        _albumsListBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.Groupings.Albums"));
-        _albumsListBoxInstance.Bind(ListBox.SelectedItemProperty, new Binding("Library.FilterState.SelectedAlbum", BindingMode.TwoWay));
-
-        _albumsListBoxInstance.ItemTemplate = _sharedViewTemplates.DetailedAlbumTemplate;
-        _albumsListBoxInstance.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
-
-        return new ScrollViewer { Content = _albumsListBoxInstance, Padding = new Thickness(0, 0, 0, 5), HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-    }
-
-    private void ApplyListBoxItemStyles(ListBox listBox)
-    {
-        listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>())
-        {
-            Setters = {
-                new Setter(TemplatedControl.BackgroundProperty, _theme.B_ListBoxBackground),
-                new Setter(TextBlock.ForegroundProperty, _theme.B_TextColor),
-                new Setter(ListBoxItem.PaddingProperty, new Thickness(3))
-            }
-        });
-        listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":pointerover").Not(xx => xx.Class(":selected")))
-        { Setters = { new Setter(TemplatedControl.BackgroundProperty, _theme.B_ControlBackgroundColor) } });
-        listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected"))
-        {
-            Setters = {
-                new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
-                new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
-            }
-        });
-        listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected").Class(":pointerover"))
-        {
-            Setters = {
-                new Setter(TemplatedControl.BackgroundProperty, _theme.B_AccentColor),
-                new Setter(TextBlock.ForegroundProperty, _theme.B_AccentForeground)
-            }
-        });
     }
 
     public void UpdateListViewMode(SongDisplayMode mode, ListBox listBox, IDataTemplate detailedTemplate, IDataTemplate compactTemplate, IDataTemplate gridTemplate)
