@@ -84,11 +84,13 @@ public class SettingsViewModel : ViewModelBase
 
     private void MarkSettingsChanged()
     {
-        if (!SettingsChanged)
+        if (SettingsChanged)
         {
-            SettingsChanged = true;
-            Debug.WriteLine("[SettingsVM] Settings marked as changed (UI interaction or child VM).");
+            return;
         }
+
+        SettingsChanged = true;
+        Debug.WriteLine("[SettingsVM] Settings marked as changed (UI interaction or child VM).");
     }
 
     private void SaveSettings(object? parameter)

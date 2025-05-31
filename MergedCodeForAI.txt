@@ -2670,7 +2670,6 @@ internal static class WaveformProcessingLogic
 </file>
 
 <file path="Source\Services\WaveFormService.cs">
-using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -2688,7 +2687,7 @@ public class WaveformService
 
     public WaveformService()
     {
-        _pointGenerator = new NAudioWaveformPointGenerator();
+        _pointGenerator = new();
     }
 
     public async Task<List<WaveformPoint>> GetWaveformAsync(string filePath, int targetPoints)
@@ -4259,7 +4258,6 @@ public class WaveformDisplayViewModel : ViewModelBase
 </file>
 
 <file path="Source\Views\BrushExtensions.cs">
-// Path: Source/Views/MainView.cs
 using System;
 using Avalonia.Media;
 
@@ -4274,6 +4272,7 @@ public static class BrushExtensions
             var c = solidBrush.Color;
             return new SolidColorBrush(Color.FromArgb(c.A, (byte)Math.Clamp(c.R * factor, 0, 255), (byte)Math.Clamp(c.G * factor, 0, 255), (byte)Math.Clamp(c.B * factor, 0, 255)));
         }
+
         return brush;
     }
 }
@@ -8719,6 +8718,128 @@ public class MainWindowViewModelOrchestrator : IDisposable
 }
 </file>
 
+<file path="Source\ViewModels\Settings\MusicDirectoriesSettingsViewModel.cs">
+using Avalonia.Controls;
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows.Input;
+using Avalonia.Platform.Storage;
+
+namespace Sonorize.ViewModels;
+
+public class MusicDirectoriesSettingsViewModel : ViewModelBase
+{
+    private readonly Action _notifyParentSettingsChanged;
+
+    public ObservableCollection<string> MusicDirectories { get; }
+    public List<string> InitialMusicDirectories { get; }
+
+    public string? SelectedDirectory
+    {
+        get;
+        set
+        {
+            if (SetProperty(ref field, value))
+            {
+                (RemoveDirectoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public ICommand AddDirectoryCommand { get; }
+    public ICommand RemoveDirectoryCommand { get; }
+
+    public bool CanRemoveDirectory => SelectedDirectory != null;
+
+    // This property can be used by the parent to quickly check if this specific section has changes
+    // compared to its initial state when the settings dialog was opened.
+    public bool HasChangesFromInitialState => !InitialMusicDirectories.SequenceEqual(MusicDirectories);
+
+    public MusicDirectoriesSettingsViewModel(IEnumerable<string> initialDirs, Action notifyParentSettingsChanged)
+    {
+        _notifyParentSettingsChanged = notifyParentSettingsChanged ?? throw new ArgumentNullException(nameof(notifyParentSettingsChanged));
+        InitialMusicDirectories = new List<string>(initialDirs);
+        MusicDirectories = new ObservableCollection<string>(initialDirs);
+
+        AddDirectoryCommand = new RelayCommand(async owner => await AddDirectoryAsync(owner as Window));
+        RemoveDirectoryCommand = new RelayCommand(RemoveSelectedDirectoryAction, _ => CanRemoveDirectory);
+
+        MusicDirectories.CollectionChanged += (s, e) => {
+            _notifyParentSettingsChanged(); // Notify parent that some UI interaction happened
+            OnPropertyChanged(nameof(HasChangesFromInitialState)); // Notify that this section's state might have changed
+        };
+    }
+
+    private async Task AddDirectoryAsync(Window? owner)
+    {
+        if (owner?.StorageProvider == null)
+        {
+            Debug.WriteLine("[MusicDirSettingsVM] StorageProvider is not available for AddDirectory.");
+            return;
+        }
+
+        var options = new FolderPickerOpenOptions
+        {
+            Title = "Select Music Directory",
+            AllowMultiple = false
+        };
+
+        var result = await owner.StorageProvider.OpenFolderPickerAsync(options);
+
+        if (result?.Count > 0)
+        {
+            var folder = result.FirstOrDefault();
+            if (folder == null) return;
+
+            string? path = null;
+            try
+            {
+                // Attempt to get a usable local path
+                if (folder.Path.IsAbsoluteUri) path = folder.Path.LocalPath;
+                else path = folder.Name; // Fallback or handle relative paths if necessary
+
+                if (!string.IsNullOrEmpty(path))
+                {
+                    path = Path.GetFullPath(path); // Normalize
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[MusicDirSettingsVM] Error processing path {folder.Path}: {ex.Message}");
+                // Optionally inform user about path issue
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(path) && Directory.Exists(path) && !MusicDirectories.Contains(path))
+            {
+                MusicDirectories.Add(path); // Triggers CollectionChanged
+            }
+            else if (!string.IsNullOrEmpty(path) && !Directory.Exists(path))
+            {
+                Debug.WriteLine($"[MusicDirSettingsVM] Selected path does not exist or is not a directory: {path}");
+                // Optionally inform user
+            }
+        }
+    }
+
+    private void RemoveSelectedDirectoryAction(object? parameter)
+    {
+        if (SelectedDirectory is null)
+        {
+            return;
+        }
+
+        MusicDirectories.Remove(SelectedDirectory); // Triggers CollectionChanged
+        SelectedDirectory = null; // Triggers PropertyChanged for UI
+    }
+}
+</file>
+
 <file path="Source\ViewModels\Settings\SettingsPersistenceManager.cs">
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -8740,8 +8861,8 @@ public class SettingsPersistenceManager
     public bool ApplyAndSaveChanges(
         AppSettings settingsOnDisk,
         IEnumerable<string> currentUiMusicDirs,
-        IEnumerable<string> initialUiMusicDirs, // Used to detect if UI list changed from its initial state
-        string? currentUiSelectedTheme,
+        IEnumerable<string> initialUiMusicDirs,
+        string? currentUiSelectedThemeFile, // Changed parameter name for clarity
         LastfmSettingsViewModel currentUiLastfmSettings)
     {
         AppSettings newSettingsToSave = new();
@@ -8756,7 +8877,6 @@ public class SettingsPersistenceManager
         bool actualChangesMade = false;
 
         // Music Directories
-        // A change is made if the current UI list is different from its initial state OR different from disk state
         if (!initialUiMusicDirs.SequenceEqual(currentUiMusicDirs) ||
             !settingsOnDisk.MusicDirectories.SequenceEqual(currentUiMusicDirs))
         {
@@ -8770,11 +8890,11 @@ public class SettingsPersistenceManager
         }
 
         // Theme
-        if (settingsOnDisk.PreferredThemeFileName != currentUiSelectedTheme)
+        if (settingsOnDisk.PreferredThemeFileName != currentUiSelectedThemeFile)
         {
-            newSettingsToSave.PreferredThemeFileName = currentUiSelectedTheme;
+            newSettingsToSave.PreferredThemeFileName = currentUiSelectedThemeFile;
             actualChangesMade = true;
-            Debug.WriteLine($"[SettingsPersistence] Theme changed to: {currentUiSelectedTheme}");
+            Debug.WriteLine($"[SettingsPersistence] Theme changed to: {currentUiSelectedThemeFile}");
         }
         else
         {
@@ -8784,11 +8904,7 @@ public class SettingsPersistenceManager
         // Last.fm Settings - Compare UI state against disk state for change detection
         if (settingsOnDisk.LastfmScrobblingEnabled != currentUiLastfmSettings.LastfmScrobblingEnabled) actualChangesMade = true;
         if (settingsOnDisk.LastfmUsername != currentUiLastfmSettings.LastfmUsername) actualChangesMade = true;
-        // Password comparison: change if UI has a new password (and it's different from disk, though disk doesn't store it long-term)
-        // Or, more simply, if the password field in UI was touched and is not null.
-        // The original logic was: settingsOnDisk.LastfmPassword != LastfmSettings.LastfmPassword && !string.IsNullOrEmpty(LastfmSettings.LastfmPassword)
-        // This implies if LastfmSettings.LastfmPassword is set, it's a change (as disk password is nulled after session key).
-        if (!string.IsNullOrEmpty(currentUiLastfmSettings.LastfmPassword)) actualChangesMade = true; // If a password was entered, consider it a change for re-auth.
+        if (!string.IsNullOrEmpty(currentUiLastfmSettings.LastfmPassword)) actualChangesMade = true;
         if (settingsOnDisk.ScrobbleThresholdPercentage != currentUiLastfmSettings.ScrobbleThresholdPercentage) actualChangesMade = true;
         if (settingsOnDisk.ScrobbleThresholdAbsoluteSeconds != currentUiLastfmSettings.ScrobbleThresholdAbsoluteSeconds) actualChangesMade = true;
 
@@ -8827,7 +8943,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Controls;
-using Avalonia.Platform.Storage;
+// Removed: using Avalonia.Platform.Storage; // No longer directly used here
 using Sonorize.Models; // Required for AppSettings type
 using Sonorize.Services;
 
@@ -8843,34 +8959,16 @@ public enum SettingsViewSection
 public class SettingsViewModel : ViewModelBase
 {
     private readonly SettingsService _settingsService;
-    private readonly ThemeService _themeService;
+    // private readonly ThemeService _themeService; // ThemeService is now injected into ThemeSettingsViewModel
     private readonly SettingsPersistenceManager _settingsPersistenceManager;
 
-    public ObservableCollection<string> MusicDirectories { get; } = new();
-    public List<string> InitialMusicDirectories { get; private set; }
+    // Music Directories are now managed by a child ViewModel
+    public MusicDirectoriesSettingsViewModel MusicDirectoriesSettings { get; }
+    // Theme settings are now managed by a child ViewModel
+    public ThemeSettingsViewModel ThemeSettings { get; }
 
-    public string? SelectedDirectory
-    {
-        get;
-
-        set => SetProperty(ref field, value, nameof(CanRemoveDirectory));
-    }
-
-    public ObservableCollection<string> AvailableThemes { get; } = new();
-
-    public string? SelectedThemeFile
-    {
-        get;
-
-        set
-        {
-            if (!SetProperty(ref field, value))
-            {
-                return;
-            }
-            MarkSettingsChanged();
-        }
-    }
+    // public ObservableCollection<string> AvailableThemes { get; } = new(); // Moved
+    // public string? SelectedThemeFile { get; set; } // Moved
 
     // Encapsulated Last.fm Settings
     public LastfmSettingsViewModel LastfmSettings { get; }
@@ -8885,40 +8983,27 @@ public class SettingsViewModel : ViewModelBase
         set => SetProperty(ref _currentSettingsViewSection, value);
     }
 
-    public ICommand AddDirectoryCommand { get; }
-    public ICommand RemoveDirectoryCommand { get; }
     public ICommand SaveAndCloseCommand { get; }
     public ICommand ShowDirectoriesSettingsCommand { get; }
     public ICommand ShowThemeSettingsCommand { get; }
     public ICommand ShowScrobblingSettingsCommand { get; }
 
 
-    public bool CanRemoveDirectory => SelectedDirectory != null;
-
     public SettingsViewModel(SettingsService settingsService)
     {
         _settingsService = settingsService;
-        _themeService = new ThemeService(null); // ThemeService used for GetAvailableThemeFiles
         _settingsPersistenceManager = new SettingsPersistenceManager(settingsService);
 
         var settings = _settingsService.LoadSettings();
-        InitialMusicDirectories = new List<string>(settings.MusicDirectories);
 
-        foreach (var dir in settings.MusicDirectories)
-        {
-            MusicDirectories.Add(dir);
-        }
+        // Initialize the child ViewModel for music directories
+        MusicDirectoriesSettings = new MusicDirectoriesSettingsViewModel(settings.MusicDirectories, MarkSettingsChanged);
 
-        foreach (var themeFile in _themeService.GetAvailableThemeFiles())
-        {
-            AvailableThemes.Add(themeFile);
-        }
+        // Initialize the child ViewModel for theme settings
+        // ThemeService instance is created here for ThemeSettingsViewModel as it's specific to this part
+        var themeServiceForChild = new ThemeService(settings.PreferredThemeFileName); // Pass current pref to ensure it loads correctly
+        ThemeSettings = new ThemeSettingsViewModel(settings.PreferredThemeFileName, themeServiceForChild, MarkSettingsChanged);
 
-        SelectedThemeFile = settings.PreferredThemeFileName ?? ThemeService.DefaultThemeFileName;
-        if (!AvailableThemes.Contains(SelectedThemeFile) && AvailableThemes.Any())
-        {
-            SelectedThemeFile = AvailableThemes.First();
-        }
 
         // Initialize Last.fm settings module
         LastfmSettings = new LastfmSettingsViewModel();
@@ -8928,104 +9013,101 @@ public class SettingsViewModel : ViewModelBase
 
         SettingsChanged = false; // Initial state is unchanged
 
-        AddDirectoryCommand = new RelayCommand(async owner => await AddDirectory(owner as Window));
-        RemoveDirectoryCommand = new RelayCommand(RemoveSelectedDirectory, _ => CanRemoveDirectory);
         SaveAndCloseCommand = new RelayCommand(SaveSettings);
 
         ShowDirectoriesSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Directories);
         ShowThemeSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Theme);
         ShowScrobblingSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Scrobbling);
-
-
-        PropertyChanged += (s, e) =>
-        {
-            if (e.PropertyName == nameof(SelectedDirectory))
-            {
-                (RemoveDirectoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            }
-            // Changes to SelectedThemeFile already call MarkSettingsChanged in their setter
-        };
-        MusicDirectories.CollectionChanged += (s, e) => MarkSettingsChanged();
     }
 
     private void MarkSettingsChanged()
     {
-        if (!SettingsChanged)
+        if (SettingsChanged)
         {
-            SettingsChanged = true;
-            Debug.WriteLine("[SettingsVM] Settings marked as changed (UI interaction).");
-        }
-    }
-
-
-    private async Task AddDirectory(Window? owner)
-    {
-        if (owner?.StorageProvider == null)
-        {
-            Debug.WriteLine("StorageProvider is not available.");
             return;
         }
 
-        var options = new FolderPickerOpenOptions
-        {
-            Title = "Select Music Directory",
-            AllowMultiple = false
-        };
-
-        var result = await owner.StorageProvider.OpenFolderPickerAsync(options);
-
-        if (result != null && result.Count > 0)
-        {
-            var folder = result.FirstOrDefault();
-            if (folder == null) return;
-
-            var path = folder.Path.LocalPath;
-            if (string.IsNullOrEmpty(path) || MusicDirectories.Contains(path)) return;
-
-            MusicDirectories.Add(path);
-            // MarkSettingsChanged() is called by CollectionChanged handler
-        }
-    }
-
-    private void RemoveSelectedDirectory(object? parameter)
-    {
-        if (SelectedDirectory == null) return;
-
-        MusicDirectories.Remove(SelectedDirectory);
-        SelectedDirectory = null;
-        // MarkSettingsChanged() is called by CollectionChanged handler
+        SettingsChanged = true;
+        Debug.WriteLine("[SettingsVM] Settings marked as changed (UI interaction or child VM).");
     }
 
     private void SaveSettings(object? parameter)
     {
         AppSettings settingsOnDisk = _settingsService.LoadSettings();
 
+        // Pass data from the child ViewModels
         bool changesPersisted = _settingsPersistenceManager.ApplyAndSaveChanges(
             settingsOnDisk,
-            this.MusicDirectories,
-            this.InitialMusicDirectories,
-            this.SelectedThemeFile,
+            MusicDirectoriesSettings.MusicDirectories,
+            MusicDirectoriesSettings.InitialMusicDirectories,
+            ThemeSettings.SelectedThemeFile, // From ThemeSettingsViewModel
             this.LastfmSettings
         );
 
         if (changesPersisted)
         {
-            // Update the baseline for future comparisons if changes were actually saved
-            this.InitialMusicDirectories = new List<string>(this.MusicDirectories);
-            // SettingsChanged flag is used by ApplicationInteractionService to determine if post-save processing is needed.
-            // If ApplyAndSaveChanges persisted anything, then SettingsChanged should be true.
-            // If MarkSettingsChanged() was called due to UI interaction but no actual changes were persisted,
-            // then SettingsChanged should reflect that no *persistent* change happened.
             this.SettingsChanged = true;
             Debug.WriteLine("[SettingsVM] Changes were persisted by SettingsPersistenceManager.");
         }
         else
         {
-            // If no changes were persisted, ensure SettingsChanged reflects this,
-            // even if UI interactions previously set it to true.
-            // This is important because SettingsChanged is checked *after* this method by the caller.
             this.SettingsChanged = false;
             Debug.WriteLine("[SettingsVM] No changes were persisted by SettingsPersistenceManager.");
+        }
+    }
+}
+</file>
+
+<file path="Source\ViewModels\Settings\ThemeSettingsViewModel.cs">
+using System;
+using System.Collections.ObjectModel;
+using System.Linq;
+using Sonorize.Services; // For ThemeService
+
+namespace Sonorize.ViewModels;
+
+public class ThemeSettingsViewModel : ViewModelBase
+{
+    private readonly ThemeService _themeService;
+    private readonly Action _notifyParentSettingsChanged;
+
+    public ObservableCollection<string> AvailableThemes { get; } = new();
+
+    public string? SelectedThemeFile
+    {
+        get;
+        set
+        {
+            if (!SetProperty(ref field, value))
+            {
+                return;
+            }
+
+            _notifyParentSettingsChanged();
+            OnPropertyChanged(nameof(HasChangesFromInitialState));
+        }
+    }
+
+    public string InitialSelectedThemeFile { get; }
+
+    public bool HasChangesFromInitialState => InitialSelectedThemeFile != SelectedThemeFile;
+
+    public ThemeSettingsViewModel(string? initialSelectedTheme, ThemeService themeService, Action notifyParentSettingsChanged)
+    {
+        _themeService = themeService ?? throw new ArgumentNullException(nameof(themeService));
+        _notifyParentSettingsChanged = notifyParentSettingsChanged ?? throw new ArgumentNullException(nameof(notifyParentSettingsChanged));
+
+        InitialSelectedThemeFile = initialSelectedTheme ?? ThemeService.DefaultThemeFileName;
+
+        foreach (var themeFile in _themeService.GetAvailableThemeFiles())
+        {
+            AvailableThemes.Add(themeFile);
+        }
+
+        SelectedThemeFile = InitialSelectedThemeFile;
+        if (!AvailableThemes.Contains(SelectedThemeFile) && AvailableThemes.Any())
+        {
+            SelectedThemeFile = AvailableThemes.First(); // Fallback if preferred theme not found
         }
     }
 }
@@ -10766,12 +10848,14 @@ public static class DirectoriesSettingsPanel
         var dirManagementButtons = new StackPanel { Orientation = Orientation.Vertical, Spacing = 5, Margin = new Thickness(0, 0, 10, 0) };
         DockPanel.SetDock(dirManagementButtons, Dock.Right);
         var addButton = new Button { Content = "Add", Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor, HorizontalAlignment = HorizontalAlignment.Stretch };
-        addButton.Bind(Button.CommandProperty, new Binding("AddDirectoryCommand"));
+        // Updated binding path
+        addButton.Bind(Button.CommandProperty, new Binding("MusicDirectoriesSettings.AddDirectoryCommand"));
         addButton.CommandParameter = ownerWindow; // Pass the owner window for the dialog
 
         var removeButton = new Button { Content = "Remove", Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor, HorizontalAlignment = HorizontalAlignment.Stretch };
-        removeButton.Bind(Button.CommandProperty, new Binding("RemoveDirectoryCommand"));
-        removeButton.Bind(Button.IsEnabledProperty, new Binding("CanRemoveDirectory"));
+        // Updated binding paths
+        removeButton.Bind(Button.CommandProperty, new Binding("MusicDirectoriesSettings.RemoveDirectoryCommand"));
+        removeButton.Bind(Button.IsEnabledProperty, new Binding("MusicDirectoriesSettings.CanRemoveDirectory"));
         dirManagementButtons.Children.Add(addButton);
         dirManagementButtons.Children.Add(removeButton);
 
@@ -10784,8 +10868,9 @@ public static class DirectoriesSettingsPanel
             Height = 150,
             MaxHeight = 200
         };
-        directoryListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("MusicDirectories"));
-        directoryListBox.Bind(ListBox.SelectedItemProperty, new Binding("SelectedDirectory", BindingMode.TwoWay));
+        // Updated binding paths
+        directoryListBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("MusicDirectoriesSettings.MusicDirectories"));
+        directoryListBox.Bind(ListBox.SelectedItemProperty, new Binding("MusicDirectoriesSettings.SelectedDirectory", BindingMode.TwoWay));
         directoriesManagementPanel.Children.Add(dirManagementButtons);
         directoriesManagementPanel.Children.Add(directoryListBox);
 
@@ -11017,8 +11102,9 @@ public static class ThemeSettingsPanel
             Foreground = theme.B_TextColor,
             BorderBrush = theme.B_SecondaryTextColor
         };
-        themeComboBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("AvailableThemes"));
-        themeComboBox.Bind(ComboBox.SelectedItemProperty, new Binding("SelectedThemeFile", BindingMode.TwoWay));
+        // Updated binding paths
+        themeComboBox.Bind(ItemsControl.ItemsSourceProperty, new Binding("ThemeSettings.AvailableThemes"));
+        themeComboBox.Bind(ComboBox.SelectedItemProperty, new Binding("ThemeSettings.SelectedThemeFile", BindingMode.TwoWay));
         panel.Children.Add(themeComboBox);
 
         panel.Children.Add(new TextBlock

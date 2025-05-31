@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -16,7 +15,7 @@ public class WaveformService
 
     public WaveformService()
     {
-        _pointGenerator = new NAudioWaveformPointGenerator();
+        _pointGenerator = new();
     }
 
     public async Task<List<WaveformPoint>> GetWaveformAsync(string filePath, int targetPoints)

@@ -1,6 +1,5 @@
 ﻿using System;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Windows.Input;
 using Avalonia.Threading;
 using Sonorize.Models;
@@ -14,12 +13,11 @@ public class ActiveLoopViewModel : ViewModelBase, IDisposable
     private readonly SongLoopService _songLoopService;
     private Song? _currentSongInternal;
 
-    private string _activeLoopDisplayText = "No loop defined.";
     public string ActiveLoopDisplayText
     {
-        get => _activeLoopDisplayText;
-        private set => SetProperty(ref _activeLoopDisplayText, value);
-    }
+        get;
+        private set => SetProperty(ref field, value);
+    } = "No loop defined.";
 
     private bool _isLoopActive;
     public bool IsLoopActive
@@ -116,10 +114,12 @@ public class ActiveLoopViewModel : ViewModelBase, IDisposable
 
     private void ExecuteToggleLoopActive(object? parameter)
     {
-        if (_currentSongInternal?.SavedLoop != null)
+        if ((_currentSongInternal?.SavedLoop) == null)
         {
-            IsLoopActive = !IsLoopActive; // Setter will call SongLoopService
+            return;
         }
+
+        IsLoopActive = !IsLoopActive; // Setter will call SongLoopService
     }
 
     private bool CanExecuteToggleLoopActive(object? parameter)
