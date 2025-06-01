@@ -31,11 +31,13 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
         get => _sessionState.PlaybackRate;
         set
         {
-            if (_sessionState.PlaybackRate != value)
+            if (_sessionState.PlaybackRate == value)
             {
-                _sessionState.PlaybackRate = value;
-                _playbackEngineCoordinator.UpdateRateAndPitch(value, PitchSemitones);
+                return;
             }
+
+            _sessionState.PlaybackRate = value;
+            _playbackEngineCoordinator.UpdateRateAndPitch(value, PitchSemitones);
         }
     }
 
@@ -44,11 +46,13 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
         get => _sessionState.PitchSemitones;
         set
         {
-            if (_sessionState.PitchSemitones != value)
+            if (_sessionState.PitchSemitones == value)
             {
-                _sessionState.PitchSemitones = value;
-                _playbackEngineCoordinator.UpdateRateAndPitch(PlaybackRate, value);
+                return;
             }
+
+            _sessionState.PitchSemitones = value;
+            _playbackEngineCoordinator.UpdateRateAndPitch(PlaybackRate, value);
         }
     }
 
@@ -243,7 +247,11 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
     }
 
     // Methods called by PlaybackCompletionHandler
-    internal void StopUiUpdateMonitor() => _infrastructureProvider.Monitor.Stop(); // Stop via infrastructure provider
+    internal void StopUiUpdateMonitor()
+    {
+        _infrastructureProvider.Monitor.Stop(); // Stop via infrastructure provider
+    }
+
     internal void UpdateStateForNaturalPlaybackEnd()
     {
         SetPlaybackState(false, PlaybackStateStatus.Stopped);
