@@ -18,7 +18,7 @@ public class ApplicationWorkflowManager : IDisposable
     private readonly PlaybackService _playbackService;
 
     private readonly NextTrackSelectorService _nextTrackSelectorService;
-    private readonly StatusBarTextProvider _statusBarTextProvider;
+    // Removed: private readonly StatusBarTextProvider _statusBarTextProvider;
     private readonly SettingsChangeProcessorService _settingsChangeProcessorService;
     private readonly PlaybackFlowManagerService _playbackFlowManagerService;
     private readonly ApplicationInteractionService _applicationInteractionService;
@@ -47,7 +47,7 @@ public class ApplicationWorkflowManager : IDisposable
 
         // Create internal services
         _nextTrackSelectorService = new NextTrackSelectorService(_shuffleRandom);
-        _statusBarTextProvider = new StatusBarTextProvider(_playbackViewModel, null!, _libraryViewModel); // Placeholder
+        // Removed: _statusBarTextProvider = new StatusBarTextProvider(_playbackViewModel, null!, _libraryViewModel); // Placeholder
 
         _settingsChangeProcessorService = new SettingsChangeProcessorService(_libraryViewModel, _scrobblingService);
         _playbackFlowManagerService = new PlaybackFlowManagerService(_libraryViewModel, _playbackViewModel, _playbackService, _nextTrackSelectorService);
@@ -77,8 +77,7 @@ public class ApplicationWorkflowManager : IDisposable
 
     public string GetCurrentStatusText(LoopEditorViewModel loopEditorViewModel)
     {
-        var localStatusBarTextProvider = new StatusBarTextProvider(_playbackViewModel, loopEditorViewModel, _libraryViewModel);
-        return localStatusBarTextProvider.GetCurrentStatusText();
+        return StatusBarTextProvider.GetCurrentStatusText(_playbackViewModel, loopEditorViewModel, _libraryViewModel);
     }
 
     public void Dispose()

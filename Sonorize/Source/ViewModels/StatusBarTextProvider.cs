@@ -1,66 +1,62 @@
-﻿using Sonorize.Services; // For PlaybackStateStatus
+﻿using Sonorize.Models;
+using Sonorize.Services;
 
 namespace Sonorize.ViewModels.Status;
 
-public class StatusBarTextProvider
+public static class StatusBarTextProvider
 {
-    private readonly PlaybackViewModel _playbackViewModel;
-    private readonly LoopEditorViewModel _loopEditorViewModel;
-    private readonly LibraryViewModel _libraryViewModel;
-
-    public StatusBarTextProvider(
-        PlaybackViewModel playbackViewModel,
-        LoopEditorViewModel loopEditorViewModel,
-        LibraryViewModel libraryViewModel)
+    public static string GetCurrentStatusText(PlaybackViewModel playbackViewModel, LoopEditorViewModel loopEditorViewModel, LibraryViewModel libraryViewModel)
     {
-        _playbackViewModel = playbackViewModel;
-        _loopEditorViewModel = loopEditorViewModel;
-        _libraryViewModel = libraryViewModel;
+        if (!playbackViewModel.HasCurrentSong)
+        {
+            return libraryViewModel.LibraryStatusText;
+        }
+
+        string playbackStateStr = GetPlaybackStateString(playbackViewModel.CurrentPlaybackStatus);
+        string baseStatus = $"{playbackStateStr}: {playbackViewModel.CurrentSong?.Title ?? "Unknown Song"}";
+        string loopStatus = GetLoopStatusString(loopEditorViewModel, playbackViewModel.CurrentSong);
+        string modeStatus = GetPlaybackModeStatusString(playbackViewModel.ModeControls);
+
+        return $"{baseStatus}{loopStatus}{modeStatus}";
     }
 
-    public string GetCurrentStatusText()
+    private static string GetPlaybackStateString(PlaybackStateStatus status)
     {
-        string status;
-        if (_playbackViewModel.HasCurrentSong)
+        return status switch
         {
-            string stateStr = _playbackViewModel.CurrentPlaybackStatus switch
-            {
-                PlaybackStateStatus.Playing => "Playing",
-                PlaybackStateStatus.Paused => "Paused",
-                PlaybackStateStatus.Stopped => "Stopped",
-                _ => "Idle"
-            };
-            status = $"{stateStr}: {_playbackViewModel.CurrentSong?.Title ?? "Unknown Song"}";
+            PlaybackStateStatus.Playing => "Playing",
+            PlaybackStateStatus.Paused => "Paused",
+            PlaybackStateStatus.Stopped => "Stopped",
+            _ => "Idle"
+        };
+    }
 
-            // Playback.CurrentSong is the same instance as LoopEditor's internal current song reference
-            if (_loopEditorViewModel.ActiveLoop.IsLoopActive && _playbackViewModel.CurrentSong?.SavedLoop != null)
-            {
-                status += $" (Loop Active)";
-            }
-
-            string modeStatus = "";
-            if (_playbackViewModel.ModeControls.ShuffleEnabled) // Corrected access
-            {
-                modeStatus += " | Shuffle";
-            }
-            modeStatus += _playbackViewModel.ModeControls.RepeatMode switch // Corrected access
-            {
-                RepeatMode.None => " | Do Nothing",
-                RepeatMode.PlayOnce => " | Play Once",
-                RepeatMode.RepeatOne => " | Repeat Song",
-                RepeatMode.RepeatAll => " | Repeat All",
-                _ => ""
-            };
-
-            if (!string.IsNullOrEmpty(modeStatus))
-            {
-                status += modeStatus;
-            }
-        }
-        else
+    private static string GetLoopStatusString(LoopEditorViewModel loopEditorViewModel, Song? currentSong)
+    {
+        if (loopEditorViewModel.ActiveLoop.IsLoopActive && currentSong?.SavedLoop != null)
         {
-            status = _libraryViewModel.LibraryStatusText;
+            return " (Loop Active)";
         }
-        return status;
+
+        return string.Empty;
+    }
+
+    private static string GetPlaybackModeStatusString(PlaybackModeViewModel modeControls)
+    {
+        string modeStatus = "";
+        if (modeControls.ShuffleEnabled)
+        {
+            modeStatus += " | Shuffle";
+        }
+
+        modeStatus += modeControls.RepeatMode switch
+        {
+            RepeatMode.None => " | Do Nothing",
+            RepeatMode.PlayOnce => " | Play Once",
+            RepeatMode.RepeatOne => " | Repeat Song",
+            RepeatMode.RepeatAll => " | Repeat All",
+            _ => ""
+        };
+        return modeStatus;
     }
 }
