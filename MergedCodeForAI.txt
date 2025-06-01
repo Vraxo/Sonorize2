@@ -366,8 +366,11 @@ public class BooleanToPlayPauseTextConverter : IValueConverter
         if (value is bool isPlaying) return isPlaying ? "Pause" : "Play";
         return "Play";
     }
+
     public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-        => throw new NotSupportedException();
+    {
+        throw new NotSupportedException();
+    }
 }
 </file>
 
@@ -3653,23 +3656,43 @@ public class PlaybackModeViewModel : ViewModelBase
 }
 </file>
 
-<file path="Source\ViewModels\PlaybackStateViewModel.cs">
+<file path="Source\ViewModels\PlaybackViewModel.cs">
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
+using System.Windows.Input;
 using Avalonia.Threading;
 using Sonorize.Models;
-using Sonorize.Services;
+using Sonorize.Services; // This using directive makes PlaybackStateStatus from the Service available
 
 namespace Sonorize.ViewModels;
 
-public class PlaybackStateViewModel : ViewModelBase, IDisposable
+public enum RepeatMode { None, PlayOnce, RepeatOne, RepeatAll }
+
+public class PlaybackViewModel : ViewModelBase, IDisposable
 {
     private readonly PlaybackService _playbackService;
 
+    public WaveformDisplayViewModel WaveformDisplay { get; }
+    public PlaybackModeViewModel ModeControls { get; }
+    public PlaybackEffectsViewModel EffectsControls { get; }
+
+    // Properties directly from PlaybackService or managed by this ViewModel
     public Song? CurrentSong => _playbackService.CurrentSong;
     public bool HasCurrentSong => _playbackService.CurrentSong != null;
     public TimeSpan CurrentPosition => _playbackService.CurrentPosition;
-    public double CurrentPositionSeconds => _playbackService.CurrentPositionSeconds;
+    public double CurrentPositionSeconds
+    {
+        get => _playbackService.CurrentPosition.TotalSeconds;
+        set
+        {
+            if (_playbackService.CurrentSong == null || Math.Abs(_playbackService.CurrentPosition.TotalSeconds - value) <= 0.01)
+            {
+                return;
+            }
+            _playbackService.Seek(TimeSpan.FromSeconds(value));
+        }
+    }
     public TimeSpan CurrentSongDuration => _playbackService.CurrentSongDuration;
     public double CurrentSongDurationSeconds => _playbackService.CurrentSongDurationSeconds;
     public PlaybackStateStatus CurrentPlaybackStatus => _playbackService.CurrentPlaybackStatus;
@@ -3689,17 +3712,43 @@ public class PlaybackStateViewModel : ViewModelBase, IDisposable
         private set => SetProperty(ref _totalTimeDisplay, value);
     }
 
-    public PlaybackStateViewModel(PlaybackService playbackService)
+    public ICommand PlayPauseResumeCommand { get; }
+    public ICommand SeekCommand { get; }
+
+    public PlaybackViewModel(PlaybackService playbackService, WaveformService waveformService)
     {
-        _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
+        _playbackService = playbackService;
+
+        WaveformDisplay = new WaveformDisplayViewModel(playbackService, waveformService);
+        ModeControls = new PlaybackModeViewModel(this);
+        EffectsControls = new PlaybackEffectsViewModel(playbackService);
+
+        PlayPauseResumeCommand = new RelayCommand(
+            _ => TogglePlayPauseResume(),
+            _ => CurrentSong != null && !WaveformDisplay.IsWaveformLoading);
+
+        SeekCommand = new RelayCommand(
+            positionSecondsObj =>
+            {
+                if (positionSecondsObj is double seconds && CurrentSongDuration.TotalSeconds > 0)
+                {
+                    _playbackService.Seek(TimeSpan.FromSeconds(seconds));
+                }
+            },
+             _ => CurrentSong != null && CurrentSongDuration.TotalSeconds > 0 && !WaveformDisplay.IsWaveformLoading);
+
         _playbackService.PropertyChanged += PlaybackService_PropertyChanged;
         UpdateAllDisplayProperties(); // Initial sync
+
+        PropertyChanged += PlaybackViewModel_PropertyChanged; // For ModeControls updates
+        WaveformDisplay.PropertyChanged += WaveformDisplay_PropertyChanged;
     }
 
     private void PlaybackService_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         Dispatcher.UIThread.InvokeAsync(() =>
         {
+            bool commandStateMayChange = false;
             switch (e.PropertyName)
             {
                 case nameof(PlaybackService.CurrentSong):
@@ -3707,6 +3756,7 @@ public class PlaybackStateViewModel : ViewModelBase, IDisposable
                     OnPropertyChanged(nameof(HasCurrentSong));
                     UpdateCurrentTimeDisplay();
                     UpdateTotalTimeDisplay();
+                    commandStateMayChange = true;
                     break;
                 case nameof(PlaybackService.CurrentPosition):
                     OnPropertyChanged(nameof(CurrentPosition));
@@ -3717,11 +3767,17 @@ public class PlaybackStateViewModel : ViewModelBase, IDisposable
                     OnPropertyChanged(nameof(CurrentSongDuration));
                     OnPropertyChanged(nameof(CurrentSongDurationSeconds));
                     UpdateTotalTimeDisplay();
+                    commandStateMayChange = true;
                     break;
                 case nameof(PlaybackService.CurrentPlaybackStatus):
                     OnPropertyChanged(nameof(CurrentPlaybackStatus));
                     OnPropertyChanged(nameof(IsPlaying));
+                    commandStateMayChange = true;
                     break;
+            }
+            if (commandStateMayChange)
+            {
+                RaisePlaybackCommandCanExecuteChanged();
             }
         });
     }
@@ -3752,91 +3808,6 @@ public class PlaybackStateViewModel : ViewModelBase, IDisposable
             : "--:--";
     }
 
-    public void Dispose()
-    {
-        _playbackService.PropertyChanged -= PlaybackService_PropertyChanged;
-    }
-}
-</file>
-
-<file path="Source\ViewModels\PlaybackViewModel.cs">
-using System;
-using System.ComponentModel;
-using System.Diagnostics;
-using System.Windows.Input;
-using Avalonia.Threading;
-using Sonorize.Models;
-using Sonorize.Services; // This using directive makes PlaybackStateStatus from the Service available
-
-namespace Sonorize.ViewModels;
-
-public enum RepeatMode { None, PlayOnce, RepeatOne, RepeatAll }
-
-public class PlaybackViewModel : ViewModelBase, IDisposable
-{
-    private readonly PlaybackService _playbackService; // Keep reference for commands if needed directly
-    private readonly PlaybackStateViewModel _stateViewModel;
-
-    public WaveformDisplayViewModel WaveformDisplay { get; }
-    public PlaybackModeViewModel ModeControls { get; }
-    public PlaybackEffectsViewModel EffectsControls { get; } // New child VM
-
-    // Properties proxied from PlaybackStateViewModel
-    public Song? CurrentSong => _stateViewModel.CurrentSong;
-    public bool HasCurrentSong => _stateViewModel.HasCurrentSong;
-    public TimeSpan CurrentPosition => _stateViewModel.CurrentPosition;
-    public double CurrentPositionSeconds
-    {
-        get => _stateViewModel.CurrentPositionSeconds;
-        set
-        {
-            if (CurrentSong == null || Math.Abs(_stateViewModel.CurrentPositionSeconds - value) <= 0.01)
-            {
-                return;
-            }
-            _playbackService.Seek(TimeSpan.FromSeconds(value)); // Use _playbackService for actions
-        }
-    }
-    public TimeSpan CurrentSongDuration => _stateViewModel.CurrentSongDuration;
-    public double CurrentSongDurationSeconds => _stateViewModel.CurrentSongDurationSeconds;
-    public PlaybackStateStatus CurrentPlaybackStatus => _stateViewModel.CurrentPlaybackStatus;
-    public bool IsPlaying => _stateViewModel.IsPlaying;
-    public string CurrentTimeDisplay => _stateViewModel.CurrentTimeDisplay;
-    public string TotalTimeDisplay => _stateViewModel.TotalTimeDisplay;
-
-
-    public ICommand PlayPauseResumeCommand { get; }
-    public ICommand SeekCommand { get; }
-
-    public PlaybackViewModel(PlaybackService playbackService, WaveformService waveformService)
-    {
-        _playbackService = playbackService;
-        _stateViewModel = new PlaybackStateViewModel(playbackService);
-
-        WaveformDisplay = new WaveformDisplayViewModel(playbackService, waveformService);
-        ModeControls = new PlaybackModeViewModel(this); // 'this' provides HasCurrentSong
-        EffectsControls = new PlaybackEffectsViewModel(playbackService);
-
-        PlayPauseResumeCommand = new RelayCommand(
-            _ => TogglePlayPauseResume(),
-            _ => CurrentSong != null && !WaveformDisplay.IsWaveformLoading);
-
-        SeekCommand = new RelayCommand(
-            positionSecondsObj =>
-            {
-                if (positionSecondsObj is double seconds && CurrentSongDuration.TotalSeconds > 0)
-                {
-                    _playbackService.Seek(TimeSpan.FromSeconds(seconds));
-                }
-            },
-             _ => CurrentSong != null && CurrentSongDuration.TotalSeconds > 0 && !WaveformDisplay.IsWaveformLoading);
-
-        // Subscribe to PlaybackStateViewModel for changes that affect this VM's logic (e.g., command executability)
-        _stateViewModel.PropertyChanged += StateViewModel_PropertyChanged;
-        PropertyChanged += PlaybackViewModel_PropertyChanged;
-        WaveformDisplay.PropertyChanged += WaveformDisplay_PropertyChanged;
-    }
-
     private void WaveformDisplay_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName != nameof(WaveformDisplayViewModel.IsWaveformLoading))
@@ -3859,7 +3830,7 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
         }
         else if (CurrentPlaybackStatus == PlaybackStateStatus.Stopped && CurrentSong != null)
         {
-            _playbackService.Resume(); // Or Play if starting from scratch
+            _playbackService.Resume();
         }
         else if (CurrentPlaybackStatus == PlaybackStateStatus.Stopped && CurrentSong == null)
         {
@@ -3867,33 +3838,12 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private void StateViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        // Forward property changes for proxied properties
-        OnPropertyChanged(e.PropertyName);
-
-        // Specific logic based on changes from StateViewModel
-        if (e.PropertyName == nameof(PlaybackStateViewModel.HasCurrentSong) ||
-            e.PropertyName == nameof(PlaybackStateViewModel.CurrentSongDuration) ||
-            e.PropertyName == nameof(PlaybackStateViewModel.CurrentPlaybackStatus))
-        {
-            RaisePlaybackCommandCanExecuteChanged();
-        }
-    }
-
-
     private void PlaybackViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        // This handler is for properties of PlaybackViewModel itself, if any directly impact ModeControls.
-        // HasCurrentSong is now proxied from StateViewModel, so StateViewModel_PropertyChanged handles its effects.
-        // If PlaybackViewModel had other direct properties affecting ModeControls, they'd be handled here.
-        // For now, this might not be strictly necessary if all relevant changes come via StateViewModel.
-        // However, keeping it for potential future direct properties of PlaybackViewModel.
         switch (e.PropertyName)
         {
-            case nameof(HasCurrentSong): // Though this comes from StateViewModel now
+            case nameof(HasCurrentSong):
                 ModeControls.RaiseCommandCanExecuteChanged();
-                // RaisePlaybackCommandCanExecuteChanged(); // This is also called in StateViewModel_PropertyChanged
                 break;
         }
     }
@@ -3907,8 +3857,8 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
-        _stateViewModel.PropertyChanged -= StateViewModel_PropertyChanged;
-        _stateViewModel.Dispose();
+        _playbackService.PropertyChanged -= PlaybackService_PropertyChanged;
+        PropertyChanged -= PlaybackViewModel_PropertyChanged;
 
         if (WaveformDisplay != null)
         {
@@ -10428,7 +10378,8 @@ using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Media;
 using Avalonia.Styling;
-using Sonorize.Models;
+using Sonorize.Models; // For ThemeColors, Song
+using Avalonia.Markup.Xaml.MarkupExtensions; // For RelativeSource
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -10482,12 +10433,22 @@ public class SongContextMenuHelper
         var editMetadataMenuItem = new MenuItem
         {
             Header = "Edit Metadata",
-            CommandParameter = songDataContext
+            CommandParameter = songDataContext // The Song object itself
         };
 
-        editMetadataMenuItem.Bind(MenuItem.CommandProperty, new Binding("$parent[ListBox].DataContext.Library.EditSongMetadataCommand"));
+        // Create the binding programmatically to avoid string parsing issues for AncestorType
+        var commandBinding = new Binding
+        {
+            Path = "DataContext.OpenEditSongMetadataDialogCommand", // Path from ListBox's DataContext (MainWindowViewModel)
+            RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
+            {
+                AncestorType = typeof(ListBox) // Find the parent ListBox
+            }
+        };
+        editMetadataMenuItem.Bind(MenuItem.CommandProperty, commandBinding);
+
         contextMenu.Items.Add(editMetadataMenuItem);
-        Debug.WriteLine($"[SongContextMenuHelper] CreateContextMenu for song: {songDataContext.Title}. MenuItem command bound declaratively.");
+        Debug.WriteLine($"[SongContextMenuHelper] CreateContextMenu for song: {songDataContext.Title}. MenuItem command bound to ListBox.DataContext.OpenEditSongMetadataDialogCommand.");
 
         return contextMenu;
     }

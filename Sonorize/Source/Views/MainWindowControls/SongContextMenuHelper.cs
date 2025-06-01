@@ -4,7 +4,8 @@ using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Media;
 using Avalonia.Styling;
-using Sonorize.Models;
+using Sonorize.Models; // For ThemeColors, Song
+using Avalonia.Markup.Xaml.MarkupExtensions; // For RelativeSource
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -58,12 +59,22 @@ public class SongContextMenuHelper
         var editMetadataMenuItem = new MenuItem
         {
             Header = "Edit Metadata",
-            CommandParameter = songDataContext
+            CommandParameter = songDataContext // The Song object itself
         };
 
-        editMetadataMenuItem.Bind(MenuItem.CommandProperty, new Binding("$parent[ListBox].DataContext.Library.EditSongMetadataCommand"));
+        // Create the binding programmatically to avoid string parsing issues for AncestorType
+        var commandBinding = new Binding
+        {
+            Path = "DataContext.OpenEditSongMetadataDialogCommand", // Path from ListBox's DataContext (MainWindowViewModel)
+            RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
+            {
+                AncestorType = typeof(ListBox) // Find the parent ListBox
+            }
+        };
+        editMetadataMenuItem.Bind(MenuItem.CommandProperty, commandBinding);
+
         contextMenu.Items.Add(editMetadataMenuItem);
-        Debug.WriteLine($"[SongContextMenuHelper] CreateContextMenu for song: {songDataContext.Title}. MenuItem command bound declaratively.");
+        Debug.WriteLine($"[SongContextMenuHelper] CreateContextMenu for song: {songDataContext.Title}. MenuItem command bound to ListBox.DataContext.OpenEditSongMetadataDialogCommand.");
 
         return contextMenu;
     }

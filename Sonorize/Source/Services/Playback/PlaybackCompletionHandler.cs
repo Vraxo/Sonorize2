@@ -18,12 +18,12 @@ public class PlaybackCompletionHandler
 
     public void Handle(
         StoppedEventArgs eventArgs,
-        Song? songThatJustStopped,
+        Song? songThatJustStopped, // The song instance whose playback actually stopped
         TimeSpan actualStoppedPosition,
         TimeSpan actualStoppedSongDuration,
-        bool wasExplicitlyStopped)
+        bool wasExplicitlyStopped) // Flag indicating if StopSession(isExplicit: true) was the initiator
     {
-        Debug.WriteLine($"[PlaybackCompletionHandler] Handling playback stop for: {songThatJustStopped?.Title ?? "No Song"}. ExplicitStop: {wasExplicitlyStopped}, Error: {eventArgs.Exception != null}");
+        Debug.WriteLine($"[PlaybackCompletionHandler] Handling playback stop for: {songThatJustStopped?.Title ?? "No Song"}. ExplicitStopRequest: {wasExplicitlyStopped}, Error: {eventArgs.Exception != null}");
 
         _sessionManager.StopUiUpdateMonitor();
 
@@ -32,19 +32,21 @@ public class PlaybackCompletionHandler
             Debug.WriteLine($"[PlaybackCompletionHandler] Playback stopped due to error: {eventArgs.Exception.Message}. Finalizing state to Stopped.");
             TryScrobble(songThatJustStopped, actualStoppedPosition);
             _sessionManager.FinalizeCurrentSong(null);
+            _sessionManager.SetPlaybackState(false, PlaybackStateStatus.Stopped);
         }
         else
         {
             bool isNearEndOfFile = (actualStoppedSongDuration > TimeSpan.Zero) &&
                                    (actualStoppedPosition >= actualStoppedSongDuration - TimeSpan.FromMilliseconds(500));
 
-            Debug.WriteLine($"[PlaybackCompletionHandler] Clean Stop. ExplicitStopReq: {wasExplicitlyStopped}. NearEnd: {isNearEndOfFile}. Pos: {actualStoppedPosition:mm\\:ss\\.ff}, Dur: {actualStoppedSongDuration:mm\\:ss\\.ff}");
+            Debug.WriteLine($"[PlaybackCompletionHandler] Clean Stop. ExplicitlyStoppedByRequest: {wasExplicitlyStopped}. NearEnd: {isNearEndOfFile}. Pos: {actualStoppedPosition:mm\\:ss\\.ff}, Dur: {actualStoppedSongDuration:mm\\:ss\\.ff}");
 
             if (wasExplicitlyStopped)
             {
                 Debug.WriteLine("[PlaybackCompletionHandler] Playback stopped by explicit user/app command. Finalizing.");
                 TryScrobble(songThatJustStopped, actualStoppedPosition);
                 _sessionManager.FinalizeCurrentSong(null);
+                _sessionManager.SetPlaybackState(false, PlaybackStateStatus.Stopped);
             }
             else if (isNearEndOfFile)
             {
@@ -53,21 +55,33 @@ public class PlaybackCompletionHandler
                 _sessionManager.UpdateStateForNaturalPlaybackEnd();
                 _sessionManager.TriggerSessionEndedNaturally();
             }
-            else
+            else // Internal stop (not explicit, not EOF) - e.g., transitioning to a new song or re-clicking current.
             {
-                Debug.WriteLine("[PlaybackCompletionHandler] Playback stopped (not error, not explicit, not EOF). Scrobbling and stopping.");
+                Debug.WriteLine($"[PlaybackCompletionHandler] Playback stopped internally. Song that just stopped: '{songThatJustStopped?.Title}', Session's current song: '{_sessionManager.GetCurrentSongForCompletion()?.Title}'. Session IsPlaying: {_sessionManager.IsPlaying}");
                 TryScrobble(songThatJustStopped, actualStoppedPosition);
-                _sessionManager.FinalizeCurrentSong(null);
+
+                // If the SessionManager indicates that it's NOT currently playing ANYTHING,
+                // then it's safe for this internal stop event (for whatever song it was)
+                // to confirm the global state as Stopped.
+                if (!_sessionManager.IsPlaying)
+                {
+                    Debug.WriteLine($"[PlaybackCompletionHandler] Session is NOT currently playing. Setting global state to Stopped due to internal stop of '{songThatJustStopped?.Title}'.");
+                    _sessionManager.SetPlaybackState(false, PlaybackStateStatus.Stopped);
+                }
+                // ELSE: SessionManager IS IsPlaying. This means another playback instance (e.g., the next song,
+                // or a re-clicked version of the current song) has already started and set the global state.
+                // The stop event for this (now potentially old/superseded) song instance should NOT
+                // override the global IsPlaying state.
+                else
+                {
+                    Debug.WriteLine($"[PlaybackCompletionHandler] Session IS currently playing (current song: '{_sessionManager.GetCurrentSongForCompletion()?.Title}'). " +
+                                    $"The internal stop event for '{songThatJustStopped?.Title}' will NOT change global playback state.");
+                }
             }
         }
 
-        if (_sessionManager.GetCurrentSongForCompletion() == null)
-        {
-            _sessionManager.SetPlaybackState(false, PlaybackStateStatus.Stopped);
-        }
-
         _sessionManager.ResetExplicitStopFlag();
-        Debug.WriteLine($"[PlaybackCompletionHandler] Handle finishes. CurrentSong after handling: {_sessionManager.GetCurrentSongForCompletion()?.Title ?? "null"}");
+        Debug.WriteLine($"[PlaybackCompletionHandler] Handle finishes. Session Song: {_sessionManager.GetCurrentSongForCompletion()?.Title ?? "null"}, IsPlaying: {_sessionManager.IsPlaying}, Status: {_sessionManager.CurrentPlaybackStatus}");
     }
 
     private async void TryScrobble(Song? song, TimeSpan playedPosition)
