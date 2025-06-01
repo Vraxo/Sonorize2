@@ -4966,61 +4966,69 @@ public class NAudioEffectsProcessor : IDisposable
     {
         get
         {
-            if (_outputProvider == null)
+            if (_outputProvider is null)
             {
                 throw new InvalidOperationException("Audio effects processor has not been initialized.");
             }
+
             return _outputProvider;
         }
     }
 
-    private float _tempo = 1.0f;
     public float Tempo
     {
-        get => _tempo;
+        get;
         set
         {
-            if (Math.Abs(_tempo - value) > float.Epsilon)
+            if (float.Abs(field - value) <= float.Epsilon)
             {
-                _tempo = value;
-                if (_soundTouch != null)
-                {
-                    try
-                    {
-                        _soundTouch.Tempo = _tempo;
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"[EffectsProcessor] Error setting SoundTouch Tempo: {ex.Message}");
-                    }
-                }
+                return;
+            }
+
+            field = value;
+
+            if (_soundTouch is null)
+            {
+                return;
+            }
+
+            try
+            {
+                _soundTouch.Tempo = field;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[EffectsProcessor] Error setting SoundTouch Tempo: {ex.Message}");
             }
         }
-    }
+    } = 1.0f;
 
-    private float _pitchSemitones = 0f;
     public float PitchSemitones
     {
-        get => _pitchSemitones;
+        get;
         set
         {
-            if (Math.Abs(_pitchSemitones - value) > float.Epsilon)
+            if (float.Abs(field - value) <= float.Epsilon)
             {
-                _pitchSemitones = value;
-                if (_pitchShifter != null)
-                {
-                    try
-                    {
-                        _pitchShifter.PitchFactor = (float)Math.Pow(2, _pitchSemitones / 12.0);
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"[EffectsProcessor] Error setting PitchShifter PitchFactor: {ex.Message}");
-                    }
-                }
+                return;
+            }
+
+            field = value;
+
+            if (_pitchShifter is null)
+            {
+                return;
+            }
+            try
+            {
+                _pitchShifter.PitchFactor = (float)Math.Pow(2, field / 12.0);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[EffectsProcessor] Error setting PitchShifter PitchFactor: {ex.Message}");
             }
         }
-    }
+    } = 0f;
 
     public NAudioEffectsProcessor()
     {
@@ -5030,10 +5038,7 @@ public class NAudioEffectsProcessor : IDisposable
     {
         Dispose(disposing: true);
 
-        if (sourceProvider == null)
-        {
-            throw new ArgumentNullException(nameof(sourceProvider));
-        }
+        ArgumentNullException.ThrowIfNull(sourceProvider);
 
         try
         {
@@ -5042,14 +5047,14 @@ public class NAudioEffectsProcessor : IDisposable
             _sampleToWaveProvider = new SampleToWaveProvider(monoSampleProvider);
 
             _soundTouch = new SoundTouchWaveProvider(_sampleToWaveProvider);
-            _soundTouch.Tempo = _tempo;
+            _soundTouch.Tempo = Tempo;
             _soundTouch.Rate = 1.0f;
             _soundTouch.Pitch = 1.0f;
 
             ISampleProvider soundTouchAsSampleProvider = _soundTouch.ToSampleProvider();
 
             _pitchShifter = new SmbPitchShiftingSampleProvider(soundTouchAsSampleProvider);
-            _pitchShifter.PitchFactor = (float)Math.Pow(2, _pitchSemitones / 12.0);
+            _pitchShifter.PitchFactor = (float)Math.Pow(2, PitchSemitones / 12.0);
 
             _outputProvider = _pitchShifter;
         }
@@ -5070,191 +5075,20 @@ public class NAudioEffectsProcessor : IDisposable
 
     protected virtual void Dispose(bool disposing)
     {
-        if (disposing)
+        if (!disposing)
         {
-            _sampleToWaveProvider = null;
-            _soundTouch = null;
-            _pitchShifter = null;
-            _outputProvider = null;
+            return;
         }
+
+        _sampleToWaveProvider = null;
+        _soundTouch = null;
+        _pitchShifter = null;
+        _outputProvider = null;
     }
 
     ~NAudioEffectsProcessor()
     {
         Dispose(disposing: false);
-    }
-}
-</file>
-
-<file path="Source\Services\Playback\NAudioEngineController.cs">
-using System;
-using System.Diagnostics;
-using System.IO;
-using NAudio.Wave;
-
-namespace Sonorize.Services.Playback;
-
-public class NAudioEngineController : IDisposable
-{
-    private NAudioPlaybackEngine? _playbackEngine;
-
-    public event EventHandler<StoppedEventArgs>? PlaybackStopped;
-
-    public TimeSpan CurrentPosition => _playbackEngine?.CurrentPosition ?? TimeSpan.Zero;
-    public TimeSpan CurrentSongDuration => _playbackEngine?.CurrentSongDuration ?? TimeSpan.Zero;
-
-    public PlaybackStateStatus CurrentPlaybackStatus => _playbackEngine?.CurrentPlaybackStatus ?? PlaybackStateStatus.Stopped;
-
-    public float PlaybackRate
-    {
-        get;
-        set
-        {
-            field = value;
-
-            if (_playbackEngine is null)
-            {
-                return;
-            }
-
-            _playbackEngine.PlaybackRate = value;
-        }
-    } = 1.0f;
-
-    public float PitchSemitones
-    {
-        get;
-        set
-        {
-            field = value;
-
-            if (_playbackEngine is null)
-            {
-                return;
-            }
-
-            _playbackEngine.PitchSemitones = value;
-        }
-    } = 0f;
-
-    public NAudioEngineController()
-    {
-        Debug.WriteLine("[EngineController] Constructor called.");
-    }
-
-    public void Load(string filePath)
-    {
-        Debug.WriteLine($"[EngineController] Load requested for: {Path.GetFileName(filePath)}");
-        DisposePreviousEngine(); // Ensure any existing engine is disposed before loading a new one
-
-        if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
-        {
-            Debug.WriteLine($"[EngineController] Load failed: File path is invalid or file does not exist at '{filePath}'.");
-            throw new FileNotFoundException("Audio file not found or path invalid.", filePath);
-        }
-
-        try
-        {
-            _playbackEngine = new NAudioPlaybackEngine();
-            _playbackEngine.PlaybackStopped += OnEnginePlaybackStopped;
-            _playbackEngine.PlaybackRate = this.PlaybackRate; // Apply current rate
-            _playbackEngine.PitchSemitones = this.PitchSemitones; // Apply current pitch
-            _playbackEngine.Load(filePath);
-            Debug.WriteLine($"[EngineController] Engine loaded successfully for: {Path.GetFileName(filePath)}");
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"[EngineController] CRITICAL ERROR during engine Load for '{filePath}': {ex.ToString()}");
-            DisposePreviousEngine(); // Cleanup on failure
-            throw; // Re-throw to allow higher levels to handle
-        }
-    }
-
-    private void OnEnginePlaybackStopped(object? sender, StoppedEventArgs e)
-    {
-        Debug.WriteLine("[EngineController] Internal OnEnginePlaybackStopped. Relaying event.");
-        PlaybackStopped?.Invoke(this, e);
-    }
-
-    public void Play()
-    {
-        if (_playbackEngine == null)
-        {
-            Debug.WriteLine("[EngineController] Play ignored: Engine not loaded.");
-            return;
-        }
-        _playbackEngine.Play();
-        Debug.WriteLine($"[EngineController] Play initiated. Engine state: {_playbackEngine.CurrentPlaybackStatus}");
-    }
-
-    public void Pause()
-    {
-        if (_playbackEngine == null)
-        {
-            Debug.WriteLine("[EngineController] Pause ignored: Engine not loaded.");
-            return;
-        }
-        _playbackEngine.Pause();
-        Debug.WriteLine($"[EngineController] Pause initiated. Engine state: {_playbackEngine.CurrentPlaybackStatus}");
-    }
-
-    public void Stop()
-    {
-        if (_playbackEngine == null)
-        {
-            Debug.WriteLine("[EngineController] Stop ignored: Engine not loaded.");
-            return;
-        }
-        _playbackEngine.Stop(); // This will trigger the engine's PlaybackStopped event, then ours
-        Debug.WriteLine("[EngineController] Stop initiated on engine.");
-    }
-
-    public void DisposeEngineInternalsOnly() // New method
-    {
-        if (_playbackEngine != null)
-        {
-            Debug.WriteLine("[EngineController] DisposeEngineInternalsOnly called. Disposing NAudioPlaybackEngine.");
-            _playbackEngine.PlaybackStopped -= OnEnginePlaybackStopped;
-            _playbackEngine.Dispose();
-            _playbackEngine = null;
-        }
-    }
-
-
-    public void Seek(TimeSpan position)
-    {
-        if (_playbackEngine == null)
-        {
-            Debug.WriteLine("[EngineController] Seek ignored: Engine not loaded.");
-            return;
-        }
-        _playbackEngine.Seek(position);
-        Debug.WriteLine($"[EngineController] Seek initiated to {position}.");
-    }
-
-    private void DisposePreviousEngine()
-    {
-        if (_playbackEngine != null)
-        {
-            Debug.WriteLine("[EngineController] Disposing previous engine instance.");
-            _playbackEngine.PlaybackStopped -= OnEnginePlaybackStopped;
-            _playbackEngine.Dispose();
-            _playbackEngine = null;
-        }
-    }
-
-    public void Dispose()
-    {
-        Debug.WriteLine("[EngineController] Dispose() called.");
-        DisposePreviousEngine();
-        GC.SuppressFinalize(this);
-        Debug.WriteLine("[EngineController] Dispose() completed.");
-    }
-
-    ~NAudioEngineController()
-    {
-        Debug.WriteLine("[EngineController] Finalizer called.");
-        Dispose();
     }
 }
 </file>
@@ -5372,23 +5206,25 @@ public class NAudioPlaybackEngine : IDisposable
 
     public float PlaybackRate
     {
-        get;
+        get => _playbackRate;
         set
         {
-            field = value;
+            _playbackRate = value;
             if (_pipeline?.EffectsProcessor != null) _pipeline.EffectsProcessor.Tempo = value;
         }
-    } = 1.0f;
+    }
+    private float _playbackRate = 1.0f;
 
     public float PitchSemitones
     {
-        get;
+        get => _pitchSemitones;
         set
         {
-            field = value;
+            _pitchSemitones = value;
             if (_pipeline?.EffectsProcessor != null) _pipeline.EffectsProcessor.PitchSemitones = value;
         }
-    } = 0f;
+    }
+    private float _pitchSemitones = 0f;
 
 
     public NAudioPlaybackEngine()
@@ -5410,6 +5246,7 @@ public class NAudioPlaybackEngine : IDisposable
 
         try
         {
+            // Properties PlaybackRate and PitchSemitones are used by NAudioPipeline constructor
             _pipeline = new NAudioPipeline(filePath, PlaybackRate, PitchSemitones, OnPipelinePlaybackStopped);
             Debug.WriteLine($"[Engine] NAudio pipeline loaded successfully via NAudioPipeline for: {Path.GetFileName(filePath)}.");
         }
@@ -5534,8 +5371,14 @@ public class NAudioPlaybackEngine : IDisposable
     {
         if (disposing)
         {
-            _pipeline?.Dispose();
-            _pipeline = null;
+            if (_pipeline != null)
+            {
+                // Unsubscribe from _pipeline events if any were directly subscribed by this class
+                // (Currently, NAudioPipeline forwards its OutputDevice.PlaybackStopped to OnPipelinePlaybackStopped,
+                // so no direct subscription to _pipeline here that needs unsubscribing).
+                _pipeline.Dispose();
+                _pipeline = null;
+            }
         }
     }
 
@@ -5644,7 +5487,7 @@ namespace Sonorize.Services.Playback;
 
 public class PlaybackEngineCoordinator : IDisposable
 {
-    private readonly NAudioEngineController _engineController;
+    private readonly NAudioPlaybackEngine _engineController; // Changed type
     private readonly PlaybackLoopHandler _loopHandler;
     private readonly PlaybackMonitor _playbackMonitor;
     private Song? _currentSong;
@@ -5657,7 +5500,7 @@ public class PlaybackEngineCoordinator : IDisposable
     public TimeSpan CurrentSongDuration => _engineController.CurrentSongDuration;
     public PlaybackStateStatus CurrentPlaybackStatus => _engineController.CurrentPlaybackStatus;
 
-    public PlaybackEngineCoordinator(NAudioEngineController engineController, PlaybackLoopHandler loopHandler, PlaybackMonitor playbackMonitor)
+    public PlaybackEngineCoordinator(NAudioPlaybackEngine engineController, PlaybackLoopHandler loopHandler, PlaybackMonitor playbackMonitor) // Changed type
     {
         _engineController = engineController ?? throw new ArgumentNullException(nameof(engineController));
         _loopHandler = loopHandler ?? throw new ArgumentNullException(nameof(loopHandler));
@@ -5751,10 +5594,10 @@ public class PlaybackEngineCoordinator : IDisposable
         Debug.WriteLine("[PlaybackEngineCoordinator] Stop initiated.");
     }
 
-    public void DisposeCurrentEngineInternals() // New method
+    public void DisposeCurrentEngineInternals()
     {
         _playbackMonitor.Stop(); // Stop monitor before disposing engine
-        _engineController.DisposeEngineInternalsOnly();
+        _engineController.Dispose(); // Changed from DisposeEngineInternalsOnly
         Debug.WriteLine("[PlaybackEngineCoordinator] Disposed current engine internals.");
     }
 
@@ -5890,7 +5733,7 @@ namespace Sonorize.Services.Playback;
 
 public class PlaybackInfrastructureProvider : IDisposable
 {
-    public NAudioEngineController EngineController { get; }
+    public NAudioPlaybackEngine EngineController { get; } // Changed type
     public PlaybackMonitor Monitor { get; }
     public PlaybackEngineCoordinator Coordinator { get; }
 
@@ -5900,10 +5743,10 @@ public class PlaybackInfrastructureProvider : IDisposable
     {
         ArgumentNullException.ThrowIfNull(loopHandler);
 
-        EngineController = new NAudioEngineController();
+        EngineController = new NAudioPlaybackEngine(); // Changed instantiation
         Monitor = new PlaybackMonitor(EngineController, loopHandler);
         Coordinator = new PlaybackEngineCoordinator(EngineController, loopHandler, Monitor);
-        
+
         Debug.WriteLine("[PlaybackInfrastructureProvider] Initialized and components created.");
     }
 
@@ -5924,6 +5767,11 @@ public class PlaybackInfrastructureProvider : IDisposable
         {
             Debug.WriteLine("[PlaybackInfrastructureProvider] Disposing components.");
             Coordinator?.Dispose();
+            // EngineController is disposed by Coordinator if Coordinator owns it,
+            // or needs to be disposed here if not fully owned by Coordinator.
+            // Given Coordinator takes it, Coordinator should dispose it.
+            // If EngineController was created and owned here, then: EngineController?.Dispose();
+            // Current Coordinator.Dispose() disposes its _engineController.
         }
 
         _disposed = true;
@@ -6128,7 +5976,7 @@ namespace Sonorize.Services.Playback;
 
 public class PlaybackMonitor : IDisposable
 {
-    private readonly NAudioEngineController _engineController;
+    private readonly NAudioPlaybackEngine _engineController; // Changed type
     private readonly PlaybackLoopHandler _loopHandler;
     private Timer? _monitorTimer;
     private Song? _songBeingMonitored;
@@ -6136,7 +5984,7 @@ public class PlaybackMonitor : IDisposable
 
     private const int MonitorIntervalMilliseconds = 100;
 
-    public PlaybackMonitor(NAudioEngineController engineController, PlaybackLoopHandler loopHandler)
+    public PlaybackMonitor(NAudioPlaybackEngine engineController, PlaybackLoopHandler loopHandler) // Changed type
     {
         _engineController = engineController ?? throw new ArgumentNullException(nameof(engineController));
         _loopHandler = loopHandler ?? throw new ArgumentNullException(nameof(loopHandler));

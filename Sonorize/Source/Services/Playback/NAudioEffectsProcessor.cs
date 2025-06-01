@@ -18,61 +18,69 @@ public class NAudioEffectsProcessor : IDisposable
     {
         get
         {
-            if (_outputProvider == null)
+            if (_outputProvider is null)
             {
                 throw new InvalidOperationException("Audio effects processor has not been initialized.");
             }
+
             return _outputProvider;
         }
     }
 
-    private float _tempo = 1.0f;
     public float Tempo
     {
-        get => _tempo;
+        get;
         set
         {
-            if (Math.Abs(_tempo - value) > float.Epsilon)
+            if (float.Abs(field - value) <= float.Epsilon)
             {
-                _tempo = value;
-                if (_soundTouch != null)
-                {
-                    try
-                    {
-                        _soundTouch.Tempo = _tempo;
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"[EffectsProcessor] Error setting SoundTouch Tempo: {ex.Message}");
-                    }
-                }
+                return;
+            }
+
+            field = value;
+
+            if (_soundTouch is null)
+            {
+                return;
+            }
+
+            try
+            {
+                _soundTouch.Tempo = field;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[EffectsProcessor] Error setting SoundTouch Tempo: {ex.Message}");
             }
         }
-    }
+    } = 1.0f;
 
-    private float _pitchSemitones = 0f;
     public float PitchSemitones
     {
-        get => _pitchSemitones;
+        get;
         set
         {
-            if (Math.Abs(_pitchSemitones - value) > float.Epsilon)
+            if (float.Abs(field - value) <= float.Epsilon)
             {
-                _pitchSemitones = value;
-                if (_pitchShifter != null)
-                {
-                    try
-                    {
-                        _pitchShifter.PitchFactor = (float)Math.Pow(2, _pitchSemitones / 12.0);
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"[EffectsProcessor] Error setting PitchShifter PitchFactor: {ex.Message}");
-                    }
-                }
+                return;
+            }
+
+            field = value;
+
+            if (_pitchShifter is null)
+            {
+                return;
+            }
+            try
+            {
+                _pitchShifter.PitchFactor = (float)Math.Pow(2, field / 12.0);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[EffectsProcessor] Error setting PitchShifter PitchFactor: {ex.Message}");
             }
         }
-    }
+    } = 0f;
 
     public NAudioEffectsProcessor()
     {
@@ -82,10 +90,7 @@ public class NAudioEffectsProcessor : IDisposable
     {
         Dispose(disposing: true);
 
-        if (sourceProvider == null)
-        {
-            throw new ArgumentNullException(nameof(sourceProvider));
-        }
+        ArgumentNullException.ThrowIfNull(sourceProvider);
 
         try
         {
@@ -94,14 +99,14 @@ public class NAudioEffectsProcessor : IDisposable
             _sampleToWaveProvider = new SampleToWaveProvider(monoSampleProvider);
 
             _soundTouch = new SoundTouchWaveProvider(_sampleToWaveProvider);
-            _soundTouch.Tempo = _tempo;
+            _soundTouch.Tempo = Tempo;
             _soundTouch.Rate = 1.0f;
             _soundTouch.Pitch = 1.0f;
 
             ISampleProvider soundTouchAsSampleProvider = _soundTouch.ToSampleProvider();
 
             _pitchShifter = new SmbPitchShiftingSampleProvider(soundTouchAsSampleProvider);
-            _pitchShifter.PitchFactor = (float)Math.Pow(2, _pitchSemitones / 12.0);
+            _pitchShifter.PitchFactor = (float)Math.Pow(2, PitchSemitones / 12.0);
 
             _outputProvider = _pitchShifter;
         }
@@ -122,13 +127,15 @@ public class NAudioEffectsProcessor : IDisposable
 
     protected virtual void Dispose(bool disposing)
     {
-        if (disposing)
+        if (!disposing)
         {
-            _sampleToWaveProvider = null;
-            _soundTouch = null;
-            _pitchShifter = null;
-            _outputProvider = null;
+            return;
         }
+
+        _sampleToWaveProvider = null;
+        _soundTouch = null;
+        _pitchShifter = null;
+        _outputProvider = null;
     }
 
     ~NAudioEffectsProcessor()

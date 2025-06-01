@@ -13,6 +13,9 @@ public class BooleanToPlayPauseTextConverter : IValueConverter
         if (value is bool isPlaying) return isPlaying ? "Pause" : "Play";
         return "Play";
     }
+
     public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-        => throw new NotSupportedException();
+    {
+        throw new NotSupportedException();
+    }
 }
