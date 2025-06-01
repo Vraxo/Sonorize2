@@ -26,7 +26,7 @@ public class WaveformRenderer
         double height = bounds.Height;
         var waveformPen = new Pen(waveformBrush, 1);
 
-        var pointsList = waveformPoints?.ToList(); // Materialize once, handles null waveformPoints
+        List<WaveformPoint>? pointsList = waveformPoints?.ToList(); // Materialize once, handles null waveformPoints
 
         if (pointsList is not null && pointsList.Count > 0)
         {

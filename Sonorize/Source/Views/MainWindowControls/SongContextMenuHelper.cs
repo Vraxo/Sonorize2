@@ -1,25 +1,20 @@
-﻿using Avalonia;
+﻿using System.Diagnostics;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Media;
 using Avalonia.Styling;
-using Avalonia.VisualTree;
 using Sonorize.Models;
-using Sonorize.ViewModels;
-using System;
-using System.Diagnostics;
 
 namespace Sonorize.Views.MainWindowControls;
 
 public class SongContextMenuHelper
 {
     private readonly ThemeColors _theme;
-    private readonly Func<LibraryViewModel?> _getFallbackLibraryVmFunc;
 
-    public SongContextMenuHelper(ThemeColors theme, Func<LibraryViewModel?> getFallbackLibraryVmFunc)
+    public SongContextMenuHelper(ThemeColors theme)
     {
         _theme = theme;
-        _getFallbackLibraryVmFunc = getFallbackLibraryVmFunc ?? throw new ArgumentNullException(nameof(getFallbackLibraryVmFunc));
         Debug.WriteLine($"[SongContextMenuHelper] Initialized.");
     }
 
@@ -60,84 +55,16 @@ public class SongContextMenuHelper
             }
         });
 
-
-        contextMenu.Opening += (sender, e) =>
+        var editMetadataMenuItem = new MenuItem
         {
-            if (sender is not ContextMenu cm) return;
-
-            Debug.WriteLine($"[ContextMenuHelper.Opening] Event fired for song: {songDataContext.Title}. Attempting to resolve LibraryVM.");
-            LibraryViewModel? resolvedLibraryVM = null;
-
-            if (cm.PlacementTarget is Control placementTarget)
-            {
-                Debug.WriteLine($"[ContextMenuHelper.Opening] PlacementTarget is '{placementTarget.GetType().Name}'.");
-                var listBoxItem = placementTarget.FindAncestorOfType<ListBoxItem>();
-                Control? targetForVmSearch = listBoxItem ?? placementTarget;
-
-                var listBox = targetForVmSearch.FindAncestorOfType<ListBox>();
-                if (listBox != null)
-                {
-                    Debug.WriteLine($"[ContextMenuHelper.Opening] Found ancestor ListBox '{listBox.Name}'. Its DataContext is '{listBox.DataContext?.GetType().Name ?? "null"}'.");
-                    if (listBox.DataContext is MainWindowViewModel mwvm && mwvm.Library != null)
-                    {
-                        resolvedLibraryVM = mwvm.Library;
-                        Debug.WriteLine($"[ContextMenuHelper.Opening] Successfully resolved LibraryVM from ListBox.DataContext (MainWindowViewModel).");
-                    }
-                    else if (listBox.DataContext is LibraryViewModel lvm)
-                    {
-                        resolvedLibraryVM = lvm;
-                        Debug.WriteLine($"[ContextMenuHelper.Opening] Successfully resolved LibraryVM directly from ListBox.DataContext.");
-                    }
-                    else
-                    {
-                        Debug.WriteLine($"[ContextMenuHelper.Opening] ListBox.DataContext is not MainWindowViewModel or LibraryViewModel, or Library is null.");
-                    }
-                }
-                else
-                {
-                    Debug.WriteLine($"[ContextMenuHelper.Opening] Could not find ancestor ListBox from PlacementTarget or its ListBoxItem ancestor.");
-                }
-            }
-            else
-            {
-                Debug.WriteLine($"[ContextMenuHelper.Opening] PlacementTarget is null. Cannot resolve LibraryVM dynamically.");
-            }
-
-            // Fallback to the explicitly provided _libraryVM if dynamic lookup failed.
-            if (resolvedLibraryVM == null)
-            {
-                resolvedLibraryVM = _getFallbackLibraryVmFunc();
-                if (resolvedLibraryVM != null)
-                {
-                    Debug.WriteLine($"[ContextMenuHelper.Opening] Using fallback LibraryVM for song: {songDataContext.Title}.");
-                }
-                else
-                {
-                    Debug.WriteLine($"[ContextMenuHelper.Opening] Fallback LibraryVM is also null for song: {songDataContext.Title}.");
-                }
-            }
-
-            cm.Items.Clear();
-            if (resolvedLibraryVM != null)
-            {
-                cm.DataContext = resolvedLibraryVM;
-
-                var editMetadataMenuItem = new MenuItem
-                {
-                    Header = "Edit Metadata",
-                    CommandParameter = songDataContext
-                };
-                editMetadataMenuItem.Bind(MenuItem.CommandProperty, new Binding("EditSongMetadataCommand"));
-                cm.Items.Add(editMetadataMenuItem);
-                Debug.WriteLine($"[ContextMenuHelper.Opening] ContextMenu DataContext set to LibraryVM. Command should bind for song: {songDataContext.Title}.");
-            }
-            else
-            {
-                Debug.WriteLine($"[ContextMenuHelper.Opening] CRITICAL: LibraryViewModel could not be resolved for song: {songDataContext.Title}. ContextMenu will be disabled or show error.");
-                cm.DataContext = null;
-                cm.Items.Add(new MenuItem { Header = " (Error: Menu commands unavailable) ", IsEnabled = false, Foreground = Brushes.Gray });
-            }
+            Header = "Edit Metadata",
+            CommandParameter = songDataContext
         };
+
+        editMetadataMenuItem.Bind(MenuItem.CommandProperty, new Binding("$parent[ListBox].DataContext.Library.EditSongMetadataCommand"));
+        contextMenu.Items.Add(editMetadataMenuItem);
+        Debug.WriteLine($"[SongContextMenuHelper] CreateContextMenu for song: {songDataContext.Title}. MenuItem command bound declaratively.");
+
         return contextMenu;
     }
 }

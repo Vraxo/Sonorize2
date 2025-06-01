@@ -15,7 +15,6 @@ namespace Sonorize.Views.MainWindowControls;
 public class SharedViewTemplates
 {
     private readonly ThemeColors _theme;
-    private LibraryViewModel? _libraryVM;
     private readonly SongContextMenuHelper _contextMenuHelper;
 
     // Expose the provider for Song templates
@@ -37,7 +36,7 @@ public class SharedViewTemplates
     public SharedViewTemplates(ThemeColors theme)
     {
         _theme = theme;
-        _contextMenuHelper = new SongContextMenuHelper(_theme, () => _libraryVM);
+        _contextMenuHelper = new SongContextMenuHelper(_theme); // Simplified instantiation
         SongTemplates = new SongItemTemplateProvider(_theme, _contextMenuHelper);
         ArtistTemplates = new ArtistItemTemplateProvider(_theme); // Instantiate new provider
 
@@ -46,11 +45,7 @@ public class SharedViewTemplates
         InitializePanelTemplates();
     }
 
-    public void SetLibraryViewModel(LibraryViewModel? libraryVM)
-    {
-        _libraryVM = libraryVM;
-        Debug.WriteLine($"[SharedViewTemplates] SetLibraryViewModel explicitly called. _libraryVM (for helper's fallback func) is now {(_libraryVM == null ? "NULL" : "NOT NULL")}.");
-    }
+    // SetLibraryViewModel method removed
 
     private void InitializeAlbumTemplates()
     {

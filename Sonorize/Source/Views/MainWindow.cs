@@ -82,53 +82,57 @@ public class MainWindow : Window
 
     private void MainWindow_DataContextChanged(object? sender, EventArgs e)
     {
-        if (_currentLibraryVM != null)
+        if (_currentLibraryVM is not null)
         {
             _currentLibraryVM.PropertyChanged -= LibraryViewModel_PropertyChanged;
-            _sharedViewTemplates.SetLibraryViewModel(null);
             _currentLibraryVM = null;
         }
 
-        if (DataContext is MainWindowViewModel vm && vm.Library != null)
+        if (DataContext is not MainWindowViewModel vm || vm.Library == null)
         {
-            vm.SetOwnerView(this);
-
-            _currentLibraryVM = vm.Library;
-            _currentLibraryVM.PropertyChanged += LibraryViewModel_PropertyChanged;
-            _sharedViewTemplates.SetLibraryViewModel(_currentLibraryVM);
-
-            ApplyListViewDisplayMode(_songListBox, _currentLibraryVM.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate);
-            ApplyListViewDisplayMode(_artistsListBox, _currentLibraryVM.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate);
-            ApplyListViewDisplayMode(_albumsListBox, _currentLibraryVM.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate);
+            return;
         }
+
+        vm.SetOwnerView(this);
+
+        _currentLibraryVM = vm.Library;
+        _currentLibraryVM.PropertyChanged += LibraryViewModel_PropertyChanged;
+        // _sharedViewTemplates.SetLibraryViewModel(_currentLibraryVM); // No longer needed
+
+        ApplyListViewDisplayMode(_songListBox, _currentLibraryVM.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate);
+        ApplyListViewDisplayMode(_artistsListBox, _currentLibraryVM.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate);
+        ApplyListViewDisplayMode(_albumsListBox, _currentLibraryVM.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate);
     }
 
     private void LibraryViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (sender is LibraryViewModel lvm)
+        if (sender is not LibraryViewModel lvm)
         {
-            if (e.PropertyName == nameof(LibraryViewModel.LibraryViewMode))
-            {
-                Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_songListBox, lvm.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate));
-            }
-            else if (e.PropertyName == nameof(LibraryViewModel.ArtistViewMode))
-            {
-                Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_artistsListBox, lvm.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate));
-            }
-            else if (e.PropertyName == nameof(LibraryViewModel.AlbumViewMode))
-            {
-                Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_albumsListBox, lvm.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate));
-            }
+            return;
+        }
+
+        if (e.PropertyName == nameof(LibraryViewModel.LibraryViewMode))
+        {
+            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_songListBox, lvm.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate));
+        }
+        else if (e.PropertyName == nameof(LibraryViewModel.ArtistViewMode))
+        {
+            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_artistsListBox, lvm.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate));
+        }
+        else if (e.PropertyName == nameof(LibraryViewModel.AlbumViewMode))
+        {
+            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_albumsListBox, lvm.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate));
         }
     }
 
     private void ApplyListViewDisplayMode(ListBox listBox, SongDisplayMode mode, IDataTemplate detailedTemplate, IDataTemplate compactTemplate, IDataTemplate gridTemplate)
     {
-        if (listBox == null)
+        if (listBox is null)
         {
             Debug.WriteLine($"[MainWindow] ApplyListViewDisplayMode called but ListBox target is null. Mode: {mode}");
             return;
         }
+
         _mainTabViewControls.UpdateListViewMode(mode, listBox, detailedTemplate, compactTemplate, gridTemplate);
     }
 
@@ -143,15 +147,17 @@ public class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
-        if (_currentLibraryVM != null)
+        if (_currentLibraryVM is not null)
         {
             _currentLibraryVM.PropertyChanged -= LibraryViewModel_PropertyChanged;
-            _sharedViewTemplates.SetLibraryViewModel(null);
+            // _sharedViewTemplates.SetLibraryViewModel(null); // No longer needed
         }
+
         if (DataContext is MainWindowViewModel vm)
         {
             vm.SetOwnerView(null!);
         }
+
         base.OnClosed(e);
     }
 }
