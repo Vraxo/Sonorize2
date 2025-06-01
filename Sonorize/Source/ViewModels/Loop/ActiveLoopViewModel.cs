@@ -49,49 +49,54 @@ public class ActiveLoopViewModel : ViewModelBase, IDisposable
 
     private void PlaybackService_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(PlaybackService.CurrentSong))
+        if (e.PropertyName != nameof(PlaybackService.CurrentSong))
         {
-            Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                UpdateInternalSongReference(_playbackService.CurrentSong);
-            });
+            return;
         }
+
+        Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            UpdateInternalSongReference(_playbackService.CurrentSong);
+        });
     }
 
     private void UpdateInternalSongReference(Song? newSong)
     {
-        if (_currentSongInternal == newSong) return;
+        if (_currentSongInternal == newSong)
+        {
+            return;
+        }
 
-        if (_currentSongInternal != null)
+        if (_currentSongInternal is not null)
         {
             _currentSongInternal.PropertyChanged -= CurrentSong_PropertyChanged;
         }
 
         _currentSongInternal = newSong;
 
-        if (_currentSongInternal != null)
+        if (_currentSongInternal is not null)
         {
             _currentSongInternal.PropertyChanged += CurrentSong_PropertyChanged;
         }
+
         RefreshStateFromCurrentSong();
     }
 
     private void CurrentSong_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (sender is Song song && song == _currentSongInternal)
+        if (sender is not Song song || song != _currentSongInternal || e.PropertyName != nameof(Song.SavedLoop) && e.PropertyName != nameof(Song.IsLoopActive))
         {
-            if (e.PropertyName == nameof(Song.SavedLoop) || e.PropertyName == nameof(Song.IsLoopActive))
-            {
-                Dispatcher.UIThread.InvokeAsync(RefreshStateFromCurrentSong);
-            }
+            return;
         }
+
+        Dispatcher.UIThread.InvokeAsync(RefreshStateFromCurrentSong);
     }
 
     private void RefreshStateFromCurrentSong()
     {
-        if (_currentSongInternal?.SavedLoop != null)
+        if (_currentSongInternal?.SavedLoop is not null)
         {
-            var loop = _currentSongInternal.SavedLoop;
+            LoopRegion loop = _currentSongInternal.SavedLoop;
             string activeStatus = _currentSongInternal.IsLoopActive ? " (Active)" : " (Inactive)";
             ActiveLoopDisplayText = $"Loop: {loop.Start:mm\\:ss\\.f} - {loop.End:mm\\:ss\\.f}{activeStatus}";
 
@@ -104,11 +109,13 @@ public class ActiveLoopViewModel : ViewModelBase, IDisposable
         else
         {
             ActiveLoopDisplayText = "No loop defined.";
+            
             if (IsLoopActive) // Ensure UI binding is false if no loop
             {
                 SetProperty(ref _isLoopActive, false, nameof(IsLoopActive));
             }
         }
+
         (ToggleLoopActiveCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
@@ -130,10 +137,12 @@ public class ActiveLoopViewModel : ViewModelBase, IDisposable
     public void Dispose()
     {
         _playbackService.PropertyChanged -= PlaybackService_PropertyChanged;
-        if (_currentSongInternal != null)
+       
+        if (_currentSongInternal is not null)
         {
             _currentSongInternal.PropertyChanged -= CurrentSong_PropertyChanged;
         }
+
         _currentSongInternal = null;
     }
 }
