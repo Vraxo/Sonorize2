@@ -259,7 +259,7 @@ public class WaveformRenderer
         double height = bounds.Height;
         var waveformPen = new Pen(waveformBrush, 1);
 
-        var pointsList = waveformPoints?.ToList(); // Materialize once, handles null waveformPoints
+        List<WaveformPoint>? pointsList = waveformPoints?.ToList(); // Materialize once, handles null waveformPoints
 
         if (pointsList is not null && pointsList.Count > 0)
         {
@@ -314,7 +314,7 @@ public class WaveformRenderer
         double currentX = (currentPosition.TotalSeconds / duration.TotalSeconds) * width;
         currentX = Math.Clamp(currentX, 0, width);
 
-        context.DrawLine(positionPen, new Point(currentX, 0), new Point(currentX, height));
+        context.DrawLine(positionPen, new(currentX, 0), new(currentX, height));
     }
 }
 </file>
@@ -4455,53 +4455,57 @@ public class MainWindow : Window
 
     private void MainWindow_DataContextChanged(object? sender, EventArgs e)
     {
-        if (_currentLibraryVM != null)
+        if (_currentLibraryVM is not null)
         {
             _currentLibraryVM.PropertyChanged -= LibraryViewModel_PropertyChanged;
-            _sharedViewTemplates.SetLibraryViewModel(null);
             _currentLibraryVM = null;
         }
 
-        if (DataContext is MainWindowViewModel vm && vm.Library != null)
+        if (DataContext is not MainWindowViewModel vm || vm.Library == null)
         {
-            vm.SetOwnerView(this);
-
-            _currentLibraryVM = vm.Library;
-            _currentLibraryVM.PropertyChanged += LibraryViewModel_PropertyChanged;
-            _sharedViewTemplates.SetLibraryViewModel(_currentLibraryVM);
-
-            ApplyListViewDisplayMode(_songListBox, _currentLibraryVM.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate);
-            ApplyListViewDisplayMode(_artistsListBox, _currentLibraryVM.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate);
-            ApplyListViewDisplayMode(_albumsListBox, _currentLibraryVM.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate);
+            return;
         }
+
+        vm.SetOwnerView(this);
+
+        _currentLibraryVM = vm.Library;
+        _currentLibraryVM.PropertyChanged += LibraryViewModel_PropertyChanged;
+        // _sharedViewTemplates.SetLibraryViewModel(_currentLibraryVM); // No longer needed
+
+        ApplyListViewDisplayMode(_songListBox, _currentLibraryVM.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate);
+        ApplyListViewDisplayMode(_artistsListBox, _currentLibraryVM.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate);
+        ApplyListViewDisplayMode(_albumsListBox, _currentLibraryVM.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate);
     }
 
     private void LibraryViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (sender is LibraryViewModel lvm)
+        if (sender is not LibraryViewModel lvm)
         {
-            if (e.PropertyName == nameof(LibraryViewModel.LibraryViewMode))
-            {
-                Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_songListBox, lvm.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate));
-            }
-            else if (e.PropertyName == nameof(LibraryViewModel.ArtistViewMode))
-            {
-                Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_artistsListBox, lvm.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate));
-            }
-            else if (e.PropertyName == nameof(LibraryViewModel.AlbumViewMode))
-            {
-                Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_albumsListBox, lvm.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate));
-            }
+            return;
+        }
+
+        if (e.PropertyName == nameof(LibraryViewModel.LibraryViewMode))
+        {
+            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_songListBox, lvm.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate));
+        }
+        else if (e.PropertyName == nameof(LibraryViewModel.ArtistViewMode))
+        {
+            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_artistsListBox, lvm.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate));
+        }
+        else if (e.PropertyName == nameof(LibraryViewModel.AlbumViewMode))
+        {
+            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_albumsListBox, lvm.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate));
         }
     }
 
     private void ApplyListViewDisplayMode(ListBox listBox, SongDisplayMode mode, IDataTemplate detailedTemplate, IDataTemplate compactTemplate, IDataTemplate gridTemplate)
     {
-        if (listBox == null)
+        if (listBox is null)
         {
             Debug.WriteLine($"[MainWindow] ApplyListViewDisplayMode called but ListBox target is null. Mode: {mode}");
             return;
         }
+
         _mainTabViewControls.UpdateListViewMode(mode, listBox, detailedTemplate, compactTemplate, gridTemplate);
     }
 
@@ -4516,15 +4520,17 @@ public class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
-        if (_currentLibraryVM != null)
+        if (_currentLibraryVM is not null)
         {
             _currentLibraryVM.PropertyChanged -= LibraryViewModel_PropertyChanged;
-            _sharedViewTemplates.SetLibraryViewModel(null);
+            // _sharedViewTemplates.SetLibraryViewModel(null); // No longer needed
         }
+
         if (DataContext is MainWindowViewModel vm)
         {
             vm.SetOwnerView(null!);
         }
+
         base.OnClosed(e);
     }
 }
@@ -10383,7 +10389,6 @@ namespace Sonorize.Views.MainWindowControls;
 public class SharedViewTemplates
 {
     private readonly ThemeColors _theme;
-    private LibraryViewModel? _libraryVM;
     private readonly SongContextMenuHelper _contextMenuHelper;
 
     // Expose the provider for Song templates
@@ -10405,7 +10410,7 @@ public class SharedViewTemplates
     public SharedViewTemplates(ThemeColors theme)
     {
         _theme = theme;
-        _contextMenuHelper = new SongContextMenuHelper(_theme, () => _libraryVM);
+        _contextMenuHelper = new SongContextMenuHelper(_theme); // Simplified instantiation
         SongTemplates = new SongItemTemplateProvider(_theme, _contextMenuHelper);
         ArtistTemplates = new ArtistItemTemplateProvider(_theme); // Instantiate new provider
 
@@ -10414,11 +10419,7 @@ public class SharedViewTemplates
         InitializePanelTemplates();
     }
 
-    public void SetLibraryViewModel(LibraryViewModel? libraryVM)
-    {
-        _libraryVM = libraryVM;
-        Debug.WriteLine($"[SharedViewTemplates] SetLibraryViewModel explicitly called. _libraryVM (for helper's fallback func) is now {(_libraryVM == null ? "NULL" : "NOT NULL")}.");
-    }
+    // SetLibraryViewModel method removed
 
     private void InitializeAlbumTemplates()
     {
@@ -10573,28 +10574,23 @@ public class SharedViewTemplates
 </file>
 
 <file path="Source\Views\MainWindowControls\SongContextMenuHelper.cs">
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Media;
 using Avalonia.Styling;
-using Avalonia.VisualTree;
 using Sonorize.Models;
-using Sonorize.ViewModels;
-using System;
-using System.Diagnostics;
 
 namespace Sonorize.Views.MainWindowControls;
 
 public class SongContextMenuHelper
 {
     private readonly ThemeColors _theme;
-    private readonly Func<LibraryViewModel?> _getFallbackLibraryVmFunc;
 
-    public SongContextMenuHelper(ThemeColors theme, Func<LibraryViewModel?> getFallbackLibraryVmFunc)
+    public SongContextMenuHelper(ThemeColors theme)
     {
         _theme = theme;
-        _getFallbackLibraryVmFunc = getFallbackLibraryVmFunc ?? throw new ArgumentNullException(nameof(getFallbackLibraryVmFunc));
         Debug.WriteLine($"[SongContextMenuHelper] Initialized.");
     }
 
@@ -10635,84 +10631,16 @@ public class SongContextMenuHelper
             }
         });
 
-
-        contextMenu.Opening += (sender, e) =>
+        var editMetadataMenuItem = new MenuItem
         {
-            if (sender is not ContextMenu cm) return;
-
-            Debug.WriteLine($"[ContextMenuHelper.Opening] Event fired for song: {songDataContext.Title}. Attempting to resolve LibraryVM.");
-            LibraryViewModel? resolvedLibraryVM = null;
-
-            if (cm.PlacementTarget is Control placementTarget)
-            {
-                Debug.WriteLine($"[ContextMenuHelper.Opening] PlacementTarget is '{placementTarget.GetType().Name}'.");
-                var listBoxItem = placementTarget.FindAncestorOfType<ListBoxItem>();
-                Control? targetForVmSearch = listBoxItem ?? placementTarget;
-
-                var listBox = targetForVmSearch.FindAncestorOfType<ListBox>();
-                if (listBox != null)
-                {
-                    Debug.WriteLine($"[ContextMenuHelper.Opening] Found ancestor ListBox '{listBox.Name}'. Its DataContext is '{listBox.DataContext?.GetType().Name ?? "null"}'.");
-                    if (listBox.DataContext is MainWindowViewModel mwvm && mwvm.Library != null)
-                    {
-                        resolvedLibraryVM = mwvm.Library;
-                        Debug.WriteLine($"[ContextMenuHelper.Opening] Successfully resolved LibraryVM from ListBox.DataContext (MainWindowViewModel).");
-                    }
-                    else if (listBox.DataContext is LibraryViewModel lvm)
-                    {
-                        resolvedLibraryVM = lvm;
-                        Debug.WriteLine($"[ContextMenuHelper.Opening] Successfully resolved LibraryVM directly from ListBox.DataContext.");
-                    }
-                    else
-                    {
-                        Debug.WriteLine($"[ContextMenuHelper.Opening] ListBox.DataContext is not MainWindowViewModel or LibraryViewModel, or Library is null.");
-                    }
-                }
-                else
-                {
-                    Debug.WriteLine($"[ContextMenuHelper.Opening] Could not find ancestor ListBox from PlacementTarget or its ListBoxItem ancestor.");
-                }
-            }
-            else
-            {
-                Debug.WriteLine($"[ContextMenuHelper.Opening] PlacementTarget is null. Cannot resolve LibraryVM dynamically.");
-            }
-
-            // Fallback to the explicitly provided _libraryVM if dynamic lookup failed.
-            if (resolvedLibraryVM == null)
-            {
-                resolvedLibraryVM = _getFallbackLibraryVmFunc();
-                if (resolvedLibraryVM != null)
-                {
-                    Debug.WriteLine($"[ContextMenuHelper.Opening] Using fallback LibraryVM for song: {songDataContext.Title}.");
-                }
-                else
-                {
-                    Debug.WriteLine($"[ContextMenuHelper.Opening] Fallback LibraryVM is also null for song: {songDataContext.Title}.");
-                }
-            }
-
-            cm.Items.Clear();
-            if (resolvedLibraryVM != null)
-            {
-                cm.DataContext = resolvedLibraryVM;
-
-                var editMetadataMenuItem = new MenuItem
-                {
-                    Header = "Edit Metadata",
-                    CommandParameter = songDataContext
-                };
-                editMetadataMenuItem.Bind(MenuItem.CommandProperty, new Binding("EditSongMetadataCommand"));
-                cm.Items.Add(editMetadataMenuItem);
-                Debug.WriteLine($"[ContextMenuHelper.Opening] ContextMenu DataContext set to LibraryVM. Command should bind for song: {songDataContext.Title}.");
-            }
-            else
-            {
-                Debug.WriteLine($"[ContextMenuHelper.Opening] CRITICAL: LibraryViewModel could not be resolved for song: {songDataContext.Title}. ContextMenu will be disabled or show error.");
-                cm.DataContext = null;
-                cm.Items.Add(new MenuItem { Header = " (Error: Menu commands unavailable) ", IsEnabled = false, Foreground = Brushes.Gray });
-            }
+            Header = "Edit Metadata",
+            CommandParameter = songDataContext
         };
+
+        editMetadataMenuItem.Bind(MenuItem.CommandProperty, new Binding("$parent[ListBox].DataContext.Library.EditSongMetadataCommand"));
+        contextMenu.Items.Add(editMetadataMenuItem);
+        Debug.WriteLine($"[SongContextMenuHelper] CreateContextMenu for song: {songDataContext.Title}. MenuItem command bound declaratively.");
+
         return contextMenu;
     }
 }

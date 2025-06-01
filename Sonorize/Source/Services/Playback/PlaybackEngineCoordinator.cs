@@ -8,7 +8,7 @@ namespace Sonorize.Services.Playback;
 
 public class PlaybackEngineCoordinator : IDisposable
 {
-    private readonly NAudioEngineController _engineController;
+    private readonly NAudioPlaybackEngine _engineController; // Changed type
     private readonly PlaybackLoopHandler _loopHandler;
     private readonly PlaybackMonitor _playbackMonitor;
     private Song? _currentSong;
@@ -21,7 +21,7 @@ public class PlaybackEngineCoordinator : IDisposable
     public TimeSpan CurrentSongDuration => _engineController.CurrentSongDuration;
     public PlaybackStateStatus CurrentPlaybackStatus => _engineController.CurrentPlaybackStatus;
 
-    public PlaybackEngineCoordinator(NAudioEngineController engineController, PlaybackLoopHandler loopHandler, PlaybackMonitor playbackMonitor)
+    public PlaybackEngineCoordinator(NAudioPlaybackEngine engineController, PlaybackLoopHandler loopHandler, PlaybackMonitor playbackMonitor) // Changed type
     {
         _engineController = engineController ?? throw new ArgumentNullException(nameof(engineController));
         _loopHandler = loopHandler ?? throw new ArgumentNullException(nameof(loopHandler));
@@ -115,10 +115,10 @@ public class PlaybackEngineCoordinator : IDisposable
         Debug.WriteLine("[PlaybackEngineCoordinator] Stop initiated.");
     }
 
-    public void DisposeCurrentEngineInternals() // New method
+    public void DisposeCurrentEngineInternals()
     {
         _playbackMonitor.Stop(); // Stop monitor before disposing engine
-        _engineController.DisposeEngineInternalsOnly();
+        _engineController.Dispose(); // Changed from DisposeEngineInternalsOnly
         Debug.WriteLine("[PlaybackEngineCoordinator] Disposed current engine internals.");
     }
 

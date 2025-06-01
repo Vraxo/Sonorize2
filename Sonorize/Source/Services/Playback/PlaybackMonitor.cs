@@ -8,7 +8,7 @@ namespace Sonorize.Services.Playback;
 
 public class PlaybackMonitor : IDisposable
 {
-    private readonly NAudioEngineController _engineController;
+    private readonly NAudioPlaybackEngine _engineController; // Changed type
     private readonly PlaybackLoopHandler _loopHandler;
     private Timer? _monitorTimer;
     private Song? _songBeingMonitored;
@@ -16,7 +16,7 @@ public class PlaybackMonitor : IDisposable
 
     private const int MonitorIntervalMilliseconds = 100;
 
-    public PlaybackMonitor(NAudioEngineController engineController, PlaybackLoopHandler loopHandler)
+    public PlaybackMonitor(NAudioPlaybackEngine engineController, PlaybackLoopHandler loopHandler) // Changed type
     {
         _engineController = engineController ?? throw new ArgumentNullException(nameof(engineController));
         _loopHandler = loopHandler ?? throw new ArgumentNullException(nameof(loopHandler));

@@ -41,23 +41,25 @@ public class NAudioPlaybackEngine : IDisposable
 
     public float PlaybackRate
     {
-        get;
+        get => _playbackRate;
         set
         {
-            field = value;
+            _playbackRate = value;
             if (_pipeline?.EffectsProcessor != null) _pipeline.EffectsProcessor.Tempo = value;
         }
-    } = 1.0f;
+    }
+    private float _playbackRate = 1.0f;
 
     public float PitchSemitones
     {
-        get;
+        get => _pitchSemitones;
         set
         {
-            field = value;
+            _pitchSemitones = value;
             if (_pipeline?.EffectsProcessor != null) _pipeline.EffectsProcessor.PitchSemitones = value;
         }
-    } = 0f;
+    }
+    private float _pitchSemitones = 0f;
 
 
     public NAudioPlaybackEngine()
@@ -79,6 +81,7 @@ public class NAudioPlaybackEngine : IDisposable
 
         try
         {
+            // Properties PlaybackRate and PitchSemitones are used by NAudioPipeline constructor
             _pipeline = new NAudioPipeline(filePath, PlaybackRate, PitchSemitones, OnPipelinePlaybackStopped);
             Debug.WriteLine($"[Engine] NAudio pipeline loaded successfully via NAudioPipeline for: {Path.GetFileName(filePath)}.");
         }
@@ -203,8 +206,14 @@ public class NAudioPlaybackEngine : IDisposable
     {
         if (disposing)
         {
-            _pipeline?.Dispose();
-            _pipeline = null;
+            if (_pipeline != null)
+            {
+                // Unsubscribe from _pipeline events if any were directly subscribed by this class
+                // (Currently, NAudioPipeline forwards its OutputDevice.PlaybackStopped to OnPipelinePlaybackStopped,
+                // so no direct subscription to _pipeline here that needs unsubscribing).
+                _pipeline.Dispose();
+                _pipeline = null;
+            }
         }
     }
 
