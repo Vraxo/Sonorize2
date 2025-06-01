@@ -11,21 +11,48 @@ public class ScrobblingService
 {
     private readonly SettingsService _settingsService;
     private readonly LastfmAuthenticatorService _authenticatorService;
-    private readonly ScrobbleEligibilityService _eligibilityService; // New dependency
+    // Removed: private readonly ScrobbleEligibilityService _eligibilityService; 
     private AppSettings _currentSettings;
 
     public bool IsScrobblingEnabled => _currentSettings.LastfmScrobblingEnabled;
 
     public bool AreCredentialsEffectivelyConfigured => LastfmAuthenticatorService.AreCredentialsEffectivelyConfigured(_currentSettings);
 
+    // ScrobbleEligibilityService constants and logic moved here
+    private const int MinTrackLengthForScrobbleSeconds = 30;
+
+    private static bool DetermineScrobbleEligibility(Song song, TimeSpan playedDuration, ScrobbleThresholds thresholds)
+    {
+        if (song == null || song.Duration.TotalSeconds <= MinTrackLengthForScrobbleSeconds)
+        {
+            Debug.WriteLine($"[ScrobblingService.Eligibility] Song '{song?.Title ?? "null"}' is null or too short ({song?.Duration.TotalSeconds ?? 0}s). Min required: {MinTrackLengthForScrobbleSeconds}s. Not scrobbling.");
+            return false;
+        }
+
+        double percentagePlayed = (playedDuration.TotalSeconds / song.Duration.TotalSeconds) * 100.0;
+        double requiredPlaybackFromPercentage = song.Duration.TotalSeconds * (thresholds.ScrobbleThresholdPercentage / 100.0);
+        double requiredPlaybackAbsolute = thresholds.ScrobbleThresholdAbsoluteSeconds;
+
+        double effectiveRequiredSeconds = Math.Min(requiredPlaybackFromPercentage, requiredPlaybackAbsolute);
+
+        bool conditionMet = playedDuration.TotalSeconds >= effectiveRequiredSeconds;
+
+        Debug.WriteLine($"[ScrobblingService.Eligibility] For '{song.Title}': " +
+                        $"Played: {playedDuration.TotalSeconds:F1}s ({percentagePlayed:F1}%), " +
+                        $"Song Duration: {song.Duration.TotalSeconds:F1}s. " +
+                        $"Configured Thresholds: {thresholds.ScrobbleThresholdPercentage}% (gives {requiredPlaybackFromPercentage:F1}s) OR {thresholds.ScrobbleThresholdAbsoluteSeconds}s. " +
+                        $"Effective Threshold: {effectiveRequiredSeconds:F1}s. Met: {conditionMet}");
+        return conditionMet;
+    }
+
+
     public ScrobblingService(
         SettingsService settingsService,
-        LastfmAuthenticatorService authenticatorService,
-        ScrobbleEligibilityService eligibilityService) // Added eligibilityService
+        LastfmAuthenticatorService authenticatorService)
     {
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
         _authenticatorService = authenticatorService ?? throw new ArgumentNullException(nameof(authenticatorService));
-        _eligibilityService = eligibilityService ?? throw new ArgumentNullException(nameof(eligibilityService)); // Store new dependency
+        // Removed: _eligibilityService = eligibilityService ?? throw new ArgumentNullException(nameof(eligibilityService));
         RefreshSettings(); // Initial load of settings
         Debug.WriteLine($"[ScrobblingService] Initialized. Scrobbling Enabled: {IsScrobblingEnabled}, Credentials Configured: {AreCredentialsEffectivelyConfigured}");
     }
@@ -50,7 +77,7 @@ public class ScrobblingService
             _currentSettings.ScrobbleThresholdPercentage,
             _currentSettings.ScrobbleThresholdAbsoluteSeconds);
 
-        return ScrobbleEligibilityService.ShouldScrobble(song, playedDuration, thresholds);
+        return DetermineScrobbleEligibility(song, playedDuration, thresholds);
     }
 
 
