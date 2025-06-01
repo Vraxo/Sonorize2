@@ -108,9 +108,9 @@ public class WaveformDisplayControl : Control
 
         if (width <= 0 || height <= 0) return;
 
-        _renderer.DrawBackground(context, Bounds, Background);
-        _renderer.DrawWaveform(context, Bounds, WaveformPoints, WaveformBrush);
-        _renderer.DrawLoopRegion(context, Bounds, ActiveLoop, Duration, LoopRegionBrush);
-        _renderer.DrawPositionMarker(context, Bounds, CurrentPosition, Duration, PositionMarkerBrush);
+        WaveformRenderer.DrawBackground(context, Bounds, Background);
+        WaveformRenderer.DrawWaveform(context, Bounds, WaveformPoints, WaveformBrush);
+        WaveformRenderer.DrawLoopRegion(context, Bounds, ActiveLoop, Duration, LoopRegionBrush);
+        WaveformRenderer.DrawPositionMarker(context, Bounds, CurrentPosition, Duration, PositionMarkerBrush);
     }
 }

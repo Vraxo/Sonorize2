@@ -3,86 +3,84 @@ using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
 using Avalonia.Media;
-using Sonorize.Models; // For LoopRegion
-using Sonorize.Services; // For WaveformPoint
+using Sonorize.Models;
+using Sonorize.Services;
 
-namespace Sonorize.Controls
+namespace Sonorize.Controls;
+
+public class WaveformRenderer
 {
-    public class WaveformRenderer
+    public static void DrawBackground(DrawingContext context, Rect bounds, IBrush? backgroundBrush)
     {
-        public void DrawBackground(DrawingContext context, Rect bounds, IBrush? backgroundBrush)
+        if (backgroundBrush is null)
         {
-            if (backgroundBrush != null)
-            {
-                context.FillRectangle(backgroundBrush, bounds);
-            }
+            return;
         }
 
-        public void DrawWaveform(DrawingContext context, Rect bounds, IEnumerable<WaveformPoint> waveformPoints, IBrush waveformBrush)
-        {
-            var width = bounds.Width;
-            var height = bounds.Height;
-            var waveformPen = new Pen(waveformBrush, 1);
+        context.FillRectangle(backgroundBrush, bounds);
+    }
 
-            if (waveformPoints != null && waveformPoints.Any())
+    public static void DrawWaveform(DrawingContext context, Rect bounds, IEnumerable<WaveformPoint> waveformPoints, IBrush waveformBrush)
+    {
+        double width = bounds.Width;
+        double height = bounds.Height;
+        var waveformPen = new Pen(waveformBrush, 1);
+
+        var pointsList = waveformPoints?.ToList(); // Materialize once, handles null waveformPoints
+
+        if (pointsList is not null && pointsList.Count > 0)
+        {
+            for (int i = 0; i < pointsList.Count; i++)
             {
-                var pointsList = waveformPoints as List<WaveformPoint> ?? waveformPoints.ToList();
-                if (pointsList.Count > 1)
-                {
-                    for (int i = 0; i < pointsList.Count; i++)
-                    {
-                        var point = pointsList[i];
-                        var x = point.X * width;
-                        var yPeakValue = point.YPeak * (height / 2);
-                        context.DrawLine(waveformPen, new Point(x, height / 2 - yPeakValue), new Point(x, height / 2 + yPeakValue));
-                    }
-                }
-                else if (pointsList.Count == 1)
-                {
-                    var point = pointsList[0];
-                    var x = point.X * width;
-                    var yPeakValue = point.YPeak * (height / 2);
-                    context.DrawLine(waveformPen, new Point(x, height / 2 - yPeakValue), new Point(x, height / 2 + yPeakValue));
-                }
-                else
-                {
-                    context.DrawLine(waveformPen, new Point(0, height / 2), new Point(width, height / 2));
-                }
-            }
-            else
-            {
-                context.DrawLine(waveformPen, new Point(0, height / 2), new Point(width, height / 2));
+                WaveformPoint point = pointsList[i];
+                double x = point.X * width;
+                double yPeakMagnitude = point.YPeak * (height / 2);
+                double centerY = height / 2;
+
+                context.DrawLine(waveformPen, new Point(x, centerY - yPeakMagnitude), new Point(x, centerY + yPeakMagnitude));
             }
         }
-
-        public void DrawLoopRegion(DrawingContext context, Rect bounds, LoopRegion? activeLoop, TimeSpan duration, IBrush loopRegionBrush)
+        else
         {
-            if (activeLoop != null && duration.TotalSeconds > 0)
-            {
-                var width = bounds.Width;
-                var height = bounds.Height;
-                var loopStartRatio = activeLoop.Start.TotalSeconds / duration.TotalSeconds;
-                var loopEndRatio = activeLoop.End.TotalSeconds / duration.TotalSeconds;
-                var loopStartX = loopStartRatio * width;
-                var loopEndX = loopEndRatio * width;
-                if (loopEndX > loopStartX)
-                {
-                    context.FillRectangle(loopRegionBrush, new Rect(loopStartX, 0, loopEndX - loopStartX, height));
-                }
-            }
+            context.DrawLine(waveformPen, new Point(0, height / 2), new Point(width, height / 2));
+        }
+    }
+
+    public static void DrawLoopRegion(DrawingContext context, Rect bounds, LoopRegion? activeLoop, TimeSpan duration, IBrush loopRegionBrush)
+    {
+        if (activeLoop is null || duration.TotalSeconds <= 0)
+        {
+            return;
         }
 
-        public void DrawPositionMarker(DrawingContext context, Rect bounds, TimeSpan currentPosition, TimeSpan duration, IBrush positionMarkerBrush)
+        double width = bounds.Width;
+        double height = bounds.Height;
+        double loopStartRatio = activeLoop.Start.TotalSeconds / duration.TotalSeconds;
+        double loopEndRatio = activeLoop.End.TotalSeconds / duration.TotalSeconds;
+        double loopStartX = loopStartRatio * width;
+        double loopEndX = loopEndRatio * width;
+
+        if (loopEndX <= loopStartX)
         {
-            if (duration.TotalSeconds > 0)
-            {
-                var width = bounds.Width;
-                var height = bounds.Height;
-                var positionPen = new Pen(positionMarkerBrush, 1.5);
-                var currentX = (currentPosition.TotalSeconds / duration.TotalSeconds) * width;
-                currentX = Math.Clamp(currentX, 0, width);
-                context.DrawLine(positionPen, new Point(currentX, 0), new Point(currentX, height));
-            }
+            return;
         }
+
+        context.FillRectangle(loopRegionBrush, new(loopStartX, 0, loopEndX - loopStartX, height));
+    }
+
+    public static void DrawPositionMarker(DrawingContext context, Rect bounds, TimeSpan currentPosition, TimeSpan duration, IBrush positionMarkerBrush)
+    {
+        if (duration.TotalSeconds <= 0)
+        {
+            return;
+        }
+
+        double width = bounds.Width;
+        double height = bounds.Height;
+        Pen positionPen = new(positionMarkerBrush, 1.5);
+        double currentX = (currentPosition.TotalSeconds / duration.TotalSeconds) * width;
+        currentX = Math.Clamp(currentX, 0, width);
+
+        context.DrawLine(positionPen, new(currentX, 0), new(currentX, height));
     }
 }
