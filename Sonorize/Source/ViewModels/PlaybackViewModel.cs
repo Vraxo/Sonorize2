@@ -39,19 +39,10 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
     public PlaybackStateStatus CurrentPlaybackStatus => _playbackService.CurrentPlaybackStatus;
     public bool IsPlaying => _playbackService.IsPlaying;
 
-    private string _currentTimeDisplay = "--:--";
-    public string CurrentTimeDisplay
-    {
-        get => _currentTimeDisplay;
-        private set => SetProperty(ref _currentTimeDisplay, value);
-    }
-
-    private string _totalTimeDisplay = "--:--";
-    public string TotalTimeDisplay
-    {
-        get => _totalTimeDisplay;
-        private set => SetProperty(ref _totalTimeDisplay, value);
-    }
+    public string CurrentTimeDisplay => _playbackService.CurrentSong != null ? $"{_playbackService.CurrentPosition:mm\\:ss}" : "--:--";
+    public string TotalTimeDisplay => (_playbackService.CurrentSong != null && _playbackService.CurrentSongDuration.TotalSeconds > 0)
+            ? $"{_playbackService.CurrentSongDuration:mm\\:ss}"
+            : "--:--";
 
     public ICommand PlayPauseResumeCommand { get; }
     public ICommand SeekCommand { get; }
@@ -95,19 +86,19 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
                 case nameof(PlaybackService.CurrentSong):
                     OnPropertyChanged(nameof(CurrentSong));
                     OnPropertyChanged(nameof(HasCurrentSong));
-                    UpdateCurrentTimeDisplay();
-                    UpdateTotalTimeDisplay();
+                    OnPropertyChanged(nameof(CurrentTimeDisplay));
+                    OnPropertyChanged(nameof(TotalTimeDisplay));
                     commandStateMayChange = true;
                     break;
                 case nameof(PlaybackService.CurrentPosition):
                     OnPropertyChanged(nameof(CurrentPosition));
                     OnPropertyChanged(nameof(CurrentPositionSeconds));
-                    UpdateCurrentTimeDisplay();
+                    OnPropertyChanged(nameof(CurrentTimeDisplay));
                     break;
                 case nameof(PlaybackService.CurrentSongDuration):
                     OnPropertyChanged(nameof(CurrentSongDuration));
                     OnPropertyChanged(nameof(CurrentSongDurationSeconds));
-                    UpdateTotalTimeDisplay();
+                    OnPropertyChanged(nameof(TotalTimeDisplay));
                     commandStateMayChange = true;
                     break;
                 case nameof(PlaybackService.CurrentPlaybackStatus):
@@ -125,8 +116,8 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
 
     private void UpdateAllDisplayProperties()
     {
-        UpdateCurrentTimeDisplay();
-        UpdateTotalTimeDisplay();
+        OnPropertyChanged(nameof(CurrentTimeDisplay));
+        OnPropertyChanged(nameof(TotalTimeDisplay));
         OnPropertyChanged(nameof(CurrentSong));
         OnPropertyChanged(nameof(HasCurrentSong));
         OnPropertyChanged(nameof(CurrentPosition));
@@ -135,18 +126,6 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(CurrentSongDurationSeconds));
         OnPropertyChanged(nameof(CurrentPlaybackStatus));
         OnPropertyChanged(nameof(IsPlaying));
-    }
-
-    private void UpdateCurrentTimeDisplay()
-    {
-        CurrentTimeDisplay = _playbackService.CurrentSong != null ? $"{_playbackService.CurrentPosition:mm\\:ss}" : "--:--";
-    }
-
-    private void UpdateTotalTimeDisplay()
-    {
-        TotalTimeDisplay = (_playbackService.CurrentSong != null && _playbackService.CurrentSongDuration.TotalSeconds > 0)
-            ? $"{_playbackService.CurrentSongDuration:mm\\:ss}"
-            : "--:--";
     }
 
     private void WaveformDisplay_PropertyChanged(object? sender, PropertyChangedEventArgs e)
