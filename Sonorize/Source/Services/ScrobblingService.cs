@@ -16,7 +16,7 @@ public class ScrobblingService
 
     public bool IsScrobblingEnabled => _currentSettings.LastfmScrobblingEnabled;
 
-    public bool AreCredentialsEffectivelyConfigured => _authenticatorService.AreCredentialsEffectivelyConfigured(_currentSettings);
+    public bool AreCredentialsEffectivelyConfigured => LastfmAuthenticatorService.AreCredentialsEffectivelyConfigured(_currentSettings);
 
     public ScrobblingService(
         SettingsService settingsService,

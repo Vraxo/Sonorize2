@@ -21,6 +21,34 @@ public class LastfmAuthenticatorService
         Debug.WriteLine("[LastfmAuthenticatorService] Initialized.");
     }
 
+    private async Task<LastfmClient?> TryAuthenticateWithCredentialsAsync(AppSettings settings)
+    {
+        Debug.WriteLine($"[LastfmAuthenticatorService] Attempting credential authentication for '{settings.LastfmUsername}'…");
+        var auth = new LastAuth(LastfmApiKey, LastfmApiSecret);
+        try
+        {
+            // Callers ensure LastfmUsername and LastfmPassword are not null/empty
+            var response = await auth.GetSessionTokenAsync(settings.LastfmUsername!, settings.LastfmPassword!);
+            if (response.Success && auth.Authenticated && auth.UserSession != null)
+            {
+                var session = auth.UserSession;
+                settings.LastfmSessionKey = session.Token;
+                settings.LastfmPassword = null; // Clear password for security
+                _settingsService.SaveSettings(settings); // Save updated settings with session key
+
+                Debug.WriteLine($"[LastfmAuthenticatorService] Successfully obtained and saved session key for '{settings.LastfmUsername}'. Password cleared from settings.");
+                return new LastfmClient(auth);
+            }
+            // else: If authentication failed but no exception, falls through to return null.
+            // Debug.WriteLine($"[LastfmAuthenticatorService] Credential authentication failed. Success={response.Success}, Authenticated={auth.Authenticated}");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[LastfmAuthenticatorService] Exception during credential authentication for '{settings.LastfmUsername}': {ex.Message}");
+        }
+        return null;
+    }
+
     public async Task<LastfmClient?> GetAuthenticatedClientAsync()
     {
         if (string.IsNullOrEmpty(LastfmApiKey) || LastfmApiKey == "YOUR_LASTFM_API_KEY" ||
@@ -32,7 +60,7 @@ public class LastfmAuthenticatorService
 
         AppSettings currentSettings = _settingsService.LoadSettings(); // Always load fresh settings
 
-        // Attempt to use existing session key from settings
+        // Attempt 1: Use existing session key from settings
         if (!string.IsNullOrEmpty(currentSettings.LastfmSessionKey))
         {
             Debug.WriteLine("[LastfmAuthenticatorService] Using existing session key from settings.");
@@ -41,57 +69,29 @@ public class LastfmAuthenticatorService
             return new LastfmClient(auth);
         }
 
-        // No session key, attempt username/password authentication
+        // Attempt 2: Authenticate with username/password
         if (!string.IsNullOrEmpty(currentSettings.LastfmUsername) &&
             !string.IsNullOrEmpty(currentSettings.LastfmPassword))
         {
-            Debug.WriteLine($"[LastfmAuthenticatorService] No session key; attempting login for '{currentSettings.LastfmUsername}'…");
-            var auth = new LastAuth(LastfmApiKey, LastfmApiSecret);
-
-            try
+            var client = await TryAuthenticateWithCredentialsAsync(currentSettings);
+            if (client != null)
             {
-                var response = await auth.GetSessionTokenAsync(
-                    currentSettings.LastfmUsername,
-                    currentSettings.LastfmPassword
-                );
-
-                if (response.Success && auth.Authenticated && auth.UserSession != null)
-                {
-                    var session = auth.UserSession;
-                    currentSettings.LastfmSessionKey = session.Token;
-                    // Clear the password after successful session key retrieval for security
-                    currentSettings.LastfmPassword = null;
-                    _settingsService.SaveSettings(currentSettings);
-
-                    Debug.WriteLine($"[LastfmAuthenticatorService] Successfully obtained and saved session key for '{currentSettings.LastfmUsername}'. Password cleared from settings.");
-
-                    // Return a new client instance authenticated with the new session
-                    return new LastfmClient(auth); // auth object now contains the session
-                }
-                else
-                {
-                    //string errorMessage = response.Exception?.Message ?? response.Status.ToString();
-                    //Debug.WriteLine($"[LastfmAuthenticatorService] Authentication failed. Success={response.Success}, Authenticated={auth.Authenticated}, Error='{errorMessage}'");
-                }
+                return client;
             }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[LastfmAuthenticatorService] Exception during Last.fm login: {ex.Message}");
-            }
+            // If TryAuthenticateWithCredentialsAsync returns null, fall through
         }
         else
         {
-            Debug.WriteLine("[LastfmAuthenticatorService] Cannot login: username/password not set in settings, and no existing session key.");
+            Debug.WriteLine("[LastfmAuthenticatorService] No session key, and username/password not fully provided in settings. Cannot attempt login.");
+            // Fall through to final debug message and return null
         }
 
-        Debug.WriteLine("[LastfmAuthenticatorService] GetAuthenticatedClientAsync: Could not obtain an authenticated Last.fm client.");
+        Debug.WriteLine("[LastfmAuthenticatorService] GetAuthenticatedClientAsync: Could not obtain an authenticated Last.fm client after all attempts.");
         return null;
     }
 
-    public bool AreCredentialsEffectivelyConfigured(AppSettings settings)
+    public static bool AreCredentialsEffectivelyConfigured(AppSettings settings)
     {
-        // Credentials are configured if we have a session key, 
-        // OR if we have username/password to attempt to get one.
         return !string.IsNullOrEmpty(settings.LastfmSessionKey) ||
                (!string.IsNullOrEmpty(settings.LastfmUsername) && !string.IsNullOrEmpty(settings.LastfmPassword));
     }
