@@ -1,4 +1,4 @@
-<file path="App.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\App.cs">
 using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -56,7 +56,7 @@ public class App : Application
 }
 </file>
 
-<file path="Program.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Program.cs">
 using System;
 using Avalonia;
 using NAudio.MediaFoundation; // Required for MediaFoundationApi
@@ -111,7 +111,7 @@ class Program
 }
 </file>
 
-<file path="Source\Controls\WaveformDisplayControl.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Controls\WaveformDisplayControl.cs">
 using System;
 using System.Collections.Generic;
 using System.Linq; // Required for Enumerable.Empty
@@ -230,7 +230,7 @@ public class WaveformDisplayControl : Control
 }
 </file>
 
-<file path="Source\Controls\WaveformRenderer.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Controls\WaveformRenderer.cs">
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -319,7 +319,7 @@ public class WaveformRenderer
 }
 </file>
 
-<file path="Source\Converters\BooleanToPlayPauseIconConverter.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Converters\BooleanToPlayPauseIconConverter.cs">
 using System;
 using System.Globalization;
 using Avalonia.Data.Converters;
@@ -350,7 +350,7 @@ namespace Sonorize.Converters
 }
 </file>
 
-<file path="Source\Converters\BooleanToPlayPauseTextConverter.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Converters\BooleanToPlayPauseTextConverter.cs">
 // Path: Source/Views/MainView.cs
 using System;
 using Avalonia.Data.Converters;
@@ -374,7 +374,7 @@ public class BooleanToPlayPauseTextConverter : IValueConverter
 }
 </file>
 
-<file path="Source\Converters\BooleanToShuffleIconConverter.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Converters\BooleanToShuffleIconConverter.cs">
 using System;
 using System.Diagnostics; // Added for Debug
 using System.Globalization;
@@ -410,7 +410,7 @@ namespace Sonorize.Converters
 }
 </file>
 
-<file path="Source\Converters\EnumToBooleanConverter.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Converters\EnumToBooleanConverter.cs">
 using System;
 using System.Globalization;
 using Avalonia.Data.Converters;
@@ -435,7 +435,7 @@ public class EnumToBooleanConverter : IValueConverter
 }
 </file>
 
-<file path="Source\Converters\NotNullToBooleanConverter.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Converters\NotNullToBooleanConverter.cs">
 using System;
 using System.Globalization;
 using Avalonia.Data.Converters;
@@ -458,7 +458,7 @@ public class NotNullToBooleanConverter : IValueConverter
 }
 </file>
 
-<file path="Source\Converters\SliderFillWidthConverter.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Converters\SliderFillWidthConverter.cs">
 using System;
 using Avalonia;
 
@@ -487,7 +487,7 @@ public class SliderFillWidthConverter : Avalonia.Data.Converters.IMultiValueConv
 }
 </file>
 
-<file path="Source\Extensions\ColorExtensions.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Extensions\ColorExtensions.cs">
 using Avalonia.Media;
 
 namespace Sonorize.Extensions;
@@ -503,7 +503,7 @@ public static class ColorExtensions
 }
 </file>
 
-<file path="Source\Extensions\ColorManipulationExtensions.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Extensions\ColorManipulationExtensions.cs">
 using Avalonia.Media;
 
 namespace Sonorize.Extensions;
@@ -517,7 +517,7 @@ public static class ColorManipulationExtensions
 }
 </file>
 
-<file path="Source\Models\AppSettings.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Models\AppSettings.cs">
 using System.Collections.Generic;
 using Sonorize.ViewModels;
 
@@ -543,7 +543,7 @@ public class AppSettings
 }
 </file>
 
-<file path="Source\Models\LoopRegion.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Models\LoopRegion.cs">
 using System;
 
 namespace Sonorize.Models;
@@ -554,7 +554,7 @@ public sealed record LoopRegion(TimeSpan Start, TimeSpan End, string Name = "Loo
 }
 </file>
 
-<file path="Source\Models\LoopStorageData.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Models\LoopStorageData.cs">
 using System;
 
 namespace Sonorize.Models;
@@ -562,7 +562,13 @@ namespace Sonorize.Models;
 public record LoopStorageData(TimeSpan Start, TimeSpan End, bool IsActive);
 </file>
 
-<file path="Source\Models\Song.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Models\ScrobbleThresholds.cs">
+namespace Sonorize.Models;
+
+public record ScrobbleThresholds(int ScrobbleThresholdPercentage, int ScrobbleThresholdAbsoluteSeconds);
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Models\Song.cs">
 using System;
 using System.Diagnostics;
 using Avalonia.Media.Imaging;
@@ -633,7 +639,7 @@ public class Song : ViewModelBase
 }
 </file>
 
-<file path="Source\Models\ThemeColors.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Models\ThemeColors.cs">
 using System.Text.Json.Serialization;
 using Avalonia.Media;
 
@@ -680,7 +686,7 @@ public class ThemeColors
 }
 </file>
 
-<file path="Source\Services\AlbumArtLoader.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\AlbumArtLoader.cs">
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -742,7 +748,7 @@ public class AlbumArtLoader
 }
 </file>
 
-<file path="Source\Services\DefaultIconGenerator.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\DefaultIconGenerator.cs">
 using System;
 using System.Diagnostics;
 using System.Globalization;
@@ -821,7 +827,7 @@ public class DefaultIconGenerator
 }
 </file>
 
-<file path="Source\Services\LastfmAuthenticatorService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\LastfmAuthenticatorService.cs">
 using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
@@ -922,7 +928,7 @@ public class LastfmAuthenticatorService
 }
 </file>
 
-<file path="Source\Services\LibraryPlaybackLinkService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\LibraryPlaybackLinkService.cs">
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -1022,7 +1028,7 @@ public class LibraryPlaybackLinkService : IDisposable
 }
 </file>
 
-<file path="Source\Services\LoopDataMigrator.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\LoopDataMigrator.cs">
 using System;
 using System.Diagnostics;
 using System.IO; // Required for Path.GetFileName
@@ -1131,7 +1137,7 @@ public class LoopDataMigrator
 }
 </file>
 
-<file path="Source\Services\LoopDataService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\LoopDataService.cs">
 // Path: Source/Services/LoopDataService.cs
 using System;
 using System.Collections.Generic;
@@ -1289,7 +1295,7 @@ public class LoopDataService
 }
 </file>
 
-<file path="Source\Services\MusicDirectoryScanner.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\MusicDirectoryScanner.cs">
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -1403,7 +1409,7 @@ public class MusicDirectoryScanner
 }
 </file>
 
-<file path="Source\Services\MusicLibraryService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\MusicLibraryService.cs">
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -1464,7 +1470,7 @@ public class MusicLibraryService
 }
 </file>
 
-<file path="Source\Services\NAudioWaveformPointGenerator.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\NAudioWaveformPointGenerator.cs">
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -1514,7 +1520,7 @@ public class NAudioWaveformPointGenerator
 }
 </file>
 
-<file path="Source\Services\NextTrackSelectorService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\NextTrackSelectorService.cs">
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -1635,7 +1641,7 @@ public class NextTrackSelectorService(Random shuffleRandom)
 }
 </file>
 
-<file path="Source\Services\ScrobbleEligibilityService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\ScrobbleEligibilityService.cs">
 using System;
 using System.Diagnostics;
 using Sonorize.Models; // For Song
@@ -1678,7 +1684,7 @@ public class ScrobbleEligibilityService
 }
 </file>
 
-<file path="Source\Services\ScrobblingService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\ScrobblingService.cs">
 using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
@@ -1692,21 +1698,59 @@ public class ScrobblingService
 {
     private readonly SettingsService _settingsService;
     private readonly LastfmAuthenticatorService _authenticatorService;
-    private readonly ScrobbleEligibilityService _eligibilityService; // New dependency
     private AppSettings _currentSettings;
 
     public bool IsScrobblingEnabled => _currentSettings.LastfmScrobblingEnabled;
 
-    public bool AreCredentialsEffectivelyConfigured => LastfmAuthenticatorService.AreCredentialsEffectivelyConfigured(_currentSettings);
+    public bool AreCredentialsEffectivelyConfigured
+    {
+        get
+        {
+            return LastfmAuthenticatorService.AreCredentialsEffectivelyConfigured(_currentSettings);
+        }
+    }
+
+    // ScrobbleEligibilityService constants and logic moved here
+    private const int MinTrackLengthForScrobbleSeconds = 30;
+
+    private static bool DetermineScrobbleEligibility(Song song, TimeSpan playedDuration, ScrobbleThresholds thresholds)
+    {
+        if (song == null || song.Duration.TotalSeconds <= MinTrackLengthForScrobbleSeconds)
+        {
+            Debug.WriteLine($"[ScrobblingService.Eligibility] Song " +
+                $"'{song?.Title ?? "null"}'" +
+                $" is null or too short " +
+                $"({song?.Duration.TotalSeconds ?? 0}s). " +
+                $"Min required: {MinTrackLengthForScrobbleSeconds}s. " +
+                $"Not scrobbling.");
+
+            return false;
+        }
+
+        double percentagePlayed = (playedDuration.TotalSeconds / song.Duration.TotalSeconds) * 100.0;
+        double requiredPlaybackFromPercentage = song.Duration.TotalSeconds * (thresholds.ScrobbleThresholdPercentage / 100.0);
+        double requiredPlaybackAbsolute = thresholds.ScrobbleThresholdAbsoluteSeconds;
+
+        double effectiveRequiredSeconds = Math.Min(requiredPlaybackFromPercentage, requiredPlaybackAbsolute);
+
+        bool conditionMet = playedDuration.TotalSeconds >= effectiveRequiredSeconds;
+
+        Debug.WriteLine($"[ScrobblingService.Eligibility] For '{song.Title}': " +
+                        $"Played: {playedDuration.TotalSeconds:F1}s ({percentagePlayed:F1}%), " +
+                        $"Song Duration: {song.Duration.TotalSeconds:F1}s. " +
+                        $"Configured Thresholds: {thresholds.ScrobbleThresholdPercentage}% (gives {requiredPlaybackFromPercentage:F1}s) OR {thresholds.ScrobbleThresholdAbsoluteSeconds}s. " +
+                        $"Effective Threshold: {effectiveRequiredSeconds:F1}s. " +
+                        $"Met: {conditionMet}");
+        return conditionMet;
+    }
+
 
     public ScrobblingService(
         SettingsService settingsService,
-        LastfmAuthenticatorService authenticatorService,
-        ScrobbleEligibilityService eligibilityService) // Added eligibilityService
+        LastfmAuthenticatorService authenticatorService)
     {
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
         _authenticatorService = authenticatorService ?? throw new ArgumentNullException(nameof(authenticatorService));
-        _eligibilityService = eligibilityService ?? throw new ArgumentNullException(nameof(eligibilityService)); // Store new dependency
         RefreshSettings(); // Initial load of settings
         Debug.WriteLine($"[ScrobblingService] Initialized. Scrobbling Enabled: {IsScrobblingEnabled}, Credentials Configured: {AreCredentialsEffectivelyConfigured}");
     }
@@ -1714,30 +1758,33 @@ public class ScrobblingService
     public void RefreshSettings()
     {
         _currentSettings = _settingsService.LoadSettings();
-        Debug.WriteLine($"[ScrobblingService] Settings refreshed. Scrobbling Enabled: {IsScrobblingEnabled}, Credentials Configured: {AreCredentialsEffectivelyConfigured}, Thresholds: {_currentSettings.ScrobbleThresholdPercentage}% / {_currentSettings.ScrobbleThresholdAbsoluteSeconds}s");
+        Debug.WriteLine($"[ScrobblingService] Settings refreshed. " +
+            $"Scrobbling Enabled: {IsScrobblingEnabled}, " +
+            $"Credentials Configured: {AreCredentialsEffectivelyConfigured}, " +
+            $"Thresholds: {_currentSettings.ScrobbleThresholdPercentage}% / {_currentSettings.ScrobbleThresholdAbsoluteSeconds}s");
     }
 
     private async Task<LastfmClient?> GetAuthenticatedClientAsync()
     {
-        RefreshSettings();
+        // _authenticatorService.GetAuthenticatedClientAsync() will load settings itself if needed.
+        // No need to call RefreshSettings() here as it would be redundant.
         return await _authenticatorService.GetAuthenticatedClientAsync();
     }
 
     public bool ShouldScrobble(Song song, TimeSpan playedDuration)
     {
-        RefreshSettings(); // Ensure _currentSettings is up-to-date for threshold values
-
+        // Rely on _currentSettings being up-to-date from constructor or external RefreshSettings call.
         var thresholds = new ScrobbleThresholds(
             _currentSettings.ScrobbleThresholdPercentage,
             _currentSettings.ScrobbleThresholdAbsoluteSeconds);
 
-        return ScrobbleEligibilityService.ShouldScrobble(song, playedDuration, thresholds);
+        return DetermineScrobbleEligibility(song, playedDuration, thresholds);
     }
 
 
     public async Task UpdateNowPlayingAsync(Song song)
     {
-        RefreshSettings();
+        // Rely on _currentSettings being up-to-date.
         if (!IsScrobblingEnabled || song == null)
         {
             Debug.WriteLine($"[ScrobblingService] UpdateNowPlayingAsync skipped. Enabled: {IsScrobblingEnabled}, Song: {song?.Title ?? "null"}");
@@ -1780,7 +1827,7 @@ public class ScrobblingService
 
     public async Task ScrobbleAsync(Song song, DateTime timePlayed)
     {
-        RefreshSettings();
+        // Rely on _currentSettings being up-to-date.
         if (!IsScrobblingEnabled || song == null)
         {
             Debug.WriteLine($"[ScrobblingService] ScrobbleAsync skipped. Enabled: {IsScrobblingEnabled}, Song: {song?.Title ?? "null"}");
@@ -1818,7 +1865,7 @@ public class ScrobblingService
 }
 </file>
 
-<file path="Source\Services\SongEditInteractionService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\SongEditInteractionService.cs">
 using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
@@ -1942,7 +1989,7 @@ public class SongEditInteractionService
 }
 </file>
 
-<file path="Source\Services\SongFactory.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\SongFactory.cs">
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -2019,7 +2066,7 @@ public class SongFactory
 }
 </file>
 
-<file path="Source\Services\SongLoopService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\SongLoopService.cs">
 using System;
 using System.Diagnostics;
 using Sonorize.Models;
@@ -2113,7 +2160,7 @@ public class SongLoopService
 }
 </file>
 
-<file path="Source\Services\SongMetadataService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\SongMetadataService.cs">
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -2192,7 +2239,7 @@ public class SongMetadataService
 }
 </file>
 
-<file path="Source\Services\ThemeService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\ThemeService.cs">
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -2321,7 +2368,7 @@ public class ThemeService
 }
 </file>
 
-<file path="Source\Services\ThumbnailService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\ThumbnailService.cs">
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -2490,7 +2537,7 @@ public class ThumbnailService : IDisposable
 }
 </file>
 
-<file path="Source\Services\WaveformProcessingLogic.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\WaveformProcessingLogic.cs">
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -2619,7 +2666,7 @@ internal static class WaveformProcessingLogic
 }
 </file>
 
-<file path="Source\Services\WaveFormService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\WaveFormService.cs">
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -2680,7 +2727,7 @@ public class WaveformService
 }
 </file>
 
-<file path="Source\UI\ThemeResourceApplicator.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\UI\ThemeResourceApplicator.cs">
 using System.Diagnostics;
 using Avalonia;
 using Avalonia.Media;
@@ -2728,7 +2775,7 @@ public static class ThemeResourceApplicator
 }
 </file>
 
-<file path="Source\Utils\AlbumArtistTupleComparer.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Utils\AlbumArtistTupleComparer.cs">
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
@@ -2754,7 +2801,7 @@ public class AlbumArtistTupleComparer : IEqualityComparer<(string Album, string 
 }
 </file>
 
-<file path="Source\ViewModels\AdvancedPanelViewModel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\AdvancedPanelViewModel.cs">
 using System.ComponentModel;
 using System.Linq;
 using System.Windows.Input;
@@ -2846,7 +2893,7 @@ public class AdvancedPanelViewModel : ViewModelBase
 }
 </file>
 
-<file path="Source\ViewModels\AlbumViewModel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\AlbumViewModel.cs">
 using System.Collections.Generic; // For List
 using Avalonia.Media.Imaging;
 // Removed System.Collections.ObjectModel as List is sufficient here and ViewModelBase handles INPC
@@ -2874,7 +2921,7 @@ public class AlbumViewModel : ViewModelBase
 }
 </file>
 
-<file path="Source\ViewModels\ApplicationWorkflowManager.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\ApplicationWorkflowManager.cs">
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -2964,7 +3011,7 @@ public class ApplicationWorkflowManager : IDisposable
 }
 </file>
 
-<file path="Source\ViewModels\ArtistViewModel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\ArtistViewModel.cs">
 using Avalonia.Media.Imaging;
 
 namespace Sonorize.ViewModels;
@@ -2983,7 +3030,7 @@ public class ArtistViewModel : ViewModelBase // Inherit from ViewModelBase
 }
 </file>
 
-<file path="Source\ViewModels\AsyncWaveformLoader.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\AsyncWaveformLoader.cs">
 using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -3104,7 +3151,7 @@ internal class AsyncWaveformLoader : ViewModelBase
 }
 </file>
 
-<file path="Source\ViewModels\LastfmSettingsViewModel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LastfmSettingsViewModel.cs">
 using Sonorize.Models; // Required for AppSettings
 
 namespace Sonorize.ViewModels;
@@ -3188,7 +3235,7 @@ public class LastfmSettingsViewModel : ViewModelBase
 }
 </file>
 
-<file path="Source\ViewModels\LibraryViewModel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LibraryViewModel.cs">
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel; // Required for PropertyChangedEventArgs
@@ -3428,7 +3475,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 }
 </file>
 
-<file path="Source\ViewModels\PlaybackEffectsViewModel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\PlaybackEffectsViewModel.cs">
 using System;
 using System.Diagnostics;
 using Sonorize.Services; // Required for PlaybackService
@@ -3492,7 +3539,7 @@ public class PlaybackEffectsViewModel : ViewModelBase
 }
 </file>
 
-<file path="Source\ViewModels\PlaybackModeViewModel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\PlaybackModeViewModel.cs">
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -3604,7 +3651,7 @@ public class PlaybackModeViewModel : ViewModelBase
 }
 </file>
 
-<file path="Source\ViewModels\PlaybackViewModel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\PlaybackViewModel.cs">
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -3797,7 +3844,7 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
 }
 </file>
 
-<file path="Source\ViewModels\RelayCommand.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\RelayCommand.cs">
 using System;
 using System.Windows.Input;
 
@@ -3847,7 +3894,7 @@ public class RelayCommand : ICommand
 }
 </file>
 
-<file path="Source\ViewModels\SongDisplayMode.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\SongDisplayMode.cs">
 namespace Sonorize.ViewModels;
 
 public enum SongDisplayMode
@@ -3858,7 +3905,7 @@ public enum SongDisplayMode
 }
 </file>
 
-<file path="Source\ViewModels\SongMetadataEditorViewModel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\SongMetadataEditorViewModel.cs">
 using System.Windows.Input;
 using Sonorize.Models;
 using Avalonia.Media.Imaging; // For Bitmap
@@ -3981,7 +4028,7 @@ public class SongMetadataEditorViewModel : ViewModelBase
 }
 </file>
 
-<file path="Source\ViewModels\StatusBarTextProvider.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\StatusBarTextProvider.cs">
 using Sonorize.Models;
 using Sonorize.Services;
 
@@ -4046,7 +4093,7 @@ public static class StatusBarTextProvider
 }
 </file>
 
-<file path="Source\ViewModels\ViewModelBase.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\ViewModelBase.cs">
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
@@ -4076,7 +4123,7 @@ public class ViewModelBase : INotifyPropertyChanged
 }
 </file>
 
-<file path="Source\ViewModels\WaveformDisplayViewModel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\WaveformDisplayViewModel.cs">
 using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -4222,7 +4269,7 @@ public class WaveformDisplayViewModel : ViewModelBase
 }
 </file>
 
-<file path="Source\Views\BrushExtensions.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\BrushExtensions.cs">
 using System;
 using Avalonia.Media;
 
@@ -4243,7 +4290,7 @@ public static class BrushExtensions
 }
 </file>
 
-<file path="Source\Views\MainWindow.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindow.cs">
 using System; // For EventArgs
 using System.ComponentModel; // For PropertyChangedEventArgs
 using System.Diagnostics; // For Debug
@@ -4409,7 +4456,7 @@ public class MainWindow : Window
 }
 </file>
 
-<file path="Source\Views\SettingsWindow.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\SettingsWindow.cs">
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives; // Required for Style
@@ -4513,7 +4560,7 @@ public class SettingsWindow : Window
 }
 </file>
 
-<file path="Source\Views\SongMetadataEditorWindow.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\SongMetadataEditorWindow.cs">
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
@@ -4667,7 +4714,7 @@ public class SongMetadataEditorWindow : Window
 }
 </file>
 
-<file path="Source\Services\Application\ApplicationInteractionService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\Application\ApplicationInteractionService.cs">
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -4770,7 +4817,7 @@ public class ApplicationInteractionService
 }
 </file>
 
-<file path="Source\Services\Application\ApplicationServicesBootstrapper.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\Application\ApplicationServicesBootstrapper.cs">
 using Sonorize.Models;
 using Sonorize.Services.Playback; // Required for PlaybackResourceInterlockService
 using Sonorize.ViewModels;
@@ -4783,8 +4830,8 @@ public class ApplicationServicesBootstrapper
     {
         // Create all services
         var lastfmAuthenticatorService = new LastfmAuthenticatorService(settingsService);
-        var scrobbleEligibilityService = new ScrobbleEligibilityService();
-        var scrobblingService = new ScrobblingService(settingsService, lastfmAuthenticatorService, scrobbleEligibilityService);
+        // Removed: var scrobbleEligibilityService = new ScrobbleEligibilityService();
+        var scrobblingService = new ScrobblingService(settingsService, lastfmAuthenticatorService); // Updated instantiation
         var playbackService = new PlaybackService(scrobblingService);
         var loopDataService = new LoopDataService();
         var defaultIconGenerator = new DefaultIconGenerator();
@@ -4818,7 +4865,7 @@ public class ApplicationServicesBootstrapper
 }
 </file>
 
-<file path="Source\Services\Playback\NAudioEffectsProcessor.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\Playback\NAudioEffectsProcessor.cs">
 using System;
 using System.Diagnostics;
 using NAudio.Wave;
@@ -4966,7 +5013,7 @@ public class NAudioEffectsProcessor : IDisposable
 }
 </file>
 
-<file path="Source\Services\Playback\NAudioPipeline.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\Playback\NAudioPipeline.cs">
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -5035,7 +5082,7 @@ internal class NAudioPipeline : IDisposable
 }
 </file>
 
-<file path="Source\Services\Playback\NAudioPlaybackEngine.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\Playback\NAudioPlaybackEngine.cs">
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -5264,7 +5311,7 @@ public class NAudioPlaybackEngine : IDisposable
 }
 </file>
 
-<file path="Source\Services\Playback\PlaybackCompletionHandler.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\Playback\PlaybackCompletionHandler.cs">
 using System;
 using System.Diagnostics;
 using Sonorize.Models;
@@ -5363,7 +5410,7 @@ public class PlaybackCompletionHandler
 }
 </file>
 
-<file path="Source\Services\Playback\PlaybackEngineCoordinator.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\Playback\PlaybackEngineCoordinator.cs">
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -5557,7 +5604,7 @@ public class PositionEventArgs(TimeSpan position, TimeSpan duration) : EventArgs
 }
 </file>
 
-<file path="Source\Services\Playback\PlaybackFlowManagerService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\Playback\PlaybackFlowManagerService.cs">
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -5612,7 +5659,7 @@ public class PlaybackFlowManagerService
 }
 </file>
 
-<file path="Source\Services\Playback\PlaybackInfrastructureProvider.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\Playback\PlaybackInfrastructureProvider.cs">
 using System;
 using System.Diagnostics;
 
@@ -5673,7 +5720,7 @@ public class PlaybackInfrastructureProvider : IDisposable
 }
 </file>
 
-<file path="Source\Services\Playback\PlaybackLoopHandler.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\Playback\PlaybackLoopHandler.cs">
 using System;
 using System.Diagnostics;
 using Sonorize.Models;
@@ -5852,7 +5899,7 @@ public class PlaybackLoopHandler : IDisposable // Implementing IDisposable for c
 }
 </file>
 
-<file path="Source\Services\Playback\PlaybackMonitor.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\Playback\PlaybackMonitor.cs">
 using System;
 using System.Diagnostics;
 using System.Threading;
@@ -5978,7 +6025,7 @@ public class PlaybackMonitor : IDisposable
 }
 </file>
 
-<file path="Source\Services\Playback\PlaybackResourceInterlockService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\Playback\PlaybackResourceInterlockService.cs">
 using System;
 using System.Diagnostics;
 using Sonorize.Models;
@@ -6032,7 +6079,7 @@ public class PlaybackResourceInterlockService
 }
 </file>
 
-<file path="Source\Services\Playback\PlaybackService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\Playback\PlaybackService.cs">
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -6158,7 +6205,7 @@ public class PlaybackService : ViewModelBase, IDisposable
 }
 </file>
 
-<file path="Source\Services\Playback\PlaybackSessionLoader.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\Playback\PlaybackSessionLoader.cs">
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -6264,7 +6311,7 @@ public class PlaybackSessionLoader
 }
 </file>
 
-<file path="Source\Services\Playback\PlaybackSessionManager.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\Playback\PlaybackSessionManager.cs">
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -6572,7 +6619,7 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
 }
 </file>
 
-<file path="Source\Services\Playback\PlaybackSessionState.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\Playback\PlaybackSessionState.cs">
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -6664,7 +6711,7 @@ public class PlaybackSessionState : INotifyPropertyChanged
 }
 </file>
 
-<file path="Source\Services\Settings\SettingsChangeProcessorService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\Settings\SettingsChangeProcessorService.cs">
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -6774,7 +6821,7 @@ public class SettingsChangeProcessorService
 }
 </file>
 
-<file path="Source\Services\Settings\SettingsService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\Settings\SettingsService.cs">
 using System;
 using System.IO;
 using System.Text.Json;
@@ -6827,7 +6874,7 @@ public class SettingsService
 }
 </file>
 
-<file path="Source\ViewModels\LibraryManagement\ArtistAlbumCollectionManager.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LibraryManagement\ArtistAlbumCollectionManager.cs">
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -6969,7 +7016,7 @@ public class ArtistAlbumCollectionManager
 }
 </file>
 
-<file path="Source\ViewModels\LibraryManagement\LibraryComponentProvider.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LibraryManagement\LibraryComponentProvider.cs">
 using Sonorize.Services;
 
 namespace Sonorize.ViewModels.LibraryManagement;
@@ -6996,7 +7043,7 @@ public class LibraryComponentProvider
 }
 </file>
 
-<file path="Source\ViewModels\LibraryManagement\LibraryDataOrchestrator.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LibraryManagement\LibraryDataOrchestrator.cs">
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -7074,7 +7121,7 @@ public class LibraryDataOrchestrator
 }
 </file>
 
-<file path="Source\ViewModels\LibraryManagement\LibraryDisplayModeService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LibraryManagement\LibraryDisplayModeService.cs">
 using System;
 using System.ComponentModel;
 using System.Windows.Input;
@@ -7185,7 +7232,7 @@ public class LibraryDisplayModeService : ViewModelBase
 }
 </file>
 
-<file path="Source\ViewModels\LibraryManagement\LibraryFilterStateManager.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LibraryManagement\LibraryFilterStateManager.cs">
 using System;
 using Sonorize.Models; // For ArtistViewModel, AlbumViewModel
 
@@ -7271,7 +7318,7 @@ public class LibraryFilterStateManager : ViewModelBase
 }
 </file>
 
-<file path="Source\ViewModels\LibraryManagement\LibraryGroupingsViewModel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LibraryManagement\LibraryGroupingsViewModel.cs">
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -7312,7 +7359,7 @@ public class LibraryGroupingsViewModel : ViewModelBase
 }
 </file>
 
-<file path="Source\ViewModels\LibraryManagement\LibraryLoadProcess.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LibraryManagement\LibraryLoadProcess.cs">
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -7380,7 +7427,7 @@ public class LibraryLoadProcess
 }
 </file>
 
-<file path="Source\ViewModels\LibraryManagement\LibraryStatusTextGenerator.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LibraryManagement\LibraryStatusTextGenerator.cs">
 using System.Linq;
 using Sonorize.Models;
 using Sonorize.Services; // For AppSettings in case it's needed indirectly
@@ -7443,7 +7490,7 @@ public class LibraryStatusTextGenerator
 }
 </file>
 
-<file path="Source\ViewModels\LibraryManagement\SongFilteringService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LibraryManagement\SongFilteringService.cs">
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -7499,7 +7546,7 @@ public class SongFilteringService
 }
 </file>
 
-<file path="Source\ViewModels\LibraryManagement\SongListManager.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LibraryManagement\SongListManager.cs">
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -7593,7 +7640,7 @@ public class SongListManager : ViewModelBase
 }
 </file>
 
-<file path="Source\ViewModels\LibraryManagement\TrackNavigationManager.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LibraryManagement\TrackNavigationManager.cs">
 using System;
 using System.Collections.ObjectModel; // For ObservableCollection
 using System.Diagnostics;
@@ -7704,7 +7751,7 @@ public class TrackNavigationManager : ViewModelBase // Inherit for RelayCommand'
 }
 </file>
 
-<file path="Source\ViewModels\Loop\ActiveLoopViewModel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\Loop\ActiveLoopViewModel.cs">
 using System;
 using System.ComponentModel;
 using System.Windows.Input;
@@ -7846,7 +7893,7 @@ public class ActiveLoopViewModel : ViewModelBase, IDisposable
 }
 </file>
 
-<file path="Source\ViewModels\Loop\LoopCandidateViewModel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\Loop\LoopCandidateViewModel.cs">
 using System;
 using System.ComponentModel;
 using System.Windows.Input;
@@ -7948,7 +7995,7 @@ public class LoopCandidateViewModel : ViewModelBase
 }
 </file>
 
-<file path="Source\ViewModels\Loop\LoopEditorViewModel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\Loop\LoopEditorViewModel.cs">
 using System;
 using System.Diagnostics;
 using System.Windows.Input;
@@ -8126,7 +8173,7 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
 }
 </file>
 
-<file path="Source\ViewModels\MainWindow\MainWindowInteractionCoordinator.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\MainWindow\MainWindowInteractionCoordinator.cs">
 using System;
 using System.Diagnostics;
 using System.Linq;
@@ -8228,7 +8275,7 @@ public class MainWindowInteractionCoordinator
 }
 </file>
 
-<file path="Source\ViewModels\MainWindow\MainWindowViewModel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\MainWindow\MainWindowViewModel.cs">
 using System;
 using System.Collections.Generic; // Added for List<string>
 using System.ComponentModel;
@@ -8436,7 +8483,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 }
 </file>
 
-<file path="Source\ViewModels\MainWindow\MainWindowViewModelOrchestrator.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\MainWindow\MainWindowViewModelOrchestrator.cs">
 using System;
 using System.ComponentModel;
 using Sonorize.ViewModels;
@@ -8588,7 +8635,7 @@ public class MainWindowViewModelOrchestrator : IDisposable
 }
 </file>
 
-<file path="Source\ViewModels\Settings\MusicDirectoriesSettingsViewModel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\Settings\MusicDirectoriesSettingsViewModel.cs">
 using Avalonia.Controls;
 using System;
 using System.Collections.Generic;
@@ -8710,7 +8757,7 @@ public class MusicDirectoriesSettingsViewModel : ViewModelBase
 }
 </file>
 
-<file path="Source\ViewModels\Settings\SettingsPersistenceManager.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\Settings\SettingsPersistenceManager.cs">
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -8805,7 +8852,7 @@ public class SettingsPersistenceManager
 }
 </file>
 
-<file path="Source\ViewModels\Settings\SettingsViewModel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\Settings\SettingsViewModel.cs">
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -8928,7 +8975,7 @@ public class SettingsViewModel : ViewModelBase
 }
 </file>
 
-<file path="Source\ViewModels\Settings\ThemeSettingsViewModel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\Settings\ThemeSettingsViewModel.cs">
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -8983,7 +9030,7 @@ public class ThemeSettingsViewModel : ViewModelBase
 }
 </file>
 
-<file path="Source\Views\MainWindow\MainWindowComponentsManager.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindow\MainWindowComponentsManager.cs">
 using System;
 using System.ComponentModel;
 using Avalonia.Controls;
@@ -9107,7 +9154,7 @@ public class MainWindowComponentsManager : IDisposable
 }
 </file>
 
-<file path="Source\Views\MainWindowControls\AdvancedPlaybackPanelControls.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindowControls\AdvancedPlaybackPanelControls.cs">
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives; // For Thumb
@@ -9235,7 +9282,7 @@ public static class AdvancedPlaybackPanelControls
 }
 </file>
 
-<file path="Source\Views\MainWindowControls\ArtistItemTemplateProvider.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindowControls\ArtistItemTemplateProvider.cs">
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
@@ -9304,7 +9351,7 @@ public class ArtistItemTemplateProvider
 }
 </file>
 
-<file path="Source\Views\MainWindowControls\ListBoxViewFactory.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindowControls\ListBoxViewFactory.cs">
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -9387,7 +9434,7 @@ public static class ListBoxViewFactory
 }
 </file>
 
-<file path="Source\Views\MainWindowControls\MainMenu.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindowControls\MainMenu.cs">
 using Avalonia.Controls;
 using Avalonia.Data;
 using Sonorize.Models; // For ThemeColors
@@ -9482,7 +9529,7 @@ public static class MainMenu
 }
 </file>
 
-<file path="Source\Views\MainWindowControls\MainPlaybackControlsPanel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindowControls\MainPlaybackControlsPanel.cs">
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
@@ -9593,7 +9640,7 @@ public static class MainPlaybackControlsPanel
 }
 </file>
 
-<file path="Source\Views\MainWindowControls\MainTabViewControls.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindowControls\MainTabViewControls.cs">
 using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
@@ -9732,7 +9779,7 @@ public class MainTabViewControls
 }
 </file>
 
-<file path="Source\Views\MainWindowControls\PlaybackNavigationButtonsPanel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindowControls\PlaybackNavigationButtonsPanel.cs">
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -9921,7 +9968,7 @@ public static class PlaybackNavigationButtonsPanel
 }
 </file>
 
-<file path="Source\Views\MainWindowControls\PlaybackTimeSliderPanel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindowControls\PlaybackTimeSliderPanel.cs">
 using System;
 using Avalonia;
 using Avalonia.Controls;
@@ -10100,7 +10147,7 @@ public static class PlaybackTimeSliderPanel
 }
 </file>
 
-<file path="Source\Views\MainWindowControls\SearchBarPanels.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindowControls\SearchBarPanels.cs">
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
@@ -10143,7 +10190,7 @@ public static class SearchBarPanel
 }
 </file>
 
-<file path="Source\Views\MainWindowControls\SharedViewTemplates.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindowControls\SharedViewTemplates.cs">
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
@@ -10345,7 +10392,7 @@ public class SharedViewTemplates
 }
 </file>
 
-<file path="Source\Views\MainWindowControls\SongContextMenuHelper.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindowControls\SongContextMenuHelper.cs">
 using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
@@ -10429,7 +10476,7 @@ public class SongContextMenuHelper
 }
 </file>
 
-<file path="Source\Views\MainWindowControls\SongInfoDisplayPanel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindowControls\SongInfoDisplayPanel.cs">
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
@@ -10506,7 +10553,7 @@ public static class SongInfoDisplayPanel
 }
 </file>
 
-<file path="Source\Views\MainWindowControls\SongItemTemplateProvider.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindowControls\SongItemTemplateProvider.cs">
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
@@ -10622,7 +10669,7 @@ public class SongItemTemplateProvider
 }
 </file>
 
-<file path="Source\Views\SettingsWindowControls\DirectoriesSettingsPanel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\SettingsWindowControls\DirectoriesSettingsPanel.cs">
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
@@ -10683,7 +10730,7 @@ public static class DirectoriesSettingsPanel
 }
 </file>
 
-<file path="Source\Views\SettingsWindowControls\ScrobblingSettingsPanel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\SettingsWindowControls\ScrobblingSettingsPanel.cs">
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives; // Required for NumericUpDown
@@ -10790,7 +10837,7 @@ public static class ScrobblingSettingsPanel
 }
 </file>
 
-<file path="Source\Views\SettingsWindowControls\SettingsButtonPanel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\SettingsWindowControls\SettingsButtonPanel.cs">
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -10831,7 +10878,7 @@ public static class SettingsButtonPanel
 }
 </file>
 
-<file path="Source\Views\SettingsWindowControls\SettingsMenuPanel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\SettingsWindowControls\SettingsMenuPanel.cs">
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
@@ -10874,7 +10921,7 @@ public static class SettingsMenuPanel
 }
 </file>
 
-<file path="Source\Views\SettingsWindowControls\ThemeSettingsPanel.cs">
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\SettingsWindowControls\ThemeSettingsPanel.cs">
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
