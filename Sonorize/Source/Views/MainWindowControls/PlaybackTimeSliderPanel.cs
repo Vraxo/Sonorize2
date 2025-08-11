@@ -1,7 +1,9 @@
-﻿using Avalonia;
+﻿using System;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives; // For Thumb, Track
 using Avalonia.Data;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
@@ -70,6 +72,25 @@ public static class PlaybackTimeSliderPanel
                 new Setter(Track.HeightProperty, 4.0)
             }
         });
+
+        mainPlaybackSlider.PointerPressed += (sender, e) =>
+        {
+            if (sender is not Slider slider) return;
+
+            var point = e.GetCurrentPoint(slider);
+            if (point.Properties.IsLeftButtonPressed)
+            {
+                var position = point.Position;
+                var bounds = slider.Bounds;
+                if (bounds.Width > 0)
+                {
+                    var ratio = Math.Clamp(position.X / bounds.Width, 0, 1);
+                    var newValue = slider.Minimum + (ratio * (slider.Maximum - slider.Minimum));
+                    slider.Value = newValue;
+                    e.Handled = true;
+                }
+            }
+        };
 
 
         mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("Playback.CurrentSongDurationSeconds"));
