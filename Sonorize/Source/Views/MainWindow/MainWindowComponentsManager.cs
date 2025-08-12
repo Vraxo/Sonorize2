@@ -18,7 +18,7 @@ public class MainWindowComponentsManager : IDisposable
     private readonly ThemeColors _currentTheme;
     private readonly WaveformService _waveformService;
     private readonly LoopDataService _loopDataService;
-    private readonly ScrobblingService _scrobblingService;
+    public ScrobblingService ScrobblingServiceProperty { get; } // Exposed for MainWindowViewModel
     private readonly SongMetadataService _songMetadataService;
     private readonly SongEditInteractionService _songEditInteractionService;
     private readonly SongLoopService _songLoopService;
@@ -55,7 +55,7 @@ public class MainWindowComponentsManager : IDisposable
         _currentTheme = currentTheme;
         _waveformService = waveformService;
         _loopDataService = loopDataService;
-        _scrobblingService = scrobblingService;
+        ScrobblingServiceProperty = scrobblingService; // Store the passed service
         _songMetadataService = songMetadataService;
         _songEditInteractionService = songEditInteractionService;
         _songLoopService = songLoopService;
@@ -69,7 +69,7 @@ public class MainWindowComponentsManager : IDisposable
 
         WorkflowManager = new ApplicationWorkflowManager(
             _settingsService,
-            _scrobblingService,
+            ScrobblingServiceProperty, // Use stored ScrobblingService
             _currentTheme,
             Library,
             Playback,

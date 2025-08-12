@@ -13,6 +13,7 @@ public class PlaybackService : ViewModelBase, IDisposable
 {
     private readonly PlaybackSessionManager _sessionManager;
     private readonly PlaybackLoopHandler _loopHandler; // Keep loop handler if it needs PlaybackService context
+    private readonly ScrobblingService _scrobblingService; // Added to perform final scrobble
 
     // Properties that mirror PlaybackSessionManager's state
     public Song? CurrentSong => _sessionManager.CurrentSong;
@@ -49,6 +50,7 @@ public class PlaybackService : ViewModelBase, IDisposable
     public PlaybackService(ScrobblingService scrobblingService)
     {
         Debug.WriteLine("[PlaybackService] Constructor called.");
+        _scrobblingService = scrobblingService;
         _loopHandler = new PlaybackLoopHandler(this);
         _sessionManager = new PlaybackSessionManager(scrobblingService, _loopHandler);
         _sessionManager.PropertyChanged += SessionManager_PropertyChanged;
@@ -105,11 +107,7 @@ public class PlaybackService : ViewModelBase, IDisposable
 
     public void Dispose()
     {
-        Debug.WriteLine("[PlaybackService] Dispose() called.");
-
-        // Before disposing, perform a final, explicit stop.
-        // This ensures the current song is scrobbled if eligible upon app close.
-        Stop();
+        Debug.WriteLine("[PlaybackService] Dispose() called on shutdown.");
 
         if (_sessionManager != null)
         {

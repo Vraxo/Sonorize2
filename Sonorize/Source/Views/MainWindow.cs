@@ -81,12 +81,47 @@ public class MainWindow : Window
         this.Closing += OnMainWindowClosing; // Graceful shutdown hook
     }
 
-    private void OnMainWindowClosing(object? sender, CancelEventArgs e)
+    private async void OnMainWindowClosing(object? sender, CancelEventArgs e)
     {
-        if (DataContext is IDisposable disposable)
+        // Prevent the window from closing immediately
+        e.Cancel = true;
+
+        if (DataContext is MainWindowViewModel vm)
         {
-            Debug.WriteLine("[MainWindow] Window is closing. Disposing ViewModel to ensure graceful shutdown.");
-            disposable.Dispose();
+            Debug.WriteLine("[MainWindow] Window is closing. Initiating graceful shutdown via ViewModel.");
+            try
+            {
+                // Perform graceful shutdown tasks, including final scrobble
+                await vm.PerformGracefulShutdownAsync();
+                Debug.WriteLine("[MainWindow] Graceful shutdown completed. Proceeding with disposal.");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[MainWindow] Error during graceful shutdown: {ex.Message}");
+            }
+            finally
+            {
+                // Dispose the ViewModel after graceful shutdown tasks are done
+                vm.Dispose();
+                Debug.WriteLine("[MainWindow] ViewModel disposed. Re-initiating window close.");
+                // Re-initiate the close, this time it should proceed without cancellation
+                // because the ViewModel has been disposed and no further async operations are pending.
+                // We need to do this on the UI thread.
+                Dispatcher.UIThread.Post(() =>
+                {
+                    // Detach the event handler to prevent re-entry and infinite loop
+                    this.Closing -= OnMainWindowClosing;
+                    this.Close(); // Now actually close the window
+                });
+            }
+        }
+        else
+        {
+            Debug.WriteLine("[MainWindow] DataContext is not MainWindowViewModel or is null. Proceeding with immediate close.");
+            // If DataContext is not the expected ViewModel, allow immediate close.
+            // Detach the event handler to prevent re-entry and infinite loop
+            this.Closing -= OnMainWindowClosing;
+            this.Close();
         }
     }
 
