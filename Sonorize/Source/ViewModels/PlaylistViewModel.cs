@@ -7,25 +7,33 @@ namespace Sonorize.ViewModels;
 
 public class PlaylistViewModel : ViewModelBase
 {
-    public string Name => PlaylistModel.Name;
-    public int SongCount => PlaylistModel.Songs.Count;
     public Playlist PlaylistModel { get; }
 
-    private List<Bitmap?> _songThumbnailsForGrid = new(new Bitmap?[4]);
+    private readonly Bitmap? _defaultIcon;
+
+    public string Name => PlaylistModel.Name;
+    public int SongCount => PlaylistModel.Songs.Count;
+
     public List<Bitmap?> SongThumbnailsForGrid
     {
-        get => _songThumbnailsForGrid;
-        private set => SetProperty(ref _songThumbnailsForGrid, value);
-    }
+        get;
+        private set
+        {
+            SetProperty(ref field, value);
+        }
 
-    private Bitmap? _representativeThumbnail;
+    } = new(new Bitmap?[4]);
+
     public Bitmap? RepresentativeThumbnail
     {
-        get => _representativeThumbnail;
-        private set => SetProperty(ref _representativeThumbnail, value);
+        get;
+
+        private set
+        {
+            SetProperty(ref field, value);
+        }
     }
 
-    private readonly Bitmap? _defaultIcon;
 
     public PlaylistViewModel(Playlist playlist, Bitmap? defaultIcon)
     {
@@ -36,9 +44,9 @@ public class PlaylistViewModel : ViewModelBase
 
     public void RecalculateThumbnails()
     {
-        var newGrid = new List<Bitmap?>(new Bitmap?[4]);
+        List<Bitmap?> newGrid = new(new Bitmap?[4]);
 
-        var distinctSongThumbs = PlaylistModel.Songs
+        List<Bitmap?> distinctSongThumbs = PlaylistModel.Songs
             .Select(s => s.Thumbnail)
             .Where(t => t is not null)
             .Distinct()
@@ -55,7 +63,7 @@ public class PlaylistViewModel : ViewModelBase
             SongThumbnailsForGrid = newGrid;
         }
 
-        var newRepresentativeThumbnail = newGrid.FirstOrDefault(t => t is not null) ?? _defaultIcon;
+        Bitmap? newRepresentativeThumbnail = newGrid.FirstOrDefault(t => t is not null) ?? _defaultIcon;
         RepresentativeThumbnail = newRepresentativeThumbnail;
     }
 }

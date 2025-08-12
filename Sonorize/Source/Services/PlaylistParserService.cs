@@ -11,7 +11,7 @@ public class PlaylistParserService
 {
     public Playlist Parse(string m3uFilePath, IReadOnlyDictionary<string, Song> allSongsLookup)
     {
-        var playlist = new Playlist
+        Playlist playlist = new()
         {
             Name = Path.GetFileNameWithoutExtension(m3uFilePath),
             FilePath = m3uFilePath
@@ -19,41 +19,13 @@ public class PlaylistParserService
 
         try
         {
-            var m3uDirectory = Path.GetDirectoryName(m3uFilePath);
-            var songPaths = File.ReadAllLines(m3uFilePath)
-                                .Select(line => line.Trim())
-                                .Where(line => !string.IsNullOrEmpty(line) && !line.StartsWith('#'));
+            string? m3uDirectory = Path.GetDirectoryName(m3uFilePath);
+            IEnumerable<string> songEntries = GetSongEntriesFromM3u(m3uFilePath);
 
-            foreach (var songPath in songPaths)
+            foreach (string songEntry in songEntries)
             {
-                string absolutePath;
-                if (Path.IsPathRooted(songPath))
+                if (!TryResolveAbsolutePath(songEntry, m3uDirectory, out var absolutePath))
                 {
-                    absolutePath = Path.GetFullPath(songPath);
-                }
-                else if (m3uDirectory is not null)
-                {
-                    // Heuristic to handle M3U paths that are relative to a "library root"
-                    // which is one level above the M3U file's directory.
-                    // This happens if the path inside the M3U is like "Music/SomeFolder/song.mp3"
-                    // when the M3U itself is inside the "Music" folder.
-                    var m3uDirName = Path.GetFileName(m3uDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                    var songPathFirstSegment = songPath.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, 2).FirstOrDefault();
-
-                    string basePath = m3uDirectory;
-                    if (!string.IsNullOrEmpty(m3uDirName) && m3uDirName.Equals(songPathFirstSegment, StringComparison.OrdinalIgnoreCase))
-                    {
-                        var m3uParentDir = Path.GetDirectoryName(m3uDirectory);
-                        if (m3uParentDir is not null)
-                        {
-                            basePath = m3uParentDir;
-                        }
-                    }
-                    absolutePath = Path.GetFullPath(Path.Combine(basePath, songPath));
-                }
-                else
-                {
-                    Debug.WriteLine($"[PlaylistParser] Cannot resolve relative path for '{songPath}' in playlist '{m3uFilePath}' as M3U directory is null.");
                     continue;
                 }
 
@@ -63,7 +35,7 @@ public class PlaylistParserService
                 }
                 else
                 {
-                    Debug.WriteLine($"[PlaylistParser] FAILED LOOKUP: Song from playlist '{playlist.Name}' not found in library. Path: '{absolutePath}'");
+                    LogFailedLookup(playlist.Name, absolutePath);
                 }
             }
         }
@@ -73,5 +45,69 @@ public class PlaylistParserService
         }
 
         return playlist;
+    }
+
+    private static IEnumerable<string> GetSongEntriesFromM3u(string m3uFilePath)
+    {
+        return File.ReadAllLines(m3uFilePath)
+                   .Select(line => line.Trim())
+                   .Where(line => !string.IsNullOrEmpty(line) && !line.StartsWith('#'));
+    }
+
+    private bool TryResolveAbsolutePath(string songEntry, string? m3uDirectory, out string absolutePath)
+    {
+        absolutePath = string.Empty;
+
+        if (Path.IsPathRooted(songEntry))
+        {
+            absolutePath = Path.GetFullPath(songEntry);
+            return true;
+        }
+
+        if (m3uDirectory is null)
+        {
+            Debug.WriteLine($"[PlaylistParser] Cannot resolve relative path for '{songEntry}' as M3U directory is null.");
+            return false;
+        }
+
+        absolutePath = DetermineAbsolutePathForRelativeEntry(songEntry, m3uDirectory);
+
+        return true;
+    }
+
+    private string DetermineAbsolutePathForRelativeEntry(string relativeSongPath, string m3uFileDirectory)
+    {
+        string baseDirectory = GetBaseDirectoryForPathResolution(relativeSongPath, m3uFileDirectory);
+        return Path.GetFullPath(Path.Combine(baseDirectory, relativeSongPath));
+    }
+
+    private static string GetBaseDirectoryForPathResolution(string relativeSongPath, string m3uFileDirectory)
+    {
+        string m3uDirectoryName = Path.GetFileName(m3uFileDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        string? songPathFirstSegment = relativeSongPath.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], 2).FirstOrDefault();
+
+        bool isPathRelativeToLibraryRoot = !string.IsNullOrEmpty(m3uDirectoryName)
+            && m3uDirectoryName.Equals(songPathFirstSegment, StringComparison.OrdinalIgnoreCase);
+
+        if (!isPathRelativeToLibraryRoot)
+        {
+            return m3uFileDirectory;
+        }
+
+        string? libraryRoot = Path.GetDirectoryName(m3uFileDirectory);
+
+        if (libraryRoot is not null)
+        {
+            return libraryRoot;
+        }
+
+        return m3uFileDirectory;
+    }
+
+    private static void LogFailedLookup(string playlistName, string failedPath)
+    {
+        Debug.WriteLine($"[PlaylistParser] FAILED LOOKUP: " +
+            $"Song from playlist '{playlistName}' not found in library." +
+            $" Path: '{failedPath}'");
     }
 }
