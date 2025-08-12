@@ -49,12 +49,12 @@ public class ScrobblingService
 
         bool conditionMet = playedDuration.TotalSeconds >= effectiveRequiredSeconds;
 
-        Debug.WriteLine($"[ScrobblingService.Eligibility] For '{song.Title}': " +
-                        $"Played: {playedDuration.TotalSeconds:F1}s ({percentagePlayed:F1}%), " +
-                        $"Song Duration: {song.Duration.TotalSeconds:F1}s. " +
-                        $"Configured Thresholds: {thresholds.ScrobbleThresholdPercentage}% (gives {requiredPlaybackFromPercentage:F1}s) OR {thresholds.ScrobbleThresholdAbsoluteSeconds}s. " +
-                        $"Effective Threshold: {effectiveRequiredSeconds:F1}s. " +
-                        $"Met: {conditionMet}");
+        //Debug.WriteLine($"[ScrobblingService.Eligibility] For '{song.Title}': " +
+        //                $"Played: {playedDuration.TotalSeconds:F1}s ({percentagePlayed:F1}%), " +
+        //                $"Song Duration: {song.Duration.TotalSeconds:F1}s. " +
+        //                $"Configured Thresholds: {thresholds.ScrobbleThresholdPercentage}% (gives {requiredPlaybackFromPercentage:F1}s) OR {thresholds.ScrobbleThresholdAbsoluteSeconds}s. " +
+        //                $"Effective Threshold: {effectiveRequiredSeconds:F1}s. " +
+        //                $"Met: {conditionMet}");
         return conditionMet;
     }
 
