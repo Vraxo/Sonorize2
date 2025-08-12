@@ -21,6 +21,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     private readonly LibraryComponentProvider _components;
     private readonly LibraryLoadProcess _libraryLoadProcess;
 
+    public LibraryDisplayModeService LibraryDisplayModeService => _displayModeService;
     public LibraryGroupingsViewModel Groupings => _components.Groupings;
     public ObservableCollection<Song> FilteredSongs => _components.SongList.FilteredSongs;
     public LibraryFilterStateManager FilterState => _components.FilterState;
@@ -207,14 +208,14 @@ public class LibraryViewModel : ViewModelBase, IDisposable
             Debug.WriteLine($"[LibraryVM] Edit metadata requested but parameter is not a Song or parent command cannot execute.");
             return;
         }
-        
+
         Debug.WriteLine($"[LibraryVM] Delegating Edit metadata for: {song.Title} to MainWindowViewModel.");
         _parentViewModel.OpenEditSongMetadataDialogCommand.Execute(song);
     }
 
     private bool CanExecuteEditSongMetadata(object? parameter)
     {
-        return parameter is Song 
+        return parameter is Song
             && _parentViewModel.OpenEditSongMetadataDialogCommand.CanExecute(parameter);
     }
 

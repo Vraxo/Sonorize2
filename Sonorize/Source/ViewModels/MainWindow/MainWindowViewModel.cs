@@ -159,14 +159,18 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private async Task OpenSettingsDialogAsync()
     {
         // InteractionCoordinator is accessed via _componentsManager
-        string statusMessage = await _componentsManager.InteractionCoordinator.CoordinateOpenSettingsDialogAsync();
-        if (!string.IsNullOrEmpty(statusMessage))
+        var (statusMessages, settingsChanged) = await _componentsManager.InteractionCoordinator.CoordinateAndProcessSettingsAsync();
+        if (settingsChanged)
         {
-            StatusBarText = statusMessage;
-        }
-        else
-        {
-            UpdateStatusBarText(); // Update with default status if no specific message
+            Library.LibraryDisplayModeService.ReloadDisplayPreferences();
+            if (statusMessages.Any())
+            {
+                StatusBarText = string.Join(" | ", statusMessages);
+            }
+            else
+            {
+                UpdateStatusBarText();
+            }
         }
     }
 

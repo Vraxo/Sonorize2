@@ -38,11 +38,26 @@ public class ArtistAlbumCollectionManager
         Bitmap? defaultSongThumbnail = _musicLibraryService.GetDefaultThumbnail();
         foreach (string? artistName in uniqueArtistNames)
         {
-            Bitmap? repThumb = allSongs.FirstOrDefault(s =>
-                                   (s.Artist?.Equals(artistName, StringComparison.OrdinalIgnoreCase) ?? false) &&
-                                   s.Thumbnail is not null && s.Thumbnail != defaultSongThumbnail)?.Thumbnail
-                               ?? defaultSongThumbnail;
-            _artistsCollection.Add(new ArtistViewModel { Name = artistName, Thumbnail = repThumb });
+            var artistVM = new ArtistViewModel { Name = artistName };
+            var songsByArtist = allSongs.Where(s => s.Artist?.Equals(artistName, StringComparison.OrdinalIgnoreCase) ?? false).ToList();
+
+            List<Bitmap?> songThumbnailsForGrid = new(new Bitmap?[4]);
+            List<Bitmap?> distinctSongThumbs = songsByArtist
+                .Select(s => s.Thumbnail ?? defaultSongThumbnail)
+                .Where(t => t != null)
+                .Distinct()
+                .Take(4)
+                .ToList();
+
+            for (int i = 0; i < distinctSongThumbs.Count; i++)
+            {
+                songThumbnailsForGrid[i] = distinctSongThumbs[i];
+            }
+
+            artistVM.SongThumbnailsForGrid = songThumbnailsForGrid;
+            artistVM.Thumbnail = songThumbnailsForGrid.FirstOrDefault(t => t != null) ?? defaultSongThumbnail;
+
+            _artistsCollection.Add(artistVM);
         }
 
         _albumsCollection.Clear();
@@ -92,13 +107,31 @@ public class ArtistAlbumCollectionManager
         var artistVM = _artistsCollection.FirstOrDefault(a => a.Name == updatedSong.Artist);
         if (artistVM is not null)
         {
-            var firstSongOfArtistWithThumbnail = allSongs.FirstOrDefault(s =>
-                (s.Artist?.Equals(artistVM.Name, StringComparison.OrdinalIgnoreCase) ?? false) && s.Thumbnail != _musicLibraryService.GetDefaultThumbnail());
+            var songsByArtist = allSongs.Where(s => s.Artist?.Equals(artistVM.Name, StringComparison.OrdinalIgnoreCase) ?? false).ToList();
+            Bitmap? defaultIcon = _musicLibraryService.GetDefaultThumbnail();
 
-            Bitmap? newArtistThumbnail = (firstSongOfArtistWithThumbnail?.Thumbnail ?? _musicLibraryService.GetDefaultThumbnail());
-            if (artistVM.Thumbnail != newArtistThumbnail) // Only update if changed to avoid needless notifications
+            List<Bitmap?> newGridThumbnails = new(new Bitmap?[4]);
+            List<Bitmap?> distinctThumbs = songsByArtist
+                .Select(s => s.Thumbnail ?? defaultIcon)
+                .Where(t => t != null)
+                .Distinct()
+                .Take(4)
+                .ToList();
+
+            for (int i = 0; i < distinctThumbs.Count; i++)
             {
-                artistVM.Thumbnail = newArtistThumbnail;
+                newGridThumbnails[i] = distinctThumbs[i];
+            }
+
+            if (!artistVM.SongThumbnailsForGrid.SequenceEqual(newGridThumbnails))
+            {
+                artistVM.SongThumbnailsForGrid = newGridThumbnails;
+            }
+
+            Bitmap? newRepresentativeThumbnail = newGridThumbnails.FirstOrDefault(t => t != null) ?? defaultIcon;
+            if (artistVM.Thumbnail != newRepresentativeThumbnail)
+            {
+                artistVM.Thumbnail = newRepresentativeThumbnail;
             }
         }
 

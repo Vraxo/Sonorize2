@@ -33,32 +33,22 @@ public class MainWindowInteractionCoordinator
         _raiseAllCommandsCanExecuteChangedCallback = raiseAllCommandsCanExecuteChangedCallback ?? throw new ArgumentNullException(nameof(raiseAllCommandsCanExecuteChangedCallback));
     }
 
-    public async Task<string> CoordinateOpenSettingsDialogAsync()
+    public async Task<(string[] StatusMessages, bool SettingsChanged)> CoordinateAndProcessSettingsAsync()
     {
         Window? owner = _getOwnerViewFunc();
         if (owner == null || _libraryViewModel.IsLoadingLibrary)
         {
-            return "Cannot open settings: No owner window or library is loading.";
+            return (["Cannot open settings: No owner window or library is loading."], false);
         }
 
         _advancedPanelViewModel.IsVisible = false;
 
         var (statusMessages, settingsChanged) = await _workflowManager.HandleOpenSettingsDialogAsync(owner);
 
-        string resultMessage = string.Empty;
-        if (settingsChanged)
-        {
-            if (statusMessages.Any())
-            {
-                resultMessage = string.Join(" | ", statusMessages);
-            }
-            // If no specific messages, the caller (MainWindowViewModel) will update status bar.
-        }
-
         _raiseAllCommandsCanExecuteChangedCallback();
-        return resultMessage;
+        return (statusMessages.ToArray(), settingsChanged);
     }
-
+    
     public async Task<(bool RefreshedNeeded, string StatusMessage)> CoordinateAddMusicDirectoryAsync()
     {
         Window? owner = _getOwnerViewFunc();

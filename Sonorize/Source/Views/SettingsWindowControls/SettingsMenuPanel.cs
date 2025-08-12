@@ -20,12 +20,16 @@ public static class SettingsMenuPanel
 
         var themeButton = new Button { Content = "Theme", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         themeButton.Bind(Button.CommandProperty, new Binding("ShowThemeSettingsCommand"));
+        
+        var appearanceButton = new Button { Content = "Appearance", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
+        appearanceButton.Bind(Button.CommandProperty, new Binding("ShowAppearanceSettingsCommand"));
 
         var scrobblingButton = new Button { Content = "Scrobbling", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         scrobblingButton.Bind(Button.CommandProperty, new Binding("ShowScrobblingSettingsCommand"));
 
         menuStackPanel.Children.Add(directoriesButton);
         menuStackPanel.Children.Add(themeButton);
+        menuStackPanel.Children.Add(appearanceButton);
         menuStackPanel.Children.Add(scrobblingButton);
 
         var menuBorder = new Border

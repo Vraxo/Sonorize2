@@ -6,6 +6,7 @@ using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.ViewModels;
 using System.Diagnostics;
@@ -21,7 +22,7 @@ public class SharedViewTemplates
     public SongItemTemplateProvider SongTemplates { get; private set; }
     // Expose the provider for Artist templates
     public ArtistItemTemplateProvider ArtistTemplates { get; private set; }
-    
+
     public FuncDataTemplate<PlaylistViewModel> DetailedPlaylistTemplate { get; private set; }
     public FuncDataTemplate<PlaylistViewModel> CompactPlaylistTemplate { get; private set; }
     public FuncDataTemplate<PlaylistViewModel> GridPlaylistTemplate { get; private set; }
@@ -29,7 +30,7 @@ public class SharedViewTemplates
     public FuncDataTemplate<AlbumViewModel> DetailedAlbumTemplate { get; private set; }
     public FuncDataTemplate<AlbumViewModel> CompactAlbumTemplate { get; private set; }
     public FuncDataTemplate<AlbumViewModel> GridAlbumTemplate { get; private set; }
-    
+
     public ITemplate<Panel> StackPanelItemsPanelTemplate { get; private set; }
     public ITemplate<Panel> WrapPanelItemsPanelTemplate { get; private set; }
 
@@ -45,7 +46,7 @@ public class SharedViewTemplates
         InitializePlaylistTemplates();
         InitializePanelTemplates();
     }
-    
+
     private void InitializePlaylistTemplates()
     {
         DetailedPlaylistTemplate = new FuncDataTemplate<PlaylistViewModel>((dataContext, nameScope) =>
@@ -54,8 +55,11 @@ public class SharedViewTemplates
 
             var imageGrid = new Grid
             {
-                Width = 58, Height = 58, Margin = new Thickness(5, 0, 10, 0),
-                ColumnDefinitions = new ColumnDefinitions("*,*"), RowDefinitions = new RowDefinitions("*,*")
+                Width = 58,
+                Height = 58,
+                Margin = new Thickness(5, 0, 10, 0),
+                ColumnDefinitions = new ColumnDefinitions("*,*"),
+                RowDefinitions = new RowDefinitions("*,*")
             };
 
             for (int i = 0; i < 4; i++)
@@ -93,25 +97,74 @@ public class SharedViewTemplates
 
         GridPlaylistTemplate = new FuncDataTemplate<PlaylistViewModel>((dataContext, nameScope) =>
         {
+            var imagePresenter = new Panel { Width = 80, Height = 80, HorizontalAlignment = HorizontalAlignment.Center };
+
+            // Composite 4-image grid
+            var imageGrid = new Grid
+            {
+                Width = 80,
+                Height = 80,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                ColumnDefinitions = new ColumnDefinitions("*,*"),
+                RowDefinitions = new RowDefinitions("*,*")
+            };
+            for (int i = 0; i < 4; i++)
+            {
+                var img = new Image { Width = 38, Height = 38, Stretch = Stretch.UniformToFill, Margin = new Thickness(1) };
+                img.Bind(Image.SourceProperty, new Binding($"SongThumbnailsForGrid[{i}]"));
+                RenderOptions.SetBitmapInterpolationMode(img, BitmapInterpolationMode.HighQuality);
+                Grid.SetRow(img, i / 2); Grid.SetColumn(img, i % 2);
+                imageGrid.Children.Add(img);
+            }
+            imageGrid.Bind(Visual.IsVisibleProperty, new MultiBinding
+            {
+                Converter = new GridViewImageVisibilityConverter { TargetType = GridViewImageType.Composite },
+                Bindings =
+                {
+                    new Binding(nameof(PlaylistViewModel.SongThumbnailsForGrid)),
+                    new Binding("DataContext.Library.LibraryDisplayModeService.PlaylistGridDisplayType")
+                    {
+                        RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+                    }
+                }
+            });
+
+            // Single representative image
+            var singleImage = new Image { Width = 80, Height = 80, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center };
+            singleImage.Bind(Image.SourceProperty, new Binding(nameof(PlaylistViewModel.RepresentativeThumbnail)));
+            RenderOptions.SetBitmapInterpolationMode(singleImage, BitmapInterpolationMode.HighQuality);
+            singleImage.Bind(Visual.IsVisibleProperty, new MultiBinding
+            {
+                Converter = new GridViewImageVisibilityConverter { TargetType = GridViewImageType.Single },
+                Bindings =
+                {
+                    new Binding(nameof(PlaylistViewModel.SongThumbnailsForGrid)),
+                    new Binding("DataContext.Library.LibraryDisplayModeService.PlaylistGridDisplayType")
+                    {
+                        RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+                    }
+                }
+            });
+
+            imagePresenter.Children.Add(imageGrid);
+            imagePresenter.Children.Add(singleImage);
+
             var contentStack = new StackPanel
             {
                 Orientation = Orientation.Vertical,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Spacing = 3
             };
-
-            var image = new Image
-            {
-                Width = 80, Height = 80, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center
-            };
-            image.Bind(Image.SourceProperty, new Binding(nameof(PlaylistViewModel.RepresentativeThumbnail)));
-            RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
-            contentStack.Children.Add(image);
+            contentStack.Children.Add(imagePresenter);
 
             var nameBlock = new TextBlock
             {
-                FontSize = 12, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap,
-                MaxHeight = 30, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center,
+                FontSize = 12,
+                FontWeight = FontWeight.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+                MaxHeight = 30,
+                TextAlignment = TextAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 2, 0, 0)
             };
             nameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(PlaylistViewModel.Name)));
@@ -119,17 +172,25 @@ public class SharedViewTemplates
 
             var countBlock = new TextBlock
             {
-                FontSize = 10, Foreground = _theme.B_SecondaryTextColor, TextWrapping = TextWrapping.Wrap,
-                MaxHeight = 15, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center
+                FontSize = 10,
+                Foreground = _theme.B_SecondaryTextColor,
+                TextWrapping = TextWrapping.Wrap,
+                MaxHeight = 15,
+                TextAlignment = TextAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center
             };
             countBlock.Bind(TextBlock.TextProperty, new Binding(nameof(PlaylistViewModel.SongCount)) { StringFormat = "{0} songs" });
             contentStack.Children.Add(countBlock);
 
             return new Border
             {
-                Width = 120, Height = 150, Background = Brushes.Transparent,
-                Padding = new Thickness(5), Child = contentStack,
-                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
+                Width = 120,
+                Height = 150,
+                Background = Brushes.Transparent,
+                Padding = new Thickness(5),
+                Child = contentStack,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
             };
         }, supportsRecycling: true);
     }
@@ -194,50 +255,64 @@ public class SharedViewTemplates
 
         GridAlbumTemplate = new FuncDataTemplate<AlbumViewModel>((dataContext, nameScope) =>
         {
+            var imagePresenter = new Panel { Width = 80, Height = 80, HorizontalAlignment = HorizontalAlignment.Center };
+
+            // Composite 4-image grid
+            var imageGrid = new Grid
+            {
+                Width = 80,
+                Height = 80,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                ColumnDefinitions = new ColumnDefinitions("*,*"),
+                RowDefinitions = new RowDefinitions("*,*")
+            };
+            for (int i = 0; i < 4; i++)
+            {
+                var img = new Image { Width = 38, Height = 38, Stretch = Stretch.UniformToFill, Margin = new Thickness(1) };
+                img.Bind(Image.SourceProperty, new Binding($"SongThumbnailsForGrid[{i}]"));
+                RenderOptions.SetBitmapInterpolationMode(img, BitmapInterpolationMode.HighQuality);
+                Grid.SetRow(img, i / 2); Grid.SetColumn(img, i % 2);
+                imageGrid.Children.Add(img);
+            }
+            imageGrid.Bind(Visual.IsVisibleProperty, new MultiBinding
+            {
+                Converter = new GridViewImageVisibilityConverter { TargetType = GridViewImageType.Composite },
+                Bindings =
+                {
+                    new Binding(nameof(AlbumViewModel.SongThumbnailsForGrid)),
+                    new Binding("DataContext.Library.LibraryDisplayModeService.AlbumGridDisplayType")
+                    {
+                        RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+                    }
+                }
+            });
+
+            // Single representative image
+            var singleImage = new Image { Width = 80, Height = 80, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center };
+            singleImage.Bind(Image.SourceProperty, new Binding(nameof(AlbumViewModel.RepresentativeThumbnail)));
+            RenderOptions.SetBitmapInterpolationMode(singleImage, BitmapInterpolationMode.HighQuality);
+            singleImage.Bind(Visual.IsVisibleProperty, new MultiBinding
+            {
+                Converter = new GridViewImageVisibilityConverter { TargetType = GridViewImageType.Single },
+                Bindings =
+                {
+                    new Binding(nameof(AlbumViewModel.SongThumbnailsForGrid)),
+                    new Binding("DataContext.Library.LibraryDisplayModeService.AlbumGridDisplayType")
+                    {
+                        RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+                    }
+                }
+            });
+
+            imagePresenter.Children.Add(imageGrid);
+            imagePresenter.Children.Add(singleImage);
+
             var contentStack = new StackPanel
             {
                 Orientation = Orientation.Vertical,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Spacing = 3
             };
-
-            var imagePresenter = new Panel { Width = 80, Height = 80, HorizontalAlignment = HorizontalAlignment.Center };
-
-            if (dataContext is not null && dataContext.SongThumbnailsForGrid is not null && dataContext.SongThumbnailsForGrid.Count(t => t is not null) > 1)
-            {
-                var imageGrid = new Grid
-                {
-                    Width = 80,
-                    Height = 80,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    ColumnDefinitions = new ColumnDefinitions("*,*"),
-                    RowDefinitions = new RowDefinitions("*,*")
-                };
-
-                for (int i = 0; i < 4; i++)
-                {
-                    var img = new Image { Width = 38, Height = 38, Stretch = Stretch.UniformToFill, Margin = new Thickness(1) };
-                    img.Bind(Image.SourceProperty, new Binding($"SongThumbnailsForGrid[{i}]"));
-                    RenderOptions.SetBitmapInterpolationMode(img, BitmapInterpolationMode.HighQuality);
-                    Grid.SetRow(img, i / 2);
-                    Grid.SetColumn(img, i % 2);
-                    imageGrid.Children.Add(img);
-                }
-                imagePresenter.Children.Add(imageGrid);
-            }
-            else
-            {
-                var singleImage = new Image
-                {
-                    Width = 80,
-                    Height = 80,
-                    Stretch = Stretch.UniformToFill,
-                    HorizontalAlignment = HorizontalAlignment.Center
-                };
-                singleImage.Bind(Image.SourceProperty, new Binding(nameof(AlbumViewModel.RepresentativeThumbnail)));
-                RenderOptions.SetBitmapInterpolationMode(singleImage, BitmapInterpolationMode.HighQuality);
-                imagePresenter.Children.Add(singleImage);
-            }
             contentStack.Children.Add(imagePresenter);
 
             var albumTitleBlock = new TextBlock

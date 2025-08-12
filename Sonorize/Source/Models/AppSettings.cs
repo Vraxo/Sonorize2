@@ -13,6 +13,11 @@ public class AppSettings
     public string AlbumViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
     public string PlaylistViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
 
+    // Grid View Image Preferences
+    public string ArtistGridViewImageType { get; set; } = "Composite";
+    public string AlbumGridViewImageType { get; set; } = "Composite";
+    public string PlaylistGridViewImageType { get; set; } = "Composite";
+
     // Last.fm Settings
     public bool LastfmScrobblingEnabled { get; set; } = false;
     public string? LastfmUsername { get; set; }

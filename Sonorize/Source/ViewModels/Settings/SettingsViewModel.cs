@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
@@ -8,6 +9,7 @@ using Avalonia.Controls;
 // Removed: using Avalonia.Platform.Storage; // No longer directly used here
 using Sonorize.Models; // Required for AppSettings type
 using Sonorize.Services;
+using Sonorize.ViewModels.Settings;
 
 namespace Sonorize.ViewModels;
 
@@ -15,24 +17,18 @@ public enum SettingsViewSection
 {
     Directories,
     Theme,
+    Appearance,
     Scrobbling
 }
 
 public class SettingsViewModel : ViewModelBase
 {
     private readonly SettingsService _settingsService;
-    // private readonly ThemeService _themeService; // ThemeService is now injected into ThemeSettingsViewModel
     private readonly SettingsPersistenceManager _settingsPersistenceManager;
 
-    // Music Directories are now managed by a child ViewModel
     public MusicDirectoriesSettingsViewModel MusicDirectoriesSettings { get; }
-    // Theme settings are now managed by a child ViewModel
     public ThemeSettingsViewModel ThemeSettings { get; }
-
-    // public ObservableCollection<string> AvailableThemes { get; } = new(); // Moved
-    // public string? SelectedThemeFile { get; set; } // Moved
-
-    // Encapsulated Last.fm Settings
+    public AppearanceSettingsViewModel AppearanceSettings { get; }
     public LastfmSettingsViewModel LastfmSettings { get; }
 
 
@@ -48,6 +44,7 @@ public class SettingsViewModel : ViewModelBase
     public ICommand SaveAndCloseCommand { get; }
     public ICommand ShowDirectoriesSettingsCommand { get; }
     public ICommand ShowThemeSettingsCommand { get; }
+    public ICommand ShowAppearanceSettingsCommand { get; }
     public ICommand ShowScrobblingSettingsCommand { get; }
 
 
@@ -58,16 +55,13 @@ public class SettingsViewModel : ViewModelBase
 
         var settings = _settingsService.LoadSettings();
 
-        // Initialize the child ViewModel for music directories
         MusicDirectoriesSettings = new MusicDirectoriesSettingsViewModel(settings.MusicDirectories, MarkSettingsChanged);
 
-        // Initialize the child ViewModel for theme settings
-        // ThemeService instance is created here for ThemeSettingsViewModel as it's specific to this part
-        var themeServiceForChild = new ThemeService(settings.PreferredThemeFileName); // Pass current pref to ensure it loads correctly
+        var themeServiceForChild = new ThemeService(settings.PreferredThemeFileName);
         ThemeSettings = new ThemeSettingsViewModel(settings.PreferredThemeFileName, themeServiceForChild, MarkSettingsChanged);
+        
+        AppearanceSettings = new AppearanceSettingsViewModel(settings, MarkSettingsChanged);
 
-
-        // Initialize Last.fm settings module
         LastfmSettings = new LastfmSettingsViewModel();
         LastfmSettings.LoadFromSettings(settings);
         LastfmSettings.PropertyChanged += (s, e) => MarkSettingsChanged();
@@ -79,6 +73,7 @@ public class SettingsViewModel : ViewModelBase
 
         ShowDirectoriesSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Directories);
         ShowThemeSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Theme);
+        ShowAppearanceSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Appearance);
         ShowScrobblingSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Scrobbling);
     }
 
@@ -97,13 +92,12 @@ public class SettingsViewModel : ViewModelBase
     {
         AppSettings settingsOnDisk = _settingsService.LoadSettings();
 
-        // Pass data from the child ViewModels
         bool changesPersisted = _settingsPersistenceManager.ApplyAndSaveChanges(
             settingsOnDisk,
-            MusicDirectoriesSettings.MusicDirectories,
-            MusicDirectoriesSettings.InitialMusicDirectories,
-            ThemeSettings.SelectedThemeFile, // From ThemeSettingsViewModel
-            this.LastfmSettings
+            this.MusicDirectoriesSettings,
+            this.ThemeSettings,
+            this.LastfmSettings,
+            this.AppearanceSettings
         );
 
         if (changesPersisted)

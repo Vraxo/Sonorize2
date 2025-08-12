@@ -84,6 +84,13 @@ public class SettingsWindow : Window
             Converter = EnumToBooleanConverter.Instance,
             ConverterParameter = SettingsViewSection.Theme
         });
+        
+        var appearanceSettingsPanel = AppearanceSettingsPanel.Create(_theme);
+        appearanceSettingsPanel.Bind(Visual.IsVisibleProperty, new Binding("CurrentSettingsViewSection")
+        {
+            Converter = EnumToBooleanConverter.Instance,
+            ConverterParameter = SettingsViewSection.Appearance
+        });
 
         var scrobblingSettingsPanel = ScrobblingSettingsPanel.Create(_theme);
         scrobblingSettingsPanel.Bind(Visual.IsVisibleProperty, new Binding("CurrentSettingsViewSection")
@@ -94,6 +101,7 @@ public class SettingsWindow : Window
 
         contentPanel.Children.Add(directoriesSettingsPanel);
         contentPanel.Children.Add(themeSettingsPanel);
+        contentPanel.Children.Add(appearanceSettingsPanel);
         contentPanel.Children.Add(scrobblingSettingsPanel);
 
         return contentPanel;

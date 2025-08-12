@@ -18,7 +18,7 @@ public class LibraryDisplayModeService : ViewModelBase
         {
             if (SetProperty(ref _libraryViewMode, value))
             {
-                SavePreference(nameof(AppSettings.LibraryViewModePreference), value);
+                SavePreference(nameof(AppSettings.LibraryViewModePreference), value.ToString());
             }
         }
     }
@@ -31,7 +31,7 @@ public class LibraryDisplayModeService : ViewModelBase
         {
             if (SetProperty(ref _artistViewMode, value))
             {
-                SavePreference(nameof(AppSettings.ArtistViewModePreference), value);
+                SavePreference(nameof(AppSettings.ArtistViewModePreference), value.ToString());
             }
         }
     }
@@ -44,7 +44,7 @@ public class LibraryDisplayModeService : ViewModelBase
         {
             if (SetProperty(ref _albumViewMode, value))
             {
-                SavePreference(nameof(AppSettings.AlbumViewModePreference), value);
+                SavePreference(nameof(AppSettings.AlbumViewModePreference), value.ToString());
             }
         }
     }
@@ -57,17 +57,21 @@ public class LibraryDisplayModeService : ViewModelBase
         {
             if (SetProperty(ref _playlistViewMode, value))
             {
-                SavePreference(nameof(AppSettings.PlaylistViewModePreference), value);
+                SavePreference(nameof(AppSettings.PlaylistViewModePreference), value.ToString());
             }
         }
     }
+
+    public GridViewImageType ArtistGridDisplayType { get; private set; }
+    public GridViewImageType AlbumGridDisplayType { get; private set; }
+    public GridViewImageType PlaylistGridDisplayType { get; private set; }
 
     public ICommand SetDisplayModeCommand { get; }
 
     public LibraryDisplayModeService(SettingsService settingsService)
     {
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
-        LoadPreferences();
+        LoadDisplayPreferences();
 
         SetDisplayModeCommand = new RelayCommand(
             param =>
@@ -89,38 +93,40 @@ public class LibraryDisplayModeService : ViewModelBase
         );
     }
 
-    private void LoadPreferences()
+    public void ReloadDisplayPreferences()
+    {
+        LoadDisplayPreferences();
+    }
+
+    private void LoadDisplayPreferences()
     {
         AppSettings settings = _settingsService.LoadSettings();
         _libraryViewMode = Enum.TryParse<SongDisplayMode>(settings.LibraryViewModePreference, out var libMode) ? libMode : SongDisplayMode.Detailed;
         _artistViewMode = Enum.TryParse<SongDisplayMode>(settings.ArtistViewModePreference, out var artMode) ? artMode : SongDisplayMode.Detailed;
         _albumViewMode = Enum.TryParse<SongDisplayMode>(settings.AlbumViewModePreference, out var albMode) ? albMode : SongDisplayMode.Detailed;
         _playlistViewMode = Enum.TryParse<SongDisplayMode>(settings.PlaylistViewModePreference, out var playMode) ? playMode : SongDisplayMode.Detailed;
+        
+        ArtistGridDisplayType = Enum.TryParse<GridViewImageType>(settings.ArtistGridViewImageType, out var artistGridType) ? artistGridType : GridViewImageType.Composite;
+        AlbumGridDisplayType = Enum.TryParse<GridViewImageType>(settings.AlbumGridViewImageType, out var albumGridType) ? albumGridType : GridViewImageType.Composite;
+        PlaylistGridDisplayType = Enum.TryParse<GridViewImageType>(settings.PlaylistGridViewImageType, out var playlistGridType) ? playlistGridType : GridViewImageType.Composite;
 
         // Initial OnPropertyChanged for any subscribers after loading
         OnPropertyChanged(nameof(LibraryViewMode));
         OnPropertyChanged(nameof(ArtistViewMode));
         OnPropertyChanged(nameof(AlbumViewMode));
         OnPropertyChanged(nameof(PlaylistViewMode));
+        OnPropertyChanged(nameof(ArtistGridDisplayType));
+        OnPropertyChanged(nameof(AlbumGridDisplayType));
+        OnPropertyChanged(nameof(PlaylistGridDisplayType));
     }
 
-    private void SavePreference(string preferenceKey, SongDisplayMode mode)
+    private void SavePreference(string preferenceKey, string value)
     {
         AppSettings settings = _settingsService.LoadSettings();
-        switch (preferenceKey)
+        var prop = typeof(AppSettings).GetProperty(preferenceKey);
+        if (prop != null && prop.CanWrite)
         {
-            case nameof(AppSettings.LibraryViewModePreference):
-                settings.LibraryViewModePreference = mode.ToString();
-                break;
-            case nameof(AppSettings.ArtistViewModePreference):
-                settings.ArtistViewModePreference = mode.ToString();
-                break;
-            case nameof(AppSettings.AlbumViewModePreference):
-                settings.AlbumViewModePreference = mode.ToString();
-                break;
-            case nameof(AppSettings.PlaylistViewModePreference):
-                settings.PlaylistViewModePreference = mode.ToString();
-                break;
+            prop.SetValue(settings, value, null);
         }
         _settingsService.SaveSettings(settings);
     }
