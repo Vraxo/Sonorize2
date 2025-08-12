@@ -15,6 +15,7 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
     private readonly PlaybackSessionState _sessionState;
 
     private PlaybackInfrastructureProvider? _currentInfrastructure;
+    private bool _hasBeenScrobbledThisSession = false; // New flag for threshold-based scrobbling
 
     // Delegated Properties to PlaybackSessionState
     public Song? CurrentSong => _sessionState.CurrentSong;
@@ -114,6 +115,7 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
         // --- Step 3: Create and start the new infrastructure ---
         try
         {
+            _hasBeenScrobbledThisSession = false; // Reset scrobble flag for the new session.
             _currentInfrastructure = new PlaybackInfrastructureProvider(_loopHandler);
             _currentInfrastructure.Coordinator.EnginePlaybackStopped += OnEngineCoordinatorPlaybackStopped;
             _currentInfrastructure.Coordinator.EnginePositionUpdated += OnEngineCoordinatorPositionUpdated;
@@ -209,6 +211,17 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
         {
             _sessionState.CurrentPosition = e.Position;
             _sessionState.CurrentSongDuration = e.Duration;
+
+            // Scrobble-on-threshold logic
+            if (!_hasBeenScrobbledThisSession && CurrentSong != null)
+            {
+                if (_scrobblingService.ShouldScrobble(CurrentSong, e.Position))
+                {
+                    Debug.WriteLine($"[SessionManager] Scrobble threshold met for '{CurrentSong.Title}'. Sending permanent scrobble now.");
+                    _scrobblingService.ScrobbleAsync(CurrentSong, DateTime.UtcNow); // Fire and forget
+                    _hasBeenScrobbledThisSession = true;
+                }
+            }
         }
     }
 

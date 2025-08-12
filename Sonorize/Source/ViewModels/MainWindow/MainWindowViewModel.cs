@@ -202,54 +202,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         return songObject is Song && !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading);
     }
 
-    public async Task PerformGracefulShutdownAsync()
-    {
-        Debug.WriteLine("[MainWindowViewModel] Initiating graceful shutdown.");
-
-        var playbackService = _componentsManager.PlaybackServiceProperty;
-        var scrobblingService = _componentsManager.ScrobblingServiceProperty; // Access ScrobblingService from ComponentsManager
-
-        if (playbackService.CurrentSong != null && playbackService.IsPlaying)
-        {
-            Debug.WriteLine($"[MainWindowViewModel] Checking for final scrobble for '{playbackService.CurrentSong.Title}'.");
-            var songToScrobble = playbackService.CurrentSong;
-            var positionScrobbled = playbackService.CurrentPosition;
-
-            if (scrobblingService.ShouldScrobble(songToScrobble, positionScrobbled))
-            {
-                Debug.WriteLine($"[MainWindowViewModel] Attempting final scrobble for '{songToScrobble.Title}'.");
-                try
-                {
-                    // Attempt to scrobble with a timeout
-                    await Task.WhenAny(
-                        scrobblingService.ScrobbleAsync(songToScrobble, DateTime.UtcNow),
-                        Task.Delay(TimeSpan.FromSeconds(5)) // 5-second timeout
-                    );
-                    Debug.WriteLine("[MainWindowViewModel] Final scrobble task completed (or timed out).");
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"[MainWindowViewModel] Final scrobble failed during graceful shutdown: {ex.Message}");
-                }
-            }
-            else
-            {
-                Debug.WriteLine("[MainWindowViewModel] Current song not eligible for final scrobble.");
-            }
-        }
-        else
-        {
-            Debug.WriteLine("[MainWindowViewModel] No song playing or no current song for final scrobble.");
-        }
-
-        Debug.WriteLine("[MainWindowViewModel] Graceful shutdown tasks completed.");
-    }
-
     public void Dispose()
     {
-        Debug.WriteLine("[MainWindowViewModel] Dispose() called.");
         _componentsManager?.Dispose();
         _ownerView = null;
-        Debug.WriteLine("[MainWindowViewModel] Dispose() completed.");
     }
 }

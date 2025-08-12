@@ -21,9 +21,6 @@ public class MainWindow : Window
     private LibraryViewModel? _currentLibraryVM;
     private readonly SharedViewTemplates _sharedViewTemplates;
     private readonly MainTabViewControls _mainTabViewControls;
-    private bool _isShuttingDown = false; // Add a field to prevent re-entry
-
-
     public MainWindow(ThemeColors theme)
     {
         _theme = theme;
@@ -82,42 +79,12 @@ public class MainWindow : Window
         this.Closing += OnMainWindowClosing; // Graceful shutdown hook
     }
 
-    private async void OnMainWindowClosing(object? sender, CancelEventArgs e)
+    private void OnMainWindowClosing(object? sender, CancelEventArgs e)
     {
-        if (_isShuttingDown) return; // Already handling shutdown, let it proceed.
-
-        if (DataContext is MainWindowViewModel vm)
+        if (DataContext is IDisposable disposable)
         {
-            // 1. Cancel the original close event.
-            e.Cancel = true;
-
-            // 2. Set flag to prevent re-entry.
-            _isShuttingDown = true;
-            Debug.WriteLine("[MainWindow] Closing requested. Starting graceful shutdown procedure.");
-
-            try
-            {
-                // 3. Provide immediate visual feedback BEFORE the wait.
-                vm.StatusBarText = "Saving final scrobble...";
-
-                // 4. Perform final async operations (like scrobbling).
-                await vm.PerformGracefulShutdownAsync();
-                Debug.WriteLine("[MainWindow] Graceful shutdown async tasks completed.");
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[MainWindow] Error during graceful shutdown tasks: {ex.Message}");
-            }
-            finally
-            {
-                // 5. Dispose the ViewModel and its hierarchy.
-                vm.Dispose();
-                Debug.WriteLine("[MainWindow] ViewModel disposed.");
-
-                // 6. Actually close the window.
-                // Because _isShuttingDown is true, this call will not re-trigger this handler.
-                Dispatcher.UIThread.Invoke(Close);
-            }
+            Debug.WriteLine("[MainWindow] Window is closing. Disposing ViewModel to ensure graceful shutdown.");
+            disposable.Dispose();
         }
     }
 
