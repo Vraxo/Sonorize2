@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Threading.Tasks;
 using IF.Lastfm.Core.Api;
+using IF.Lastfm.Core.Api.Helpers;
 using IF.Lastfm.Core.Objects; // Added for service classes like Track, Auth
 using Sonorize.Models;
 
@@ -104,6 +105,13 @@ public class ScrobblingService
             return;
         }
 
+        // FINAL SAFEGUARD: Last.fm requires artist and title for scrobbles.
+        if (string.IsNullOrWhiteSpace(song.Artist) || string.IsNullOrWhiteSpace(song.Title))
+        {
+            Debug.WriteLine($"[ScrobblingService] UpdateNowPlayingAsync skipped for '{song.FilePath}'. Reason: Artist or Title metadata is missing.");
+            return;
+        }
+
         var client = await GetAuthenticatedClientAsync();
         if (client == null)
         {
@@ -113,23 +121,27 @@ public class ScrobblingService
 
         try
         {
-            Debug.WriteLine($"[ScrobblingService] Sending UpdateNowPlaying for: {song.Title} by {song.Artist}");
-            var trackInfo = new LastTrack { Name = song.Title, ArtistName = song.Artist, AlbumName = song.Album };
-            if (song.Duration.TotalSeconds > 0)
+            LastResponse? response = null;
+            for (int i = 0; i < 2; i++) // Retry once on failure
             {
-                trackInfo.Duration = song.Duration;
-            }
+                Debug.WriteLine($"[ScrobblingService] Sending UpdateNowPlaying for: {song.Title} by {song.Artist} (Attempt {i + 1})");
+                var scrobble = new Scrobble(song.Artist, song.Album, song.Title, DateTimeOffset.Now);
+                response = await client.Track.UpdateNowPlayingAsync(scrobble);
 
-            var scrobble = new Scrobble(song.Artist, song.Album, song.Title, DateTimeOffset.Now);
-            var response = await client.Track.UpdateNowPlayingAsync(scrobble);
-
-            if (response.Success)
-            {
-                Debug.WriteLine($"[ScrobblingService] UpdateNowPlaying successful for: {song.Title}");
-            }
-            else
-            {
-                Debug.WriteLine($"[ScrobblingService] UpdateNowPlaying FAILED for: {song.Title}. Error: {response.Status} - {response.Error}");
+                if (response.Success)
+                {
+                    Debug.WriteLine($"[ScrobblingService] UpdateNowPlaying successful for: {song.Title}");
+                    break; // Exit loop on success
+                }
+                else
+                {
+                    Debug.WriteLine($"[ScrobblingService] UpdateNowPlaying FAILED for: {song.Title}. Error: {response.Status} - {response.Error}");
+                    if (i == 0) // If it's the first attempt
+                    {
+                        Debug.WriteLine("[ScrobblingService] Waiting 2 seconds before retry...");
+                        await Task.Delay(2000);
+                    }
+                }
             }
         }
         catch (Exception ex)
@@ -147,6 +159,13 @@ public class ScrobblingService
             return;
         }
 
+        // FINAL SAFEGUARD: Last.fm requires artist and title for scrobbles.
+        if (string.IsNullOrWhiteSpace(song.Artist) || string.IsNullOrWhiteSpace(song.Title))
+        {
+            Debug.WriteLine($"[ScrobblingService] ScrobbleAsync skipped for '{song.FilePath}'. Reason: Artist or Title metadata is missing.");
+            return;
+        }
+
         var client = await GetAuthenticatedClientAsync();
         if (client == null)
         {
@@ -156,18 +175,27 @@ public class ScrobblingService
 
         try
         {
-            Debug.WriteLine($"[ScrobblingService] Sending Scrobble for: {song.Title} by {song.Artist}, TimePlayed: {timePlayed}");
-
-            var scrobble = new Scrobble(song.Artist, song.Album, song.Title, timePlayed);
-            var response = await client.Track.ScrobbleAsync(scrobble);
-
-            if (response.Success)
+            LastResponse? response = null;
+            for (int i = 0; i < 2; i++) // Retry once on failure
             {
-                Debug.WriteLine($"[ScrobblingService] Scrobble successful for: {song.Title}");
-            }
-            else
-            {
-                Debug.WriteLine($"[ScrobblingService] Scrobble FAILED for: {song.Title}. Error: {response.Status} - {response.Error}");
+                Debug.WriteLine($"[ScrobblingService] Sending Scrobble for: {song.Title} by {song.Artist}, TimePlayed: {timePlayed} (Attempt {i + 1})");
+                var scrobble = new Scrobble(song.Artist, song.Album, song.Title, timePlayed);
+                response = await client.Track.ScrobbleAsync(scrobble);
+
+                if (response.Success)
+                {
+                    Debug.WriteLine($"[ScrobblingService] Scrobble successful for: {song.Title}");
+                    break; // Exit loop on success
+                }
+                else
+                {
+                    Debug.WriteLine($"[ScrobblingService] Scrobble FAILED for: {song.Title}. Error: {response.Status} - {response.Error}");
+                    if (i == 0) // If it's the first attempt
+                    {
+                        Debug.WriteLine("[ScrobblingService] Waiting 2 seconds before retry...");
+                        await Task.Delay(2000);
+                    }
+                }
             }
         }
         catch (Exception ex)
