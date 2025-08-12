@@ -11,7 +11,7 @@ public class PlaybackEngineCoordinator : IDisposable
     private readonly NAudioPlaybackEngine _engineController; // Changed type
     private readonly PlaybackLoopHandler _loopHandler;
     private readonly PlaybackMonitor _playbackMonitor;
-    private Song? _currentSong;
+    public Song? CurrentSong { get; private set; }
     private bool _disposed = false;
 
     public event EventHandler<StoppedEventArgs>? EnginePlaybackStopped;
@@ -43,7 +43,7 @@ public class PlaybackEngineCoordinator : IDisposable
 
     public void SetSong(Song? song)
     {
-        _currentSong = song;
+        CurrentSong = song;
         _loopHandler.UpdateCurrentSong(song);
         Debug.WriteLine($"[PlaybackEngineCoordinator] SetSong: {song?.Title ?? "null"}");
     }
@@ -67,7 +67,7 @@ public class PlaybackEngineCoordinator : IDisposable
 
     public void Play(bool startMonitor)
     {
-        if (_currentSong == null)
+        if (CurrentSong == null)
         {
             Debug.WriteLine("[PlaybackEngineCoordinator] Play called but no current song. Aborting.");
             return;
@@ -81,9 +81,9 @@ public class PlaybackEngineCoordinator : IDisposable
         _engineController.Play();
         if (startMonitor)
         {
-            _playbackMonitor.Start(_currentSong, OnMonitorPositionUpdate);
+            _playbackMonitor.Start(CurrentSong, OnMonitorPositionUpdate);
         }
-        Debug.WriteLine($"[PlaybackEngineCoordinator] Play initiated for {_currentSong.Title}. Monitor started: {startMonitor}");
+        Debug.WriteLine($"[PlaybackEngineCoordinator] Play initiated for {CurrentSong.Title}. Monitor started: {startMonitor}");
     }
 
     public void Pause()
@@ -95,7 +95,7 @@ public class PlaybackEngineCoordinator : IDisposable
 
     public void Resume(bool startMonitor)
     {
-        if (_currentSong == null)
+        if (CurrentSong == null)
         {
             Debug.WriteLine("[PlaybackEngineCoordinator] Resume called but no current song. Aborting.");
             return;
@@ -103,9 +103,9 @@ public class PlaybackEngineCoordinator : IDisposable
         _engineController.Play(); // NAudio handles resuming from paused or re-playing from stopped if applicable
         if (startMonitor)
         {
-            _playbackMonitor.Start(_currentSong, OnMonitorPositionUpdate);
+            _playbackMonitor.Start(CurrentSong, OnMonitorPositionUpdate);
         }
-        Debug.WriteLine($"[PlaybackEngineCoordinator] Resume initiated for {_currentSong.Title}. Monitor started: {startMonitor}");
+        Debug.WriteLine($"[PlaybackEngineCoordinator] Resume initiated for {CurrentSong.Title}. Monitor started: {startMonitor}");
     }
 
     public void Stop()
@@ -124,7 +124,7 @@ public class PlaybackEngineCoordinator : IDisposable
 
     public void Seek(TimeSpan requestedPosition)
     {
-        if (_currentSong == null || _engineController.CurrentSongDuration == TimeSpan.Zero) return;
+        if (CurrentSong == null || _engineController.CurrentSongDuration == TimeSpan.Zero) return;
 
         TimeSpan targetPosition = _loopHandler.GetAdjustedSeekPosition(requestedPosition, _engineController.CurrentSongDuration);
 
