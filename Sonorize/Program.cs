@@ -1,5 +1,6 @@
 ﻿using System;
 using Avalonia;
+using Avalonia.Logging;
 using NAudio.MediaFoundation; // Required for MediaFoundationApi
 
 namespace Sonorize;
@@ -48,5 +49,5 @@ class Program
     public static AppBuilder BuildAvaloniaApp()
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()
-            .LogToTrace();
+            .LogToTrace(level: LogEventLevel.Warning);
 }

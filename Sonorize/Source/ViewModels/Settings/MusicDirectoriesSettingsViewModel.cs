@@ -33,7 +33,7 @@ public class MusicDirectoriesSettingsViewModel : ViewModelBase
     public ICommand AddDirectoryCommand { get; }
     public ICommand RemoveDirectoryCommand { get; }
 
-    public bool CanRemoveDirectory => SelectedDirectory != null;
+    public bool CanRemoveDirectory => SelectedDirectory is not null;
 
     // This property can be used by the parent to quickly check if this specific section has changes
     // compared to its initial state when the settings dialog was opened.

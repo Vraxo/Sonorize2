@@ -21,7 +21,7 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
 
     // Properties directly from PlaybackService or managed by this ViewModel
     public Song? CurrentSong => _playbackService.CurrentSong;
-    public bool HasCurrentSong => _playbackService.CurrentSong != null;
+    public bool HasCurrentSong => _playbackService.CurrentSong is not null;
     public TimeSpan CurrentPosition => _playbackService.CurrentPosition;
     public double CurrentPositionSeconds => _playbackService.CurrentPosition.TotalSeconds;
     public TimeSpan CurrentSongDuration => _playbackService.CurrentSongDuration;
@@ -46,8 +46,8 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
     }
 
 
-    public string CurrentTimeDisplay => _playbackService.CurrentSong != null ? $"{_playbackService.CurrentPosition:mm\\:ss}" : "--:--";
-    public string TotalTimeDisplay => (_playbackService.CurrentSong != null && _playbackService.CurrentSongDuration.TotalSeconds > 0)
+    public string CurrentTimeDisplay => _playbackService.CurrentSong is not null ? $"{_playbackService.CurrentPosition:mm\\:ss}" : "--:--";
+    public string TotalTimeDisplay => (_playbackService.CurrentSong is not null && _playbackService.CurrentSongDuration.TotalSeconds > 0)
             ? $"{_playbackService.CurrentSongDuration:mm\\:ss}"
             : "--:--";
 
@@ -64,7 +64,7 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
 
         PlayPauseResumeCommand = new RelayCommand(
             _ => TogglePlayPauseResume(),
-            _ => CurrentSong != null && !WaveformDisplay.IsWaveformLoading);
+            _ => CurrentSong is not null && !WaveformDisplay.IsWaveformLoading);
 
         SeekCommand = new RelayCommand(
             positionSecondsObj =>
@@ -74,7 +74,7 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
                     _playbackService.Seek(TimeSpan.FromSeconds(seconds));
                 }
             },
-             _ => CurrentSong != null && CurrentSongDuration.TotalSeconds > 0 && !WaveformDisplay.IsWaveformLoading);
+             _ => CurrentSong is not null && CurrentSongDuration.TotalSeconds > 0 && !WaveformDisplay.IsWaveformLoading);
 
         _playbackService.PropertyChanged += PlaybackService_PropertyChanged;
         UpdateAllDisplayProperties(); // Initial sync
@@ -161,7 +161,7 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
         {
             _playbackService.Resume();
         }
-        else if (CurrentPlaybackStatus == PlaybackStateStatus.Stopped && CurrentSong != null)
+        else if (CurrentPlaybackStatus == PlaybackStateStatus.Stopped && CurrentSong is not null)
         {
             _playbackService.Resume();
         }
@@ -209,7 +209,7 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
         _playbackService.PropertyChanged -= PlaybackService_PropertyChanged;
         PropertyChanged -= PlaybackViewModel_PropertyChanged;
 
-        if (WaveformDisplay != null)
+        if (WaveformDisplay is not null)
         {
             WaveformDisplay.PropertyChanged -= WaveformDisplay_PropertyChanged;
             // If WaveformDisplay implements IDisposable, call it

@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.ObjectModel;
-using System.ComponentModel; // Required for PropertyChangedEventArgs
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -19,34 +19,21 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     private readonly LibraryDisplayModeService _displayModeService;
     private readonly TrackNavigationManager _trackNavigationManager;
     private readonly LibraryComponentProvider _components;
-    private readonly LibraryLoadProcess _libraryLoadProcess; // New field
+    private readonly LibraryLoadProcess _libraryLoadProcess;
 
-    // Proxied properties using _components
     public LibraryGroupingsViewModel Groupings => _components.Groupings;
     public ObservableCollection<Song> FilteredSongs => _components.SongList.FilteredSongs;
     public LibraryFilterStateManager FilterState => _components.FilterState;
-
-    public Song? SelectedSong
-    {
-        get => _components.SongList.SelectedSong;
-        set
-        {
-            if (_components.SongList.SelectedSong != value)
-            {
-                _components.SongList.SelectedSong = value;
-                OnPropertyChanged(); // Notify that LibraryViewModel.SelectedSong has changed
-                _trackNavigationManager.UpdateSelectedSong(value);
-                (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged();
-                Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"} (via SongListManager)");
-            }
-        }
-    }
 
     public ICommand SetDisplayModeCommand => _displayModeService.SetDisplayModeCommand;
     public ICommand PreviousTrackCommand => _trackNavigationManager.PreviousTrackCommand;
     public ICommand NextTrackCommand => _trackNavigationManager.NextTrackCommand;
     public ICommand EditSongMetadataCommand { get; }
 
+    public SongDisplayMode LibraryViewMode => _displayModeService.LibraryViewMode;
+    public SongDisplayMode ArtistViewMode => _displayModeService.ArtistViewMode;
+    public SongDisplayMode AlbumViewMode => _displayModeService.AlbumViewMode;
+    public SongDisplayMode PlaylistViewMode => _displayModeService.PlaylistViewMode;
 
     public bool IsLoadingLibrary
     {
@@ -65,15 +52,32 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
     public string LibraryStatusText
     {
-        get => _libraryStatusText;
-        private set => SetProperty(ref _libraryStatusText, value);
+        get;
+
+        private set
+        {
+            SetProperty(ref field, value);
+        }
+    } = "";
+
+    public Song? SelectedSong
+    {
+        get => _components.SongList.SelectedSong;
+        set
+        {
+            if (_components.SongList.SelectedSong == value)
+            {
+                return;
+            }
+
+            _components.SongList.SelectedSong = value;
+            OnPropertyChanged();
+            _trackNavigationManager.UpdateSelectedSong(value);
+            (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged();
+
+            Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"} (via SongListManager)");
+        }
     }
-    private string _libraryStatusText = "";
-
-
-    public SongDisplayMode LibraryViewMode => _displayModeService.LibraryViewMode;
-    public SongDisplayMode ArtistViewMode => _displayModeService.ArtistViewMode;
-    public SongDisplayMode AlbumViewMode => _displayModeService.AlbumViewMode;
 
     public LibraryViewModel(
         MainWindowViewModel parentViewModel,
@@ -128,7 +132,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         }
     }
 
-
     private void DisplayModeService_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         switch (e.PropertyName)
@@ -141,6 +144,9 @@ public class LibraryViewModel : ViewModelBase, IDisposable
                 break;
             case nameof(LibraryDisplayModeService.AlbumViewMode):
                 OnPropertyChanged(nameof(AlbumViewMode));
+                break;
+            case nameof(LibraryDisplayModeService.PlaylistViewMode):
+                OnPropertyChanged(nameof(PlaylistViewMode));
                 break;
         }
     }
@@ -168,7 +174,8 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         _components.SongList.ApplyFilter(
             _components.FilterState.SearchQuery,
             _components.FilterState.SelectedArtist,
-            _components.FilterState.SelectedAlbum);
+            _components.FilterState.SelectedAlbum,
+            _components.FilterState.SelectedPlaylist);
 
         _trackNavigationManager.UpdateSelectedSong(_components.SongList.SelectedSong);
         UpdateStatusBarText();
@@ -176,36 +183,39 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
     public void UpdateStatusBarText()
     {
-        if (!IsLoadingLibrary)
+        if (IsLoadingLibrary)
         {
-            LibraryStatusText = _components.StatusTextGenerator.GenerateStatusText(
-                IsLoadingLibrary,
-                _components.SongList.AllSongsCount,
-                FilteredSongs.Count,
-                _components.FilterState.SelectedArtist,
-                _components.FilterState.SelectedAlbum,
-                _components.FilterState.SearchQuery,
-                _settingsService
-            );
+            return;
         }
+
+        LibraryStatusText = _components.StatusTextGenerator.GenerateStatusText(
+            IsLoadingLibrary,
+            _components.SongList.AllSongsCount,
+            FilteredSongs.Count,
+            _components.FilterState.SelectedArtist,
+            _components.FilterState.SelectedAlbum,
+            _components.FilterState.SelectedPlaylist,
+            _components.FilterState.SearchQuery,
+            _settingsService
+        );
     }
 
     private void ExecuteEditSongMetadata(object? parameter)
     {
-        if (parameter is Song song && _parentViewModel.OpenEditSongMetadataDialogCommand.CanExecute(song))
-        {
-            Debug.WriteLine($"[LibraryVM] Delegating Edit metadata for: {song.Title} to MainWindowViewModel.");
-            _parentViewModel.OpenEditSongMetadataDialogCommand.Execute(song);
-        }
-        else
+        if (parameter is not Song song || !_parentViewModel.OpenEditSongMetadataDialogCommand.CanExecute(song))
         {
             Debug.WriteLine($"[LibraryVM] Edit metadata requested but parameter is not a Song or parent command cannot execute.");
+            return;
         }
+        
+        Debug.WriteLine($"[LibraryVM] Delegating Edit metadata for: {song.Title} to MainWindowViewModel.");
+        _parentViewModel.OpenEditSongMetadataDialogCommand.Execute(song);
     }
 
     private bool CanExecuteEditSongMetadata(object? parameter)
     {
-        return parameter is Song && _parentViewModel.OpenEditSongMetadataDialogCommand.CanExecute(parameter);
+        return parameter is Song 
+            && _parentViewModel.OpenEditSongMetadataDialogCommand.CanExecute(parameter);
     }
 
 
@@ -216,20 +226,23 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
-        if (_musicLibraryService != null)
+        if (_musicLibraryService is not null)
         {
             _musicLibraryService.SongThumbnailUpdated -= MusicLibraryService_SongThumbnailUpdated;
         }
-        if (_displayModeService != null)
+
+        if (_displayModeService is not null)
         {
             _displayModeService.PropertyChanged -= DisplayModeService_PropertyChanged;
         }
-        if (_components?.FilterState != null)
+
+        if (_components?.FilterState is not null)
         {
             _components.FilterState.FilterCriteriaChanged -= (s, e) => ApplyFilter();
             _components.FilterState.RequestTabSwitchToLibrary -= (s, e) => _parentViewModel.ActiveTabIndex = 0;
         }
-        if (_components?.SongList != null)
+
+        if (_components?.SongList is not null)
         {
             _components.SongList.PropertyChanged -= SongListManager_PropertyChanged;
         }

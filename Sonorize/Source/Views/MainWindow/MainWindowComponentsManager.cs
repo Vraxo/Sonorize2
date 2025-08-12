@@ -106,7 +106,7 @@ public class MainWindowComponentsManager : IDisposable
 
     public void Dispose()
     {
-        if (PlaybackServiceProperty != null)
+        if (PlaybackServiceProperty is not null)
         {
             PlaybackServiceProperty.PlaybackEndedNaturally -= PlaybackService_PlaybackEndedNaturally;
         }

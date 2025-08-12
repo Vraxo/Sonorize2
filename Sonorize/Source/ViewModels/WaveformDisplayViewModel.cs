@@ -61,7 +61,7 @@ public class WaveformDisplayViewModel : ViewModelBase
         {
             // If the song is the same, and panel is visible, ensure waveform is loaded if not already
             // This handles cases where the panel might have been hidden and then reshown for the same song.
-            if (_isPanelVisible && newSong != null && !WaveformRenderData.Any() && !IsWaveformLoading)
+            if (_isPanelVisible && newSong is not null && !WaveformRenderData.Any() && !IsWaveformLoading)
             {
                 Debug.WriteLine($"[WaveformDisplayVM] Panel visible for same song '{newSong.Title}', but no waveform. Triggering load.");
                 _ = TryLoadWaveformAsync(newSong);
@@ -71,7 +71,7 @@ public class WaveformDisplayViewModel : ViewModelBase
 
         _currentSongForWaveform = newSong;
 
-        if (_currentSongForWaveform != null && _isPanelVisible)
+        if (_currentSongForWaveform is not null && _isPanelVisible)
         {
             Debug.WriteLine($"[WaveformDisplayVM] Current song changed to '{_currentSongForWaveform.Title}' and panel is visible. Triggering load.");
             _ = TryLoadWaveformAsync(_currentSongForWaveform);
@@ -92,7 +92,7 @@ public class WaveformDisplayViewModel : ViewModelBase
         _isPanelVisible = isVisible;
         Debug.WriteLine($"[WaveformDisplayVM] Panel visibility set to: {isVisible}");
 
-        if (_isPanelVisible && _currentSongForWaveform != null)
+        if (_isPanelVisible && _currentSongForWaveform is not null)
         {
             // Panel became visible for the current song. If no data and not loading, start load.
             if (!WaveformRenderData.Any() && !IsWaveformLoading)
@@ -126,7 +126,7 @@ public class WaveformDisplayViewModel : ViewModelBase
         {
             // A previous load finished, but the song context has since changed.
             // Trigger a new load for the actual current song if conditions are met.
-            if (_currentSongForWaveform != null && _isPanelVisible)
+            if (_currentSongForWaveform is not null && _isPanelVisible)
             {
                 Debug.WriteLine($"[WaveformDisplayVM] Post-load check: Song context changed from '{_playbackService.CurrentSong?.Title}' to '{_currentSongForWaveform.Title}'. Re-evaluating load for {_currentSongForWaveform.Title}.");
                 _ = TryLoadWaveformAsync(_currentSongForWaveform);

@@ -23,7 +23,7 @@ public class PlaybackSessionState : INotifyPropertyChanged
         }
     }
 
-    public bool HasCurrentSong => CurrentSong != null;
+    public bool HasCurrentSong => CurrentSong is not null;
 
     private bool _isPlaying;
     public bool IsPlaying { get => _isPlaying; set => SetProperty(ref _isPlaying, value); }

@@ -16,7 +16,7 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
     public LoopCandidateViewModel CandidateLoop { get; }
     public ActiveLoopViewModel ActiveLoop { get; } // New child ViewModel
 
-    public bool CanSaveLoopRegion => _currentSongInternal != null
+    public bool CanSaveLoopRegion => _currentSongInternal is not null
                                      && CandidateLoop.NewLoopStartCandidate.HasValue
                                      && CandidateLoop.NewLoopEndCandidate.HasValue
                                      && CandidateLoop.NewLoopEndCandidate.Value > CandidateLoop.NewLoopStartCandidate.Value
@@ -43,10 +43,10 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
         ActiveLoop = new ActiveLoopViewModel(playbackService, songLoopService); // Instantiate new child
 
         SaveLoopCommand = new RelayCommand(SaveLoopAction, _ => CanSaveLoopRegion);
-        ClearLoopCommand = new RelayCommand(ClearSavedLoopAction, _ => _currentSongInternal?.SavedLoop != null);
+        ClearLoopCommand = new RelayCommand(ClearSavedLoopAction, _ => _currentSongInternal?.SavedLoop is not null);
         WaveformSeekCommand = new RelayCommand(
-            timeSpanObj => { if (timeSpanObj is TimeSpan ts && _currentSongInternal != null) _playbackService.Seek(ts); },
-            _ => _currentSongInternal != null);
+            timeSpanObj => { if (timeSpanObj is TimeSpan ts && _currentSongInternal is not null) _playbackService.Seek(ts); },
+            _ => _currentSongInternal is not null);
 
         _playbackService.PropertyChanged += PlaybackService_PropertyChanged;
         UpdateStateForCurrentSong(_playbackService.CurrentSong); // Initial state update
@@ -66,12 +66,12 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
             {
                 case nameof(PlaybackService.CurrentSong):
                     Debug.WriteLine($"[LoopEdVM] PlaybackService.CurrentSong changed to: {_playbackService.CurrentSong?.Title ?? "null"}. Updating loop editor state.");
-                    if (_currentSongInternal != null)
+                    if (_currentSongInternal is not null)
                     {
                         _currentSongInternal.PropertyChanged -= CurrentSong_PropertyChanged;
                     }
                     _currentSongInternal = _playbackService.CurrentSong;
-                    if (_currentSongInternal != null)
+                    if (_currentSongInternal is not null)
                     {
                         _currentSongInternal.PropertyChanged += CurrentSong_PropertyChanged;
                     }
@@ -110,7 +110,7 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
     private void UpdateStateForCurrentSong(Song? song)
     {
         Debug.WriteLine($"[LoopEdVM] UpdateStateForCurrentSong called for: {song?.Title ?? "null"}");
-        if (song?.SavedLoop != null)
+        if (song?.SavedLoop is not null)
         {
             CandidateLoop.NewLoopStartCandidate = song.SavedLoop.Start;
             CandidateLoop.NewLoopEndCandidate = song.SavedLoop.End;
@@ -137,7 +137,7 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
         TimeSpan start = CandidateLoop.NewLoopStartCandidate.Value;
         TimeSpan end = CandidateLoop.NewLoopEndCandidate.Value;
 
-        bool shouldBeActive = (currentSong.SavedLoop != null && currentSong.IsLoopActive) || currentSong.SavedLoop == null;
+        bool shouldBeActive = (currentSong.SavedLoop is not null && currentSong.IsLoopActive) || currentSong.SavedLoop == null;
 
         _songLoopService.SaveLoop(currentSong, start, end, shouldBeActive);
         // ActiveLoopViewModel and LoopEditorViewModel will react to Song model PropertyChanged events
@@ -146,7 +146,7 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
     private void ClearSavedLoopAction(object? param)
     {
         var currentSong = _currentSongInternal;
-        if (currentSong != null)
+        if (currentSong is not null)
         {
             _songLoopService.ClearLoop(currentSong);
         }
@@ -163,7 +163,7 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
-        if (_currentSongInternal != null)
+        if (_currentSongInternal is not null)
         {
             _currentSongInternal.PropertyChanged -= CurrentSong_PropertyChanged;
         }

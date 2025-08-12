@@ -48,6 +48,19 @@ public class LibraryDisplayModeService : ViewModelBase
             }
         }
     }
+    
+    private SongDisplayMode _playlistViewMode;
+    public SongDisplayMode PlaylistViewMode
+    {
+        get => _playlistViewMode;
+        private set
+        {
+            if (SetProperty(ref _playlistViewMode, value))
+            {
+                SavePreference(nameof(AppSettings.PlaylistViewModePreference), value);
+            }
+        }
+    }
 
     public ICommand SetDisplayModeCommand { get; }
 
@@ -69,6 +82,7 @@ public class LibraryDisplayModeService : ViewModelBase
                     case "Library": LibraryViewMode = mode; break;
                     case "Artists": ArtistViewMode = mode; break;
                     case "Albums": AlbumViewMode = mode; break;
+                    case "Playlists": PlaylistViewMode = mode; break;
                 }
             },
             _ => true // Command is always executable
@@ -81,11 +95,13 @@ public class LibraryDisplayModeService : ViewModelBase
         _libraryViewMode = Enum.TryParse<SongDisplayMode>(settings.LibraryViewModePreference, out var libMode) ? libMode : SongDisplayMode.Detailed;
         _artistViewMode = Enum.TryParse<SongDisplayMode>(settings.ArtistViewModePreference, out var artMode) ? artMode : SongDisplayMode.Detailed;
         _albumViewMode = Enum.TryParse<SongDisplayMode>(settings.AlbumViewModePreference, out var albMode) ? albMode : SongDisplayMode.Detailed;
+        _playlistViewMode = Enum.TryParse<SongDisplayMode>(settings.PlaylistViewModePreference, out var playMode) ? playMode : SongDisplayMode.Detailed;
 
         // Initial OnPropertyChanged for any subscribers after loading
         OnPropertyChanged(nameof(LibraryViewMode));
         OnPropertyChanged(nameof(ArtistViewMode));
         OnPropertyChanged(nameof(AlbumViewMode));
+        OnPropertyChanged(nameof(PlaylistViewMode));
     }
 
     private void SavePreference(string preferenceKey, SongDisplayMode mode)
@@ -101,6 +117,9 @@ public class LibraryDisplayModeService : ViewModelBase
                 break;
             case nameof(AppSettings.AlbumViewModePreference):
                 settings.AlbumViewModePreference = mode.ToString();
+                break;
+            case nameof(AppSettings.PlaylistViewModePreference):
+                settings.PlaylistViewModePreference = mode.ToString();
                 break;
         }
         _settingsService.SaveSettings(settings);

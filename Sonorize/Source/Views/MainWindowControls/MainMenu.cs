@@ -80,10 +80,26 @@ public static class MainMenu
         albumsViewSubMenu.Items.Add(albDetailed);
         albumsViewSubMenu.Items.Add(albCompact);
         albumsViewSubMenu.Items.Add(albGrid);
+        
+        // Playlists View SubMenu
+        var playlistsViewSubMenu = new MenuItem { Header = "Playlists View", Foreground = theme.B_TextColor };
+        var playDetailed = new MenuItem { Header = "Detailed", Foreground = theme.B_TextColor };
+        playDetailed.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        playDetailed.CommandParameter = ("Playlists", SongDisplayMode.Detailed);
+        var playCompact = new MenuItem { Header = "Compact", Foreground = theme.B_TextColor };
+        playCompact.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        playCompact.CommandParameter = ("Playlists", SongDisplayMode.Compact);
+        var playGrid = new MenuItem { Header = "Grid", Foreground = theme.B_TextColor };
+        playGrid.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        playGrid.CommandParameter = ("Playlists", SongDisplayMode.Grid);
+        playlistsViewSubMenu.Items.Add(playDetailed);
+        playlistsViewSubMenu.Items.Add(playCompact);
+        playlistsViewSubMenu.Items.Add(playGrid);
 
         viewMenuItem.Items.Add(libraryViewSubMenu);
         viewMenuItem.Items.Add(artistsViewSubMenu);
         viewMenuItem.Items.Add(albumsViewSubMenu);
+        viewMenuItem.Items.Add(playlistsViewSubMenu);
 
         menu.Items.Add(fileMenuItem);
         menu.Items.Add(viewMenuItem);

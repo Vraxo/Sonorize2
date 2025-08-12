@@ -33,7 +33,7 @@ public static class StatusBarTextProvider
 
     private static string GetLoopStatusString(LoopEditorViewModel loopEditorViewModel, Song? currentSong)
     {
-        if (loopEditorViewModel.ActiveLoop.IsLoopActive && currentSong?.SavedLoop != null)
+        if (loopEditorViewModel.ActiveLoop.IsLoopActive && currentSong?.SavedLoop is not null)
         {
             return " (Loop Active)";
         }

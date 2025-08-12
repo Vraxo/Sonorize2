@@ -109,7 +109,7 @@ public class PlaybackService : ViewModelBase, IDisposable
     {
         Debug.WriteLine("[PlaybackService] Dispose() called on shutdown.");
 
-        if (_sessionManager != null)
+        if (_sessionManager is not null)
         {
             _sessionManager.PropertyChanged -= SessionManager_PropertyChanged;
             _sessionManager.Dispose();

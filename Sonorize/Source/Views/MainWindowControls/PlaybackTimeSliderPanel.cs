@@ -83,7 +83,7 @@ public static class PlaybackTimeSliderPanel
             // This logic is for when the user clicks on the track to jump to a position.
             // The thumb drag is handled by DragStarted/DragCompleted.
             var thumb = slider.FindDescendantOfType<Thumb>();
-            if (thumb != null && thumb.IsPointerOver)
+            if (thumb is not null && thumb.IsPointerOver)
             {
                 // Pointer is over the thumb, let the thumb's drag events handle this.
                 return;
@@ -111,7 +111,7 @@ public static class PlaybackTimeSliderPanel
             if (sender is not Slider slider || slider.DataContext is not MainWindowViewModel { Playback: { } playbackVM }) return;
 
             var thumb = slider.FindDescendantOfType<Thumb>();
-            if (thumb != null && thumb.IsPointerOver)
+            if (thumb is not null && thumb.IsPointerOver)
             {
                 // Pointer is over the thumb, let the thumb's drag events handle this.
                 return;

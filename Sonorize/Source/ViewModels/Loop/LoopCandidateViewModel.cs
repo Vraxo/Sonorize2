@@ -76,7 +76,7 @@ public class LoopCandidateViewModel : ViewModelBase
     }
 
     private bool CanCaptureLoopPoint(object? _) =>
-        _getCurrentSongCallback() != null &&
+        _getCurrentSongCallback() is not null &&
         _playbackService.CurrentPlaybackStatus != PlaybackStateStatus.Stopped;
 
     public void RaiseCaptureCommandsCanExecuteChanged()

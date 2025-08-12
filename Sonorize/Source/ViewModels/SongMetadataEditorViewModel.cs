@@ -101,7 +101,7 @@ public class SongMetadataEditorViewModel : ViewModelBase
             if (result.Count > 0)
             {
                 var selectedFile = result.FirstOrDefault();
-                if (selectedFile != null)
+                if (selectedFile is not null)
                 {
                     try
                     {

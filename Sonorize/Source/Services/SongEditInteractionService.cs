@@ -44,7 +44,7 @@ public class SongEditInteractionService
         // Use PlaybackResourceInterlockService to prepare for editing
         previousPlaybackState = _playbackResourceInterlock.PrepareForExternalOperation(songToEdit);
 
-        if (previousPlaybackState == null && _playbackResourceInterlock.PrepareForExternalOperation(songToEdit) != null) // Check if the song was the one playing
+        if (previousPlaybackState == null && _playbackResourceInterlock.PrepareForExternalOperation(songToEdit) is not null) // Check if the song was the one playing
         {
             // This case implies the song *was* current, but PrepareForExternalOperation failed to return state (should not happen if song matches)
             // Or, more likely, if the songToEdit was NOT the current song, previousPlaybackState would be null.

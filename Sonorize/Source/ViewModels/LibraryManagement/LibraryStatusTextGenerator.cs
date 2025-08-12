@@ -12,17 +12,13 @@ public class LibraryStatusTextGenerator
         int filteredSongsCount,
         ArtistViewModel? selectedArtist,
         AlbumViewModel? selectedAlbum,
+        PlaylistViewModel? selectedPlaylist,
         string? searchQuery,
-        SettingsService settingsService) // Pass SettingsService to check for configured directories
+        SettingsService settingsService)
     {
         if (isLoadingLibrary)
         {
-            // During loading, LibraryViewModel's LibraryStatusText is updated by MusicLibraryService callbacks.
-            // This generator is primarily for post-loading or idle states.
-            // However, if called during loading, we might return a generic loading message
-            // or expect the caller (LibraryViewModel) to handle this case.
-            // For now, assume this is called when not actively in the middle of the LoadMusicFromDirectoriesAsync song processing loop.
-            return "Loading library..."; // Or whatever the current LibraryStatusText is if passed in.
+            return "Loading library...";
         }
 
         if (allSongsCount == 0)
@@ -38,13 +34,18 @@ public class LibraryStatusTextGenerator
             }
         }
 
+        // Playlist selection takes precedence for status text
+        if (selectedPlaylist?.Name is not null)
+        {
+            return $"Showing playlist '{selectedPlaylist.Name}': {filteredSongsCount} songs.";
+        }
         // Album selection takes precedence for status text
-        if (selectedAlbum?.Title != null && selectedAlbum.Artist != null)
+        if (selectedAlbum?.Title is not null && selectedAlbum.Artist is not null)
         {
             return $"Showing songs from {selectedAlbum.Title} by {selectedAlbum.Artist}: {filteredSongsCount} of {allSongsCount} total songs.";
         }
         // Then artist selection
-        else if (selectedArtist?.Name != null)
+        else if (selectedArtist?.Name is not null)
         {
             return $"Showing songs by {selectedArtist.Name}: {filteredSongsCount} of {allSongsCount} total songs.";
         }

@@ -51,7 +51,7 @@ public class SongListManager : ViewModelBase
 
     public int AllSongsCount => _allSongs.Count;
 
-    public void ApplyFilter(string? searchQuery, ArtistViewModel? selectedArtist, AlbumViewModel? selectedAlbum)
+    public void ApplyFilter(string? searchQuery, ArtistViewModel? selectedArtist, AlbumViewModel? selectedAlbum, PlaylistViewModel? selectedPlaylist)
     {
         var currentSelectedSongBeforeFilter = SelectedSong;
 
@@ -60,7 +60,8 @@ public class SongListManager : ViewModelBase
             _allSongs,
             searchQuery,
             selectedArtist,
-            selectedAlbum);
+            selectedAlbum,
+            selectedPlaylist);
 
         foreach (var song in filtered)
         {
@@ -68,16 +69,16 @@ public class SongListManager : ViewModelBase
         }
 
         // Preserve selection if possible
-        if (currentSelectedSongBeforeFilter != null && FilteredSongs.Contains(currentSelectedSongBeforeFilter))
+        if (currentSelectedSongBeforeFilter is not null && FilteredSongs.Contains(currentSelectedSongBeforeFilter))
         {
             SelectedSong = currentSelectedSongBeforeFilter; // No change notification if it's the same instance
         }
-        else if (currentSelectedSongBeforeFilter != null)
+        else if (currentSelectedSongBeforeFilter is not null)
         {
             Debug.WriteLine($"[SongListManager] Selected song '{currentSelectedSongBeforeFilter.Title}' is no longer in the filtered list. Clearing selection.");
             SelectedSong = null; // Notify that selection is cleared
         }
-        else if (SelectedSong != null) // If there was a selection but it's no longer valid (e.g. currentSelectedSongBeforeFilter was null, but SelectedSong somehow had a value from previous invalid state)
+        else if (SelectedSong is not null) // If there was a selection but it's no longer valid (e.g. currentSelectedSongBeforeFilter was null, but SelectedSong somehow had a value from previous invalid state)
         {
             SelectedSong = null; // Ensure selection is cleared and notified
         }

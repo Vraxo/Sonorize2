@@ -62,14 +62,14 @@ public class ActiveLoopViewModel : ViewModelBase, IDisposable
     {
         if (_currentSongInternal == newSong) return;
 
-        if (_currentSongInternal != null)
+        if (_currentSongInternal is not null)
         {
             _currentSongInternal.PropertyChanged -= CurrentSong_PropertyChanged;
         }
 
         _currentSongInternal = newSong;
 
-        if (_currentSongInternal != null)
+        if (_currentSongInternal is not null)
         {
             _currentSongInternal.PropertyChanged += CurrentSong_PropertyChanged;
         }
@@ -89,7 +89,7 @@ public class ActiveLoopViewModel : ViewModelBase, IDisposable
 
     private void RefreshStateFromCurrentSong()
     {
-        if (_currentSongInternal?.SavedLoop != null)
+        if (_currentSongInternal?.SavedLoop is not null)
         {
             var loop = _currentSongInternal.SavedLoop;
             string activeStatus = _currentSongInternal.IsLoopActive ? " (Active)" : " (Inactive)";
@@ -124,13 +124,13 @@ public class ActiveLoopViewModel : ViewModelBase, IDisposable
 
     private bool CanExecuteToggleLoopActive(object? parameter)
     {
-        return _currentSongInternal?.SavedLoop != null;
+        return _currentSongInternal?.SavedLoop is not null;
     }
 
     public void Dispose()
     {
         _playbackService.PropertyChanged -= PlaybackService_PropertyChanged;
-        if (_currentSongInternal != null)
+        if (_currentSongInternal is not null)
         {
             _currentSongInternal.PropertyChanged -= CurrentSong_PropertyChanged;
         }

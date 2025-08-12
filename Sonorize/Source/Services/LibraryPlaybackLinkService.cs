@@ -48,12 +48,12 @@ public class LibraryPlaybackLinkService : IDisposable
         {
             Debug.WriteLine($"[LibraryPlaybackLinkService] Library.SelectedSong changed to: {_libraryViewModel.SelectedSong?.Title ?? "null"}. Instance: {_libraryViewModel.SelectedSong?.GetHashCode() ?? 0}");
 
-            if (_libraryViewModel.SelectedSong != null && _playbackService.CurrentSong != _libraryViewModel.SelectedSong)
+            if (_libraryViewModel.SelectedSong is not null && _playbackService.CurrentSong != _libraryViewModel.SelectedSong)
             {
                 Debug.WriteLine($"[LibraryPlaybackLinkService] Library.SelectedSong changed to a *different* song ({_libraryViewModel.SelectedSong.Title}) than PlaybackService.CurrentSong ({_playbackService.CurrentSong?.Title ?? "null"}). Calling PlaybackService.Play().");
                 _playbackService.Play(_libraryViewModel.SelectedSong);
             }
-            else if (_libraryViewModel.SelectedSong != null && _playbackService.CurrentSong == _libraryViewModel.SelectedSong)
+            else if (_libraryViewModel.SelectedSong is not null && _playbackService.CurrentSong == _libraryViewModel.SelectedSong)
             {
                 Debug.WriteLine($"[LibraryPlaybackLinkService] Library.SelectedSong changed but is the SAME song instance as PlaybackService.CurrentSong ({_libraryViewModel.SelectedSong.Title}). No Play call needed here.");
             }

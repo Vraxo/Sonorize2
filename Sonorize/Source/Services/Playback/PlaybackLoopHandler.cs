@@ -42,7 +42,7 @@ public class PlaybackLoopHandler : IDisposable // Implementing IDisposable for c
     internal void CheckForLoopSeek(TimeSpan currentPosition, TimeSpan totalDuration)
     {
         // Ensure we have a song, it has a saved loop, and the loop is active
-        if (_currentSong?.SavedLoop != null && _currentSong.IsLoopActive)
+        if (_currentSong?.SavedLoop is not null && _currentSong.IsLoopActive)
         {
             var loop = _currentSong.SavedLoop;
 
@@ -88,7 +88,7 @@ public class PlaybackLoopHandler : IDisposable // Implementing IDisposable for c
         // Apply loop region constraints if an active loop is defined for the current song.
         // If seeking *into* an active loop from *outside* its start or after its end, snap to start.
         // If seeking *within* an active loop, allow it.
-        if (_currentSong?.SavedLoop != null && _currentSong.IsLoopActive)
+        if (_currentSong?.SavedLoop is not null && _currentSong.IsLoopActive)
         {
             var loop = _currentSong.SavedLoop;
             Debug.WriteLine($"[LoopHandler] GetAdjustedSeekPosition: Active loop detected [{loop.Start:mm\\:ss\\.ff}-{loop.End:mm\\:ss\\.ff}). Requested: {requestedPosition:mm\\:ss\\.ff}");
@@ -131,7 +131,7 @@ public class PlaybackLoopHandler : IDisposable // Implementing IDisposable for c
     /// <returns>The initial playback position.</returns>
     internal TimeSpan GetInitialPlaybackPosition(TimeSpan totalDuration)
     {
-        if (_currentSong?.SavedLoop != null && _currentSong.IsLoopActive)
+        if (_currentSong?.SavedLoop is not null && _currentSong.IsLoopActive)
         {
             var loop = _currentSong.SavedLoop;
             // Ensure loop start is valid before returning it

@@ -45,7 +45,7 @@ public class PlaybackSessionLoader
         catch (Exception ex)
         {
             Debug.WriteLine($"[PlaybackSessionLoader] Exception during LoadNewSession for '{song.FilePath}': {ex}");
-            if (_sessionState.CurrentSong != null) _playbackEngineCoordinator.Stop(); // Ensure engine is stopped if partially loaded
+            if (_sessionState.CurrentSong is not null) _playbackEngineCoordinator.Stop(); // Ensure engine is stopped if partially loaded
             _sessionState.CurrentSong = null;
             return false;
         }

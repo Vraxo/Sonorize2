@@ -30,7 +30,7 @@ public class SongMetadataService
                 tagFile.Tag.Album = song.Album;
 
                 // Handle Thumbnail
-                if (song.Thumbnail != null)
+                if (song.Thumbnail is not null)
                 {
                     using var ms = new MemoryStream();
                     // Save the Avalonia Bitmap to a stream (defaults to PNG format)

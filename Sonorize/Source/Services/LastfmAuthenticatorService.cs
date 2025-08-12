@@ -29,7 +29,7 @@ public class LastfmAuthenticatorService
         {
             // Callers ensure LastfmUsername and LastfmPassword are not null/empty
             var response = await auth.GetSessionTokenAsync(settings.LastfmUsername!, settings.LastfmPassword!);
-            if (response.Success && auth.Authenticated && auth.UserSession != null)
+            if (response.Success && auth.Authenticated && auth.UserSession is not null)
             {
                 var session = auth.UserSession;
                 settings.LastfmSessionKey = session.Token;
@@ -74,7 +74,7 @@ public class LastfmAuthenticatorService
             !string.IsNullOrEmpty(currentSettings.LastfmPassword))
         {
             var client = await TryAuthenticateWithCredentialsAsync(currentSettings);
-            if (client != null)
+            if (client is not null)
             {
                 return client;
             }

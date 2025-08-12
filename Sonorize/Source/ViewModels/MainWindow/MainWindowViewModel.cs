@@ -96,7 +96,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
 
         // Correctly handle exit by closing the window, which triggers the disposal chain.
-        ExitCommand = new RelayCommand(_ => _ownerView?.Close(), _ => _ownerView != null);
+        ExitCommand = new RelayCommand(_ => _ownerView?.Close(), _ => _ownerView is not null);
 
         AddDirectoryAndRefreshCommand = new RelayCommand(async _ => await AddMusicDirectoryAndRefreshAsync(),
             _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));

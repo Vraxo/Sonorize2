@@ -165,7 +165,7 @@ public class PlaybackEngineCoordinator : IDisposable
         {
             Debug.WriteLine("[PlaybackEngineCoordinator] Dispose called.");
             _playbackMonitor?.Dispose();
-            if (_engineController != null)
+            if (_engineController is not null)
             {
                 _engineController.PlaybackStopped -= OnEngineControllerPlaybackStoppedRelay;
                 _engineController.Dispose();

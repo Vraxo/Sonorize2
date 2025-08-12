@@ -81,7 +81,7 @@ public class AdvancedPanelViewModel : ViewModelBase
     {
         _playbackViewModel.PropertyChanged -= OnDependentViewModelPropertyChanged;
         _libraryViewModel.PropertyChanged -= OnDependentViewModelPropertyChanged;
-        if (_playbackViewModel?.WaveformDisplay != null)
+        if (_playbackViewModel?.WaveformDisplay is not null)
         {
             _playbackViewModel.WaveformDisplay.PropertyChanged -= WaveformDisplay_PropertyChanged;
         }

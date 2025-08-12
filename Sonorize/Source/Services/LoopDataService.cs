@@ -38,11 +38,11 @@ public class LoopDataService
                     var tempStore = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
                     _loopDataStore = new Dictionary<string, LoopStorageData>();
 
-                    if (tempStore != null)
+                    if (tempStore is not null)
                     {
                         foreach (var kvp in tempStore)
                         {
-                            if (LoopDataMigrator.TryProcessEntry(kvp.Key, kvp.Value, out LoopStorageData? processedData) && processedData != null)
+                            if (LoopDataMigrator.TryProcessEntry(kvp.Key, kvp.Value, out LoopStorageData? processedData) && processedData is not null)
                             {
                                 _loopDataStore[kvp.Key] = processedData;
                             }

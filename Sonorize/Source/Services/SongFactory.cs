@@ -63,7 +63,7 @@ public class SongFactory
         }
 
         var storedLoopData = _loopDataService.GetLoop(song.FilePath);
-        if (storedLoopData != null)
+        if (storedLoopData is not null)
         {
             song.SavedLoop = new LoopRegion(storedLoopData.Start, storedLoopData.End);
             song.IsLoopActive = storedLoopData.IsActive;

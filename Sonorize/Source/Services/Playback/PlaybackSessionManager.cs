@@ -80,7 +80,7 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
 
         // --- Step 1: Detach and schedule the stop for the old infrastructure ---
         var oldInfrastructure = _currentInfrastructure;
-        if (oldInfrastructure != null)
+        if (oldInfrastructure is not null)
         {
             // Detach main handlers so they don't fire for the old instance anymore
             oldInfrastructure.Coordinator.EnginePlaybackStopped -= OnEngineCoordinatorPlaybackStopped;
@@ -213,7 +213,7 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
             _sessionState.CurrentSongDuration = e.Duration;
 
             // Scrobble-on-threshold logic
-            if (!_hasBeenScrobbledThisSession && CurrentSong != null)
+            if (!_hasBeenScrobbledThisSession && CurrentSong is not null)
             {
                 if (_scrobblingService.ShouldScrobble(CurrentSong, e.Position))
                 {
@@ -277,7 +277,7 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
     public void Dispose()
     {
         Debug.WriteLine("[PlaybackSessionManager] Dispose called.");
-        if (_sessionState != null) _sessionState.PropertyChanged -= SessionState_PropertyChanged;
+        if (_sessionState is not null) _sessionState.PropertyChanged -= SessionState_PropertyChanged;
         _currentInfrastructure?.Dispose();
         _currentInfrastructure = null;
         GC.SuppressFinalize(this);

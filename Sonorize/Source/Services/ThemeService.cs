@@ -76,7 +76,7 @@ public class ThemeService
             {
                 var json = File.ReadAllText(filePath);
                 var theme = JsonSerializer.Deserialize<ThemeColors>(json);
-                if (theme != null)
+                if (theme is not null)
                 {
                     Debug.WriteLine($"[ThemeService] Theme '{themeFileName}' loaded successfully.");
                     return theme;
@@ -120,7 +120,7 @@ public class ThemeService
         }
         return Directory.GetFiles(_themesDirectory, "*.json")
                         .Select(Path.GetFileName)
-                        .Where(f => f != null) // Path.GetFileName can return null
+                        .Where(f => f is not null) // Path.GetFileName can return null
                         .ToList()!; // Non-null asserted as we filter nulls
     }
 }

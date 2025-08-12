@@ -25,51 +25,46 @@ public class LibraryDataOrchestrator
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
     }
 
-    public async Task<List<Song>> LoadAndProcessLibraryDataAsync(
-        Action<string> statusUpdateCallback,
-        Action<Song> songAddedToRawListCallback)
+    public async Task<(List<Song> Songs, List<Playlist> Playlists)> LoadAndProcessLibraryDataAsync(Action<string> statusUpdateCallback)
     {
-        var rawSongs = new List<Song>(); // Temporary list to gather songs from MusicLibraryService
+        var rawSongs = new List<Song>();
 
         AppSettings settings = _settingsService.LoadSettings();
         if (!settings.MusicDirectories.Any())
         {
             await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback("No music directories configured."));
-            return rawSongs; // Return empty list
+            return (rawSongs, new List<Playlist>());
         }
 
         try
         {
-            // Phase 1: Load raw song metadata and thumbnails (thumbnails load in background via MusicLibraryService)
+            // Phase 1: Load raw song metadata and thumbnails
             await _musicLibraryService.LoadMusicFromDirectoriesAsync(
                 settings.MusicDirectories,
                 song =>
                 {
-                    // This callback is invoked on UI thread by MusicLibraryService
                     rawSongs.Add(song);
-                    songAddedToRawListCallback(song); // Notify caller (LibraryViewModel) to add to its _allSongs
                 },
-                status => Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback(status)) // Pass status updates
+                status => Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback(status))
             );
 
-            // Phase 2: Populate Artist and Album collections using the fully gathered rawSongs list
-            // This is done after all songs are initially processed by MusicLibraryService.
-            // The ArtistAlbumCollectionManager operates on the collections passed to its constructor,
-            // so this call effectively updates the Artists and Albums collections in LibraryViewModel.
-            // Ensure this runs on UI thread if ArtistAlbumCollectionManager modifies UI-bound collections directly.
-            // ArtistAlbumCollectionManager is designed to populate ObservableCollections, which should be UI thread safe if modified there.
+            // Phase 2: Load Playlists using the fully gathered rawSongs list
+            await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Found {rawSongs.Count} songs. Scanning for playlists..."));
+            var playlists = await _musicLibraryService.LoadPlaylistsAsync(settings.MusicDirectories, rawSongs);
+
+            // Phase 3: Populate Artist and Album collections
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 _artistAlbumManager.PopulateCollections(rawSongs);
             });
 
-            return rawSongs; // Return the populated list of all songs
+            return (rawSongs, playlists);
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"[LibraryDataOrchestrator] Error loading and processing library data: {ex}");
             await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback("Error loading music library."));
-            return new List<Song>(); // Return empty list on error
+            return (new List<Song>(), new List<Playlist>());
         }
     }
 }

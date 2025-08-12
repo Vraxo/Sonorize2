@@ -54,7 +54,7 @@ internal class NAudioPipeline : IDisposable
 
     public void Dispose()
     {
-        if (OutputDevice != null)
+        if (OutputDevice is not null)
         {
             OutputDevice.PlaybackStopped -= OnOutputDevicePlaybackStopped;
             OutputDevice.Dispose();

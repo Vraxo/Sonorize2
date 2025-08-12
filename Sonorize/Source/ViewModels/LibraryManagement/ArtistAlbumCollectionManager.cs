@@ -40,7 +40,7 @@ public class ArtistAlbumCollectionManager
         {
             Bitmap? repThumb = allSongs.FirstOrDefault(s =>
                                    (s.Artist?.Equals(artistName, StringComparison.OrdinalIgnoreCase) ?? false) &&
-                                   s.Thumbnail != null && s.Thumbnail != defaultSongThumbnail)?.Thumbnail
+                                   s.Thumbnail is not null && s.Thumbnail != defaultSongThumbnail)?.Thumbnail
                                ?? defaultSongThumbnail;
             _artistsCollection.Add(new ArtistViewModel { Name = artistName, Thumbnail = repThumb });
         }
@@ -80,7 +80,7 @@ public class ArtistAlbumCollectionManager
             }
 
             albumVM.SongThumbnailsForGrid = songThumbnailsForGrid;
-            albumVM.RepresentativeThumbnail = songThumbnailsForGrid.FirstOrDefault(t => t != null) ?? defaultSongThumbnail;
+            albumVM.RepresentativeThumbnail = songThumbnailsForGrid.FirstOrDefault(t => t is not null) ?? defaultSongThumbnail;
 
             _albumsCollection.Add(albumVM);
         }
@@ -90,7 +90,7 @@ public class ArtistAlbumCollectionManager
     {
         // Update ArtistViewModel
         var artistVM = _artistsCollection.FirstOrDefault(a => a.Name == updatedSong.Artist);
-        if (artistVM != null)
+        if (artistVM is not null)
         {
             var firstSongOfArtistWithThumbnail = allSongs.FirstOrDefault(s =>
                 (s.Artist?.Equals(artistVM.Name, StringComparison.OrdinalIgnoreCase) ?? false) && s.Thumbnail != _musicLibraryService.GetDefaultThumbnail());
@@ -104,7 +104,7 @@ public class ArtistAlbumCollectionManager
 
         // Update AlbumViewModel
         var albumVM = _albumsCollection.FirstOrDefault(al => al.Title == updatedSong.Album && al.Artist == updatedSong.Artist);
-        if (albumVM != null)
+        if (albumVM is not null)
         {
             var songsInAlbum = allSongs.Where(s => (s.Album?.Equals(albumVM.Title, StringComparison.OrdinalIgnoreCase) ?? false) &&
                                                     (s.Artist?.Equals(albumVM.Artist, StringComparison.OrdinalIgnoreCase) ?? false))
@@ -129,7 +129,7 @@ public class ArtistAlbumCollectionManager
                 albumVM.SongThumbnailsForGrid = newSongThumbnailsForGrid;
             }
 
-            Bitmap? newRepresentativeThumbnail = newSongThumbnailsForGrid.FirstOrDefault(t => t != null) ?? defaultSongThumbnail;
+            Bitmap? newRepresentativeThumbnail = newSongThumbnailsForGrid.FirstOrDefault(t => t is not null) ?? defaultSongThumbnail;
             if (albumVM.RepresentativeThumbnail != newRepresentativeThumbnail)
             {
                 albumVM.RepresentativeThumbnail = newRepresentativeThumbnail;

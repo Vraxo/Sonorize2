@@ -18,6 +18,7 @@ public class MainTabViewControls
     private ListBox? _songListBoxInstance;
     private ListBox? _artistsListBoxInstance;
     private ListBox? _albumsListBoxInstance;
+    private ListBox? _playlistsListBoxInstance;
 
     public MainTabViewControls(ThemeColors theme, SharedViewTemplates sharedViewTemplates)
     {
@@ -25,7 +26,7 @@ public class MainTabViewControls
         _sharedViewTemplates = sharedViewTemplates;
     }
 
-    public TabControl CreateMainTabView(out ListBox songListBox, out ListBox artistsListBox, out ListBox albumsListBox)
+    public TabControl CreateMainTabView(out ListBox songListBox, out ListBox artistsListBox, out ListBox albumsListBox, out ListBox playlistsListBox)
     {
         var tabControl = new TabControl
         {
@@ -92,14 +93,28 @@ public class MainTabViewControls
             Header = "ALBUMS",
             Content = albumsListScrollViewer
         };
+        
+        var (playlistsListScrollViewer, plb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            _theme, _sharedViewTemplates, "PlaylistsListBox", "Library.Groupings.Playlists", "Library.FilterState.SelectedPlaylist",
+            _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
+            lb => _playlistsListBoxInstance = lb);
+        _playlistsListBoxInstance = plb;
+        
+        var playlistsTab = new TabItem
+        {
+            Header = "PLAYLISTS",
+            Content = playlistsListScrollViewer
+        };
 
         tabControl.Items.Add(libraryTab);
         tabControl.Items.Add(artistsTab);
         tabControl.Items.Add(albumsTab);
+        tabControl.Items.Add(playlistsTab);
 
         songListBox = _songListBoxInstance!;
         artistsListBox = _artistsListBoxInstance!;
         albumsListBox = _albumsListBoxInstance!;
+        playlistsListBox = _playlistsListBoxInstance!;
         return tabControl;
     }
 
@@ -119,17 +134,17 @@ public class MainTabViewControls
             case SongDisplayMode.Detailed:
                 listBox.ItemTemplate = detailedTemplate;
                 listBox.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
-                if (scrollViewer != null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                if (scrollViewer is not null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
                 break;
             case SongDisplayMode.Compact:
                 listBox.ItemTemplate = compactTemplate;
                 listBox.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
-                if (scrollViewer != null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                if (scrollViewer is not null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
                 break;
             case SongDisplayMode.Grid:
                 listBox.ItemTemplate = gridTemplate;
                 listBox.ItemsPanel = _sharedViewTemplates.WrapPanelItemsPanelTemplate;
-                if (scrollViewer != null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                if (scrollViewer is not null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
                 break;
         }
     }

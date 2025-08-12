@@ -24,9 +24,9 @@ public class PlaybackCompletionHandler
         bool wasExplicitlyStopped, // Flag indicating if StopSession(isExplicit: true) was the initiator
         bool isInternalStopForSongChange)
     {
-        Debug.WriteLine($"[PlaybackCompletionHandler] Handling playback stop for: {songThatJustStopped?.Title ?? "No Song"}. ExplicitStop: {wasExplicitlyStopped}, InternalChange: {isInternalStopForSongChange}, Error: {eventArgs.Exception != null}, Pos: {actualStoppedPosition:mm\\:ss\\.ff}, Dur: {actualStoppedSongDuration:mm\\:ss\\.ff}");
+        Debug.WriteLine($"[PlaybackCompletionHandler] Handling playback stop for: {songThatJustStopped?.Title ?? "No Song"}. ExplicitStop: {wasExplicitlyStopped}, InternalChange: {isInternalStopForSongChange}, Error: {eventArgs.Exception is not null}, Pos: {actualStoppedPosition:mm\\:ss\\.ff}, Dur: {actualStoppedSongDuration:mm\\:ss\\.ff}");
 
-        if (eventArgs.Exception != null)
+        if (eventArgs.Exception is not null)
         {
             _sessionManager.StopUiUpdateMonitor(); // Stop monitor on error
             Debug.WriteLine($"[PlaybackCompletionHandler] Playback stopped due to error: {eventArgs.Exception.Message}. Finalizing state to Stopped.");

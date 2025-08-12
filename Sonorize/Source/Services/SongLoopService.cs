@@ -71,7 +71,7 @@ public class SongLoopService
         song.IsLoopActive = isActive; // This will raise PropertyChanged on the Song model
 
         // Persist only if a loop actually exists
-        if (song.SavedLoop != null)
+        if (song.SavedLoop is not null)
         {
             _loopDataService.UpdateLoopActiveState(song.FilePath, isActive);
             Debug.WriteLine($"[SongLoopService] Loop active state for {song.Title} set to {isActive} and persisted.");

@@ -42,7 +42,7 @@ public class LoopDataMigrator
         {
             Debug.WriteLine($"[LoopDataMigrator] Could not deserialize or migrate loop entry for {Path.GetFileName(filePathKey)} into a known format.");
         }
-        return loopData != null;
+        return loopData is not null;
     }
 
     private static bool TryDeserializeCurrentFormat(JsonElement jsonData, out LoopStorageData? loopData)
@@ -53,7 +53,7 @@ public class LoopDataMigrator
         // If Deserialize<T> can return null without an exception for certain inputs,
         // that case would also result in `loopData` being null.
         loopData = jsonData.Deserialize<LoopStorageData>();
-        if (loopData != null)
+        if (loopData is not null)
         {
             // Successfully deserialized to current format
             return true;

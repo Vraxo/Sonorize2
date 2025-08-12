@@ -36,11 +36,11 @@ public class MainWindowViewModelOrchestrator : IDisposable
     {
         _libraryViewModel.PropertyChanged += Library_PropertyChanged;
         _playbackViewModel.PropertyChanged += Playback_PropertyChanged;
-        if (_playbackViewModel.ModeControls != null)
+        if (_playbackViewModel.ModeControls is not null)
         {
             _playbackViewModel.ModeControls.PropertyChanged += PlaybackModeControls_PropertyChanged;
         }
-        if (_playbackViewModel.WaveformDisplay != null)
+        if (_playbackViewModel.WaveformDisplay is not null)
         {
             _playbackViewModel.WaveformDisplay.PropertyChanged += PlaybackWaveformDisplay_PropertyChanged;
         }
@@ -51,11 +51,11 @@ public class MainWindowViewModelOrchestrator : IDisposable
     {
         _libraryViewModel.PropertyChanged -= Library_PropertyChanged;
         _playbackViewModel.PropertyChanged -= Playback_PropertyChanged;
-        if (_playbackViewModel.ModeControls != null)
+        if (_playbackViewModel.ModeControls is not null)
         {
             _playbackViewModel.ModeControls.PropertyChanged -= PlaybackModeControls_PropertyChanged;
         }
-        if (_playbackViewModel.WaveformDisplay != null)
+        if (_playbackViewModel.WaveformDisplay is not null)
         {
             _playbackViewModel.WaveformDisplay.PropertyChanged -= PlaybackWaveformDisplay_PropertyChanged;
         }

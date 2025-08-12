@@ -30,12 +30,33 @@ public class LibraryFilterStateManager : ViewModelBase
         {
             if (SetProperty(ref _selectedArtist, value))
             {
-                if (_selectedArtist != null)
+                if (_selectedArtist is not null)
                 {
                     // When an artist is selected, update SearchQuery and clear SelectedAlbum
                     _searchQuery = _selectedArtist.Name ?? string.Empty; // Avoid raising SearchQuery's own event storm
                     OnPropertyChanged(nameof(SearchQuery)); // Manually notify SearchQuery changed
                     SelectedAlbum = null; // This will trigger its own PropertyChanged and subsequently FilterCriteriaChanged
+                    RequestTabSwitchToLibrary?.Invoke(this, EventArgs.Empty);
+                }
+                FilterCriteriaChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+    }
+
+    private PlaylistViewModel? _selectedPlaylist;
+    public PlaylistViewModel? SelectedPlaylist
+    {
+        get => _selectedPlaylist;
+        set
+        {
+            if (SetProperty(ref _selectedPlaylist, value))
+            {
+                if (_selectedPlaylist is not null)
+                {
+                    SearchQuery = string.Empty;
+                    OnPropertyChanged(nameof(SearchQuery));
+                    SelectedArtist = null;
+                    SelectedAlbum = null;
                     RequestTabSwitchToLibrary?.Invoke(this, EventArgs.Empty);
                 }
                 FilterCriteriaChanged?.Invoke(this, EventArgs.Empty);
@@ -51,7 +72,7 @@ public class LibraryFilterStateManager : ViewModelBase
         {
             if (SetProperty(ref _selectedAlbum, value))
             {
-                if (_selectedAlbum != null)
+                if (_selectedAlbum is not null)
                 {
                     // When an album is selected, update SearchQuery and clear SelectedArtist
                     _searchQuery = _selectedAlbum.Title ?? string.Empty; // Avoid raising SearchQuery's own event storm
@@ -71,8 +92,9 @@ public class LibraryFilterStateManager : ViewModelBase
     {
         // Suppress individual notifications if setting multiple properties
         bool changed = false;
-        if (_selectedArtist != null) { _selectedArtist = null; OnPropertyChanged(nameof(SelectedArtist)); changed = true; }
-        if (_selectedAlbum != null) { _selectedAlbum = null; OnPropertyChanged(nameof(SelectedAlbum)); changed = true; }
+        if (_selectedArtist is not null) { _selectedArtist = null; OnPropertyChanged(nameof(SelectedArtist)); changed = true; }
+        if (_selectedAlbum is not null) { _selectedAlbum = null; OnPropertyChanged(nameof(SelectedAlbum)); changed = true; }
+        if (_selectedPlaylist is not null) { _selectedPlaylist = null; OnPropertyChanged(nameof(SelectedPlaylist)); changed = true; }
         if (!string.IsNullOrEmpty(_searchQuery)) { _searchQuery = string.Empty; OnPropertyChanged(nameof(SearchQuery)); changed = true; }
 
         if (changed)

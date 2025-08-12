@@ -11,6 +11,7 @@ public class AppSettings
     public string LibraryViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
     public string ArtistViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
     public string AlbumViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
+    public string PlaylistViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
 
     // Last.fm Settings
     public bool LastfmScrobblingEnabled { get; set; } = false;

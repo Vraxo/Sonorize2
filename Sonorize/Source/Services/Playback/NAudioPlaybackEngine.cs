@@ -17,7 +17,7 @@ public class NAudioPlaybackEngine : IDisposable
         get => _pipeline?.AudioReader?.CurrentTime ?? TimeSpan.Zero;
         set
         {
-            if (_pipeline?.AudioReader != null) _pipeline.AudioReader.CurrentTime = value;
+            if (_pipeline?.AudioReader is not null) _pipeline.AudioReader.CurrentTime = value;
             else Debug.WriteLine("[Engine] Attempted to set CurrentPosition on null pipeline/audioReader.");
         }
     }
@@ -45,7 +45,7 @@ public class NAudioPlaybackEngine : IDisposable
         set
         {
             _playbackRate = value;
-            if (_pipeline?.EffectsProcessor != null) _pipeline.EffectsProcessor.Tempo = value;
+            if (_pipeline?.EffectsProcessor is not null) _pipeline.EffectsProcessor.Tempo = value;
         }
     }
     private float _playbackRate = 1.0f;
@@ -56,7 +56,7 @@ public class NAudioPlaybackEngine : IDisposable
         set
         {
             _pitchSemitones = value;
-            if (_pipeline?.EffectsProcessor != null) _pipeline.EffectsProcessor.PitchSemitones = value;
+            if (_pipeline?.EffectsProcessor is not null) _pipeline.EffectsProcessor.PitchSemitones = value;
         }
     }
     private float _pitchSemitones = 0f;
@@ -97,7 +97,7 @@ public class NAudioPlaybackEngine : IDisposable
     public void Play()
     {
         Debug.WriteLine("[Engine] Play requested.");
-        if (_pipeline?.OutputDevice != null && (_pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Paused || _pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Stopped))
+        if (_pipeline?.OutputDevice is not null && (_pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Paused || _pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Stopped))
         {
             Debug.WriteLine("[Engine] Calling device.Play().");
             try
@@ -110,7 +110,7 @@ public class NAudioPlaybackEngine : IDisposable
                 Debug.WriteLine($"[Engine] Error during device.Play(): {ex.Message}");
             }
         }
-        else if (_pipeline?.OutputDevice != null && _pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Playing)
+        else if (_pipeline?.OutputDevice is not null && _pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Playing)
         {
             Debug.WriteLine("[Engine] Already playing. Doing nothing.");
         }
@@ -123,7 +123,7 @@ public class NAudioPlaybackEngine : IDisposable
     public void Pause()
     {
         Debug.WriteLine("[Engine] Pause requested.");
-        if (_pipeline?.OutputDevice != null && _pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Playing)
+        if (_pipeline?.OutputDevice is not null && _pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Playing)
         {
             Debug.WriteLine("[Engine] Calling device.Pause().");
             try
@@ -145,7 +145,7 @@ public class NAudioPlaybackEngine : IDisposable
     public void Stop()
     {
         Debug.WriteLine("[Engine] Stop requested.");
-        if (_pipeline?.OutputDevice != null && _pipeline.OutputDevice.PlaybackState != NAudio.Wave.PlaybackState.Stopped)
+        if (_pipeline?.OutputDevice is not null && _pipeline.OutputDevice.PlaybackState != NAudio.Wave.PlaybackState.Stopped)
         {
             Debug.WriteLine("[Engine] Calling device.Stop().");
             try
@@ -167,7 +167,7 @@ public class NAudioPlaybackEngine : IDisposable
     public void Seek(TimeSpan position)
     {
         Debug.WriteLine($"[Engine] Seek requested to {position:mm\\:ss\\.ff}.");
-        if (_pipeline?.AudioReader != null)
+        if (_pipeline?.AudioReader is not null)
         {
             try
             {
@@ -206,7 +206,7 @@ public class NAudioPlaybackEngine : IDisposable
     {
         if (disposing)
         {
-            if (_pipeline != null)
+            if (_pipeline is not null)
             {
                 // Unsubscribe from _pipeline events if any were directly subscribed by this class
                 // (Currently, NAudioPipeline forwards its OutputDevice.PlaybackStopped to OnPipelinePlaybackStopped,
