@@ -27,4 +27,16 @@ public class PlaylistCollectionManager
             _playlistsCollection.Add(new PlaylistViewModel(playlist, defaultIcon));
         }
     }
+
+    public void HandleSongThumbnailUpdate(Song updatedSong)
+    {
+        // Find all playlists containing this song
+        var affectedPlaylists = _playlistsCollection
+            .Where(pvm => pvm.PlaylistModel.Songs.Contains(updatedSong));
+
+        foreach (var playlistVM in affectedPlaylists)
+        {
+            playlistVM.RecalculateThumbnails();
+        }
+    }
 }

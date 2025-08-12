@@ -30,7 +30,7 @@ public class LibraryGroupingsViewModel : ViewModelBase
     {
         _artistAlbumManager.PopulateCollections(allSongs);
     }
-    
+
     public void PopulatePlaylistCollection(IEnumerable<Playlist> allPlaylists)
     {
         _playlistManager.PopulateCollection(allPlaylists);
@@ -40,6 +40,6 @@ public class LibraryGroupingsViewModel : ViewModelBase
     {
         // This method will be called on the UI thread by LibraryViewModel
         _artistAlbumManager.UpdateCollectionsForSongThumbnail(updatedSong, allSongs);
-        // ObservableCollections and their items will notify changes
+        _playlistManager.HandleSongThumbnailUpdate(updatedSong);
     }
 }
