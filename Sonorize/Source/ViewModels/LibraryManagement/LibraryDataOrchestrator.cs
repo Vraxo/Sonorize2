@@ -11,9 +11,10 @@ namespace Sonorize.ViewModels.LibraryManagement;
 
 public class LibraryDataOrchestrator
 {
-    private readonly MusicLibraryService _musicLibraryService;
+private readonly MusicLibraryService _musicLibraryService;
     private readonly ArtistAlbumCollectionManager _artistAlbumManager;
     private readonly SettingsService _settingsService;
+    private readonly AutoPlaylistGeneratorService _autoPlaylistGenerator;
 
     public LibraryDataOrchestrator(
         MusicLibraryService musicLibraryService,
@@ -23,6 +24,7 @@ public class LibraryDataOrchestrator
         _musicLibraryService = musicLibraryService ?? throw new ArgumentNullException(nameof(musicLibraryService));
         _artistAlbumManager = artistAlbumManager ?? throw new ArgumentNullException(nameof(artistAlbumManager));
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
+        _autoPlaylistGenerator = new AutoPlaylistGeneratorService();
     }
 
     public async Task<(List<Song> Songs, List<Playlist> Playlists)> LoadAndProcessLibraryDataAsync(Action<string> statusUpdateCallback)
@@ -50,7 +52,13 @@ public class LibraryDataOrchestrator
 
             // Phase 2: Load Playlists using the fully gathered rawSongs list
             await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Found {rawSongs.Count} songs. Scanning for playlists..."));
-            var playlists = await _musicLibraryService.LoadPlaylistsAsync(settings.MusicDirectories, rawSongs);
+            var filePlaylists = await _musicLibraryService.LoadPlaylistsAsync(settings.MusicDirectories, rawSongs);
+
+            // Phase 2.5: Generate Auto-Playlists
+            var autoPlaylists = _autoPlaylistGenerator.GenerateAll(rawSongs);
+            
+            // Combine all playlists, auto-playlists first
+            var allPlaylists = autoPlaylists.Concat(filePlaylists).ToList();
 
             // Phase 3: Populate Artist and Album collections
             await Dispatcher.UIThread.InvokeAsync(() =>
@@ -58,7 +66,7 @@ public class LibraryDataOrchestrator
                 _artistAlbumManager.PopulateCollections(rawSongs);
             });
 
-            return (rawSongs, playlists);
+            return (rawSongs, allPlaylists);
         }
         catch (Exception ex)
         {

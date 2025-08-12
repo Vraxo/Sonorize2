@@ -436,6 +436,47 @@ public class EnumToBooleanConverter : IValueConverter
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Converters\GridViewImageVisibilityConverter.cs">
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using Avalonia.Data.Converters;
+using Avalonia.Media.Imaging;
+using Sonorize.ViewModels;
+
+namespace Sonorize.Converters
+{
+    public class GridViewImageVisibilityConverter : IMultiValueConverter
+    {
+        public GridViewImageType TargetType { get; set; }
+
+        public object Convert(IList<object?> values, Type targetType, object? parameter, CultureInfo culture)
+        {
+            if (values.Count != 2 || values[1] is not GridViewImageType currentSetting)
+            {
+                return false;
+            }
+
+            int thumbnailCount = 0;
+            if (values[0] is IEnumerable<Bitmap?> thumbnails)
+            {
+                thumbnailCount = thumbnails.Count(t => t is not null);
+            }
+
+            if (TargetType == GridViewImageType.Composite)
+            {
+                return currentSetting == GridViewImageType.Composite && thumbnailCount > 1;
+            }
+            else // TargetType is Single
+            {
+                return currentSetting == GridViewImageType.Single || (currentSetting == GridViewImageType.Composite && thumbnailCount <= 1);
+            }
+        }
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Converters\NotNullToBooleanConverter.cs">
 using System;
 using System.Globalization;
@@ -533,6 +574,11 @@ public class AppSettings
     public string ArtistViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
     public string AlbumViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
     public string PlaylistViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
+
+    // Grid View Image Preferences
+    public string ArtistGridViewImageType { get; set; } = "Composite";
+    public string AlbumGridViewImageType { get; set; } = "Composite";
+    public string PlaylistGridViewImageType { get; set; } = "Composite";
 
     // Last.fm Settings
     public bool LastfmScrobblingEnabled { get; set; } = false;
@@ -1713,7 +1759,7 @@ public class PlaylistParserService
 {
     public Playlist Parse(string m3uFilePath, IReadOnlyDictionary<string, Song> allSongsLookup)
     {
-        var playlist = new Playlist
+        Playlist playlist = new()
         {
             Name = Path.GetFileNameWithoutExtension(m3uFilePath),
             FilePath = m3uFilePath
@@ -1721,25 +1767,13 @@ public class PlaylistParserService
 
         try
         {
-            var m3uDirectory = Path.GetDirectoryName(m3uFilePath);
-            var songPaths = File.ReadAllLines(m3uFilePath)
-                                .Select(line => line.Trim())
-                                .Where(line => !string.IsNullOrEmpty(line) && !line.StartsWith('#'));
+            string? m3uDirectory = Path.GetDirectoryName(m3uFilePath);
+            IEnumerable<string> songEntries = GetSongEntriesFromM3u(m3uFilePath);
 
-            foreach (var songPath in songPaths)
+            foreach (string songEntry in songEntries)
             {
-                string absolutePath;
-                if (Path.IsPathRooted(songPath))
+                if (!TryResolveAbsolutePath(songEntry, m3uDirectory, out var absolutePath))
                 {
-                    absolutePath = Path.GetFullPath(songPath);
-                }
-                else if (m3uDirectory is not null)
-                {
-                    absolutePath = Path.GetFullPath(Path.Combine(m3uDirectory, songPath));
-                }
-                else
-                {
-                    Debug.WriteLine($"[PlaylistParser] Cannot resolve relative path for '{songPath}' in playlist '{m3uFilePath}' as M3U directory is null.");
                     continue;
                 }
 
@@ -1749,7 +1783,7 @@ public class PlaylistParserService
                 }
                 else
                 {
-                    Debug.WriteLine($"[PlaylistParser] FAILED LOOKUP: Song from playlist '{playlist.Name}' not found in library. Path: '{absolutePath}'");
+                    LogFailedLookup(playlist.Name, absolutePath);
                 }
             }
         }
@@ -1759,6 +1793,70 @@ public class PlaylistParserService
         }
 
         return playlist;
+    }
+
+    private static IEnumerable<string> GetSongEntriesFromM3u(string m3uFilePath)
+    {
+        return File.ReadAllLines(m3uFilePath)
+                   .Select(line => line.Trim())
+                   .Where(line => !string.IsNullOrEmpty(line) && !line.StartsWith('#'));
+    }
+
+    private bool TryResolveAbsolutePath(string songEntry, string? m3uDirectory, out string absolutePath)
+    {
+        absolutePath = string.Empty;
+
+        if (Path.IsPathRooted(songEntry))
+        {
+            absolutePath = Path.GetFullPath(songEntry);
+            return true;
+        }
+
+        if (m3uDirectory is null)
+        {
+            Debug.WriteLine($"[PlaylistParser] Cannot resolve relative path for '{songEntry}' as M3U directory is null.");
+            return false;
+        }
+
+        absolutePath = DetermineAbsolutePathForRelativeEntry(songEntry, m3uDirectory);
+
+        return true;
+    }
+
+    private string DetermineAbsolutePathForRelativeEntry(string relativeSongPath, string m3uFileDirectory)
+    {
+        string baseDirectory = GetBaseDirectoryForPathResolution(relativeSongPath, m3uFileDirectory);
+        return Path.GetFullPath(Path.Combine(baseDirectory, relativeSongPath));
+    }
+
+    private static string GetBaseDirectoryForPathResolution(string relativeSongPath, string m3uFileDirectory)
+    {
+        string m3uDirectoryName = Path.GetFileName(m3uFileDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        string? songPathFirstSegment = relativeSongPath.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], 2).FirstOrDefault();
+
+        bool isPathRelativeToLibraryRoot = !string.IsNullOrEmpty(m3uDirectoryName)
+            && m3uDirectoryName.Equals(songPathFirstSegment, StringComparison.OrdinalIgnoreCase);
+
+        if (!isPathRelativeToLibraryRoot)
+        {
+            return m3uFileDirectory;
+        }
+
+        string? libraryRoot = Path.GetDirectoryName(m3uFileDirectory);
+
+        if (libraryRoot is not null)
+        {
+            return libraryRoot;
+        }
+
+        return m3uFileDirectory;
+    }
+
+    private static void LogFailedLookup(string playlistName, string failedPath)
+    {
+        Debug.WriteLine($"[PlaylistParser] FAILED LOOKUP: " +
+            $"Song from playlist '{playlistName}' not found in library." +
+            $" Path: '{failedPath}'");
     }
 }
 </file>
@@ -3162,6 +3260,7 @@ public class ApplicationWorkflowManager : IDisposable
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\ArtistViewModel.cs">
+using System.Collections.Generic;
 using Avalonia.Media.Imaging;
 
 namespace Sonorize.ViewModels;
@@ -3169,6 +3268,12 @@ namespace Sonorize.ViewModels;
 public class ArtistViewModel : ViewModelBase // Inherit from ViewModelBase
 {
     public string? Name { get; set; } // Name can remain simple if not changed after creation
+
+    public List<Bitmap?> SongThumbnailsForGrid
+    {
+        get;
+        set => SetProperty(ref field, value);
+    } = new List<Bitmap?>(new Bitmap?[4]);
 
     private Bitmap? _thumbnail;
     public Bitmap? Thumbnail
@@ -3301,6 +3406,17 @@ internal class AsyncWaveformLoader : ViewModelBase
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\GridViewImageType.cs">
+namespace Sonorize.ViewModels
+{
+    public enum GridViewImageType
+    {
+        Single,
+        Composite
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LastfmSettingsViewModel.cs">
 using Sonorize.Models; // Required for AppSettings
 
@@ -3409,6 +3525,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     private readonly LibraryComponentProvider _components;
     private readonly LibraryLoadProcess _libraryLoadProcess;
 
+    public LibraryDisplayModeService LibraryDisplayModeService => _displayModeService;
     public LibraryGroupingsViewModel Groupings => _components.Groupings;
     public ObservableCollection<Song> FilteredSongs => _components.SongList.FilteredSongs;
     public LibraryFilterStateManager FilterState => _components.FilterState;
@@ -3595,14 +3712,14 @@ public class LibraryViewModel : ViewModelBase, IDisposable
             Debug.WriteLine($"[LibraryVM] Edit metadata requested but parameter is not a Song or parent command cannot execute.");
             return;
         }
-        
+
         Debug.WriteLine($"[LibraryVM] Delegating Edit metadata for: {song.Title} to MainWindowViewModel.");
         _parentViewModel.OpenEditSongMetadataDialogCommand.Execute(song);
     }
 
     private bool CanExecuteEditSongMetadata(object? parameter)
     {
-        return parameter is Song 
+        return parameter is Song
             && _parentViewModel.OpenEditSongMetadataDialogCommand.CanExecute(parameter);
     }
 
@@ -4046,29 +4163,64 @@ namespace Sonorize.ViewModels;
 
 public class PlaylistViewModel : ViewModelBase
 {
+    public Playlist PlaylistModel { get; }
+
+    private readonly Bitmap? _defaultIcon;
+
     public string Name => PlaylistModel.Name;
     public int SongCount => PlaylistModel.Songs.Count;
-    public Playlist PlaylistModel { get; }
-    public List<Bitmap?> SongThumbnailsForGrid { get; } = new(new Bitmap?[4]);
-    public Bitmap? RepresentativeThumbnail { get; }
+
+    public List<Bitmap?> SongThumbnailsForGrid
+    {
+        get;
+        private set
+        {
+            SetProperty(ref field, value);
+        }
+
+    } = new(new Bitmap?[4]);
+
+    public Bitmap? RepresentativeThumbnail
+    {
+        get;
+
+        private set
+        {
+            SetProperty(ref field, value);
+        }
+    }
+
 
     public PlaylistViewModel(Playlist playlist, Bitmap? defaultIcon)
     {
         PlaylistModel = playlist;
+        _defaultIcon = defaultIcon;
+        RecalculateThumbnails();
+    }
 
-        List<Bitmap?> distinctSongThumbs = playlist.Songs
-            .Where(s => s.Thumbnail is not null)
+    public void RecalculateThumbnails()
+    {
+        List<Bitmap?> newGrid = new(new Bitmap?[4]);
+
+        List<Bitmap?> distinctSongThumbs = PlaylistModel.Songs
             .Select(s => s.Thumbnail)
+            .Where(t => t is not null)
             .Distinct()
             .Take(4)
             .ToList();
 
         for (int i = 0; i < distinctSongThumbs.Count; i++)
         {
-            SongThumbnailsForGrid[i] = distinctSongThumbs[i];
+            newGrid[i] = distinctSongThumbs[i];
         }
 
-        RepresentativeThumbnail = SongThumbnailsForGrid.FirstOrDefault(t => t is not null) ?? defaultIcon;
+        if (!SongThumbnailsForGrid.SequenceEqual(newGrid))
+        {
+            SongThumbnailsForGrid = newGrid;
+        }
+
+        Bitmap? newRepresentativeThumbnail = newGrid.FirstOrDefault(t => t is not null) ?? _defaultIcon;
+        RepresentativeThumbnail = newRepresentativeThumbnail;
     }
 }
 </file>
@@ -4786,6 +4938,13 @@ public class SettingsWindow : Window
             Converter = EnumToBooleanConverter.Instance,
             ConverterParameter = SettingsViewSection.Theme
         });
+        
+        var appearanceSettingsPanel = AppearanceSettingsPanel.Create(_theme);
+        appearanceSettingsPanel.Bind(Visual.IsVisibleProperty, new Binding("CurrentSettingsViewSection")
+        {
+            Converter = EnumToBooleanConverter.Instance,
+            ConverterParameter = SettingsViewSection.Appearance
+        });
 
         var scrobblingSettingsPanel = ScrobblingSettingsPanel.Create(_theme);
         scrobblingSettingsPanel.Bind(Visual.IsVisibleProperty, new Binding("CurrentSettingsViewSection")
@@ -4796,6 +4955,7 @@ public class SettingsWindow : Window
 
         contentPanel.Children.Add(directoriesSettingsPanel);
         contentPanel.Children.Add(themeSettingsPanel);
+        contentPanel.Children.Add(appearanceSettingsPanel);
         contentPanel.Children.Add(scrobblingSettingsPanel);
 
         return contentPanel;
@@ -7028,6 +7188,115 @@ public class SettingsChangeProcessorService
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\Settings\SettingsPersistenceManager.cs">
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using Sonorize.Models;
+using Sonorize.Services;
+using Sonorize.ViewModels.Settings;
+
+namespace Sonorize.ViewModels;
+
+public class SettingsPersistenceManager
+{
+    private readonly SettingsService _settingsService;
+
+    public SettingsPersistenceManager(SettingsService settingsService)
+    {
+        _settingsService = settingsService ?? throw new System.ArgumentNullException(nameof(settingsService));
+    }
+
+    public bool ApplyAndSaveChanges(
+        AppSettings settingsOnDisk,
+        MusicDirectoriesSettingsViewModel musicDirectoriesSettings,
+        ThemeSettingsViewModel themeSettings,
+        LastfmSettingsViewModel lastfmSettings,
+        AppearanceSettingsViewModel appearanceSettings)
+    {
+        AppSettings newSettingsToSave = new();
+
+        // Preserve settings not managed by SettingsViewModel's UI by copying from disk state
+        newSettingsToSave.LibraryViewModePreference = settingsOnDisk.LibraryViewModePreference;
+        newSettingsToSave.ArtistViewModePreference = settingsOnDisk.ArtistViewModePreference;
+        newSettingsToSave.AlbumViewModePreference = settingsOnDisk.AlbumViewModePreference;
+        newSettingsToSave.PlaylistViewModePreference = settingsOnDisk.PlaylistViewModePreference;
+        newSettingsToSave.LastfmSessionKey = settingsOnDisk.LastfmSessionKey;
+
+        bool actualChangesMade = false;
+
+        // Music Directories
+        if (musicDirectoriesSettings.HasChangesFromInitialState)
+        {
+            newSettingsToSave.MusicDirectories = new List<string>(musicDirectoriesSettings.MusicDirectories);
+            actualChangesMade = true;
+            Debug.WriteLine($"[SettingsPersistence] Music directories changed. Count: {newSettingsToSave.MusicDirectories.Count}");
+        }
+        else
+        {
+            newSettingsToSave.MusicDirectories = new List<string>(settingsOnDisk.MusicDirectories);
+        }
+
+        // Theme
+        if (themeSettings.HasChangesFromInitialState)
+        {
+            newSettingsToSave.PreferredThemeFileName = themeSettings.SelectedThemeFile;
+            actualChangesMade = true;
+            Debug.WriteLine($"[SettingsPersistence] Theme changed to: {themeSettings.SelectedThemeFile}");
+        }
+        else
+        {
+            newSettingsToSave.PreferredThemeFileName = settingsOnDisk.PreferredThemeFileName;
+        }
+        
+        // Appearance
+        if (appearanceSettings.HasChangesFromInitialState)
+        {
+            appearanceSettings.UpdateAppSettings(newSettingsToSave);
+            actualChangesMade = true;
+            Debug.WriteLine($"[SettingsPersistence] Appearance settings changed.");
+        }
+        else
+        {
+            newSettingsToSave.ArtistGridViewImageType = settingsOnDisk.ArtistGridViewImageType;
+            newSettingsToSave.AlbumGridViewImageType = settingsOnDisk.AlbumGridViewImageType;
+            newSettingsToSave.PlaylistGridViewImageType = settingsOnDisk.PlaylistGridViewImageType;
+        }
+
+        // Last.fm Settings - Compare UI state against disk state for change detection
+        bool lastfmChanged = settingsOnDisk.LastfmScrobblingEnabled != lastfmSettings.LastfmScrobblingEnabled ||
+                             settingsOnDisk.LastfmUsername != lastfmSettings.LastfmUsername ||
+                             !string.IsNullOrEmpty(lastfmSettings.LastfmPassword) ||
+                             settingsOnDisk.ScrobbleThresholdPercentage != lastfmSettings.ScrobbleThresholdPercentage ||
+                             settingsOnDisk.ScrobbleThresholdAbsoluteSeconds != lastfmSettings.ScrobbleThresholdAbsoluteSeconds;
+        
+        if (lastfmChanged) actualChangesMade = true;
+        
+        lastfmSettings.UpdateAppSettings(newSettingsToSave);
+        if (lastfmChanged)
+        {
+            Debug.WriteLine($"[SettingsPersistence] Last.fm settings potentially updated in newSettingsToSave: " +
+                            $"Scrobbling={newSettingsToSave.LastfmScrobblingEnabled}, " +
+                            $"User={newSettingsToSave.LastfmUsername}, " +
+                            $"PassLen={(newSettingsToSave.LastfmPassword?.Length ?? 0)}, " +
+                            $"Thresh%={newSettingsToSave.ScrobbleThresholdPercentage}, " +
+                            $"ThreshAbsSec={newSettingsToSave.ScrobbleThresholdAbsoluteSeconds}");
+        }
+
+
+        if (actualChangesMade)
+        {
+            _settingsService.SaveSettings(newSettingsToSave);
+            Debug.WriteLine("[SettingsPersistence] Actual changes detected and settings saved.");
+            return true;
+        }
+
+        Debug.WriteLine("[SettingsPersistence] No actual changes to persist.");
+        return false;
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\Settings\SettingsService.cs">
 using System;
 using System.IO;
@@ -7122,11 +7391,26 @@ public class ArtistAlbumCollectionManager
         Bitmap? defaultSongThumbnail = _musicLibraryService.GetDefaultThumbnail();
         foreach (string? artistName in uniqueArtistNames)
         {
-            Bitmap? repThumb = allSongs.FirstOrDefault(s =>
-                                   (s.Artist?.Equals(artistName, StringComparison.OrdinalIgnoreCase) ?? false) &&
-                                   s.Thumbnail is not null && s.Thumbnail != defaultSongThumbnail)?.Thumbnail
-                               ?? defaultSongThumbnail;
-            _artistsCollection.Add(new ArtistViewModel { Name = artistName, Thumbnail = repThumb });
+            var artistVM = new ArtistViewModel { Name = artistName };
+            var songsByArtist = allSongs.Where(s => s.Artist?.Equals(artistName, StringComparison.OrdinalIgnoreCase) ?? false).ToList();
+
+            List<Bitmap?> songThumbnailsForGrid = new(new Bitmap?[4]);
+            List<Bitmap?> distinctSongThumbs = songsByArtist
+                .Select(s => s.Thumbnail ?? defaultSongThumbnail)
+                .Where(t => t != null)
+                .Distinct()
+                .Take(4)
+                .ToList();
+
+            for (int i = 0; i < distinctSongThumbs.Count; i++)
+            {
+                songThumbnailsForGrid[i] = distinctSongThumbs[i];
+            }
+
+            artistVM.SongThumbnailsForGrid = songThumbnailsForGrid;
+            artistVM.Thumbnail = songThumbnailsForGrid.FirstOrDefault(t => t != null) ?? defaultSongThumbnail;
+
+            _artistsCollection.Add(artistVM);
         }
 
         _albumsCollection.Clear();
@@ -7176,13 +7460,31 @@ public class ArtistAlbumCollectionManager
         var artistVM = _artistsCollection.FirstOrDefault(a => a.Name == updatedSong.Artist);
         if (artistVM is not null)
         {
-            var firstSongOfArtistWithThumbnail = allSongs.FirstOrDefault(s =>
-                (s.Artist?.Equals(artistVM.Name, StringComparison.OrdinalIgnoreCase) ?? false) && s.Thumbnail != _musicLibraryService.GetDefaultThumbnail());
+            var songsByArtist = allSongs.Where(s => s.Artist?.Equals(artistVM.Name, StringComparison.OrdinalIgnoreCase) ?? false).ToList();
+            Bitmap? defaultIcon = _musicLibraryService.GetDefaultThumbnail();
 
-            Bitmap? newArtistThumbnail = (firstSongOfArtistWithThumbnail?.Thumbnail ?? _musicLibraryService.GetDefaultThumbnail());
-            if (artistVM.Thumbnail != newArtistThumbnail) // Only update if changed to avoid needless notifications
+            List<Bitmap?> newGridThumbnails = new(new Bitmap?[4]);
+            List<Bitmap?> distinctThumbs = songsByArtist
+                .Select(s => s.Thumbnail ?? defaultIcon)
+                .Where(t => t != null)
+                .Distinct()
+                .Take(4)
+                .ToList();
+
+            for (int i = 0; i < distinctThumbs.Count; i++)
             {
-                artistVM.Thumbnail = newArtistThumbnail;
+                newGridThumbnails[i] = distinctThumbs[i];
+            }
+
+            if (!artistVM.SongThumbnailsForGrid.SequenceEqual(newGridThumbnails))
+            {
+                artistVM.SongThumbnailsForGrid = newGridThumbnails;
+            }
+
+            Bitmap? newRepresentativeThumbnail = newGridThumbnails.FirstOrDefault(t => t != null) ?? defaultIcon;
+            if (artistVM.Thumbnail != newRepresentativeThumbnail)
+            {
+                artistVM.Thumbnail = newRepresentativeThumbnail;
             }
         }
 
@@ -7344,7 +7646,7 @@ public class LibraryDisplayModeService : ViewModelBase
         {
             if (SetProperty(ref _libraryViewMode, value))
             {
-                SavePreference(nameof(AppSettings.LibraryViewModePreference), value);
+                SavePreference(nameof(AppSettings.LibraryViewModePreference), value.ToString());
             }
         }
     }
@@ -7357,7 +7659,7 @@ public class LibraryDisplayModeService : ViewModelBase
         {
             if (SetProperty(ref _artistViewMode, value))
             {
-                SavePreference(nameof(AppSettings.ArtistViewModePreference), value);
+                SavePreference(nameof(AppSettings.ArtistViewModePreference), value.ToString());
             }
         }
     }
@@ -7370,7 +7672,7 @@ public class LibraryDisplayModeService : ViewModelBase
         {
             if (SetProperty(ref _albumViewMode, value))
             {
-                SavePreference(nameof(AppSettings.AlbumViewModePreference), value);
+                SavePreference(nameof(AppSettings.AlbumViewModePreference), value.ToString());
             }
         }
     }
@@ -7383,17 +7685,21 @@ public class LibraryDisplayModeService : ViewModelBase
         {
             if (SetProperty(ref _playlistViewMode, value))
             {
-                SavePreference(nameof(AppSettings.PlaylistViewModePreference), value);
+                SavePreference(nameof(AppSettings.PlaylistViewModePreference), value.ToString());
             }
         }
     }
+
+    public GridViewImageType ArtistGridDisplayType { get; private set; }
+    public GridViewImageType AlbumGridDisplayType { get; private set; }
+    public GridViewImageType PlaylistGridDisplayType { get; private set; }
 
     public ICommand SetDisplayModeCommand { get; }
 
     public LibraryDisplayModeService(SettingsService settingsService)
     {
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
-        LoadPreferences();
+        LoadDisplayPreferences();
 
         SetDisplayModeCommand = new RelayCommand(
             param =>
@@ -7415,38 +7721,40 @@ public class LibraryDisplayModeService : ViewModelBase
         );
     }
 
-    private void LoadPreferences()
+    public void ReloadDisplayPreferences()
+    {
+        LoadDisplayPreferences();
+    }
+
+    private void LoadDisplayPreferences()
     {
         AppSettings settings = _settingsService.LoadSettings();
         _libraryViewMode = Enum.TryParse<SongDisplayMode>(settings.LibraryViewModePreference, out var libMode) ? libMode : SongDisplayMode.Detailed;
         _artistViewMode = Enum.TryParse<SongDisplayMode>(settings.ArtistViewModePreference, out var artMode) ? artMode : SongDisplayMode.Detailed;
         _albumViewMode = Enum.TryParse<SongDisplayMode>(settings.AlbumViewModePreference, out var albMode) ? albMode : SongDisplayMode.Detailed;
         _playlistViewMode = Enum.TryParse<SongDisplayMode>(settings.PlaylistViewModePreference, out var playMode) ? playMode : SongDisplayMode.Detailed;
+        
+        ArtistGridDisplayType = Enum.TryParse<GridViewImageType>(settings.ArtistGridViewImageType, out var artistGridType) ? artistGridType : GridViewImageType.Composite;
+        AlbumGridDisplayType = Enum.TryParse<GridViewImageType>(settings.AlbumGridViewImageType, out var albumGridType) ? albumGridType : GridViewImageType.Composite;
+        PlaylistGridDisplayType = Enum.TryParse<GridViewImageType>(settings.PlaylistGridViewImageType, out var playlistGridType) ? playlistGridType : GridViewImageType.Composite;
 
         // Initial OnPropertyChanged for any subscribers after loading
         OnPropertyChanged(nameof(LibraryViewMode));
         OnPropertyChanged(nameof(ArtistViewMode));
         OnPropertyChanged(nameof(AlbumViewMode));
         OnPropertyChanged(nameof(PlaylistViewMode));
+        OnPropertyChanged(nameof(ArtistGridDisplayType));
+        OnPropertyChanged(nameof(AlbumGridDisplayType));
+        OnPropertyChanged(nameof(PlaylistGridDisplayType));
     }
 
-    private void SavePreference(string preferenceKey, SongDisplayMode mode)
+    private void SavePreference(string preferenceKey, string value)
     {
         AppSettings settings = _settingsService.LoadSettings();
-        switch (preferenceKey)
+        var prop = typeof(AppSettings).GetProperty(preferenceKey);
+        if (prop != null && prop.CanWrite)
         {
-            case nameof(AppSettings.LibraryViewModePreference):
-                settings.LibraryViewModePreference = mode.ToString();
-                break;
-            case nameof(AppSettings.ArtistViewModePreference):
-                settings.ArtistViewModePreference = mode.ToString();
-                break;
-            case nameof(AppSettings.AlbumViewModePreference):
-                settings.AlbumViewModePreference = mode.ToString();
-                break;
-            case nameof(AppSettings.PlaylistViewModePreference):
-                settings.PlaylistViewModePreference = mode.ToString();
-                break;
+            prop.SetValue(settings, value, null);
         }
         _settingsService.SaveSettings(settings);
     }
@@ -7594,7 +7902,7 @@ public class LibraryGroupingsViewModel : ViewModelBase
     {
         _artistAlbumManager.PopulateCollections(allSongs);
     }
-    
+
     public void PopulatePlaylistCollection(IEnumerable<Playlist> allPlaylists)
     {
         _playlistManager.PopulateCollection(allPlaylists);
@@ -7604,7 +7912,7 @@ public class LibraryGroupingsViewModel : ViewModelBase
     {
         // This method will be called on the UI thread by LibraryViewModel
         _artistAlbumManager.UpdateCollectionsForSongThumbnail(updatedSong, allSongs);
-        // ObservableCollections and their items will notify changes
+        _playlistManager.HandleSongThumbnailUpdate(updatedSong);
     }
 }
 </file>
@@ -7767,6 +8075,18 @@ public class PlaylistCollectionManager
         foreach (var playlist in allPlaylists.OrderBy(p => p.Name))
         {
             _playlistsCollection.Add(new PlaylistViewModel(playlist, defaultIcon));
+        }
+    }
+
+    public void HandleSongThumbnailUpdate(Song updatedSong)
+    {
+        // Find all playlists containing this song
+        var affectedPlaylists = _playlistsCollection
+            .Where(pvm => pvm.PlaylistModel.Songs.Contains(updatedSong));
+
+        foreach (var playlistVM in affectedPlaylists)
+        {
+            playlistVM.RecalculateThumbnails();
         }
     }
 }
@@ -8496,32 +8816,22 @@ public class MainWindowInteractionCoordinator
         _raiseAllCommandsCanExecuteChangedCallback = raiseAllCommandsCanExecuteChangedCallback ?? throw new ArgumentNullException(nameof(raiseAllCommandsCanExecuteChangedCallback));
     }
 
-    public async Task<string> CoordinateOpenSettingsDialogAsync()
+    public async Task<(string[] StatusMessages, bool SettingsChanged)> CoordinateAndProcessSettingsAsync()
     {
         Window? owner = _getOwnerViewFunc();
         if (owner == null || _libraryViewModel.IsLoadingLibrary)
         {
-            return "Cannot open settings: No owner window or library is loading.";
+            return (["Cannot open settings: No owner window or library is loading."], false);
         }
 
         _advancedPanelViewModel.IsVisible = false;
 
         var (statusMessages, settingsChanged) = await _workflowManager.HandleOpenSettingsDialogAsync(owner);
 
-        string resultMessage = string.Empty;
-        if (settingsChanged)
-        {
-            if (statusMessages.Any())
-            {
-                resultMessage = string.Join(" | ", statusMessages);
-            }
-            // If no specific messages, the caller (MainWindowViewModel) will update status bar.
-        }
-
         _raiseAllCommandsCanExecuteChangedCallback();
-        return resultMessage;
+        return (statusMessages.ToArray(), settingsChanged);
     }
-
+    
     public async Task<(bool RefreshedNeeded, string StatusMessage)> CoordinateAddMusicDirectoryAsync()
     {
         Window? owner = _getOwnerViewFunc();
@@ -8724,14 +9034,18 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private async Task OpenSettingsDialogAsync()
     {
         // InteractionCoordinator is accessed via _componentsManager
-        string statusMessage = await _componentsManager.InteractionCoordinator.CoordinateOpenSettingsDialogAsync();
-        if (!string.IsNullOrEmpty(statusMessage))
+        var (statusMessages, settingsChanged) = await _componentsManager.InteractionCoordinator.CoordinateAndProcessSettingsAsync();
+        if (settingsChanged)
         {
-            StatusBarText = statusMessage;
-        }
-        else
-        {
-            UpdateStatusBarText(); // Update with default status if no specific message
+            Library.LibraryDisplayModeService.ReloadDisplayPreferences();
+            if (statusMessages.Any())
+            {
+                StatusBarText = string.Join(" | ", statusMessages);
+            }
+            else
+            {
+                UpdateStatusBarText();
+            }
         }
     }
 
@@ -8927,6 +9241,97 @@ public class MainWindowViewModelOrchestrator : IDisposable
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\Settings\AppearanceSettingsViewModel.cs">
+using System;
+using Sonorize.Models;
+using Sonorize.Services;
+
+namespace Sonorize.ViewModels.Settings
+{
+    public class AppearanceSettingsViewModel : ViewModelBase
+    {
+        private readonly Action _notifyParentSettingsChanged;
+
+        public GridViewImageType ArtistGridType { get; set; }
+        public GridViewImageType AlbumGridType { get; set; }
+        public GridViewImageType PlaylistGridType { get; set; }
+
+        private readonly GridViewImageType _initialArtistGridType;
+        private readonly GridViewImageType _initialAlbumGridType;
+        private readonly GridViewImageType _initialPlaylistGridType;
+        
+        public bool IsArtistGridSingle
+        {
+            get => ArtistGridType == GridViewImageType.Single;
+            set { if (value && ArtistGridType != GridViewImageType.Single) { ArtistGridType = GridViewImageType.Single; OnAppearanceChanged(); } }
+        }
+        public bool IsArtistGridComposite
+        {
+            get => ArtistGridType == GridViewImageType.Composite;
+            set { if (value && ArtistGridType != GridViewImageType.Composite) { ArtistGridType = GridViewImageType.Composite; OnAppearanceChanged(); } }
+        }
+
+        public bool IsAlbumGridSingle
+        {
+            get => AlbumGridType == GridViewImageType.Single;
+            set { if (value && AlbumGridType != GridViewImageType.Single) { AlbumGridType = GridViewImageType.Single; OnAppearanceChanged(); } }
+        }
+        public bool IsAlbumGridComposite
+        {
+            get => AlbumGridType == GridViewImageType.Composite;
+            set { if (value && AlbumGridType != GridViewImageType.Composite) { AlbumGridType = GridViewImageType.Composite; OnAppearanceChanged(); } }
+        }
+
+        public bool IsPlaylistGridSingle
+        {
+            get => PlaylistGridType == GridViewImageType.Single;
+            set { if (value && PlaylistGridType != GridViewImageType.Single) { PlaylistGridType = GridViewImageType.Single; OnAppearanceChanged(); } }
+        }
+        public bool IsPlaylistGridComposite
+        {
+            get => PlaylistGridType == GridViewImageType.Composite;
+            set { if (value && PlaylistGridType != GridViewImageType.Composite) { PlaylistGridType = GridViewImageType.Composite; OnAppearanceChanged(); } }
+        }
+
+        public bool HasChangesFromInitialState => _initialArtistGridType != ArtistGridType ||
+                                                  _initialAlbumGridType != AlbumGridType ||
+                                                  _initialPlaylistGridType != PlaylistGridType;
+
+        public AppearanceSettingsViewModel(AppSettings settings, Action notifyParentSettingsChanged)
+        {
+            _notifyParentSettingsChanged = notifyParentSettingsChanged ?? throw new ArgumentNullException(nameof(notifyParentSettingsChanged));
+            
+            _initialArtistGridType = Enum.TryParse<GridViewImageType>(settings.ArtistGridViewImageType, out var agt) ? agt : GridViewImageType.Composite;
+            _initialAlbumGridType = Enum.TryParse<GridViewImageType>(settings.AlbumGridViewImageType, out var alhgt) ? alhgt : GridViewImageType.Composite;
+            _initialPlaylistGridType = Enum.TryParse<GridViewImageType>(settings.PlaylistGridViewImageType, out var pgt) ? pgt : GridViewImageType.Composite;
+
+            ArtistGridType = _initialArtistGridType;
+            AlbumGridType = _initialAlbumGridType;
+            PlaylistGridType = _initialPlaylistGridType;
+        }
+
+        private void OnAppearanceChanged()
+        {
+            OnPropertyChanged(nameof(IsArtistGridSingle));
+            OnPropertyChanged(nameof(IsArtistGridComposite));
+            OnPropertyChanged(nameof(IsAlbumGridSingle));
+            OnPropertyChanged(nameof(IsAlbumGridComposite));
+            OnPropertyChanged(nameof(IsPlaylistGridSingle));
+            OnPropertyChanged(nameof(IsPlaylistGridComposite));
+            OnPropertyChanged(nameof(HasChangesFromInitialState));
+            _notifyParentSettingsChanged();
+        }
+
+        public void UpdateAppSettings(AppSettings settings)
+        {
+            settings.ArtistGridViewImageType = ArtistGridType.ToString();
+            settings.AlbumGridViewImageType = AlbumGridType.ToString();
+            settings.PlaylistGridViewImageType = PlaylistGridType.ToString();
+        }
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\Settings\MusicDirectoriesSettingsViewModel.cs">
 using Avalonia.Controls;
 using System;
@@ -9049,102 +9454,8 @@ public class MusicDirectoriesSettingsViewModel : ViewModelBase
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\Settings\SettingsPersistenceManager.cs">
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using Sonorize.Models;
-using Sonorize.Services;
-
-namespace Sonorize.ViewModels;
-
-public class SettingsPersistenceManager
-{
-    private readonly SettingsService _settingsService;
-
-    public SettingsPersistenceManager(SettingsService settingsService)
-    {
-        _settingsService = settingsService ?? throw new System.ArgumentNullException(nameof(settingsService));
-    }
-
-    public bool ApplyAndSaveChanges(
-        AppSettings settingsOnDisk,
-        IEnumerable<string> currentUiMusicDirs,
-        IEnumerable<string> initialUiMusicDirs,
-        string? currentUiSelectedThemeFile, // Changed parameter name for clarity
-        LastfmSettingsViewModel currentUiLastfmSettings)
-    {
-        AppSettings newSettingsToSave = new();
-
-        // Preserve settings not managed by SettingsViewModel's UI by copying from disk state
-        newSettingsToSave.LibraryViewModePreference = settingsOnDisk.LibraryViewModePreference;
-        newSettingsToSave.ArtistViewModePreference = settingsOnDisk.ArtistViewModePreference;
-        newSettingsToSave.AlbumViewModePreference = settingsOnDisk.AlbumViewModePreference;
-        newSettingsToSave.LastfmSessionKey = settingsOnDisk.LastfmSessionKey;
-        // Add any other unmanaged settings here if AppSettings grows
-
-        bool actualChangesMade = false;
-
-        // Music Directories
-        if (!initialUiMusicDirs.SequenceEqual(currentUiMusicDirs) ||
-            !settingsOnDisk.MusicDirectories.SequenceEqual(currentUiMusicDirs))
-        {
-            newSettingsToSave.MusicDirectories = new List<string>(currentUiMusicDirs);
-            actualChangesMade = true;
-            Debug.WriteLine($"[SettingsPersistence] Music directories changed. Count: {newSettingsToSave.MusicDirectories.Count}");
-        }
-        else
-        {
-            newSettingsToSave.MusicDirectories = new List<string>(settingsOnDisk.MusicDirectories);
-        }
-
-        // Theme
-        if (settingsOnDisk.PreferredThemeFileName != currentUiSelectedThemeFile)
-        {
-            newSettingsToSave.PreferredThemeFileName = currentUiSelectedThemeFile;
-            actualChangesMade = true;
-            Debug.WriteLine($"[SettingsPersistence] Theme changed to: {currentUiSelectedThemeFile}");
-        }
-        else
-        {
-            newSettingsToSave.PreferredThemeFileName = settingsOnDisk.PreferredThemeFileName;
-        }
-
-        // Last.fm Settings - Compare UI state against disk state for change detection
-        if (settingsOnDisk.LastfmScrobblingEnabled != currentUiLastfmSettings.LastfmScrobblingEnabled) actualChangesMade = true;
-        if (settingsOnDisk.LastfmUsername != currentUiLastfmSettings.LastfmUsername) actualChangesMade = true;
-        if (!string.IsNullOrEmpty(currentUiLastfmSettings.LastfmPassword)) actualChangesMade = true;
-        if (settingsOnDisk.ScrobbleThresholdPercentage != currentUiLastfmSettings.ScrobbleThresholdPercentage) actualChangesMade = true;
-        if (settingsOnDisk.ScrobbleThresholdAbsoluteSeconds != currentUiLastfmSettings.ScrobbleThresholdAbsoluteSeconds) actualChangesMade = true;
-
-        // Apply UI Last.fm settings to newSettingsToSave object
-        currentUiLastfmSettings.UpdateAppSettings(newSettingsToSave);
-        if (actualChangesMade)
-        {
-            // Log Last.fm specific changes if any were part of overall changes
-            Debug.WriteLine($"[SettingsPersistence] Last.fm settings potentially updated in newSettingsToSave: " +
-                          $"Scrobbling={newSettingsToSave.LastfmScrobblingEnabled}, " +
-                          $"User={newSettingsToSave.LastfmUsername}, " +
-                          $"PassLen={(newSettingsToSave.LastfmPassword?.Length ?? 0)}, " +
-                          $"Thresh%={newSettingsToSave.ScrobbleThresholdPercentage}, " +
-                          $"ThreshAbsSec={newSettingsToSave.ScrobbleThresholdAbsoluteSeconds}");
-        }
-
-
-        if (actualChangesMade)
-        {
-            _settingsService.SaveSettings(newSettingsToSave);
-            Debug.WriteLine("[SettingsPersistence] Actual changes detected and settings saved.");
-            return true;
-        }
-
-        Debug.WriteLine("[SettingsPersistence] No actual changes to persist.");
-        return false;
-    }
-}
-</file>
-
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\Settings\SettingsViewModel.cs">
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -9155,6 +9466,7 @@ using Avalonia.Controls;
 // Removed: using Avalonia.Platform.Storage; // No longer directly used here
 using Sonorize.Models; // Required for AppSettings type
 using Sonorize.Services;
+using Sonorize.ViewModels.Settings;
 
 namespace Sonorize.ViewModels;
 
@@ -9162,24 +9474,18 @@ public enum SettingsViewSection
 {
     Directories,
     Theme,
+    Appearance,
     Scrobbling
 }
 
 public class SettingsViewModel : ViewModelBase
 {
     private readonly SettingsService _settingsService;
-    // private readonly ThemeService _themeService; // ThemeService is now injected into ThemeSettingsViewModel
     private readonly SettingsPersistenceManager _settingsPersistenceManager;
 
-    // Music Directories are now managed by a child ViewModel
     public MusicDirectoriesSettingsViewModel MusicDirectoriesSettings { get; }
-    // Theme settings are now managed by a child ViewModel
     public ThemeSettingsViewModel ThemeSettings { get; }
-
-    // public ObservableCollection<string> AvailableThemes { get; } = new(); // Moved
-    // public string? SelectedThemeFile { get; set; } // Moved
-
-    // Encapsulated Last.fm Settings
+    public AppearanceSettingsViewModel AppearanceSettings { get; }
     public LastfmSettingsViewModel LastfmSettings { get; }
 
 
@@ -9195,6 +9501,7 @@ public class SettingsViewModel : ViewModelBase
     public ICommand SaveAndCloseCommand { get; }
     public ICommand ShowDirectoriesSettingsCommand { get; }
     public ICommand ShowThemeSettingsCommand { get; }
+    public ICommand ShowAppearanceSettingsCommand { get; }
     public ICommand ShowScrobblingSettingsCommand { get; }
 
 
@@ -9205,16 +9512,13 @@ public class SettingsViewModel : ViewModelBase
 
         var settings = _settingsService.LoadSettings();
 
-        // Initialize the child ViewModel for music directories
         MusicDirectoriesSettings = new MusicDirectoriesSettingsViewModel(settings.MusicDirectories, MarkSettingsChanged);
 
-        // Initialize the child ViewModel for theme settings
-        // ThemeService instance is created here for ThemeSettingsViewModel as it's specific to this part
-        var themeServiceForChild = new ThemeService(settings.PreferredThemeFileName); // Pass current pref to ensure it loads correctly
+        var themeServiceForChild = new ThemeService(settings.PreferredThemeFileName);
         ThemeSettings = new ThemeSettingsViewModel(settings.PreferredThemeFileName, themeServiceForChild, MarkSettingsChanged);
+        
+        AppearanceSettings = new AppearanceSettingsViewModel(settings, MarkSettingsChanged);
 
-
-        // Initialize Last.fm settings module
         LastfmSettings = new LastfmSettingsViewModel();
         LastfmSettings.LoadFromSettings(settings);
         LastfmSettings.PropertyChanged += (s, e) => MarkSettingsChanged();
@@ -9226,6 +9530,7 @@ public class SettingsViewModel : ViewModelBase
 
         ShowDirectoriesSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Directories);
         ShowThemeSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Theme);
+        ShowAppearanceSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Appearance);
         ShowScrobblingSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Scrobbling);
     }
 
@@ -9244,13 +9549,12 @@ public class SettingsViewModel : ViewModelBase
     {
         AppSettings settingsOnDisk = _settingsService.LoadSettings();
 
-        // Pass data from the child ViewModels
         bool changesPersisted = _settingsPersistenceManager.ApplyAndSaveChanges(
             settingsOnDisk,
-            MusicDirectoriesSettings.MusicDirectories,
-            MusicDirectoriesSettings.InitialMusicDirectories,
-            ThemeSettings.SelectedThemeFile, // From ThemeSettingsViewModel
-            this.LastfmSettings
+            this.MusicDirectoriesSettings,
+            this.ThemeSettings,
+            this.LastfmSettings,
+            this.AppearanceSettings
         );
 
         if (changesPersisted)
@@ -9582,6 +9886,7 @@ using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Sonorize.Converters;
 using Sonorize.Models; // For ThemeColors
 using Sonorize.ViewModels; // For ArtistViewModel
 using System.Diagnostics;
@@ -9629,14 +9934,68 @@ public class ArtistItemTemplateProvider
 
         GridArtistTemplate = new FuncDataTemplate<ArtistViewModel>((dataContext, nameScope) =>
         {
-            var image = new Image { Width = 80, Height = 80, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center };
-            image.Bind(Image.SourceProperty, new Binding(nameof(ArtistViewModel.Thumbnail)));
-            RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
+            var imagePresenter = new Panel { Width = 80, Height = 80, HorizontalAlignment = HorizontalAlignment.Center };
+
+            // Composite 4-image grid
+            var imageGrid = new Grid
+            {
+                Width = 80,
+                Height = 80,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                ColumnDefinitions = new ColumnDefinitions("*,*"),
+                RowDefinitions = new RowDefinitions("*,*")
+            };
+            for (int i = 0; i < 4; i++)
+            {
+                var img = new Image { Width = 38, Height = 38, Stretch = Stretch.UniformToFill, Margin = new Thickness(1) };
+                img.Bind(Image.SourceProperty, new Binding($"SongThumbnailsForGrid[{i}]"));
+                RenderOptions.SetBitmapInterpolationMode(img, BitmapInterpolationMode.HighQuality);
+                Grid.SetRow(img, i / 2); Grid.SetColumn(img, i % 2);
+                imageGrid.Children.Add(img);
+            }
+            imageGrid.Bind(Visual.IsVisibleProperty, new MultiBinding
+            {
+                Converter = new GridViewImageVisibilityConverter { TargetType = GridViewImageType.Composite },
+                Bindings =
+                {
+                    new Binding(nameof(ArtistViewModel.SongThumbnailsForGrid)),
+                    new Binding("DataContext.Library.LibraryDisplayModeService.ArtistGridDisplayType")
+                    {
+                        RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
+                        {
+                            AncestorType = typeof(Window)
+                        }
+                    }
+                }
+            });
+
+            // Single representative image
+            var singleImage = new Image { Width = 80, Height = 80, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center };
+            singleImage.Bind(Image.SourceProperty, new Binding(nameof(ArtistViewModel.Thumbnail)));
+            RenderOptions.SetBitmapInterpolationMode(singleImage, BitmapInterpolationMode.HighQuality);
+            singleImage.Bind(Visual.IsVisibleProperty, new MultiBinding
+            {
+                Converter = new GridViewImageVisibilityConverter { TargetType = GridViewImageType.Single },
+                Bindings =
+                {
+                    new Binding(nameof(ArtistViewModel.SongThumbnailsForGrid)),
+                    new Binding("DataContext.Library.LibraryDisplayModeService.ArtistGridDisplayType")
+                    {
+                        RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
+                        {
+                            AncestorType = typeof(Window)
+                        }
+                    }
+                }
+            });
+
+            imagePresenter.Children.Add(imageGrid);
+            imagePresenter.Children.Add(singleImage);
 
             var artistNameBlock = new TextBlock { FontSize = 12, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, MaxHeight = 30, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 3, 0, 0) };
             artistNameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(ArtistViewModel.Name)));
 
-            var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { image, artistNameBlock } };
+            var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { imagePresenter, artistNameBlock } };
             return new Border { Width = 120, Height = 130, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         }, supportsRecycling: true);
     }
@@ -10511,6 +10870,7 @@ using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.ViewModels;
 using System.Diagnostics;
@@ -10526,7 +10886,7 @@ public class SharedViewTemplates
     public SongItemTemplateProvider SongTemplates { get; private set; }
     // Expose the provider for Artist templates
     public ArtistItemTemplateProvider ArtistTemplates { get; private set; }
-    
+
     public FuncDataTemplate<PlaylistViewModel> DetailedPlaylistTemplate { get; private set; }
     public FuncDataTemplate<PlaylistViewModel> CompactPlaylistTemplate { get; private set; }
     public FuncDataTemplate<PlaylistViewModel> GridPlaylistTemplate { get; private set; }
@@ -10534,7 +10894,7 @@ public class SharedViewTemplates
     public FuncDataTemplate<AlbumViewModel> DetailedAlbumTemplate { get; private set; }
     public FuncDataTemplate<AlbumViewModel> CompactAlbumTemplate { get; private set; }
     public FuncDataTemplate<AlbumViewModel> GridAlbumTemplate { get; private set; }
-    
+
     public ITemplate<Panel> StackPanelItemsPanelTemplate { get; private set; }
     public ITemplate<Panel> WrapPanelItemsPanelTemplate { get; private set; }
 
@@ -10550,7 +10910,7 @@ public class SharedViewTemplates
         InitializePlaylistTemplates();
         InitializePanelTemplates();
     }
-    
+
     private void InitializePlaylistTemplates()
     {
         DetailedPlaylistTemplate = new FuncDataTemplate<PlaylistViewModel>((dataContext, nameScope) =>
@@ -10559,8 +10919,11 @@ public class SharedViewTemplates
 
             var imageGrid = new Grid
             {
-                Width = 58, Height = 58, Margin = new Thickness(5, 0, 10, 0),
-                ColumnDefinitions = new ColumnDefinitions("*,*"), RowDefinitions = new RowDefinitions("*,*")
+                Width = 58,
+                Height = 58,
+                Margin = new Thickness(5, 0, 10, 0),
+                ColumnDefinitions = new ColumnDefinitions("*,*"),
+                RowDefinitions = new RowDefinitions("*,*")
             };
 
             for (int i = 0; i < 4; i++)
@@ -10598,25 +10961,74 @@ public class SharedViewTemplates
 
         GridPlaylistTemplate = new FuncDataTemplate<PlaylistViewModel>((dataContext, nameScope) =>
         {
+            var imagePresenter = new Panel { Width = 80, Height = 80, HorizontalAlignment = HorizontalAlignment.Center };
+
+            // Composite 4-image grid
+            var imageGrid = new Grid
+            {
+                Width = 80,
+                Height = 80,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                ColumnDefinitions = new ColumnDefinitions("*,*"),
+                RowDefinitions = new RowDefinitions("*,*")
+            };
+            for (int i = 0; i < 4; i++)
+            {
+                var img = new Image { Width = 38, Height = 38, Stretch = Stretch.UniformToFill, Margin = new Thickness(1) };
+                img.Bind(Image.SourceProperty, new Binding($"SongThumbnailsForGrid[{i}]"));
+                RenderOptions.SetBitmapInterpolationMode(img, BitmapInterpolationMode.HighQuality);
+                Grid.SetRow(img, i / 2); Grid.SetColumn(img, i % 2);
+                imageGrid.Children.Add(img);
+            }
+            imageGrid.Bind(Visual.IsVisibleProperty, new MultiBinding
+            {
+                Converter = new GridViewImageVisibilityConverter { TargetType = GridViewImageType.Composite },
+                Bindings =
+                {
+                    new Binding(nameof(PlaylistViewModel.SongThumbnailsForGrid)),
+                    new Binding("DataContext.Library.LibraryDisplayModeService.PlaylistGridDisplayType")
+                    {
+                        RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+                    }
+                }
+            });
+
+            // Single representative image
+            var singleImage = new Image { Width = 80, Height = 80, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center };
+            singleImage.Bind(Image.SourceProperty, new Binding(nameof(PlaylistViewModel.RepresentativeThumbnail)));
+            RenderOptions.SetBitmapInterpolationMode(singleImage, BitmapInterpolationMode.HighQuality);
+            singleImage.Bind(Visual.IsVisibleProperty, new MultiBinding
+            {
+                Converter = new GridViewImageVisibilityConverter { TargetType = GridViewImageType.Single },
+                Bindings =
+                {
+                    new Binding(nameof(PlaylistViewModel.SongThumbnailsForGrid)),
+                    new Binding("DataContext.Library.LibraryDisplayModeService.PlaylistGridDisplayType")
+                    {
+                        RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+                    }
+                }
+            });
+
+            imagePresenter.Children.Add(imageGrid);
+            imagePresenter.Children.Add(singleImage);
+
             var contentStack = new StackPanel
             {
                 Orientation = Orientation.Vertical,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Spacing = 3
             };
-
-            var image = new Image
-            {
-                Width = 80, Height = 80, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center
-            };
-            image.Bind(Image.SourceProperty, new Binding(nameof(PlaylistViewModel.RepresentativeThumbnail)));
-            RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
-            contentStack.Children.Add(image);
+            contentStack.Children.Add(imagePresenter);
 
             var nameBlock = new TextBlock
             {
-                FontSize = 12, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap,
-                MaxHeight = 30, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center,
+                FontSize = 12,
+                FontWeight = FontWeight.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+                MaxHeight = 30,
+                TextAlignment = TextAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 2, 0, 0)
             };
             nameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(PlaylistViewModel.Name)));
@@ -10624,17 +11036,25 @@ public class SharedViewTemplates
 
             var countBlock = new TextBlock
             {
-                FontSize = 10, Foreground = _theme.B_SecondaryTextColor, TextWrapping = TextWrapping.Wrap,
-                MaxHeight = 15, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center
+                FontSize = 10,
+                Foreground = _theme.B_SecondaryTextColor,
+                TextWrapping = TextWrapping.Wrap,
+                MaxHeight = 15,
+                TextAlignment = TextAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center
             };
             countBlock.Bind(TextBlock.TextProperty, new Binding(nameof(PlaylistViewModel.SongCount)) { StringFormat = "{0} songs" });
             contentStack.Children.Add(countBlock);
 
             return new Border
             {
-                Width = 120, Height = 150, Background = Brushes.Transparent,
-                Padding = new Thickness(5), Child = contentStack,
-                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
+                Width = 120,
+                Height = 150,
+                Background = Brushes.Transparent,
+                Padding = new Thickness(5),
+                Child = contentStack,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
             };
         }, supportsRecycling: true);
     }
@@ -10699,50 +11119,64 @@ public class SharedViewTemplates
 
         GridAlbumTemplate = new FuncDataTemplate<AlbumViewModel>((dataContext, nameScope) =>
         {
+            var imagePresenter = new Panel { Width = 80, Height = 80, HorizontalAlignment = HorizontalAlignment.Center };
+
+            // Composite 4-image grid
+            var imageGrid = new Grid
+            {
+                Width = 80,
+                Height = 80,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                ColumnDefinitions = new ColumnDefinitions("*,*"),
+                RowDefinitions = new RowDefinitions("*,*")
+            };
+            for (int i = 0; i < 4; i++)
+            {
+                var img = new Image { Width = 38, Height = 38, Stretch = Stretch.UniformToFill, Margin = new Thickness(1) };
+                img.Bind(Image.SourceProperty, new Binding($"SongThumbnailsForGrid[{i}]"));
+                RenderOptions.SetBitmapInterpolationMode(img, BitmapInterpolationMode.HighQuality);
+                Grid.SetRow(img, i / 2); Grid.SetColumn(img, i % 2);
+                imageGrid.Children.Add(img);
+            }
+            imageGrid.Bind(Visual.IsVisibleProperty, new MultiBinding
+            {
+                Converter = new GridViewImageVisibilityConverter { TargetType = GridViewImageType.Composite },
+                Bindings =
+                {
+                    new Binding(nameof(AlbumViewModel.SongThumbnailsForGrid)),
+                    new Binding("DataContext.Library.LibraryDisplayModeService.AlbumGridDisplayType")
+                    {
+                        RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+                    }
+                }
+            });
+
+            // Single representative image
+            var singleImage = new Image { Width = 80, Height = 80, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center };
+            singleImage.Bind(Image.SourceProperty, new Binding(nameof(AlbumViewModel.RepresentativeThumbnail)));
+            RenderOptions.SetBitmapInterpolationMode(singleImage, BitmapInterpolationMode.HighQuality);
+            singleImage.Bind(Visual.IsVisibleProperty, new MultiBinding
+            {
+                Converter = new GridViewImageVisibilityConverter { TargetType = GridViewImageType.Single },
+                Bindings =
+                {
+                    new Binding(nameof(AlbumViewModel.SongThumbnailsForGrid)),
+                    new Binding("DataContext.Library.LibraryDisplayModeService.AlbumGridDisplayType")
+                    {
+                        RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+                    }
+                }
+            });
+
+            imagePresenter.Children.Add(imageGrid);
+            imagePresenter.Children.Add(singleImage);
+
             var contentStack = new StackPanel
             {
                 Orientation = Orientation.Vertical,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Spacing = 3
             };
-
-            var imagePresenter = new Panel { Width = 80, Height = 80, HorizontalAlignment = HorizontalAlignment.Center };
-
-            if (dataContext is not null && dataContext.SongThumbnailsForGrid is not null && dataContext.SongThumbnailsForGrid.Count(t => t is not null) > 1)
-            {
-                var imageGrid = new Grid
-                {
-                    Width = 80,
-                    Height = 80,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    ColumnDefinitions = new ColumnDefinitions("*,*"),
-                    RowDefinitions = new RowDefinitions("*,*")
-                };
-
-                for (int i = 0; i < 4; i++)
-                {
-                    var img = new Image { Width = 38, Height = 38, Stretch = Stretch.UniformToFill, Margin = new Thickness(1) };
-                    img.Bind(Image.SourceProperty, new Binding($"SongThumbnailsForGrid[{i}]"));
-                    RenderOptions.SetBitmapInterpolationMode(img, BitmapInterpolationMode.HighQuality);
-                    Grid.SetRow(img, i / 2);
-                    Grid.SetColumn(img, i % 2);
-                    imageGrid.Children.Add(img);
-                }
-                imagePresenter.Children.Add(imageGrid);
-            }
-            else
-            {
-                var singleImage = new Image
-                {
-                    Width = 80,
-                    Height = 80,
-                    Stretch = Stretch.UniformToFill,
-                    HorizontalAlignment = HorizontalAlignment.Center
-                };
-                singleImage.Bind(Image.SourceProperty, new Binding(nameof(AlbumViewModel.RepresentativeThumbnail)));
-                RenderOptions.SetBitmapInterpolationMode(singleImage, BitmapInterpolationMode.HighQuality);
-                imagePresenter.Children.Add(singleImage);
-            }
             contentStack.Children.Add(imagePresenter);
 
             var albumTitleBlock = new TextBlock
@@ -11068,6 +11502,80 @@ public class SongItemTemplateProvider
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\SettingsWindowControls\AppearanceSettingsPanel.cs">
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Data;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Sonorize.Models;
+
+namespace Sonorize.Views.SettingsWindowControls;
+
+public static class AppearanceSettingsPanel
+{
+    public static StackPanel Create(ThemeColors theme)
+    {
+        var panel = new StackPanel { Spacing = 15 };
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Appearance",
+            FontSize = 18,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = theme.B_TextColor,
+            Margin = new Thickness(0, 0, 0, 5)
+        });
+
+        panel.Children.Add(CreateGridImageTypeSelector(theme, "Artist", "AppearanceSettings.IsArtistGridSingle", "AppearanceSettings.IsArtistGridComposite"));
+        panel.Children.Add(CreateGridImageTypeSelector(theme, "Album", "AppearanceSettings.IsAlbumGridSingle", "AppearanceSettings.IsAlbumGridComposite"));
+        panel.Children.Add(CreateGridImageTypeSelector(theme, "Playlist", "AppearanceSettings.IsPlaylistGridSingle", "AppearanceSettings.IsPlaylistGridComposite"));
+
+        return panel;
+    }
+
+    private static StackPanel CreateGridImageTypeSelector(ThemeColors theme, string label, string singleBindingPath, string compositeBindingPath)
+    {
+        var sectionPanel = new StackPanel { Spacing = 8 };
+
+        var title = new TextBlock
+        {
+            Text = $"{label} Grid Image Style",
+            FontSize = 14,
+            FontWeight = FontWeight.Normal,
+            Foreground = theme.B_TextColor,
+            Margin = new Thickness(0, 0, 0, 5)
+        };
+
+        var singleRadio = new RadioButton
+        {
+            Content = "Single Representative Image",
+            GroupName = $"{label}GridStyle",
+            Foreground = theme.B_TextColor
+        };
+        singleRadio.Bind(RadioButton.IsCheckedProperty, new Binding(singleBindingPath, BindingMode.TwoWay));
+
+        var compositeRadio = new RadioButton
+        {
+            Content = "4-Image Composite (if available)",
+            GroupName = $"{label}GridStyle",
+            Foreground = theme.B_TextColor
+        };
+        compositeRadio.Bind(RadioButton.IsCheckedProperty, new Binding(compositeBindingPath, BindingMode.TwoWay));
+
+        var radioPanel = new StackPanel { Orientation = Orientation.Vertical, Spacing = 5, Margin = new Thickness(10, 0, 0, 0) };
+        radioPanel.Children.Add(singleRadio);
+        radioPanel.Children.Add(compositeRadio);
+
+        sectionPanel.Children.Add(title);
+        sectionPanel.Children.Add(radioPanel);
+        sectionPanel.Children.Add(new Separator { Background = theme.B_ControlBackgroundColor, Margin = new Thickness(0, 5) });
+
+        return sectionPanel;
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\SettingsWindowControls\DirectoriesSettingsPanel.cs">
 using Avalonia;
 using Avalonia.Controls;
@@ -11300,12 +11808,16 @@ public static class SettingsMenuPanel
 
         var themeButton = new Button { Content = "Theme", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         themeButton.Bind(Button.CommandProperty, new Binding("ShowThemeSettingsCommand"));
+        
+        var appearanceButton = new Button { Content = "Appearance", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
+        appearanceButton.Bind(Button.CommandProperty, new Binding("ShowAppearanceSettingsCommand"));
 
         var scrobblingButton = new Button { Content = "Scrobbling", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         scrobblingButton.Bind(Button.CommandProperty, new Binding("ShowScrobblingSettingsCommand"));
 
         menuStackPanel.Children.Add(directoriesButton);
         menuStackPanel.Children.Add(themeButton);
+        menuStackPanel.Children.Add(appearanceButton);
         menuStackPanel.Children.Add(scrobblingButton);
 
         var menuBorder = new Border

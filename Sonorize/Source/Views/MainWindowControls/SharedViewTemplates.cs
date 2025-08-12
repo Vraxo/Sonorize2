@@ -72,9 +72,15 @@ public class SharedViewTemplates
             }
             Grid.SetColumn(imageGrid, 0); itemGrid.Children.Add(imageGrid);
 
+            var iconAndNamePanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+            var icon = new TextBlock { FontSize = 14, Text = "✨", VerticalAlignment = VerticalAlignment.Center };
+            icon.Bind(Visual.IsVisibleProperty, new Binding(nameof(PlaylistViewModel.IsAutoPlaylist)));
             var nameBlock = new TextBlock { FontSize = 14, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center };
             nameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(PlaylistViewModel.Name)));
-            Grid.SetColumn(nameBlock, 1); itemGrid.Children.Add(nameBlock);
+            iconAndNamePanel.Children.Add(icon);
+            iconAndNamePanel.Children.Add(nameBlock);
+            Grid.SetColumn(iconAndNamePanel, 1);
+            itemGrid.Children.Add(iconAndNamePanel);
 
             var countBlock = new TextBlock { FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
             countBlock.Bind(TextBlock.TextProperty, new Binding(nameof(PlaylistViewModel.SongCount)) { StringFormat = "{0} songs" });
@@ -85,13 +91,16 @@ public class SharedViewTemplates
 
         CompactPlaylistTemplate = new FuncDataTemplate<PlaylistViewModel>((dataContext, nameScope) =>
         {
+            var icon = new TextBlock { FontSize = 12, Text = "✨", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 5, 0) };
+            icon.Bind(Visual.IsVisibleProperty, new Binding(nameof(PlaylistViewModel.IsAutoPlaylist)));
+
             var nameBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
             nameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(PlaylistViewModel.Name)));
 
             var countBlock = new TextBlock { FontSize = 11, Foreground = _theme.B_SecondaryTextColor, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(5, 0, 0, 0) };
             countBlock.Bind(TextBlock.TextProperty, new Binding(nameof(PlaylistViewModel.SongCount)) { StringFormat = " - {0} songs" });
 
-            var panel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { nameBlock, countBlock } };
+            var panel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { icon, nameBlock, countBlock } };
             return new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = panel };
         }, supportsRecycling: true);
 
@@ -157,6 +166,9 @@ public class SharedViewTemplates
             };
             contentStack.Children.Add(imagePresenter);
 
+            var namePanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 2, 0, 0) };
+            var icon = new TextBlock { FontSize = 12, Text = "✨", VerticalAlignment = VerticalAlignment.Center };
+            icon.Bind(Visual.IsVisibleProperty, new Binding(nameof(PlaylistViewModel.IsAutoPlaylist)));
             var nameBlock = new TextBlock
             {
                 FontSize = 12,
@@ -164,11 +176,12 @@ public class SharedViewTemplates
                 TextWrapping = TextWrapping.Wrap,
                 MaxHeight = 30,
                 TextAlignment = TextAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 2, 0, 0)
+                HorizontalAlignment = HorizontalAlignment.Center
             };
             nameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(PlaylistViewModel.Name)));
-            contentStack.Children.Add(nameBlock);
+            namePanel.Children.Add(icon);
+            namePanel.Children.Add(nameBlock);
+            contentStack.Children.Add(namePanel);
 
             var countBlock = new TextBlock
             {

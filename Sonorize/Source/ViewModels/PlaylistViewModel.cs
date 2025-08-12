@@ -13,6 +13,7 @@ public class PlaylistViewModel : ViewModelBase
 
     public string Name => PlaylistModel.Name;
     public int SongCount => PlaylistModel.Songs.Count;
+    public bool IsAutoPlaylist => PlaylistModel.IsAutoPlaylist;
 
     public List<Bitmap?> SongThumbnailsForGrid
     {

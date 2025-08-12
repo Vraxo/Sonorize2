@@ -62,6 +62,16 @@ public class SongFactory
             Debug.WriteLine($"[SongFactory] Error reading tags for \"{Path.GetFileName(filePath)}\": {ex.Message}. Song will use defaults.");
         }
 
+        try
+        {
+            song.DateAdded = new FileInfo(filePath).CreationTimeUtc;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[SongFactory] Could not read file creation time for {Path.GetFileName(filePath)}: {ex.Message}. Using current time as fallback.");
+            song.DateAdded = DateTime.UtcNow;
+        }
+
         var storedLoopData = _loopDataService.GetLoop(song.FilePath);
         if (storedLoopData is not null)
         {

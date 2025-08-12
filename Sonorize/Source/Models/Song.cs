@@ -45,6 +45,8 @@ public class Song : ViewModelBase
         set => SetProperty(ref field, value);
     }
 
+    public DateTime DateAdded { get; set; }
+
     public LoopRegion? SavedLoop
     {
         get;
