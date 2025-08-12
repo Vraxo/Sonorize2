@@ -13,6 +13,7 @@ public enum RepeatMode { None, PlayOnce, RepeatOne, RepeatAll }
 public class PlaybackViewModel : ViewModelBase, IDisposable
 {
     private readonly PlaybackService _playbackService;
+    private bool _isUserDraggingSlider;
 
     public WaveformDisplayViewModel WaveformDisplay { get; }
     public PlaybackModeViewModel ModeControls { get; }
@@ -22,22 +23,28 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
     public Song? CurrentSong => _playbackService.CurrentSong;
     public bool HasCurrentSong => _playbackService.CurrentSong != null;
     public TimeSpan CurrentPosition => _playbackService.CurrentPosition;
-    public double CurrentPositionSeconds
-    {
-        get => _playbackService.CurrentPosition.TotalSeconds;
-        set
-        {
-            if (_playbackService.CurrentSong == null || Math.Abs(_playbackService.CurrentPosition.TotalSeconds - value) <= 0.01)
-            {
-                return;
-            }
-            _playbackService.Seek(TimeSpan.FromSeconds(value));
-        }
-    }
+    public double CurrentPositionSeconds => _playbackService.CurrentPosition.TotalSeconds;
     public TimeSpan CurrentSongDuration => _playbackService.CurrentSongDuration;
     public double CurrentSongDurationSeconds => _playbackService.CurrentSongDurationSeconds;
     public PlaybackStateStatus CurrentPlaybackStatus => _playbackService.CurrentPlaybackStatus;
     public bool IsPlaying => _playbackService.IsPlaying;
+
+    private double _sliderPosition;
+    public double SliderPosition
+    {
+        get => _sliderPosition;
+        set
+        {
+            // This is only set by the slider or the timer update.
+            // The check prevents feedback loops if SetProperty is called from the timer
+            // with the same value that the slider already has.
+            if (Math.Abs(_sliderPosition - value) > 0.001)
+            {
+                SetProperty(ref _sliderPosition, value);
+            }
+        }
+    }
+
 
     public string CurrentTimeDisplay => _playbackService.CurrentSong != null ? $"{_playbackService.CurrentPosition:mm\\:ss}" : "--:--";
     public string TotalTimeDisplay => (_playbackService.CurrentSong != null && _playbackService.CurrentSongDuration.TotalSeconds > 0)
@@ -88,9 +95,14 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
                     OnPropertyChanged(nameof(HasCurrentSong));
                     OnPropertyChanged(nameof(CurrentTimeDisplay));
                     OnPropertyChanged(nameof(TotalTimeDisplay));
+                    UpdateAllDisplayProperties();
                     commandStateMayChange = true;
                     break;
                 case nameof(PlaybackService.CurrentPosition):
+                    if (!_isUserDraggingSlider)
+                    {
+                        SliderPosition = _playbackService.CurrentPosition.TotalSeconds;
+                    }
                     OnPropertyChanged(nameof(CurrentPosition));
                     OnPropertyChanged(nameof(CurrentPositionSeconds));
                     OnPropertyChanged(nameof(CurrentTimeDisplay));
@@ -126,6 +138,7 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(CurrentSongDurationSeconds));
         OnPropertyChanged(nameof(CurrentPlaybackStatus));
         OnPropertyChanged(nameof(IsPlaying));
+        SliderPosition = _playbackService.CurrentPosition.TotalSeconds;
     }
 
     private void WaveformDisplay_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -165,6 +178,22 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
             case nameof(HasCurrentSong):
                 ModeControls.RaiseCommandCanExecuteChanged();
                 break;
+        }
+    }
+
+    public void BeginSliderDrag()
+    {
+        _isUserDraggingSlider = true;
+        Debug.WriteLine("[PlaybackVM] Begin slider drag");
+    }
+
+    public void CompleteSliderDrag()
+    {
+        if (_isUserDraggingSlider)
+        {
+            _isUserDraggingSlider = false;
+            Debug.WriteLine($"[PlaybackVM] Slider drag complete. Seeking to: {SliderPosition}");
+            _playbackService.Seek(TimeSpan.FromSeconds(SliderPosition));
         }
     }
 

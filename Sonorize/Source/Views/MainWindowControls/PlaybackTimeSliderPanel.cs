@@ -7,7 +7,9 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.VisualTree;
 using Sonorize.Models; // For ThemeColors
+using Sonorize.ViewModels;
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -73,28 +75,72 @@ public static class PlaybackTimeSliderPanel
             }
         });
 
+        // Handle clicking directly on the track (not the thumb)
         mainPlaybackSlider.PointerPressed += (sender, e) =>
         {
-            if (sender is not Slider slider) return;
+            if (sender is not Slider slider || slider.DataContext is not MainWindowViewModel { Playback: { } playbackVM }) return;
+
+            // This logic is for when the user clicks on the track to jump to a position.
+            // The thumb drag is handled by DragStarted/DragCompleted.
+            var thumb = slider.FindDescendantOfType<Thumb>();
+            if (thumb != null && thumb.IsPointerOver)
+            {
+                // Pointer is over the thumb, let the thumb's drag events handle this.
+                return;
+            }
+
+            playbackVM.BeginSliderDrag();
 
             var point = e.GetCurrentPoint(slider);
             if (point.Properties.IsLeftButtonPressed)
             {
-                var position = point.Position;
                 var bounds = slider.Bounds;
                 if (bounds.Width > 0)
                 {
-                    var ratio = Math.Clamp(position.X / bounds.Width, 0, 1);
+                    var ratio = Math.Clamp(point.Position.X / bounds.Width, 0, 1);
                     var newValue = slider.Minimum + (ratio * (slider.Maximum - slider.Minimum));
-                    slider.Value = newValue;
+                    slider.Value = newValue; // This updates SliderPosition via TwoWay binding
                     e.Handled = true;
                 }
             }
         };
 
+        // This handles the release from a track click.
+        mainPlaybackSlider.PointerReleased += (sender, e) =>
+        {
+            if (sender is not Slider slider || slider.DataContext is not MainWindowViewModel { Playback: { } playbackVM }) return;
+
+            var thumb = slider.FindDescendantOfType<Thumb>();
+            if (thumb != null && thumb.IsPointerOver)
+            {
+                // Pointer is over the thumb, let the thumb's drag events handle this.
+                return;
+            }
+
+            playbackVM.CompleteSliderDrag();
+            e.Handled = true;
+        };
+
+        // Add handlers specifically for the Thumb's drag operations
+        mainPlaybackSlider.AddHandler(Thumb.DragStartedEvent, (s, e) =>
+        {
+            if (s is Slider { DataContext: MainWindowViewModel { Playback: { } playbackVM } })
+            {
+                playbackVM.BeginSliderDrag();
+            }
+        });
+
+        mainPlaybackSlider.AddHandler(Thumb.DragCompletedEvent, (s, e) =>
+        {
+            if (s is Slider { DataContext: MainWindowViewModel { Playback: { } playbackVM } })
+            {
+                playbackVM.CompleteSliderDrag();
+            }
+        });
+
 
         mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("Playback.CurrentSongDurationSeconds"));
-        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("Playback.CurrentPositionSeconds", BindingMode.TwoWay));
+        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("Playback.SliderPosition", BindingMode.TwoWay));
         mainPlaybackSlider.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
         var timeSliderGrid = new Grid
