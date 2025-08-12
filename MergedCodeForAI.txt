@@ -424,7 +424,7 @@ public class EnumToBooleanConverter : IValueConverter
 
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
-        return value != null && parameter != null && value.Equals(parameter);
+        return value is not null && parameter is not null && value.Equals(parameter);
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
@@ -449,7 +449,7 @@ public class NotNullToBooleanConverter : IValueConverter
 
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
-        return value != null;
+        return value is not null;
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
@@ -532,6 +532,7 @@ public class AppSettings
     public string LibraryViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
     public string ArtistViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
     public string AlbumViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
+    public string PlaylistViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
 
     // Last.fm Settings
     public bool LastfmScrobblingEnabled { get; set; } = false;
@@ -561,6 +562,19 @@ using System;
 namespace Sonorize.Models;
 
 public record LoopStorageData(TimeSpan Start, TimeSpan End, bool IsActive);
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Models\Playlist.cs">
+using System.Collections.Generic;
+
+namespace Sonorize.Models;
+
+public class Playlist
+{
+    public string Name { get; set; } = "Unknown Playlist";
+    public string FilePath { get; set; } = string.Empty;
+    public List<Song> Songs { get; set; } = new();
+}
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Models\ScrobbleThresholds.cs">
@@ -860,7 +874,7 @@ public class LastfmAuthenticatorService
         {
             // Callers ensure LastfmUsername and LastfmPassword are not null/empty
             var response = await auth.GetSessionTokenAsync(settings.LastfmUsername!, settings.LastfmPassword!);
-            if (response.Success && auth.Authenticated && auth.UserSession != null)
+            if (response.Success && auth.Authenticated && auth.UserSession is not null)
             {
                 var session = auth.UserSession;
                 settings.LastfmSessionKey = session.Token;
@@ -905,7 +919,7 @@ public class LastfmAuthenticatorService
             !string.IsNullOrEmpty(currentSettings.LastfmPassword))
         {
             var client = await TryAuthenticateWithCredentialsAsync(currentSettings);
-            if (client != null)
+            if (client is not null)
             {
                 return client;
             }
@@ -980,12 +994,12 @@ public class LibraryPlaybackLinkService : IDisposable
         {
             Debug.WriteLine($"[LibraryPlaybackLinkService] Library.SelectedSong changed to: {_libraryViewModel.SelectedSong?.Title ?? "null"}. Instance: {_libraryViewModel.SelectedSong?.GetHashCode() ?? 0}");
 
-            if (_libraryViewModel.SelectedSong != null && _playbackService.CurrentSong != _libraryViewModel.SelectedSong)
+            if (_libraryViewModel.SelectedSong is not null && _playbackService.CurrentSong != _libraryViewModel.SelectedSong)
             {
                 Debug.WriteLine($"[LibraryPlaybackLinkService] Library.SelectedSong changed to a *different* song ({_libraryViewModel.SelectedSong.Title}) than PlaybackService.CurrentSong ({_playbackService.CurrentSong?.Title ?? "null"}). Calling PlaybackService.Play().");
                 _playbackService.Play(_libraryViewModel.SelectedSong);
             }
-            else if (_libraryViewModel.SelectedSong != null && _playbackService.CurrentSong == _libraryViewModel.SelectedSong)
+            else if (_libraryViewModel.SelectedSong is not null && _playbackService.CurrentSong == _libraryViewModel.SelectedSong)
             {
                 Debug.WriteLine($"[LibraryPlaybackLinkService] Library.SelectedSong changed but is the SAME song instance as PlaybackService.CurrentSong ({_libraryViewModel.SelectedSong.Title}). No Play call needed here.");
             }
@@ -1074,7 +1088,7 @@ public class LoopDataMigrator
         {
             Debug.WriteLine($"[LoopDataMigrator] Could not deserialize or migrate loop entry for {Path.GetFileName(filePathKey)} into a known format.");
         }
-        return loopData != null;
+        return loopData is not null;
     }
 
     private static bool TryDeserializeCurrentFormat(JsonElement jsonData, out LoopStorageData? loopData)
@@ -1085,7 +1099,7 @@ public class LoopDataMigrator
         // If Deserialize<T> can return null without an exception for certain inputs,
         // that case would also result in `loopData` being null.
         loopData = jsonData.Deserialize<LoopStorageData>();
-        if (loopData != null)
+        if (loopData is not null)
         {
             // Successfully deserialized to current format
             return true;
@@ -1179,11 +1193,11 @@ public class LoopDataService
                     var tempStore = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
                     _loopDataStore = new Dictionary<string, LoopStorageData>();
 
-                    if (tempStore != null)
+                    if (tempStore is not null)
                     {
                         foreach (var kvp in tempStore)
                         {
-                            if (LoopDataMigrator.TryProcessEntry(kvp.Key, kvp.Value, out LoopStorageData? processedData) && processedData != null)
+                            if (LoopDataMigrator.TryProcessEntry(kvp.Key, kvp.Value, out LoopStorageData? processedData) && processedData is not null)
                             {
                                 _loopDataStore[kvp.Key] = processedData;
                             }
@@ -1414,6 +1428,8 @@ public class MusicDirectoryScanner
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using Sonorize.Models;
@@ -1425,7 +1441,8 @@ public class MusicLibraryService
     private readonly LoopDataService _loopDataService;
     private readonly ThumbnailService _thumbnailService;
     private readonly SongFactory _songFactory;
-    private readonly MusicDirectoryScanner _directoryScanner; // Added MusicDirectoryScanner
+    private readonly MusicDirectoryScanner _directoryScanner;
+    private readonly PlaylistParserService _playlistParserService = new();
 
     public event Action<Song>? SongThumbnailUpdated;
 
@@ -1458,11 +1475,51 @@ public class MusicLibraryService
         Debug.WriteLine("[MusicLibService] LoadMusicFromDirectoriesAsync delegation completed.");
     }
 
+    public async Task<List<Playlist>> LoadPlaylistsAsync(IEnumerable<string> directories, IEnumerable<Song> allSongs)
+    {
+        return await Task.Run(() =>
+        {
+            var playlists = new List<Playlist>();
+            var allSongsLookup = allSongs.ToDictionary(s => s.FilePath, StringComparer.OrdinalIgnoreCase);
+
+            if (!allSongsLookup.Any())
+            {
+                Debug.WriteLine("[MusicLibService] No songs loaded, skipping playlist scan.");
+                return playlists;
+            }
+
+            foreach (var dir in directories)
+            {
+                if (Directory.Exists(dir))
+                {
+                    try
+                    {
+                        var m3uFiles = Directory.EnumerateFiles(dir, "*.m3u", SearchOption.AllDirectories);
+                        foreach (var m3uFile in m3uFiles)
+                        {
+                            var playlist = _playlistParserService.Parse(m3uFile, allSongsLookup);
+                            if (playlist.Songs.Any())
+                            {
+                                playlists.Add(playlist);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"[MusicLibService] Error scanning for playlists in '{dir}': {ex.Message}");
+                    }
+                }
+            }
+            Debug.WriteLine($"[MusicLibService] Found {playlists.Count} playlists with songs.");
+            return playlists.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        });
+    }
+
     // Callback for when ThumbnailService has processed a thumbnail (called by MusicDirectoryScanner via ThumbnailService)
     private void HandleThumbnailReady(Song song, Bitmap? loadedThumbnail)
     {
         // This callback is invoked on the UI thread by ThumbnailService
-        if (loadedThumbnail != null)
+        if (loadedThumbnail is not null)
         {
             song.Thumbnail = loadedThumbnail;
         }
@@ -1638,6 +1695,70 @@ public class NextTrackSelectorService(Random shuffleRandom)
         }
 
         return nextSong;
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\PlaylistParserService.cs">
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using Sonorize.Models;
+
+namespace Sonorize.Services;
+
+public class PlaylistParserService
+{
+    public Playlist Parse(string m3uFilePath, IReadOnlyDictionary<string, Song> allSongsLookup)
+    {
+        var playlist = new Playlist
+        {
+            Name = Path.GetFileNameWithoutExtension(m3uFilePath),
+            FilePath = m3uFilePath
+        };
+
+        try
+        {
+            var m3uDirectory = Path.GetDirectoryName(m3uFilePath);
+            var songPaths = File.ReadAllLines(m3uFilePath)
+                                .Select(line => line.Trim())
+                                .Where(line => !string.IsNullOrEmpty(line) && !line.StartsWith('#'));
+
+            foreach (var songPath in songPaths)
+            {
+                string absolutePath;
+                if (Path.IsPathRooted(songPath))
+                {
+                    absolutePath = Path.GetFullPath(songPath);
+                }
+                else if (m3uDirectory is not null)
+                {
+                    absolutePath = Path.GetFullPath(Path.Combine(m3uDirectory, songPath));
+                }
+                else
+                {
+                    Debug.WriteLine($"[PlaylistParser] Cannot resolve relative path for '{songPath}' in playlist '{m3uFilePath}' as M3U directory is null.");
+                    continue;
+                }
+
+                if (allSongsLookup.TryGetValue(absolutePath, out var song))
+                {
+                    playlist.Songs.Add(song);
+                }
+                else
+                {
+                    Debug.WriteLine($"[PlaylistParser] FAILED LOOKUP: Song from playlist '{playlist.Name}' not found in library. Path: '{absolutePath}'");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[PlaylistParser] Error parsing playlist file '{m3uFilePath}': {ex.Message}");
+        }
+
+        return playlist;
     }
 }
 </file>
@@ -1941,7 +2062,7 @@ public class SongEditInteractionService
         // Use PlaybackResourceInterlockService to prepare for editing
         previousPlaybackState = _playbackResourceInterlock.PrepareForExternalOperation(songToEdit);
 
-        if (previousPlaybackState == null && _playbackResourceInterlock.PrepareForExternalOperation(songToEdit) != null) // Check if the song was the one playing
+        if (previousPlaybackState == null && _playbackResourceInterlock.PrepareForExternalOperation(songToEdit) is not null) // Check if the song was the one playing
         {
             // This case implies the song *was* current, but PrepareForExternalOperation failed to return state (should not happen if song matches)
             // Or, more likely, if the songToEdit was NOT the current song, previousPlaybackState would be null.
@@ -2084,7 +2205,7 @@ public class SongFactory
         }
 
         var storedLoopData = _loopDataService.GetLoop(song.FilePath);
-        if (storedLoopData != null)
+        if (storedLoopData is not null)
         {
             song.SavedLoop = new LoopRegion(storedLoopData.Start, storedLoopData.End);
             song.IsLoopActive = storedLoopData.IsActive;
@@ -2169,7 +2290,7 @@ public class SongLoopService
         song.IsLoopActive = isActive; // This will raise PropertyChanged on the Song model
 
         // Persist only if a loop actually exists
-        if (song.SavedLoop != null)
+        if (song.SavedLoop is not null)
         {
             _loopDataService.UpdateLoopActiveState(song.FilePath, isActive);
             Debug.WriteLine($"[SongLoopService] Loop active state for {song.Title} set to {isActive} and persisted.");
@@ -2222,7 +2343,7 @@ public class SongMetadataService
                 tagFile.Tag.Album = song.Album;
 
                 // Handle Thumbnail
-                if (song.Thumbnail != null)
+                if (song.Thumbnail is not null)
                 {
                     using var ms = new MemoryStream();
                     // Save the Avalonia Bitmap to a stream (defaults to PNG format)
@@ -2347,7 +2468,7 @@ public class ThemeService
             {
                 var json = File.ReadAllText(filePath);
                 var theme = JsonSerializer.Deserialize<ThemeColors>(json);
-                if (theme != null)
+                if (theme is not null)
                 {
                     Debug.WriteLine($"[ThemeService] Theme '{themeFileName}' loaded successfully.");
                     return theme;
@@ -2391,7 +2512,7 @@ public class ThemeService
         }
         return Directory.GetFiles(_themesDirectory, "*.json")
                         .Select(Path.GetFileName)
-                        .Where(f => f != null) // Path.GetFileName can return null
+                        .Where(f => f is not null) // Path.GetFileName can return null
                         .ToList()!; // Non-null asserted as we filter nulls
     }
 }
@@ -2914,7 +3035,7 @@ public class AdvancedPanelViewModel : ViewModelBase
     {
         _playbackViewModel.PropertyChanged -= OnDependentViewModelPropertyChanged;
         _libraryViewModel.PropertyChanged -= OnDependentViewModelPropertyChanged;
-        if (_playbackViewModel?.WaveformDisplay != null)
+        if (_playbackViewModel?.WaveformDisplay is not null)
         {
             _playbackViewModel.WaveformDisplay.PropertyChanged -= WaveformDisplay_PropertyChanged;
         }
@@ -3267,7 +3388,7 @@ public class LastfmSettingsViewModel : ViewModelBase
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LibraryViewModel.cs">
 using System;
 using System.Collections.ObjectModel;
-using System.ComponentModel; // Required for PropertyChangedEventArgs
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -3286,34 +3407,21 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     private readonly LibraryDisplayModeService _displayModeService;
     private readonly TrackNavigationManager _trackNavigationManager;
     private readonly LibraryComponentProvider _components;
-    private readonly LibraryLoadProcess _libraryLoadProcess; // New field
+    private readonly LibraryLoadProcess _libraryLoadProcess;
 
-    // Proxied properties using _components
     public LibraryGroupingsViewModel Groupings => _components.Groupings;
     public ObservableCollection<Song> FilteredSongs => _components.SongList.FilteredSongs;
     public LibraryFilterStateManager FilterState => _components.FilterState;
-
-    public Song? SelectedSong
-    {
-        get => _components.SongList.SelectedSong;
-        set
-        {
-            if (_components.SongList.SelectedSong != value)
-            {
-                _components.SongList.SelectedSong = value;
-                OnPropertyChanged(); // Notify that LibraryViewModel.SelectedSong has changed
-                _trackNavigationManager.UpdateSelectedSong(value);
-                (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged();
-                Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"} (via SongListManager)");
-            }
-        }
-    }
 
     public ICommand SetDisplayModeCommand => _displayModeService.SetDisplayModeCommand;
     public ICommand PreviousTrackCommand => _trackNavigationManager.PreviousTrackCommand;
     public ICommand NextTrackCommand => _trackNavigationManager.NextTrackCommand;
     public ICommand EditSongMetadataCommand { get; }
 
+    public SongDisplayMode LibraryViewMode => _displayModeService.LibraryViewMode;
+    public SongDisplayMode ArtistViewMode => _displayModeService.ArtistViewMode;
+    public SongDisplayMode AlbumViewMode => _displayModeService.AlbumViewMode;
+    public SongDisplayMode PlaylistViewMode => _displayModeService.PlaylistViewMode;
 
     public bool IsLoadingLibrary
     {
@@ -3332,15 +3440,32 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
     public string LibraryStatusText
     {
-        get => _libraryStatusText;
-        private set => SetProperty(ref _libraryStatusText, value);
+        get;
+
+        private set
+        {
+            SetProperty(ref field, value);
+        }
+    } = "";
+
+    public Song? SelectedSong
+    {
+        get => _components.SongList.SelectedSong;
+        set
+        {
+            if (_components.SongList.SelectedSong == value)
+            {
+                return;
+            }
+
+            _components.SongList.SelectedSong = value;
+            OnPropertyChanged();
+            _trackNavigationManager.UpdateSelectedSong(value);
+            (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged();
+
+            Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"} (via SongListManager)");
+        }
     }
-    private string _libraryStatusText = "";
-
-
-    public SongDisplayMode LibraryViewMode => _displayModeService.LibraryViewMode;
-    public SongDisplayMode ArtistViewMode => _displayModeService.ArtistViewMode;
-    public SongDisplayMode AlbumViewMode => _displayModeService.AlbumViewMode;
 
     public LibraryViewModel(
         MainWindowViewModel parentViewModel,
@@ -3395,7 +3520,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         }
     }
 
-
     private void DisplayModeService_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         switch (e.PropertyName)
@@ -3408,6 +3532,9 @@ public class LibraryViewModel : ViewModelBase, IDisposable
                 break;
             case nameof(LibraryDisplayModeService.AlbumViewMode):
                 OnPropertyChanged(nameof(AlbumViewMode));
+                break;
+            case nameof(LibraryDisplayModeService.PlaylistViewMode):
+                OnPropertyChanged(nameof(PlaylistViewMode));
                 break;
         }
     }
@@ -3435,7 +3562,8 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         _components.SongList.ApplyFilter(
             _components.FilterState.SearchQuery,
             _components.FilterState.SelectedArtist,
-            _components.FilterState.SelectedAlbum);
+            _components.FilterState.SelectedAlbum,
+            _components.FilterState.SelectedPlaylist);
 
         _trackNavigationManager.UpdateSelectedSong(_components.SongList.SelectedSong);
         UpdateStatusBarText();
@@ -3443,36 +3571,39 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
     public void UpdateStatusBarText()
     {
-        if (!IsLoadingLibrary)
+        if (IsLoadingLibrary)
         {
-            LibraryStatusText = _components.StatusTextGenerator.GenerateStatusText(
-                IsLoadingLibrary,
-                _components.SongList.AllSongsCount,
-                FilteredSongs.Count,
-                _components.FilterState.SelectedArtist,
-                _components.FilterState.SelectedAlbum,
-                _components.FilterState.SearchQuery,
-                _settingsService
-            );
+            return;
         }
+
+        LibraryStatusText = _components.StatusTextGenerator.GenerateStatusText(
+            IsLoadingLibrary,
+            _components.SongList.AllSongsCount,
+            FilteredSongs.Count,
+            _components.FilterState.SelectedArtist,
+            _components.FilterState.SelectedAlbum,
+            _components.FilterState.SelectedPlaylist,
+            _components.FilterState.SearchQuery,
+            _settingsService
+        );
     }
 
     private void ExecuteEditSongMetadata(object? parameter)
     {
-        if (parameter is Song song && _parentViewModel.OpenEditSongMetadataDialogCommand.CanExecute(song))
-        {
-            Debug.WriteLine($"[LibraryVM] Delegating Edit metadata for: {song.Title} to MainWindowViewModel.");
-            _parentViewModel.OpenEditSongMetadataDialogCommand.Execute(song);
-        }
-        else
+        if (parameter is not Song song || !_parentViewModel.OpenEditSongMetadataDialogCommand.CanExecute(song))
         {
             Debug.WriteLine($"[LibraryVM] Edit metadata requested but parameter is not a Song or parent command cannot execute.");
+            return;
         }
+        
+        Debug.WriteLine($"[LibraryVM] Delegating Edit metadata for: {song.Title} to MainWindowViewModel.");
+        _parentViewModel.OpenEditSongMetadataDialogCommand.Execute(song);
     }
 
     private bool CanExecuteEditSongMetadata(object? parameter)
     {
-        return parameter is Song && _parentViewModel.OpenEditSongMetadataDialogCommand.CanExecute(parameter);
+        return parameter is Song 
+            && _parentViewModel.OpenEditSongMetadataDialogCommand.CanExecute(parameter);
     }
 
 
@@ -3483,20 +3614,23 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
-        if (_musicLibraryService != null)
+        if (_musicLibraryService is not null)
         {
             _musicLibraryService.SongThumbnailUpdated -= MusicLibraryService_SongThumbnailUpdated;
         }
-        if (_displayModeService != null)
+
+        if (_displayModeService is not null)
         {
             _displayModeService.PropertyChanged -= DisplayModeService_PropertyChanged;
         }
-        if (_components?.FilterState != null)
+
+        if (_components?.FilterState is not null)
         {
             _components.FilterState.FilterCriteriaChanged -= (s, e) => ApplyFilter();
             _components.FilterState.RequestTabSwitchToLibrary -= (s, e) => _parentViewModel.ActiveTabIndex = 0;
         }
-        if (_components?.SongList != null)
+
+        if (_components?.SongList is not null)
         {
             _components.SongList.PropertyChanged -= SongListManager_PropertyChanged;
         }
@@ -3704,7 +3838,7 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
 
     // Properties directly from PlaybackService or managed by this ViewModel
     public Song? CurrentSong => _playbackService.CurrentSong;
-    public bool HasCurrentSong => _playbackService.CurrentSong != null;
+    public bool HasCurrentSong => _playbackService.CurrentSong is not null;
     public TimeSpan CurrentPosition => _playbackService.CurrentPosition;
     public double CurrentPositionSeconds => _playbackService.CurrentPosition.TotalSeconds;
     public TimeSpan CurrentSongDuration => _playbackService.CurrentSongDuration;
@@ -3729,8 +3863,8 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
     }
 
 
-    public string CurrentTimeDisplay => _playbackService.CurrentSong != null ? $"{_playbackService.CurrentPosition:mm\\:ss}" : "--:--";
-    public string TotalTimeDisplay => (_playbackService.CurrentSong != null && _playbackService.CurrentSongDuration.TotalSeconds > 0)
+    public string CurrentTimeDisplay => _playbackService.CurrentSong is not null ? $"{_playbackService.CurrentPosition:mm\\:ss}" : "--:--";
+    public string TotalTimeDisplay => (_playbackService.CurrentSong is not null && _playbackService.CurrentSongDuration.TotalSeconds > 0)
             ? $"{_playbackService.CurrentSongDuration:mm\\:ss}"
             : "--:--";
 
@@ -3747,7 +3881,7 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
 
         PlayPauseResumeCommand = new RelayCommand(
             _ => TogglePlayPauseResume(),
-            _ => CurrentSong != null && !WaveformDisplay.IsWaveformLoading);
+            _ => CurrentSong is not null && !WaveformDisplay.IsWaveformLoading);
 
         SeekCommand = new RelayCommand(
             positionSecondsObj =>
@@ -3757,7 +3891,7 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
                     _playbackService.Seek(TimeSpan.FromSeconds(seconds));
                 }
             },
-             _ => CurrentSong != null && CurrentSongDuration.TotalSeconds > 0 && !WaveformDisplay.IsWaveformLoading);
+             _ => CurrentSong is not null && CurrentSongDuration.TotalSeconds > 0 && !WaveformDisplay.IsWaveformLoading);
 
         _playbackService.PropertyChanged += PlaybackService_PropertyChanged;
         UpdateAllDisplayProperties(); // Initial sync
@@ -3844,7 +3978,7 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
         {
             _playbackService.Resume();
         }
-        else if (CurrentPlaybackStatus == PlaybackStateStatus.Stopped && CurrentSong != null)
+        else if (CurrentPlaybackStatus == PlaybackStateStatus.Stopped && CurrentSong is not null)
         {
             _playbackService.Resume();
         }
@@ -3892,12 +4026,49 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
         _playbackService.PropertyChanged -= PlaybackService_PropertyChanged;
         PropertyChanged -= PlaybackViewModel_PropertyChanged;
 
-        if (WaveformDisplay != null)
+        if (WaveformDisplay is not null)
         {
             WaveformDisplay.PropertyChanged -= WaveformDisplay_PropertyChanged;
             // If WaveformDisplay implements IDisposable, call it
         }
         ModeControls?.Dispose();
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\PlaylistViewModel.cs">
+using System.Collections.Generic;
+using System.Linq;
+using Avalonia.Media.Imaging;
+using Sonorize.Models;
+
+namespace Sonorize.ViewModels;
+
+public class PlaylistViewModel : ViewModelBase
+{
+    public string Name => PlaylistModel.Name;
+    public int SongCount => PlaylistModel.Songs.Count;
+    public Playlist PlaylistModel { get; }
+    public List<Bitmap?> SongThumbnailsForGrid { get; } = new(new Bitmap?[4]);
+    public Bitmap? RepresentativeThumbnail { get; }
+
+    public PlaylistViewModel(Playlist playlist, Bitmap? defaultIcon)
+    {
+        PlaylistModel = playlist;
+
+        List<Bitmap?> distinctSongThumbs = playlist.Songs
+            .Where(s => s.Thumbnail is not null)
+            .Select(s => s.Thumbnail)
+            .Distinct()
+            .Take(4)
+            .ToList();
+
+        for (int i = 0; i < distinctSongThumbs.Count; i++)
+        {
+            SongThumbnailsForGrid[i] = distinctSongThumbs[i];
+        }
+
+        RepresentativeThumbnail = SongThumbnailsForGrid.FirstOrDefault(t => t is not null) ?? defaultIcon;
     }
 }
 </file>
@@ -4067,7 +4238,7 @@ public class SongMetadataEditorViewModel : ViewModelBase
             if (result.Count > 0)
             {
                 var selectedFile = result.FirstOrDefault();
-                if (selectedFile != null)
+                if (selectedFile is not null)
                 {
                     try
                     {
@@ -4122,7 +4293,7 @@ public static class StatusBarTextProvider
 
     private static string GetLoopStatusString(LoopEditorViewModel loopEditorViewModel, Song? currentSong)
     {
-        if (loopEditorViewModel.ActiveLoop.IsLoopActive && currentSong?.SavedLoop != null)
+        if (loopEditorViewModel.ActiveLoop.IsLoopActive && currentSong?.SavedLoop is not null)
         {
             return " (Loop Active)";
         }
@@ -4245,7 +4416,7 @@ public class WaveformDisplayViewModel : ViewModelBase
         {
             // If the song is the same, and panel is visible, ensure waveform is loaded if not already
             // This handles cases where the panel might have been hidden and then reshown for the same song.
-            if (_isPanelVisible && newSong != null && !WaveformRenderData.Any() && !IsWaveformLoading)
+            if (_isPanelVisible && newSong is not null && !WaveformRenderData.Any() && !IsWaveformLoading)
             {
                 Debug.WriteLine($"[WaveformDisplayVM] Panel visible for same song '{newSong.Title}', but no waveform. Triggering load.");
                 _ = TryLoadWaveformAsync(newSong);
@@ -4255,7 +4426,7 @@ public class WaveformDisplayViewModel : ViewModelBase
 
         _currentSongForWaveform = newSong;
 
-        if (_currentSongForWaveform != null && _isPanelVisible)
+        if (_currentSongForWaveform is not null && _isPanelVisible)
         {
             Debug.WriteLine($"[WaveformDisplayVM] Current song changed to '{_currentSongForWaveform.Title}' and panel is visible. Triggering load.");
             _ = TryLoadWaveformAsync(_currentSongForWaveform);
@@ -4276,7 +4447,7 @@ public class WaveformDisplayViewModel : ViewModelBase
         _isPanelVisible = isVisible;
         Debug.WriteLine($"[WaveformDisplayVM] Panel visibility set to: {isVisible}");
 
-        if (_isPanelVisible && _currentSongForWaveform != null)
+        if (_isPanelVisible && _currentSongForWaveform is not null)
         {
             // Panel became visible for the current song. If no data and not loading, start load.
             if (!WaveformRenderData.Any() && !IsWaveformLoading)
@@ -4310,7 +4481,7 @@ public class WaveformDisplayViewModel : ViewModelBase
         {
             // A previous load finished, but the song context has since changed.
             // Trigger a new load for the actual current song if conditions are met.
-            if (_currentSongForWaveform != null && _isPanelVisible)
+            if (_currentSongForWaveform is not null && _isPanelVisible)
             {
                 Debug.WriteLine($"[WaveformDisplayVM] Post-load check: Song context changed from '{_playbackService.CurrentSong?.Title}' to '{_currentSongForWaveform.Title}'. Re-evaluating load for {_currentSongForWaveform.Title}.");
                 _ = TryLoadWaveformAsync(_currentSongForWaveform);
@@ -4369,6 +4540,7 @@ public class MainWindow : Window
     private ListBox _songListBox;
     private ListBox _artistsListBox;
     private ListBox _albumsListBox;
+    private ListBox _playlistsListBox;
     private LibraryViewModel? _currentLibraryVM;
     private readonly SharedViewTemplates _sharedViewTemplates;
     private readonly MainTabViewControls _mainTabViewControls;
@@ -4407,7 +4579,7 @@ public class MainWindow : Window
         Grid.SetRow(searchBarPanel, 1);
         mainGrid.Children.Add(searchBarPanel);
 
-        var tabControl = _mainTabViewControls.CreateMainTabView(out _songListBox, out _artistsListBox, out _albumsListBox);
+        var tabControl = _mainTabViewControls.CreateMainTabView(out _songListBox, out _artistsListBox, out _albumsListBox, out _playlistsListBox);
         Grid.SetRow(tabControl, 2);
         mainGrid.Children.Add(tabControl);
 
@@ -4461,6 +4633,7 @@ public class MainWindow : Window
         ApplyListViewDisplayMode(_songListBox, _currentLibraryVM.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate);
         ApplyListViewDisplayMode(_artistsListBox, _currentLibraryVM.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate);
         ApplyListViewDisplayMode(_albumsListBox, _currentLibraryVM.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate);
+        ApplyListViewDisplayMode(_playlistsListBox, _currentLibraryVM.PlaylistViewMode, _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.CompactPlaylistTemplate, _sharedViewTemplates.GridPlaylistTemplate);
     }
 
     private void LibraryViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -4481,6 +4654,10 @@ public class MainWindow : Window
         else if (e.PropertyName == nameof(LibraryViewModel.AlbumViewMode))
         {
             Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_albumsListBox, lvm.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate));
+        }
+        else if (e.PropertyName == nameof(LibraryViewModel.PlaylistViewMode))
+        {
+            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_playlistsListBox, lvm.PlaylistViewMode, _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.CompactPlaylistTemplate, _sharedViewTemplates.GridPlaylistTemplate));
         }
     }
 
@@ -5136,7 +5313,7 @@ internal class NAudioPipeline : IDisposable
 
     public void Dispose()
     {
-        if (OutputDevice != null)
+        if (OutputDevice is not null)
         {
             OutputDevice.PlaybackStopped -= OnOutputDevicePlaybackStopped;
             OutputDevice.Dispose();
@@ -5168,7 +5345,7 @@ public class NAudioPlaybackEngine : IDisposable
         get => _pipeline?.AudioReader?.CurrentTime ?? TimeSpan.Zero;
         set
         {
-            if (_pipeline?.AudioReader != null) _pipeline.AudioReader.CurrentTime = value;
+            if (_pipeline?.AudioReader is not null) _pipeline.AudioReader.CurrentTime = value;
             else Debug.WriteLine("[Engine] Attempted to set CurrentPosition on null pipeline/audioReader.");
         }
     }
@@ -5196,7 +5373,7 @@ public class NAudioPlaybackEngine : IDisposable
         set
         {
             _playbackRate = value;
-            if (_pipeline?.EffectsProcessor != null) _pipeline.EffectsProcessor.Tempo = value;
+            if (_pipeline?.EffectsProcessor is not null) _pipeline.EffectsProcessor.Tempo = value;
         }
     }
     private float _playbackRate = 1.0f;
@@ -5207,7 +5384,7 @@ public class NAudioPlaybackEngine : IDisposable
         set
         {
             _pitchSemitones = value;
-            if (_pipeline?.EffectsProcessor != null) _pipeline.EffectsProcessor.PitchSemitones = value;
+            if (_pipeline?.EffectsProcessor is not null) _pipeline.EffectsProcessor.PitchSemitones = value;
         }
     }
     private float _pitchSemitones = 0f;
@@ -5248,7 +5425,7 @@ public class NAudioPlaybackEngine : IDisposable
     public void Play()
     {
         Debug.WriteLine("[Engine] Play requested.");
-        if (_pipeline?.OutputDevice != null && (_pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Paused || _pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Stopped))
+        if (_pipeline?.OutputDevice is not null && (_pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Paused || _pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Stopped))
         {
             Debug.WriteLine("[Engine] Calling device.Play().");
             try
@@ -5261,7 +5438,7 @@ public class NAudioPlaybackEngine : IDisposable
                 Debug.WriteLine($"[Engine] Error during device.Play(): {ex.Message}");
             }
         }
-        else if (_pipeline?.OutputDevice != null && _pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Playing)
+        else if (_pipeline?.OutputDevice is not null && _pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Playing)
         {
             Debug.WriteLine("[Engine] Already playing. Doing nothing.");
         }
@@ -5274,7 +5451,7 @@ public class NAudioPlaybackEngine : IDisposable
     public void Pause()
     {
         Debug.WriteLine("[Engine] Pause requested.");
-        if (_pipeline?.OutputDevice != null && _pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Playing)
+        if (_pipeline?.OutputDevice is not null && _pipeline.OutputDevice.PlaybackState == NAudio.Wave.PlaybackState.Playing)
         {
             Debug.WriteLine("[Engine] Calling device.Pause().");
             try
@@ -5296,7 +5473,7 @@ public class NAudioPlaybackEngine : IDisposable
     public void Stop()
     {
         Debug.WriteLine("[Engine] Stop requested.");
-        if (_pipeline?.OutputDevice != null && _pipeline.OutputDevice.PlaybackState != NAudio.Wave.PlaybackState.Stopped)
+        if (_pipeline?.OutputDevice is not null && _pipeline.OutputDevice.PlaybackState != NAudio.Wave.PlaybackState.Stopped)
         {
             Debug.WriteLine("[Engine] Calling device.Stop().");
             try
@@ -5318,7 +5495,7 @@ public class NAudioPlaybackEngine : IDisposable
     public void Seek(TimeSpan position)
     {
         Debug.WriteLine($"[Engine] Seek requested to {position:mm\\:ss\\.ff}.");
-        if (_pipeline?.AudioReader != null)
+        if (_pipeline?.AudioReader is not null)
         {
             try
             {
@@ -5357,7 +5534,7 @@ public class NAudioPlaybackEngine : IDisposable
     {
         if (disposing)
         {
-            if (_pipeline != null)
+            if (_pipeline is not null)
             {
                 // Unsubscribe from _pipeline events if any were directly subscribed by this class
                 // (Currently, NAudioPipeline forwards its OutputDevice.PlaybackStopped to OnPipelinePlaybackStopped,
@@ -5404,9 +5581,9 @@ public class PlaybackCompletionHandler
         bool wasExplicitlyStopped, // Flag indicating if StopSession(isExplicit: true) was the initiator
         bool isInternalStopForSongChange)
     {
-        Debug.WriteLine($"[PlaybackCompletionHandler] Handling playback stop for: {songThatJustStopped?.Title ?? "No Song"}. ExplicitStop: {wasExplicitlyStopped}, InternalChange: {isInternalStopForSongChange}, Error: {eventArgs.Exception != null}, Pos: {actualStoppedPosition:mm\\:ss\\.ff}, Dur: {actualStoppedSongDuration:mm\\:ss\\.ff}");
+        Debug.WriteLine($"[PlaybackCompletionHandler] Handling playback stop for: {songThatJustStopped?.Title ?? "No Song"}. ExplicitStop: {wasExplicitlyStopped}, InternalChange: {isInternalStopForSongChange}, Error: {eventArgs.Exception is not null}, Pos: {actualStoppedPosition:mm\\:ss\\.ff}, Dur: {actualStoppedSongDuration:mm\\:ss\\.ff}");
 
-        if (eventArgs.Exception != null)
+        if (eventArgs.Exception is not null)
         {
             _sessionManager.StopUiUpdateMonitor(); // Stop monitor on error
             Debug.WriteLine($"[PlaybackCompletionHandler] Playback stopped due to error: {eventArgs.Exception.Message}. Finalizing state to Stopped.");
@@ -5608,7 +5785,7 @@ public class PlaybackEngineCoordinator : IDisposable
         {
             Debug.WriteLine("[PlaybackEngineCoordinator] Dispose called.");
             _playbackMonitor?.Dispose();
-            if (_engineController != null)
+            if (_engineController is not null)
             {
                 _engineController.PlaybackStopped -= OnEngineControllerPlaybackStoppedRelay;
                 _engineController.Dispose();
@@ -5795,7 +5972,7 @@ public class PlaybackLoopHandler : IDisposable // Implementing IDisposable for c
     internal void CheckForLoopSeek(TimeSpan currentPosition, TimeSpan totalDuration)
     {
         // Ensure we have a song, it has a saved loop, and the loop is active
-        if (_currentSong?.SavedLoop != null && _currentSong.IsLoopActive)
+        if (_currentSong?.SavedLoop is not null && _currentSong.IsLoopActive)
         {
             var loop = _currentSong.SavedLoop;
 
@@ -5841,7 +6018,7 @@ public class PlaybackLoopHandler : IDisposable // Implementing IDisposable for c
         // Apply loop region constraints if an active loop is defined for the current song.
         // If seeking *into* an active loop from *outside* its start or after its end, snap to start.
         // If seeking *within* an active loop, allow it.
-        if (_currentSong?.SavedLoop != null && _currentSong.IsLoopActive)
+        if (_currentSong?.SavedLoop is not null && _currentSong.IsLoopActive)
         {
             var loop = _currentSong.SavedLoop;
             Debug.WriteLine($"[LoopHandler] GetAdjustedSeekPosition: Active loop detected [{loop.Start:mm\\:ss\\.ff}-{loop.End:mm\\:ss\\.ff}). Requested: {requestedPosition:mm\\:ss\\.ff}");
@@ -5884,7 +6061,7 @@ public class PlaybackLoopHandler : IDisposable // Implementing IDisposable for c
     /// <returns>The initial playback position.</returns>
     internal TimeSpan GetInitialPlaybackPosition(TimeSpan totalDuration)
     {
-        if (_currentSong?.SavedLoop != null && _currentSong.IsLoopActive)
+        if (_currentSong?.SavedLoop is not null && _currentSong.IsLoopActive)
         {
             var loop = _currentSong.SavedLoop;
             // Ensure loop start is valid before returning it
@@ -6232,7 +6409,7 @@ public class PlaybackService : ViewModelBase, IDisposable
     {
         Debug.WriteLine("[PlaybackService] Dispose() called on shutdown.");
 
-        if (_sessionManager != null)
+        if (_sessionManager is not null)
         {
             _sessionManager.PropertyChanged -= SessionManager_PropertyChanged;
             _sessionManager.Dispose();
@@ -6297,7 +6474,7 @@ public class PlaybackSessionLoader
         catch (Exception ex)
         {
             Debug.WriteLine($"[PlaybackSessionLoader] Exception during LoadNewSession for '{song.FilePath}': {ex}");
-            if (_sessionState.CurrentSong != null) _playbackEngineCoordinator.Stop(); // Ensure engine is stopped if partially loaded
+            if (_sessionState.CurrentSong is not null) _playbackEngineCoordinator.Stop(); // Ensure engine is stopped if partially loaded
             _sessionState.CurrentSong = null;
             return false;
         }
@@ -6438,7 +6615,7 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
 
         // --- Step 1: Detach and schedule the stop for the old infrastructure ---
         var oldInfrastructure = _currentInfrastructure;
-        if (oldInfrastructure != null)
+        if (oldInfrastructure is not null)
         {
             // Detach main handlers so they don't fire for the old instance anymore
             oldInfrastructure.Coordinator.EnginePlaybackStopped -= OnEngineCoordinatorPlaybackStopped;
@@ -6571,7 +6748,7 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
             _sessionState.CurrentSongDuration = e.Duration;
 
             // Scrobble-on-threshold logic
-            if (!_hasBeenScrobbledThisSession && CurrentSong != null)
+            if (!_hasBeenScrobbledThisSession && CurrentSong is not null)
             {
                 if (_scrobblingService.ShouldScrobble(CurrentSong, e.Position))
                 {
@@ -6635,7 +6812,7 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
     public void Dispose()
     {
         Debug.WriteLine("[PlaybackSessionManager] Dispose called.");
-        if (_sessionState != null) _sessionState.PropertyChanged -= SessionState_PropertyChanged;
+        if (_sessionState is not null) _sessionState.PropertyChanged -= SessionState_PropertyChanged;
         _currentInfrastructure?.Dispose();
         _currentInfrastructure = null;
         GC.SuppressFinalize(this);
@@ -6675,7 +6852,7 @@ public class PlaybackSessionState : INotifyPropertyChanged
         }
     }
 
-    public bool HasCurrentSong => CurrentSong != null;
+    public bool HasCurrentSong => CurrentSong is not null;
 
     private bool _isPlaying;
     public bool IsPlaying { get => _isPlaying; set => SetProperty(ref _isPlaying, value); }
@@ -6947,7 +7124,7 @@ public class ArtistAlbumCollectionManager
         {
             Bitmap? repThumb = allSongs.FirstOrDefault(s =>
                                    (s.Artist?.Equals(artistName, StringComparison.OrdinalIgnoreCase) ?? false) &&
-                                   s.Thumbnail != null && s.Thumbnail != defaultSongThumbnail)?.Thumbnail
+                                   s.Thumbnail is not null && s.Thumbnail != defaultSongThumbnail)?.Thumbnail
                                ?? defaultSongThumbnail;
             _artistsCollection.Add(new ArtistViewModel { Name = artistName, Thumbnail = repThumb });
         }
@@ -6987,7 +7164,7 @@ public class ArtistAlbumCollectionManager
             }
 
             albumVM.SongThumbnailsForGrid = songThumbnailsForGrid;
-            albumVM.RepresentativeThumbnail = songThumbnailsForGrid.FirstOrDefault(t => t != null) ?? defaultSongThumbnail;
+            albumVM.RepresentativeThumbnail = songThumbnailsForGrid.FirstOrDefault(t => t is not null) ?? defaultSongThumbnail;
 
             _albumsCollection.Add(albumVM);
         }
@@ -6997,7 +7174,7 @@ public class ArtistAlbumCollectionManager
     {
         // Update ArtistViewModel
         var artistVM = _artistsCollection.FirstOrDefault(a => a.Name == updatedSong.Artist);
-        if (artistVM != null)
+        if (artistVM is not null)
         {
             var firstSongOfArtistWithThumbnail = allSongs.FirstOrDefault(s =>
                 (s.Artist?.Equals(artistVM.Name, StringComparison.OrdinalIgnoreCase) ?? false) && s.Thumbnail != _musicLibraryService.GetDefaultThumbnail());
@@ -7011,7 +7188,7 @@ public class ArtistAlbumCollectionManager
 
         // Update AlbumViewModel
         var albumVM = _albumsCollection.FirstOrDefault(al => al.Title == updatedSong.Album && al.Artist == updatedSong.Artist);
-        if (albumVM != null)
+        if (albumVM is not null)
         {
             var songsInAlbum = allSongs.Where(s => (s.Album?.Equals(albumVM.Title, StringComparison.OrdinalIgnoreCase) ?? false) &&
                                                     (s.Artist?.Equals(albumVM.Artist, StringComparison.OrdinalIgnoreCase) ?? false))
@@ -7036,7 +7213,7 @@ public class ArtistAlbumCollectionManager
                 albumVM.SongThumbnailsForGrid = newSongThumbnailsForGrid;
             }
 
-            Bitmap? newRepresentativeThumbnail = newSongThumbnailsForGrid.FirstOrDefault(t => t != null) ?? defaultSongThumbnail;
+            Bitmap? newRepresentativeThumbnail = newSongThumbnailsForGrid.FirstOrDefault(t => t is not null) ?? defaultSongThumbnail;
             if (albumVM.RepresentativeThumbnail != newRepresentativeThumbnail)
             {
                 albumVM.RepresentativeThumbnail = newRepresentativeThumbnail;
@@ -7101,51 +7278,46 @@ public class LibraryDataOrchestrator
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
     }
 
-    public async Task<List<Song>> LoadAndProcessLibraryDataAsync(
-        Action<string> statusUpdateCallback,
-        Action<Song> songAddedToRawListCallback)
+    public async Task<(List<Song> Songs, List<Playlist> Playlists)> LoadAndProcessLibraryDataAsync(Action<string> statusUpdateCallback)
     {
-        var rawSongs = new List<Song>(); // Temporary list to gather songs from MusicLibraryService
+        var rawSongs = new List<Song>();
 
         AppSettings settings = _settingsService.LoadSettings();
         if (!settings.MusicDirectories.Any())
         {
             await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback("No music directories configured."));
-            return rawSongs; // Return empty list
+            return (rawSongs, new List<Playlist>());
         }
 
         try
         {
-            // Phase 1: Load raw song metadata and thumbnails (thumbnails load in background via MusicLibraryService)
+            // Phase 1: Load raw song metadata and thumbnails
             await _musicLibraryService.LoadMusicFromDirectoriesAsync(
                 settings.MusicDirectories,
                 song =>
                 {
-                    // This callback is invoked on UI thread by MusicLibraryService
                     rawSongs.Add(song);
-                    songAddedToRawListCallback(song); // Notify caller (LibraryViewModel) to add to its _allSongs
                 },
-                status => Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback(status)) // Pass status updates
+                status => Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback(status))
             );
 
-            // Phase 2: Populate Artist and Album collections using the fully gathered rawSongs list
-            // This is done after all songs are initially processed by MusicLibraryService.
-            // The ArtistAlbumCollectionManager operates on the collections passed to its constructor,
-            // so this call effectively updates the Artists and Albums collections in LibraryViewModel.
-            // Ensure this runs on UI thread if ArtistAlbumCollectionManager modifies UI-bound collections directly.
-            // ArtistAlbumCollectionManager is designed to populate ObservableCollections, which should be UI thread safe if modified there.
+            // Phase 2: Load Playlists using the fully gathered rawSongs list
+            await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Found {rawSongs.Count} songs. Scanning for playlists..."));
+            var playlists = await _musicLibraryService.LoadPlaylistsAsync(settings.MusicDirectories, rawSongs);
+
+            // Phase 3: Populate Artist and Album collections
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 _artistAlbumManager.PopulateCollections(rawSongs);
             });
 
-            return rawSongs; // Return the populated list of all songs
+            return (rawSongs, playlists);
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"[LibraryDataOrchestrator] Error loading and processing library data: {ex}");
             await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback("Error loading music library."));
-            return new List<Song>(); // Return empty list on error
+            return (new List<Song>(), new List<Playlist>());
         }
     }
 }
@@ -7202,6 +7374,19 @@ public class LibraryDisplayModeService : ViewModelBase
             }
         }
     }
+    
+    private SongDisplayMode _playlistViewMode;
+    public SongDisplayMode PlaylistViewMode
+    {
+        get => _playlistViewMode;
+        private set
+        {
+            if (SetProperty(ref _playlistViewMode, value))
+            {
+                SavePreference(nameof(AppSettings.PlaylistViewModePreference), value);
+            }
+        }
+    }
 
     public ICommand SetDisplayModeCommand { get; }
 
@@ -7223,6 +7408,7 @@ public class LibraryDisplayModeService : ViewModelBase
                     case "Library": LibraryViewMode = mode; break;
                     case "Artists": ArtistViewMode = mode; break;
                     case "Albums": AlbumViewMode = mode; break;
+                    case "Playlists": PlaylistViewMode = mode; break;
                 }
             },
             _ => true // Command is always executable
@@ -7235,11 +7421,13 @@ public class LibraryDisplayModeService : ViewModelBase
         _libraryViewMode = Enum.TryParse<SongDisplayMode>(settings.LibraryViewModePreference, out var libMode) ? libMode : SongDisplayMode.Detailed;
         _artistViewMode = Enum.TryParse<SongDisplayMode>(settings.ArtistViewModePreference, out var artMode) ? artMode : SongDisplayMode.Detailed;
         _albumViewMode = Enum.TryParse<SongDisplayMode>(settings.AlbumViewModePreference, out var albMode) ? albMode : SongDisplayMode.Detailed;
+        _playlistViewMode = Enum.TryParse<SongDisplayMode>(settings.PlaylistViewModePreference, out var playMode) ? playMode : SongDisplayMode.Detailed;
 
         // Initial OnPropertyChanged for any subscribers after loading
         OnPropertyChanged(nameof(LibraryViewMode));
         OnPropertyChanged(nameof(ArtistViewMode));
         OnPropertyChanged(nameof(AlbumViewMode));
+        OnPropertyChanged(nameof(PlaylistViewMode));
     }
 
     private void SavePreference(string preferenceKey, SongDisplayMode mode)
@@ -7255,6 +7443,9 @@ public class LibraryDisplayModeService : ViewModelBase
                 break;
             case nameof(AppSettings.AlbumViewModePreference):
                 settings.AlbumViewModePreference = mode.ToString();
+                break;
+            case nameof(AppSettings.PlaylistViewModePreference):
+                settings.PlaylistViewModePreference = mode.ToString();
                 break;
         }
         _settingsService.SaveSettings(settings);
@@ -7295,12 +7486,33 @@ public class LibraryFilterStateManager : ViewModelBase
         {
             if (SetProperty(ref _selectedArtist, value))
             {
-                if (_selectedArtist != null)
+                if (_selectedArtist is not null)
                 {
                     // When an artist is selected, update SearchQuery and clear SelectedAlbum
                     _searchQuery = _selectedArtist.Name ?? string.Empty; // Avoid raising SearchQuery's own event storm
                     OnPropertyChanged(nameof(SearchQuery)); // Manually notify SearchQuery changed
                     SelectedAlbum = null; // This will trigger its own PropertyChanged and subsequently FilterCriteriaChanged
+                    RequestTabSwitchToLibrary?.Invoke(this, EventArgs.Empty);
+                }
+                FilterCriteriaChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+    }
+
+    private PlaylistViewModel? _selectedPlaylist;
+    public PlaylistViewModel? SelectedPlaylist
+    {
+        get => _selectedPlaylist;
+        set
+        {
+            if (SetProperty(ref _selectedPlaylist, value))
+            {
+                if (_selectedPlaylist is not null)
+                {
+                    SearchQuery = string.Empty;
+                    OnPropertyChanged(nameof(SearchQuery));
+                    SelectedArtist = null;
+                    SelectedAlbum = null;
                     RequestTabSwitchToLibrary?.Invoke(this, EventArgs.Empty);
                 }
                 FilterCriteriaChanged?.Invoke(this, EventArgs.Empty);
@@ -7316,7 +7528,7 @@ public class LibraryFilterStateManager : ViewModelBase
         {
             if (SetProperty(ref _selectedAlbum, value))
             {
-                if (_selectedAlbum != null)
+                if (_selectedAlbum is not null)
                 {
                     // When an album is selected, update SearchQuery and clear SelectedArtist
                     _searchQuery = _selectedAlbum.Title ?? string.Empty; // Avoid raising SearchQuery's own event storm
@@ -7336,8 +7548,9 @@ public class LibraryFilterStateManager : ViewModelBase
     {
         // Suppress individual notifications if setting multiple properties
         bool changed = false;
-        if (_selectedArtist != null) { _selectedArtist = null; OnPropertyChanged(nameof(SelectedArtist)); changed = true; }
-        if (_selectedAlbum != null) { _selectedAlbum = null; OnPropertyChanged(nameof(SelectedAlbum)); changed = true; }
+        if (_selectedArtist is not null) { _selectedArtist = null; OnPropertyChanged(nameof(SelectedArtist)); changed = true; }
+        if (_selectedAlbum is not null) { _selectedAlbum = null; OnPropertyChanged(nameof(SelectedAlbum)); changed = true; }
+        if (_selectedPlaylist is not null) { _selectedPlaylist = null; OnPropertyChanged(nameof(SelectedPlaylist)); changed = true; }
         if (!string.IsNullOrEmpty(_searchQuery)) { _searchQuery = string.Empty; OnPropertyChanged(nameof(SearchQuery)); changed = true; }
 
         if (changed)
@@ -7360,24 +7573,31 @@ namespace Sonorize.ViewModels.LibraryManagement;
 public class LibraryGroupingsViewModel : ViewModelBase
 {
     private readonly ArtistAlbumCollectionManager _artistAlbumManager;
-    private readonly MusicLibraryService _musicLibraryService; // For ArtistAlbumCollectionManager
+    private readonly MusicLibraryService _musicLibraryService;
+    private readonly PlaylistCollectionManager _playlistManager;
 
-    internal ArtistAlbumCollectionManager ArtistAlbumManager => _artistAlbumManager; // Expose for LibraryDataOrchestrator
+    internal ArtistAlbumCollectionManager ArtistAlbumManager => _artistAlbumManager;
+    internal PlaylistCollectionManager PlaylistManager => _playlistManager;
 
     public ObservableCollection<ArtistViewModel> Artists { get; } = [];
     public ObservableCollection<AlbumViewModel> Albums { get; } = [];
+    public ObservableCollection<PlaylistViewModel> Playlists { get; } = [];
 
     public LibraryGroupingsViewModel(MusicLibraryService musicLibraryService)
     {
         _musicLibraryService = musicLibraryService ?? throw new ArgumentNullException(nameof(musicLibraryService));
         _artistAlbumManager = new ArtistAlbumCollectionManager(Artists, Albums, _musicLibraryService);
+        _playlistManager = new PlaylistCollectionManager(Playlists, _musicLibraryService);
     }
 
     public void PopulateCollections(IEnumerable<Song> allSongs)
     {
-        // This method will be called on the UI thread by LibraryViewModel
         _artistAlbumManager.PopulateCollections(allSongs);
-        // ObservableCollections will notify changes automatically
+    }
+    
+    public void PopulatePlaylistCollection(IEnumerable<Playlist> allPlaylists)
+    {
+        _playlistManager.PopulateCollection(allPlaylists);
     }
 
     public void HandleSongThumbnailUpdate(Song updatedSong, IEnumerable<Song> allSongs)
@@ -7433,21 +7653,19 @@ public class LibraryLoadProcess
             _components.SongList.ClearAllSongs();
             _components.Groupings.Artists.Clear();
             _components.Groupings.Albums.Clear();
+            _components.Groupings.Playlists.Clear();
             _setStatusTextDelegate("Preparing to load music...");
         });
-
-        // This local list is only used to pass to songAddedCallback, which is then passed to DataOrchestrator.
-        // DataOrchestrator itself now returns the fully loaded list, so this local list is not strictly necessary for the final result.
-        List<Song> loadedRawSongsAccumulator = new List<Song>();
-        Action<Song> songAddedCallback = song => loadedRawSongsAccumulator.Add(song);
+        
         Action<string> statusUpdateCallback = status => _setStatusTextDelegate(status);
 
-        var allLoadedSongsFromOrchestrator = await _components.DataOrchestrator.LoadAndProcessLibraryDataAsync(statusUpdateCallback, songAddedCallback);
+        var (allLoadedSongsFromOrchestrator, allLoadedPlaylistsFromOrchestrator) = await _components.DataOrchestrator.LoadAndProcessLibraryDataAsync(statusUpdateCallback);
         _components.SongList.SetAllSongs(allLoadedSongsFromOrchestrator);
 
         await _uiDispatcher.InvokeAsync(() =>
         {
             _components.Groupings.PopulateCollections(_components.SongList.GetAllSongsReadOnly());
+            _components.Groupings.PopulatePlaylistCollection(allLoadedPlaylistsFromOrchestrator);
             _applyFilterDelegate();
         });
 
@@ -7472,17 +7690,13 @@ public class LibraryStatusTextGenerator
         int filteredSongsCount,
         ArtistViewModel? selectedArtist,
         AlbumViewModel? selectedAlbum,
+        PlaylistViewModel? selectedPlaylist,
         string? searchQuery,
-        SettingsService settingsService) // Pass SettingsService to check for configured directories
+        SettingsService settingsService)
     {
         if (isLoadingLibrary)
         {
-            // During loading, LibraryViewModel's LibraryStatusText is updated by MusicLibraryService callbacks.
-            // This generator is primarily for post-loading or idle states.
-            // However, if called during loading, we might return a generic loading message
-            // or expect the caller (LibraryViewModel) to handle this case.
-            // For now, assume this is called when not actively in the middle of the LoadMusicFromDirectoriesAsync song processing loop.
-            return "Loading library..."; // Or whatever the current LibraryStatusText is if passed in.
+            return "Loading library...";
         }
 
         if (allSongsCount == 0)
@@ -7498,13 +7712,18 @@ public class LibraryStatusTextGenerator
             }
         }
 
+        // Playlist selection takes precedence for status text
+        if (selectedPlaylist?.Name is not null)
+        {
+            return $"Showing playlist '{selectedPlaylist.Name}': {filteredSongsCount} songs.";
+        }
         // Album selection takes precedence for status text
-        if (selectedAlbum?.Title != null && selectedAlbum.Artist != null)
+        if (selectedAlbum?.Title is not null && selectedAlbum.Artist is not null)
         {
             return $"Showing songs from {selectedAlbum.Title} by {selectedAlbum.Artist}: {filteredSongsCount} of {allSongsCount} total songs.";
         }
         // Then artist selection
-        else if (selectedArtist?.Name != null)
+        else if (selectedArtist?.Name is not null)
         {
             return $"Showing songs by {selectedArtist.Name}: {filteredSongsCount} of {allSongsCount} total songs.";
         }
@@ -7515,6 +7734,39 @@ public class LibraryStatusTextGenerator
         else // No specific view, no search query - showing all songs
         {
             return $"{allSongsCount} songs in library.";
+        }
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LibraryManagement\PlaylistCollectionManager.cs">
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
+using Avalonia.Media.Imaging;
+using Sonorize.Models;
+using Sonorize.Services;
+
+namespace Sonorize.ViewModels.LibraryManagement;
+
+public class PlaylistCollectionManager
+{
+    private readonly ObservableCollection<PlaylistViewModel> _playlistsCollection;
+    private readonly MusicLibraryService _musicLibraryService;
+
+    public PlaylistCollectionManager(ObservableCollection<PlaylistViewModel> playlistsCollection, MusicLibraryService musicLibraryService)
+    {
+        _playlistsCollection = playlistsCollection;
+        _musicLibraryService = musicLibraryService;
+    }
+
+    public void PopulateCollection(IEnumerable<Playlist> allPlaylists)
+    {
+        _playlistsCollection.Clear();
+        var defaultIcon = _musicLibraryService.GetDefaultThumbnail();
+        foreach (var playlist in allPlaylists.OrderBy(p => p.Name))
+        {
+            _playlistsCollection.Add(new PlaylistViewModel(playlist, defaultIcon));
         }
     }
 }
@@ -7534,31 +7786,35 @@ public class SongFilteringService
         IEnumerable<Song> allSongs,
         string? searchQuery,
         ArtistViewModel? selectedArtist,
-        AlbumViewModel? selectedAlbum)
+        AlbumViewModel? selectedAlbum,
+        PlaylistViewModel? selectedPlaylist)
     {
         IEnumerable<Song> songsToFilter = allSongs;
 
         // Priority:
-        // 1. If an album is selected, filter by album (and its artist).
-        // 2. Else if an artist is selected, filter by artist.
-        // 3. Else if a search query is present, filter by query.
-        // 4. Else, show all songs (after ordering).
+        // 1. If a playlist is selected, show its songs.
+        // 2. Else if an album is selected, filter by album (and its artist).
+        // 3. Else if an artist is selected, filter by artist.
+        // 4. Else if a search query is present, filter by query.
+        // 5. Else, show all songs (after ordering).
 
-        bool specificAlbumSelected = selectedAlbum?.Title != null && selectedAlbum.Artist != null;
-        bool specificArtistSelected = selectedArtist?.Name != null;
+        bool specificPlaylistSelected = selectedPlaylist is not null;
+        bool specificAlbumSelected = selectedAlbum?.Title is not null && selectedAlbum.Artist is not null;
+        bool specificArtistSelected = selectedArtist?.Name is not null;
 
-        if (specificAlbumSelected)
+        if (specificPlaylistSelected)
         {
-            // When an album is selected, the searchQuery is often set to the album title.
-            // We should primarily filter by the album's identity.
+            // Playlist songs are already in order. Don't sort them.
+            return selectedPlaylist!.PlaylistModel.Songs;
+        }
+        else if (specificAlbumSelected)
+        {
             songsToFilter = songsToFilter.Where(s =>
                 (s.Album?.Equals(selectedAlbum!.Title, StringComparison.OrdinalIgnoreCase) ?? false) &&
                 (s.Artist?.Equals(selectedAlbum!.Artist, StringComparison.OrdinalIgnoreCase) ?? false));
         }
         else if (specificArtistSelected)
         {
-            // When an artist is selected, the searchQuery is often set to the artist name.
-            // Filter by the artist's identity.
             songsToFilter = songsToFilter.Where(s =>
                 s.Artist?.Equals(selectedArtist!.Name, StringComparison.OrdinalIgnoreCase) ?? false);
         }
@@ -7630,7 +7886,7 @@ public class SongListManager : ViewModelBase
 
     public int AllSongsCount => _allSongs.Count;
 
-    public void ApplyFilter(string? searchQuery, ArtistViewModel? selectedArtist, AlbumViewModel? selectedAlbum)
+    public void ApplyFilter(string? searchQuery, ArtistViewModel? selectedArtist, AlbumViewModel? selectedAlbum, PlaylistViewModel? selectedPlaylist)
     {
         var currentSelectedSongBeforeFilter = SelectedSong;
 
@@ -7639,7 +7895,8 @@ public class SongListManager : ViewModelBase
             _allSongs,
             searchQuery,
             selectedArtist,
-            selectedAlbum);
+            selectedAlbum,
+            selectedPlaylist);
 
         foreach (var song in filtered)
         {
@@ -7647,16 +7904,16 @@ public class SongListManager : ViewModelBase
         }
 
         // Preserve selection if possible
-        if (currentSelectedSongBeforeFilter != null && FilteredSongs.Contains(currentSelectedSongBeforeFilter))
+        if (currentSelectedSongBeforeFilter is not null && FilteredSongs.Contains(currentSelectedSongBeforeFilter))
         {
             SelectedSong = currentSelectedSongBeforeFilter; // No change notification if it's the same instance
         }
-        else if (currentSelectedSongBeforeFilter != null)
+        else if (currentSelectedSongBeforeFilter is not null)
         {
             Debug.WriteLine($"[SongListManager] Selected song '{currentSelectedSongBeforeFilter.Title}' is no longer in the filtered list. Clearing selection.");
             SelectedSong = null; // Notify that selection is cleared
         }
-        else if (SelectedSong != null) // If there was a selection but it's no longer valid (e.g. currentSelectedSongBeforeFilter was null, but SelectedSong somehow had a value from previous invalid state)
+        else if (SelectedSong is not null) // If there was a selection but it's no longer valid (e.g. currentSelectedSongBeforeFilter was null, but SelectedSong somehow had a value from previous invalid state)
         {
             SelectedSong = null; // Ensure selection is cleared and notified
         }
@@ -7846,14 +8103,14 @@ public class ActiveLoopViewModel : ViewModelBase, IDisposable
     {
         if (_currentSongInternal == newSong) return;
 
-        if (_currentSongInternal != null)
+        if (_currentSongInternal is not null)
         {
             _currentSongInternal.PropertyChanged -= CurrentSong_PropertyChanged;
         }
 
         _currentSongInternal = newSong;
 
-        if (_currentSongInternal != null)
+        if (_currentSongInternal is not null)
         {
             _currentSongInternal.PropertyChanged += CurrentSong_PropertyChanged;
         }
@@ -7873,7 +8130,7 @@ public class ActiveLoopViewModel : ViewModelBase, IDisposable
 
     private void RefreshStateFromCurrentSong()
     {
-        if (_currentSongInternal?.SavedLoop != null)
+        if (_currentSongInternal?.SavedLoop is not null)
         {
             var loop = _currentSongInternal.SavedLoop;
             string activeStatus = _currentSongInternal.IsLoopActive ? " (Active)" : " (Inactive)";
@@ -7908,13 +8165,13 @@ public class ActiveLoopViewModel : ViewModelBase, IDisposable
 
     private bool CanExecuteToggleLoopActive(object? parameter)
     {
-        return _currentSongInternal?.SavedLoop != null;
+        return _currentSongInternal?.SavedLoop is not null;
     }
 
     public void Dispose()
     {
         _playbackService.PropertyChanged -= PlaybackService_PropertyChanged;
-        if (_currentSongInternal != null)
+        if (_currentSongInternal is not null)
         {
             _currentSongInternal.PropertyChanged -= CurrentSong_PropertyChanged;
         }
@@ -8002,7 +8259,7 @@ public class LoopCandidateViewModel : ViewModelBase
     }
 
     private bool CanCaptureLoopPoint(object? _) =>
-        _getCurrentSongCallback() != null &&
+        _getCurrentSongCallback() is not null &&
         _playbackService.CurrentPlaybackStatus != PlaybackStateStatus.Stopped;
 
     public void RaiseCaptureCommandsCanExecuteChanged()
@@ -8044,7 +8301,7 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
     public LoopCandidateViewModel CandidateLoop { get; }
     public ActiveLoopViewModel ActiveLoop { get; } // New child ViewModel
 
-    public bool CanSaveLoopRegion => _currentSongInternal != null
+    public bool CanSaveLoopRegion => _currentSongInternal is not null
                                      && CandidateLoop.NewLoopStartCandidate.HasValue
                                      && CandidateLoop.NewLoopEndCandidate.HasValue
                                      && CandidateLoop.NewLoopEndCandidate.Value > CandidateLoop.NewLoopStartCandidate.Value
@@ -8071,10 +8328,10 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
         ActiveLoop = new ActiveLoopViewModel(playbackService, songLoopService); // Instantiate new child
 
         SaveLoopCommand = new RelayCommand(SaveLoopAction, _ => CanSaveLoopRegion);
-        ClearLoopCommand = new RelayCommand(ClearSavedLoopAction, _ => _currentSongInternal?.SavedLoop != null);
+        ClearLoopCommand = new RelayCommand(ClearSavedLoopAction, _ => _currentSongInternal?.SavedLoop is not null);
         WaveformSeekCommand = new RelayCommand(
-            timeSpanObj => { if (timeSpanObj is TimeSpan ts && _currentSongInternal != null) _playbackService.Seek(ts); },
-            _ => _currentSongInternal != null);
+            timeSpanObj => { if (timeSpanObj is TimeSpan ts && _currentSongInternal is not null) _playbackService.Seek(ts); },
+            _ => _currentSongInternal is not null);
 
         _playbackService.PropertyChanged += PlaybackService_PropertyChanged;
         UpdateStateForCurrentSong(_playbackService.CurrentSong); // Initial state update
@@ -8094,12 +8351,12 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
             {
                 case nameof(PlaybackService.CurrentSong):
                     Debug.WriteLine($"[LoopEdVM] PlaybackService.CurrentSong changed to: {_playbackService.CurrentSong?.Title ?? "null"}. Updating loop editor state.");
-                    if (_currentSongInternal != null)
+                    if (_currentSongInternal is not null)
                     {
                         _currentSongInternal.PropertyChanged -= CurrentSong_PropertyChanged;
                     }
                     _currentSongInternal = _playbackService.CurrentSong;
-                    if (_currentSongInternal != null)
+                    if (_currentSongInternal is not null)
                     {
                         _currentSongInternal.PropertyChanged += CurrentSong_PropertyChanged;
                     }
@@ -8138,7 +8395,7 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
     private void UpdateStateForCurrentSong(Song? song)
     {
         Debug.WriteLine($"[LoopEdVM] UpdateStateForCurrentSong called for: {song?.Title ?? "null"}");
-        if (song?.SavedLoop != null)
+        if (song?.SavedLoop is not null)
         {
             CandidateLoop.NewLoopStartCandidate = song.SavedLoop.Start;
             CandidateLoop.NewLoopEndCandidate = song.SavedLoop.End;
@@ -8165,7 +8422,7 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
         TimeSpan start = CandidateLoop.NewLoopStartCandidate.Value;
         TimeSpan end = CandidateLoop.NewLoopEndCandidate.Value;
 
-        bool shouldBeActive = (currentSong.SavedLoop != null && currentSong.IsLoopActive) || currentSong.SavedLoop == null;
+        bool shouldBeActive = (currentSong.SavedLoop is not null && currentSong.IsLoopActive) || currentSong.SavedLoop == null;
 
         _songLoopService.SaveLoop(currentSong, start, end, shouldBeActive);
         // ActiveLoopViewModel and LoopEditorViewModel will react to Song model PropertyChanged events
@@ -8174,7 +8431,7 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
     private void ClearSavedLoopAction(object? param)
     {
         var currentSong = _currentSongInternal;
-        if (currentSong != null)
+        if (currentSong is not null)
         {
             _songLoopService.ClearLoop(currentSong);
         }
@@ -8191,7 +8448,7 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
-        if (_currentSongInternal != null)
+        if (_currentSongInternal is not null)
         {
             _currentSongInternal.PropertyChanged -= CurrentSong_PropertyChanged;
         }
@@ -8404,7 +8661,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
 
         // Correctly handle exit by closing the window, which triggers the disposal chain.
-        ExitCommand = new RelayCommand(_ => _ownerView?.Close(), _ => _ownerView != null);
+        ExitCommand = new RelayCommand(_ => _ownerView?.Close(), _ => _ownerView is not null);
 
         AddDirectoryAndRefreshCommand = new RelayCommand(async _ => await AddMusicDirectoryAndRefreshAsync(),
             _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
@@ -8557,11 +8814,11 @@ public class MainWindowViewModelOrchestrator : IDisposable
     {
         _libraryViewModel.PropertyChanged += Library_PropertyChanged;
         _playbackViewModel.PropertyChanged += Playback_PropertyChanged;
-        if (_playbackViewModel.ModeControls != null)
+        if (_playbackViewModel.ModeControls is not null)
         {
             _playbackViewModel.ModeControls.PropertyChanged += PlaybackModeControls_PropertyChanged;
         }
-        if (_playbackViewModel.WaveformDisplay != null)
+        if (_playbackViewModel.WaveformDisplay is not null)
         {
             _playbackViewModel.WaveformDisplay.PropertyChanged += PlaybackWaveformDisplay_PropertyChanged;
         }
@@ -8572,11 +8829,11 @@ public class MainWindowViewModelOrchestrator : IDisposable
     {
         _libraryViewModel.PropertyChanged -= Library_PropertyChanged;
         _playbackViewModel.PropertyChanged -= Playback_PropertyChanged;
-        if (_playbackViewModel.ModeControls != null)
+        if (_playbackViewModel.ModeControls is not null)
         {
             _playbackViewModel.ModeControls.PropertyChanged -= PlaybackModeControls_PropertyChanged;
         }
-        if (_playbackViewModel.WaveformDisplay != null)
+        if (_playbackViewModel.WaveformDisplay is not null)
         {
             _playbackViewModel.WaveformDisplay.PropertyChanged -= PlaybackWaveformDisplay_PropertyChanged;
         }
@@ -8706,7 +8963,7 @@ public class MusicDirectoriesSettingsViewModel : ViewModelBase
     public ICommand AddDirectoryCommand { get; }
     public ICommand RemoveDirectoryCommand { get; }
 
-    public bool CanRemoveDirectory => SelectedDirectory != null;
+    public bool CanRemoveDirectory => SelectedDirectory is not null;
 
     // This property can be used by the parent to quickly check if this specific section has changes
     // compared to its initial state when the settings dialog was opened.
@@ -9174,7 +9431,7 @@ public class MainWindowComponentsManager : IDisposable
 
     public void Dispose()
     {
-        if (PlaybackServiceProperty != null)
+        if (PlaybackServiceProperty is not null)
         {
             PlaybackServiceProperty.PlaybackEndedNaturally -= PlaybackService_PlaybackEndedNaturally;
         }
@@ -9552,10 +9809,26 @@ public static class MainMenu
         albumsViewSubMenu.Items.Add(albDetailed);
         albumsViewSubMenu.Items.Add(albCompact);
         albumsViewSubMenu.Items.Add(albGrid);
+        
+        // Playlists View SubMenu
+        var playlistsViewSubMenu = new MenuItem { Header = "Playlists View", Foreground = theme.B_TextColor };
+        var playDetailed = new MenuItem { Header = "Detailed", Foreground = theme.B_TextColor };
+        playDetailed.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        playDetailed.CommandParameter = ("Playlists", SongDisplayMode.Detailed);
+        var playCompact = new MenuItem { Header = "Compact", Foreground = theme.B_TextColor };
+        playCompact.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        playCompact.CommandParameter = ("Playlists", SongDisplayMode.Compact);
+        var playGrid = new MenuItem { Header = "Grid", Foreground = theme.B_TextColor };
+        playGrid.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        playGrid.CommandParameter = ("Playlists", SongDisplayMode.Grid);
+        playlistsViewSubMenu.Items.Add(playDetailed);
+        playlistsViewSubMenu.Items.Add(playCompact);
+        playlistsViewSubMenu.Items.Add(playGrid);
 
         viewMenuItem.Items.Add(libraryViewSubMenu);
         viewMenuItem.Items.Add(artistsViewSubMenu);
         viewMenuItem.Items.Add(albumsViewSubMenu);
+        viewMenuItem.Items.Add(playlistsViewSubMenu);
 
         menu.Items.Add(fileMenuItem);
         menu.Items.Add(viewMenuItem);
@@ -9696,6 +9969,7 @@ public class MainTabViewControls
     private ListBox? _songListBoxInstance;
     private ListBox? _artistsListBoxInstance;
     private ListBox? _albumsListBoxInstance;
+    private ListBox? _playlistsListBoxInstance;
 
     public MainTabViewControls(ThemeColors theme, SharedViewTemplates sharedViewTemplates)
     {
@@ -9703,7 +9977,7 @@ public class MainTabViewControls
         _sharedViewTemplates = sharedViewTemplates;
     }
 
-    public TabControl CreateMainTabView(out ListBox songListBox, out ListBox artistsListBox, out ListBox albumsListBox)
+    public TabControl CreateMainTabView(out ListBox songListBox, out ListBox artistsListBox, out ListBox albumsListBox, out ListBox playlistsListBox)
     {
         var tabControl = new TabControl
         {
@@ -9770,14 +10044,28 @@ public class MainTabViewControls
             Header = "ALBUMS",
             Content = albumsListScrollViewer
         };
+        
+        var (playlistsListScrollViewer, plb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            _theme, _sharedViewTemplates, "PlaylistsListBox", "Library.Groupings.Playlists", "Library.FilterState.SelectedPlaylist",
+            _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
+            lb => _playlistsListBoxInstance = lb);
+        _playlistsListBoxInstance = plb;
+        
+        var playlistsTab = new TabItem
+        {
+            Header = "PLAYLISTS",
+            Content = playlistsListScrollViewer
+        };
 
         tabControl.Items.Add(libraryTab);
         tabControl.Items.Add(artistsTab);
         tabControl.Items.Add(albumsTab);
+        tabControl.Items.Add(playlistsTab);
 
         songListBox = _songListBoxInstance!;
         artistsListBox = _artistsListBoxInstance!;
         albumsListBox = _albumsListBoxInstance!;
+        playlistsListBox = _playlistsListBoxInstance!;
         return tabControl;
     }
 
@@ -9797,17 +10085,17 @@ public class MainTabViewControls
             case SongDisplayMode.Detailed:
                 listBox.ItemTemplate = detailedTemplate;
                 listBox.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
-                if (scrollViewer != null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                if (scrollViewer is not null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
                 break;
             case SongDisplayMode.Compact:
                 listBox.ItemTemplate = compactTemplate;
                 listBox.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
-                if (scrollViewer != null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                if (scrollViewer is not null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
                 break;
             case SongDisplayMode.Grid:
                 listBox.ItemTemplate = gridTemplate;
                 listBox.ItemsPanel = _sharedViewTemplates.WrapPanelItemsPanelTemplate;
-                if (scrollViewer != null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                if (scrollViewer is not null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
                 break;
         }
     }
@@ -10089,7 +10377,7 @@ public static class PlaybackTimeSliderPanel
             // This logic is for when the user clicks on the track to jump to a position.
             // The thumb drag is handled by DragStarted/DragCompleted.
             var thumb = slider.FindDescendantOfType<Thumb>();
-            if (thumb != null && thumb.IsPointerOver)
+            if (thumb is not null && thumb.IsPointerOver)
             {
                 // Pointer is over the thumb, let the thumb's drag events handle this.
                 return;
@@ -10117,7 +10405,7 @@ public static class PlaybackTimeSliderPanel
             if (sender is not Slider slider || slider.DataContext is not MainWindowViewModel { Playback: { } playbackVM }) return;
 
             var thumb = slider.FindDescendantOfType<Thumb>();
-            if (thumb != null && thumb.IsPointerOver)
+            if (thumb is not null && thumb.IsPointerOver)
             {
                 // Pointer is over the thumb, let the thumb's drag events handle this.
                 return;
@@ -10238,31 +10526,118 @@ public class SharedViewTemplates
     public SongItemTemplateProvider SongTemplates { get; private set; }
     // Expose the provider for Artist templates
     public ArtistItemTemplateProvider ArtistTemplates { get; private set; }
+    
+    public FuncDataTemplate<PlaylistViewModel> DetailedPlaylistTemplate { get; private set; }
+    public FuncDataTemplate<PlaylistViewModel> CompactPlaylistTemplate { get; private set; }
+    public FuncDataTemplate<PlaylistViewModel> GridPlaylistTemplate { get; private set; }
 
-
-    // Album Templates
     public FuncDataTemplate<AlbumViewModel> DetailedAlbumTemplate { get; private set; }
     public FuncDataTemplate<AlbumViewModel> CompactAlbumTemplate { get; private set; }
     public FuncDataTemplate<AlbumViewModel> GridAlbumTemplate { get; private set; }
-
-
-    // Panel Templates (reusable) - Corrected to ITemplate<Panel>
+    
     public ITemplate<Panel> StackPanelItemsPanelTemplate { get; private set; }
     public ITemplate<Panel> WrapPanelItemsPanelTemplate { get; private set; }
 
     public SharedViewTemplates(ThemeColors theme)
     {
         _theme = theme;
-        _contextMenuHelper = new SongContextMenuHelper(_theme); // Simplified instantiation
+        _contextMenuHelper = new SongContextMenuHelper(_theme);
         SongTemplates = new SongItemTemplateProvider(_theme, _contextMenuHelper);
-        ArtistTemplates = new ArtistItemTemplateProvider(_theme); // Instantiate new provider
+        ArtistTemplates = new ArtistItemTemplateProvider(_theme);
 
         Debug.WriteLine("[SharedViewTemplates] Constructor called.");
         InitializeAlbumTemplates();
+        InitializePlaylistTemplates();
         InitializePanelTemplates();
     }
+    
+    private void InitializePlaylistTemplates()
+    {
+        DetailedPlaylistTemplate = new FuncDataTemplate<PlaylistViewModel>((dataContext, nameScope) =>
+        {
+            var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), VerticalAlignment = VerticalAlignment.Center };
 
-    // SetLibraryViewModel method removed
+            var imageGrid = new Grid
+            {
+                Width = 58, Height = 58, Margin = new Thickness(5, 0, 10, 0),
+                ColumnDefinitions = new ColumnDefinitions("*,*"), RowDefinitions = new RowDefinitions("*,*")
+            };
+
+            for (int i = 0; i < 4; i++)
+            {
+                var img = new Image { Width = 28, Height = 28, Stretch = Stretch.UniformToFill, Margin = new Thickness(1) };
+                img.Bind(Image.SourceProperty, new Binding($"SongThumbnailsForGrid[{i}]"));
+                RenderOptions.SetBitmapInterpolationMode(img, BitmapInterpolationMode.HighQuality);
+                Grid.SetRow(img, i / 2); Grid.SetColumn(img, i % 2);
+                imageGrid.Children.Add(img);
+            }
+            Grid.SetColumn(imageGrid, 0); itemGrid.Children.Add(imageGrid);
+
+            var nameBlock = new TextBlock { FontSize = 14, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center };
+            nameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(PlaylistViewModel.Name)));
+            Grid.SetColumn(nameBlock, 1); itemGrid.Children.Add(nameBlock);
+
+            var countBlock = new TextBlock { FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
+            countBlock.Bind(TextBlock.TextProperty, new Binding(nameof(PlaylistViewModel.SongCount)) { StringFormat = "{0} songs" });
+            Grid.SetColumn(countBlock, 2); itemGrid.Children.Add(countBlock);
+
+            return new Border { Padding = new Thickness(10, 6), MinHeight = 68, Background = Brushes.Transparent, Child = itemGrid };
+        }, supportsRecycling: true);
+
+        CompactPlaylistTemplate = new FuncDataTemplate<PlaylistViewModel>((dataContext, nameScope) =>
+        {
+            var nameBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+            nameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(PlaylistViewModel.Name)));
+
+            var countBlock = new TextBlock { FontSize = 11, Foreground = _theme.B_SecondaryTextColor, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(5, 0, 0, 0) };
+            countBlock.Bind(TextBlock.TextProperty, new Binding(nameof(PlaylistViewModel.SongCount)) { StringFormat = " - {0} songs" });
+
+            var panel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { nameBlock, countBlock } };
+            return new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = panel };
+        }, supportsRecycling: true);
+
+        GridPlaylistTemplate = new FuncDataTemplate<PlaylistViewModel>((dataContext, nameScope) =>
+        {
+            var contentStack = new StackPanel
+            {
+                Orientation = Orientation.Vertical,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Spacing = 3
+            };
+
+            var image = new Image
+            {
+                Width = 80, Height = 80, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center
+            };
+            image.Bind(Image.SourceProperty, new Binding(nameof(PlaylistViewModel.RepresentativeThumbnail)));
+            RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
+            contentStack.Children.Add(image);
+
+            var nameBlock = new TextBlock
+            {
+                FontSize = 12, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap,
+                MaxHeight = 30, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 2, 0, 0)
+            };
+            nameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(PlaylistViewModel.Name)));
+            contentStack.Children.Add(nameBlock);
+
+            var countBlock = new TextBlock
+            {
+                FontSize = 10, Foreground = _theme.B_SecondaryTextColor, TextWrapping = TextWrapping.Wrap,
+                MaxHeight = 15, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center
+            };
+            countBlock.Bind(TextBlock.TextProperty, new Binding(nameof(PlaylistViewModel.SongCount)) { StringFormat = "{0} songs" });
+            contentStack.Children.Add(countBlock);
+
+            return new Border
+            {
+                Width = 120, Height = 150, Background = Brushes.Transparent,
+                Padding = new Thickness(5), Child = contentStack,
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
+            };
+        }, supportsRecycling: true);
+    }
 
     private void InitializeAlbumTemplates()
     {
@@ -10333,7 +10708,7 @@ public class SharedViewTemplates
 
             var imagePresenter = new Panel { Width = 80, Height = 80, HorizontalAlignment = HorizontalAlignment.Center };
 
-            if (dataContext != null && dataContext.SongThumbnailsForGrid != null && dataContext.SongThumbnailsForGrid.Count(t => t != null) > 1)
+            if (dataContext is not null && dataContext.SongThumbnailsForGrid is not null && dataContext.SongThumbnailsForGrid.Count(t => t is not null) > 1)
             {
                 var imageGrid = new Grid
                 {

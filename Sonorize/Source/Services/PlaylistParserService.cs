@@ -33,7 +33,23 @@ public class PlaylistParserService
                 }
                 else if (m3uDirectory is not null)
                 {
-                    absolutePath = Path.GetFullPath(Path.Combine(m3uDirectory, songPath));
+                    // Heuristic to handle M3U paths that are relative to a "library root"
+                    // which is one level above the M3U file's directory.
+                    // This happens if the path inside the M3U is like "Music/SomeFolder/song.mp3"
+                    // when the M3U itself is inside the "Music" folder.
+                    var m3uDirName = Path.GetFileName(m3uDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                    var songPathFirstSegment = songPath.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, 2).FirstOrDefault();
+
+                    string basePath = m3uDirectory;
+                    if (!string.IsNullOrEmpty(m3uDirName) && m3uDirName.Equals(songPathFirstSegment, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var m3uParentDir = Path.GetDirectoryName(m3uDirectory);
+                        if (m3uParentDir is not null)
+                        {
+                            basePath = m3uParentDir;
+                        }
+                    }
+                    absolutePath = Path.GetFullPath(Path.Combine(basePath, songPath));
                 }
                 else
                 {
