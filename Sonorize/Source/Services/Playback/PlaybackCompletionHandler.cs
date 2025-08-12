@@ -25,10 +25,9 @@ public class PlaybackCompletionHandler
     {
         Debug.WriteLine($"[PlaybackCompletionHandler] Handling playback stop for: {songThatJustStopped?.Title ?? "No Song"}. ExplicitStopRequest: {wasExplicitlyStopped}, Error: {eventArgs.Exception != null}");
 
-        _sessionManager.StopUiUpdateMonitor();
-
         if (eventArgs.Exception != null)
         {
+            _sessionManager.StopUiUpdateMonitor(); // Stop monitor on error
             Debug.WriteLine($"[PlaybackCompletionHandler] Playback stopped due to error: {eventArgs.Exception.Message}. Finalizing state to Stopped.");
             TryScrobble(songThatJustStopped, actualStoppedPosition);
             _sessionManager.FinalizeCurrentSong(null);
@@ -43,6 +42,7 @@ public class PlaybackCompletionHandler
 
             if (wasExplicitlyStopped)
             {
+                _sessionManager.StopUiUpdateMonitor(); // Stop monitor on explicit stop
                 Debug.WriteLine("[PlaybackCompletionHandler] Playback stopped by explicit user/app command. Finalizing.");
                 TryScrobble(songThatJustStopped, actualStoppedPosition);
                 _sessionManager.FinalizeCurrentSong(null);
@@ -62,20 +62,21 @@ public class PlaybackCompletionHandler
 
                 // If the SessionManager indicates that it's NOT currently playing ANYTHING,
                 // then it's safe for this internal stop event (for whatever song it was)
-                // to confirm the global state as Stopped.
+                // to confirm the global state as Stopped. This can happen if the next song fails to load.
                 if (!_sessionManager.IsPlaying)
                 {
+                    _sessionManager.StopUiUpdateMonitor(); // Stop monitor here as playback has failed.
                     Debug.WriteLine($"[PlaybackCompletionHandler] Session is NOT currently playing. Setting global state to Stopped due to internal stop of '{songThatJustStopped?.Title}'.");
                     _sessionManager.SetPlaybackState(false, PlaybackStateStatus.Stopped);
                 }
                 // ELSE: SessionManager IS IsPlaying. This means another playback instance (e.g., the next song,
                 // or a re-clicked version of the current song) has already started and set the global state.
                 // The stop event for this (now potentially old/superseded) song instance should NOT
-                // override the global IsPlaying state.
+                // override the global IsPlaying state OR THE MONITOR.
                 else
                 {
                     Debug.WriteLine($"[PlaybackCompletionHandler] Session IS currently playing (current song: '{_sessionManager.GetCurrentSongForCompletion()?.Title}'). " +
-                                    $"The internal stop event for '{songThatJustStopped?.Title}' will NOT change global playback state.");
+                                    $"The internal stop event for '{songThatJustStopped?.Title}' will NOT change global playback state or stop the monitor.");
                 }
             }
         }

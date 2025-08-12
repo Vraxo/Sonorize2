@@ -9973,11 +9973,11 @@ using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives; // For Thumb, Track
-using Avalonia.Controls.Templates;  // For FuncControlTemplate
 using Avalonia.Data;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Sonorize.Converters;
+using Avalonia.Styling;
 using Sonorize.Models; // For ThemeColors
 
 namespace Sonorize.Views.MainWindowControls;
@@ -10020,105 +10020,49 @@ public static class PlaybackTimeSliderPanel
             Background = theme.B_SecondaryTextColor, // Inactive part of the track
             Foreground = theme.B_AccentColor,        // Active part of the track
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            Height = 32,                             // Overall height of the slider control
-            MinHeight = 32,                          // Ensure it requests this minimum height
-            Padding = new Thickness(0),
-            CornerRadius = new CornerRadius(8),      // Rounded ends for the overall slider control
-            RenderTransform = new TranslateTransform(0, -3) // Shift slider up by 3 pixels
         };
 
-        // Override the theme resource for track height specifically for this slider
-        mainPlaybackSlider.Resources["SliderTrackThemeHeight"] = 6.0;
-
-        // Slider Template - thumb invisible but interactive
-        mainPlaybackSlider.Template = new FuncControlTemplate<Slider>((slider, _) =>
+        // Add a style for the slider's thumb to make it visible and circular
+        mainPlaybackSlider.Styles.Add(new Style(s => s.OfType<Slider>().Descendant().Is<Thumb>())
         {
-            var backgroundPart = new Border
+            Setters =
             {
-                Background = slider.Background,
-                CornerRadius = new CornerRadius(3),
-                VerticalAlignment = VerticalAlignment.Center,
-                Height = 8
-            };
-
-            var filledPart = new Border
-            {
-                Background = slider.Foreground,
-                CornerRadius = new CornerRadius(3),
-                VerticalAlignment = VerticalAlignment.Center,
-                Height = 8
-            };
-
-            var thumb = new Thumb
-            {
-                Width = 4,
-                Height = 6,
-                Opacity = 0,
-                IsHitTestVisible = true
-            };
-
-            var track = new Track
-            {
-                Name = "PART_Track",
-                Orientation = Orientation.Horizontal,
-                Thumb = thumb
-            };
-
-            track.Bind(Track.MinimumProperty, slider[!Slider.MinimumProperty]);
-            track.Bind(Track.MaximumProperty, slider[!Slider.MaximumProperty]);
-            track.Bind(Track.ValueProperty, slider[!Slider.ValueProperty]);
-
-            var container = new Grid
-            {
-                VerticalAlignment = VerticalAlignment.Center,
-                Height = 6,
-                Children =
-                {
-                    backgroundPart,
-                    new Grid
-                    {
-                        HorizontalAlignment = HorizontalAlignment.Left,
-                        Children = { filledPart }
-                    },
-                    track
-                }
-            };
-
-            // Bind filledPart.Width to proportional slider value
-            filledPart.Bind(Border.WidthProperty, new MultiBinding
-            {
-                Converter = new SliderFillWidthConverter(),
-                Bindings =
-                {
-                    slider[!Slider.ValueProperty],
-                    slider[!Slider.MaximumProperty],
-                    slider[!Slider.BoundsProperty]
-                }
-            });
-
-            return container;
+                new Setter(Thumb.BackgroundProperty, theme.B_AccentColor),
+                new Setter(Thumb.BorderThicknessProperty, new Thickness(0)),
+                new Setter(Thumb.CornerRadiusProperty, new CornerRadius(7)),
+                new Setter(Thumb.WidthProperty, 14.0),
+                new Setter(Thumb.HeightProperty, 14.0),
+            }
         });
 
-        // HERE IS THE CRUCIAL CHANGE:
-        // Handle PointerPressed on the slider itself (the whole clickable area)
+        // Optional: Style for the track height
+        mainPlaybackSlider.Styles.Add(new Style(s => s.OfType<Slider>().Descendant().Is<Track>())
+        {
+            Setters =
+            {
+                new Setter(Track.HeightProperty, 4.0)
+            }
+        });
+
         mainPlaybackSlider.PointerPressed += (sender, e) =>
         {
-            var s = (Slider)sender;
-            var pos = e.GetPosition(s);
-            var bounds = s.Bounds;
+            if (sender is not Slider slider) return;
 
-            if (bounds.Width > 0)
+            var point = e.GetCurrentPoint(slider);
+            if (point.Properties.IsLeftButtonPressed)
             {
-                // Calculate ratio (clamped 0 to 1)
-                double ratio = Math.Clamp(pos.X / bounds.Width, 0, 1);
-
-                // Calculate new slider value based on ratio
-                double newValue = s.Minimum + ratio * (s.Maximum - s.Minimum);
-
-                s.Value = newValue;
-                e.Handled = true;
+                var position = point.Position;
+                var bounds = slider.Bounds;
+                if (bounds.Width > 0)
+                {
+                    var ratio = Math.Clamp(position.X / bounds.Width, 0, 1);
+                    var newValue = slider.Minimum + (ratio * (slider.Maximum - slider.Minimum));
+                    slider.Value = newValue;
+                    e.Handled = true;
+                }
             }
         };
+
 
         mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("Playback.CurrentSongDurationSeconds"));
         mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("Playback.CurrentPositionSeconds", BindingMode.TwoWay));
@@ -10128,7 +10072,6 @@ public static class PlaybackTimeSliderPanel
         {
             ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
             VerticalAlignment = VerticalAlignment.Center,
-            Height = 32,
             MinWidth = 500,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             ClipToBounds = false

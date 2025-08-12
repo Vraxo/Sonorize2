@@ -13,8 +13,11 @@ public class PlaybackMonitor : IDisposable
     private Timer? _monitorTimer;
     private Song? _songBeingMonitored;
     private Action<TimeSpan, TimeSpan>? _positionUpdateAction;
+    private int _notPlayingCounter;
 
     private const int MonitorIntervalMilliseconds = 100;
+    private const int NotPlayingToleranceTicks = 5; // 5 * 100ms = 500ms tolerance
+
 
     public PlaybackMonitor(NAudioPlaybackEngine engineController, PlaybackLoopHandler loopHandler) // Changed type
     {
@@ -29,6 +32,8 @@ public class PlaybackMonitor : IDisposable
 
         _songBeingMonitored = songToMonitor;
         _positionUpdateAction = positionUpdateAction ?? throw new ArgumentNullException(nameof(positionUpdateAction));
+        _notPlayingCounter = 0;
+
 
         if (_songBeingMonitored is null)
         {
@@ -72,11 +77,17 @@ public class PlaybackMonitor : IDisposable
 
         if (_engineController.CurrentPlaybackStatus != PlaybackStateStatus.Playing)
         {
-            // If not playing, stop the monitor.
-            Debug.WriteLine($"[PlaybackMonitor Callback] Engine not playing (State: {_engineController.CurrentPlaybackStatus}). Stopping monitoring for '{localSongBeingMonitored.Title}'.");
-            Dispatcher.UIThread.InvokeAsync(Stop);
+            _notPlayingCounter++;
+            if (_notPlayingCounter > NotPlayingToleranceTicks)
+            {
+                Debug.WriteLine($"[PlaybackMonitor Callback] Engine not playing for {NotPlayingToleranceTicks} ticks (State: {_engineController.CurrentPlaybackStatus}). Stopping monitoring for '{localSongBeingMonitored.Title}'.");
+                Dispatcher.UIThread.InvokeAsync(Stop);
+            }
             return;
         }
+
+        _notPlayingCounter = 0; // Reset counter if playing
+
 
         Dispatcher.UIThread.InvokeAsync(() =>
         {
