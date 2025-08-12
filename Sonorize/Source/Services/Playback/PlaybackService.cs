@@ -47,12 +47,12 @@ public class PlaybackService : ViewModelBase, IDisposable
     internal PlaybackSessionManager SessionManager => _sessionManager;
 
 
-    public PlaybackService(ScrobblingService scrobblingService)
+    public PlaybackService(ScrobblingService scrobblingService, PlayCountDataService playCountDataService)
     {
         Debug.WriteLine("[PlaybackService] Constructor called.");
         _scrobblingService = scrobblingService;
         _loopHandler = new PlaybackLoopHandler(this);
-        _sessionManager = new PlaybackSessionManager(scrobblingService, _loopHandler);
+        _sessionManager = new PlaybackSessionManager(scrobblingService, _loopHandler, playCountDataService);
         _sessionManager.PropertyChanged += SessionManager_PropertyChanged;
     }
 

@@ -10,14 +10,14 @@ public class ApplicationServicesBootstrapper
     {
         // Create all services
         var lastfmAuthenticatorService = new LastfmAuthenticatorService(settingsService);
-        // Removed: var scrobbleEligibilityService = new ScrobbleEligibilityService();
-        var scrobblingService = new ScrobblingService(settingsService, lastfmAuthenticatorService); // Updated instantiation
-        var playbackService = new PlaybackService(scrobblingService);
+        var scrobblingService = new ScrobblingService(settingsService, lastfmAuthenticatorService);
         var loopDataService = new LoopDataService();
+        var playCountDataService = new PlayCountDataService(); // NEW
+        var playbackService = new PlaybackService(scrobblingService, playCountDataService); // MODIFIED
         var defaultIconGenerator = new DefaultIconGenerator();
         var albumArtLoader = new AlbumArtLoader(); // Create AlbumArtLoader
         var thumbnailService = new ThumbnailService(defaultIconGenerator, albumArtLoader); // Pass both dependencies
-        var songFactory = new SongFactory(loopDataService);
+        var songFactory = new SongFactory(loopDataService, playCountDataService); // MODIFIED
         var musicLibraryService = new MusicLibraryService(loopDataService, thumbnailService, songFactory);
         var waveformService = new WaveformService();
         var songMetadataService = new SongMetadataService();

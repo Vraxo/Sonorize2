@@ -18,8 +18,10 @@ public class AutoPlaylistGeneratorService
             autoPlaylists.Add(recentlyAdded);
         }
 
-        // Generate "Most Played" (placeholder)
-        autoPlaylists.Add(GenerateMostPlayedPlaylist(allSongs, 25));
+        // Generate "Most Played" and always add it, even if empty.
+        var mostPlayed = GenerateMostPlayedPlaylist(allSongs, 25);
+        autoPlaylists.Add(mostPlayed);
+
 
         return autoPlaylists;
     }
@@ -37,12 +39,19 @@ public class AutoPlaylistGeneratorService
 
     private Playlist GenerateMostPlayedPlaylist(IEnumerable<Song> allSongs, int count)
     {
-        // Placeholder for now. This would require play count tracking.
+        // Now implemented to use the PlayCount property
+        var songs = allSongs
+            .Where(s => s.PlayCount > 0)
+            .OrderByDescending(s => s.PlayCount)
+            .ThenByDescending(s => s.DateAdded) // Secondary sort for ties
+            .Take(count)
+            .ToList();
+
         return new Playlist
         {
             Name = "Most Played",
             IsAutoPlaylist = true,
-            Songs = new List<Song>() // Empty for now
+            Songs = songs
         };
     }
 }

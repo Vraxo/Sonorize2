@@ -10,10 +10,12 @@ namespace Sonorize.Services;
 public class SongFactory
 {
     private readonly LoopDataService _loopDataService;
+    private readonly PlayCountDataService _playCountDataService;
 
-    public SongFactory(LoopDataService loopDataService)
+    public SongFactory(LoopDataService loopDataService, PlayCountDataService playCountDataService)
     {
         _loopDataService = loopDataService ?? throw new ArgumentNullException(nameof(loopDataService));
+        _playCountDataService = playCountDataService ?? throw new ArgumentNullException(nameof(playCountDataService));
         Debug.WriteLine("[SongFactory] Initialized.");
     }
 
@@ -78,6 +80,8 @@ public class SongFactory
             song.SavedLoop = new LoopRegion(storedLoopData.Start, storedLoopData.End);
             song.IsLoopActive = storedLoopData.IsActive;
         }
+
+        song.PlayCount = _playCountDataService.GetPlayCount(song.FilePath);
 
         return song;
     }

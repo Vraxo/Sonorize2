@@ -13,9 +13,12 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
     private readonly PlaybackCompletionHandler _completionHandler;
     private readonly ScrobblingService _scrobblingService;
     private readonly PlaybackSessionState _sessionState;
+    private readonly PlayCountDataService _playCountDataService;
 
     private PlaybackInfrastructureProvider? _currentInfrastructure;
     private bool _hasBeenScrobbledThisSession = false; // New flag for threshold-based scrobbling
+    private bool _hasBeenCountedAsPlayedThisSession = false;
+
 
     // Delegated Properties to PlaybackSessionState
     public Song? CurrentSong => _sessionState.CurrentSong;
@@ -54,10 +57,11 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? SessionEndedNaturally;
 
-    public PlaybackSessionManager(ScrobblingService scrobblingService, PlaybackLoopHandler loopHandler)
+    public PlaybackSessionManager(ScrobblingService scrobblingService, PlaybackLoopHandler loopHandler, PlayCountDataService playCountDataService)
     {
         _scrobblingService = scrobblingService ?? throw new ArgumentNullException(nameof(scrobblingService));
         _loopHandler = loopHandler ?? throw new ArgumentNullException(nameof(loopHandler));
+        _playCountDataService = playCountDataService ?? throw new ArgumentNullException(nameof(playCountDataService));
         _sessionState = new PlaybackSessionState();
         _sessionState.PropertyChanged += SessionState_PropertyChanged;
         _completionHandler = new PlaybackCompletionHandler(this, _scrobblingService);
@@ -116,6 +120,7 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
         try
         {
             _hasBeenScrobbledThisSession = false; // Reset scrobble flag for the new session.
+            _hasBeenCountedAsPlayedThisSession = false;
             _currentInfrastructure = new PlaybackInfrastructureProvider(_loopHandler);
             _currentInfrastructure.Coordinator.EnginePlaybackStopped += OnEngineCoordinatorPlaybackStopped;
             _currentInfrastructure.Coordinator.EnginePositionUpdated += OnEngineCoordinatorPositionUpdated;
@@ -207,20 +212,33 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
 
     private void OnEngineCoordinatorPositionUpdated(object? sender, PositionEventArgs e)
     {
-        if (sender == _currentInfrastructure?.Coordinator)
+        if (sender != _currentInfrastructure?.Coordinator)
         {
-            _sessionState.CurrentPosition = e.Position;
-            _sessionState.CurrentSongDuration = e.Duration;
+            return;
+        }
+
+        _sessionState.CurrentPosition = e.Position;
+        _sessionState.CurrentSongDuration = e.Duration;
+
+        if (CurrentSong is not null)
+        {
+            bool playbackThresholdMet = _scrobblingService.ShouldScrobble(CurrentSong, e.Position);
 
             // Scrobble-on-threshold logic
-            if (!_hasBeenScrobbledThisSession && CurrentSong is not null)
+            if (!_hasBeenScrobbledThisSession && playbackThresholdMet)
             {
-                if (_scrobblingService.ShouldScrobble(CurrentSong, e.Position))
-                {
-                    Debug.WriteLine($"[SessionManager] Scrobble threshold met for '{CurrentSong.Title}'. Sending permanent scrobble now.");
-                    _scrobblingService.ScrobbleAsync(CurrentSong, DateTime.UtcNow); // Fire and forget
-                    _hasBeenScrobbledThisSession = true;
-                }
+                Debug.WriteLine($"[SessionManager] Scrobble threshold met for '{CurrentSong.Title}'. Sending permanent scrobble now.");
+                _ = _scrobblingService.ScrobbleAsync(CurrentSong, DateTime.UtcNow); // Fire and forget
+                _hasBeenScrobbledThisSession = true;
+            }
+
+            // Play count logic
+            if (!_hasBeenCountedAsPlayedThisSession && playbackThresholdMet)
+            {
+                Debug.WriteLine($"[SessionManager] Play count threshold met for '{CurrentSong.Title}'. Incrementing count.");
+                _playCountDataService.IncrementPlayCount(CurrentSong.FilePath);
+                CurrentSong.PlayCount++; // Update the live model
+                _hasBeenCountedAsPlayedThisSession = true;
             }
         }
     }
