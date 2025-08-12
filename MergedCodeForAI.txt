@@ -3667,6 +3667,7 @@ public enum RepeatMode { None, PlayOnce, RepeatOne, RepeatAll }
 public class PlaybackViewModel : ViewModelBase, IDisposable
 {
     private readonly PlaybackService _playbackService;
+    private bool _isUserDraggingSlider;
 
     public WaveformDisplayViewModel WaveformDisplay { get; }
     public PlaybackModeViewModel ModeControls { get; }
@@ -3676,22 +3677,28 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
     public Song? CurrentSong => _playbackService.CurrentSong;
     public bool HasCurrentSong => _playbackService.CurrentSong != null;
     public TimeSpan CurrentPosition => _playbackService.CurrentPosition;
-    public double CurrentPositionSeconds
-    {
-        get => _playbackService.CurrentPosition.TotalSeconds;
-        set
-        {
-            if (_playbackService.CurrentSong == null || Math.Abs(_playbackService.CurrentPosition.TotalSeconds - value) <= 0.01)
-            {
-                return;
-            }
-            _playbackService.Seek(TimeSpan.FromSeconds(value));
-        }
-    }
+    public double CurrentPositionSeconds => _playbackService.CurrentPosition.TotalSeconds;
     public TimeSpan CurrentSongDuration => _playbackService.CurrentSongDuration;
     public double CurrentSongDurationSeconds => _playbackService.CurrentSongDurationSeconds;
     public PlaybackStateStatus CurrentPlaybackStatus => _playbackService.CurrentPlaybackStatus;
     public bool IsPlaying => _playbackService.IsPlaying;
+
+    private double _sliderPosition;
+    public double SliderPosition
+    {
+        get => _sliderPosition;
+        set
+        {
+            // This is only set by the slider or the timer update.
+            // The check prevents feedback loops if SetProperty is called from the timer
+            // with the same value that the slider already has.
+            if (Math.Abs(_sliderPosition - value) > 0.001)
+            {
+                SetProperty(ref _sliderPosition, value);
+            }
+        }
+    }
+
 
     public string CurrentTimeDisplay => _playbackService.CurrentSong != null ? $"{_playbackService.CurrentPosition:mm\\:ss}" : "--:--";
     public string TotalTimeDisplay => (_playbackService.CurrentSong != null && _playbackService.CurrentSongDuration.TotalSeconds > 0)
@@ -3742,9 +3749,14 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
                     OnPropertyChanged(nameof(HasCurrentSong));
                     OnPropertyChanged(nameof(CurrentTimeDisplay));
                     OnPropertyChanged(nameof(TotalTimeDisplay));
+                    UpdateAllDisplayProperties();
                     commandStateMayChange = true;
                     break;
                 case nameof(PlaybackService.CurrentPosition):
+                    if (!_isUserDraggingSlider)
+                    {
+                        SliderPosition = _playbackService.CurrentPosition.TotalSeconds;
+                    }
                     OnPropertyChanged(nameof(CurrentPosition));
                     OnPropertyChanged(nameof(CurrentPositionSeconds));
                     OnPropertyChanged(nameof(CurrentTimeDisplay));
@@ -3780,6 +3792,7 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(CurrentSongDurationSeconds));
         OnPropertyChanged(nameof(CurrentPlaybackStatus));
         OnPropertyChanged(nameof(IsPlaying));
+        SliderPosition = _playbackService.CurrentPosition.TotalSeconds;
     }
 
     private void WaveformDisplay_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -3819,6 +3832,22 @@ public class PlaybackViewModel : ViewModelBase, IDisposable
             case nameof(HasCurrentSong):
                 ModeControls.RaiseCommandCanExecuteChanged();
                 break;
+        }
+    }
+
+    public void BeginSliderDrag()
+    {
+        _isUserDraggingSlider = true;
+        Debug.WriteLine("[PlaybackVM] Begin slider drag");
+    }
+
+    public void CompleteSliderDrag()
+    {
+        if (_isUserDraggingSlider)
+        {
+            _isUserDraggingSlider = false;
+            Debug.WriteLine($"[PlaybackVM] Slider drag complete. Seeking to: {SliderPosition}");
+            _playbackService.Seek(TimeSpan.FromSeconds(SliderPosition));
         }
     }
 
@@ -5339,10 +5368,9 @@ public class PlaybackCompletionHandler
     {
         Debug.WriteLine($"[PlaybackCompletionHandler] Handling playback stop for: {songThatJustStopped?.Title ?? "No Song"}. ExplicitStopRequest: {wasExplicitlyStopped}, Error: {eventArgs.Exception != null}");
 
-        _sessionManager.StopUiUpdateMonitor();
-
         if (eventArgs.Exception != null)
         {
+            _sessionManager.StopUiUpdateMonitor(); // Stop monitor on error
             Debug.WriteLine($"[PlaybackCompletionHandler] Playback stopped due to error: {eventArgs.Exception.Message}. Finalizing state to Stopped.");
             TryScrobble(songThatJustStopped, actualStoppedPosition);
             _sessionManager.FinalizeCurrentSong(null);
@@ -5357,6 +5385,7 @@ public class PlaybackCompletionHandler
 
             if (wasExplicitlyStopped)
             {
+                _sessionManager.StopUiUpdateMonitor(); // Stop monitor on explicit stop
                 Debug.WriteLine("[PlaybackCompletionHandler] Playback stopped by explicit user/app command. Finalizing.");
                 TryScrobble(songThatJustStopped, actualStoppedPosition);
                 _sessionManager.FinalizeCurrentSong(null);
@@ -5376,20 +5405,21 @@ public class PlaybackCompletionHandler
 
                 // If the SessionManager indicates that it's NOT currently playing ANYTHING,
                 // then it's safe for this internal stop event (for whatever song it was)
-                // to confirm the global state as Stopped.
+                // to confirm the global state as Stopped. This can happen if the next song fails to load.
                 if (!_sessionManager.IsPlaying)
                 {
+                    _sessionManager.StopUiUpdateMonitor(); // Stop monitor here as playback has failed.
                     Debug.WriteLine($"[PlaybackCompletionHandler] Session is NOT currently playing. Setting global state to Stopped due to internal stop of '{songThatJustStopped?.Title}'.");
                     _sessionManager.SetPlaybackState(false, PlaybackStateStatus.Stopped);
                 }
                 // ELSE: SessionManager IS IsPlaying. This means another playback instance (e.g., the next song,
                 // or a re-clicked version of the current song) has already started and set the global state.
                 // The stop event for this (now potentially old/superseded) song instance should NOT
-                // override the global IsPlaying state.
+                // override the global IsPlaying state OR THE MONITOR.
                 else
                 {
                     Debug.WriteLine($"[PlaybackCompletionHandler] Session IS currently playing (current song: '{_sessionManager.GetCurrentSongForCompletion()?.Title}'). " +
-                                    $"The internal stop event for '{songThatJustStopped?.Title}' will NOT change global playback state.");
+                                    $"The internal stop event for '{songThatJustStopped?.Title}' will NOT change global playback state or stop the monitor.");
                 }
             }
         }
@@ -5915,8 +5945,11 @@ public class PlaybackMonitor : IDisposable
     private Timer? _monitorTimer;
     private Song? _songBeingMonitored;
     private Action<TimeSpan, TimeSpan>? _positionUpdateAction;
+    private int _notPlayingCounter;
 
     private const int MonitorIntervalMilliseconds = 100;
+    private const int NotPlayingToleranceTicks = 5; // 5 * 100ms = 500ms tolerance
+
 
     public PlaybackMonitor(NAudioPlaybackEngine engineController, PlaybackLoopHandler loopHandler) // Changed type
     {
@@ -5931,6 +5964,8 @@ public class PlaybackMonitor : IDisposable
 
         _songBeingMonitored = songToMonitor;
         _positionUpdateAction = positionUpdateAction ?? throw new ArgumentNullException(nameof(positionUpdateAction));
+        _notPlayingCounter = 0;
+
 
         if (_songBeingMonitored is null)
         {
@@ -5974,11 +6009,17 @@ public class PlaybackMonitor : IDisposable
 
         if (_engineController.CurrentPlaybackStatus != PlaybackStateStatus.Playing)
         {
-            // If not playing, stop the monitor.
-            Debug.WriteLine($"[PlaybackMonitor Callback] Engine not playing (State: {_engineController.CurrentPlaybackStatus}). Stopping monitoring for '{localSongBeingMonitored.Title}'.");
-            Dispatcher.UIThread.InvokeAsync(Stop);
+            _notPlayingCounter++;
+            if (_notPlayingCounter > NotPlayingToleranceTicks)
+            {
+                Debug.WriteLine($"[PlaybackMonitor Callback] Engine not playing for {NotPlayingToleranceTicks} ticks (State: {_engineController.CurrentPlaybackStatus}). Stopping monitoring for '{localSongBeingMonitored.Title}'.");
+                Dispatcher.UIThread.InvokeAsync(Stop);
+            }
             return;
         }
+
+        _notPlayingCounter = 0; // Reset counter if playing
+
 
         Dispatcher.UIThread.InvokeAsync(() =>
         {
@@ -6371,6 +6412,7 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
     }
 
     private volatile bool _explicitStopRequested = false;
+    private Song? _songBeingReplaced;
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? SessionEndedNaturally;
@@ -6413,41 +6455,43 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
     {
         Debug.WriteLine($"[SessionManager] StartNewSession requested for: {(song?.Title ?? "null song")}");
 
+        // --- Step 1: Stop current playback if any ---
+        if (CurrentPlaybackStatus != PlaybackStateStatus.Stopped && CurrentSong != null)
+        {
+            Debug.WriteLine($"[SessionManager] Current song '{CurrentSong.Title}' ({CurrentPlaybackStatus}) will be stopped for new/re-clicked song '{song?.Title ?? "null song"}'.");
+            _songBeingReplaced = CurrentSong; // Flag that this stop is part of a song switch
+            _explicitStopRequested = false;
+            _playbackEngineCoordinator.Stop();
+        }
+        else
+        {
+            _songBeingReplaced = null; // Nothing was playing, so nothing is being replaced.
+        }
+
+        // --- Step 2: Validate new song ---
         if (song == null || string.IsNullOrEmpty(song.FilePath) || !File.Exists(song.FilePath))
         {
-            Debug.WriteLine("[SessionManager] New song is null or invalid. Stopping current playback if any.");
-            if (CurrentPlaybackStatus != PlaybackStateStatus.Stopped)
+            Debug.WriteLine("[SessionManager] New song is null or invalid. Playback will stop (if it was running).");
+            // If nothing was playing initially, we need to ensure the state is clean.
+            if (_songBeingReplaced == null)
             {
-                // This stop is an internal mechanism due to invalid new song.
-                _explicitStopRequested = false;
-                _playbackEngineCoordinator.Stop();
-            }
-            else // Already stopped, just ensure state reflects no song.
-            {
-                _sessionState.CurrentSong = null;
-                SetPlaybackState(false, PlaybackStateStatus.Stopped);
+                FinalizeCurrentSong(null); // Clears song, position, etc.
             }
             return false;
         }
 
-        // If a song is currently playing or paused, and it's different from the new song,
-        // or if it's the same song (re-click), it needs to be stopped first.
-        if (CurrentPlaybackStatus != PlaybackStateStatus.Stopped && CurrentSong != null)
+        // --- Step 3: Load the new song ---
+        var result = _sessionLoader.LoadNewSession(song);
+        if (!result)
         {
-            Debug.WriteLine($"[SessionManager] Current song '{CurrentSong.Title}' ({CurrentPlaybackStatus}) will be stopped for new/re-clicked song '{song.Title}'.");
-            // This stop is internal to starting/restarting a song, not an explicit user "stop all playback" request.
-            // So, _explicitStopRequested must be false to ensure PlaybackCompletionHandler treats it as an internal stop.
-            _explicitStopRequested = false;
-            _playbackEngineCoordinator.Stop();
-            // The PlaybackStopped event for the old song will be handled asynchronously.
-            // The PlaybackCompletionHandler logic for internal stops should prevent interference
-            // with the new song's session that is about to be loaded.
+            // Loading failed. The state should already be 'Stopped' and clean from the loader.
+            // The stop event from the old song might still be pending. We need to clear _songBeingReplaced
+            // so that the stop event doesn't get confused.
+            Debug.WriteLine($"[SessionManager] New session load failed for '{song.Title}'.");
+            _songBeingReplaced = null;
         }
 
-        // _explicitStopRequested is now definitely false (either set above, or was already false if nothing was playing).
-        // This flag primarily informs the PlaybackCompletionHandler.
-        // For the new session being loaded by _sessionLoader, the concept of an "explicit stop" doesn't apply yet.
-        return _sessionLoader.LoadNewSession(song);
+        return result;
     }
 
     public void PauseSession()
@@ -6531,15 +6575,14 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
 
     private void OnEngineCoordinatorPlaybackStopped(object? sender, StoppedEventArgs e)
     {
-        Song? songThatJustStopped = CurrentSong; // Capture before it's potentially changed by the handler
-
-        // It's crucial that `songThatJustStopped` refers to the song whose engine instance *actually* stopped.
-        // If `_sessionLoader.LoadNewSession` has already updated `CurrentSong` by the time this event arrives
-        // for the *old* song, then `CurrentSong` here would be the *new* song.
-        // This requires careful handling. The `NAudioPipeline` or `NAudioPlaybackEngine` should ideally pass
-        // context about which song's playback stopped. For now, assume the event carries the context.
-        // Let's refine: `OnEngineCoordinatorPlaybackStopped` itself is for the *current* coordinator's engine.
-        // The state of `_explicitStopRequested` is the key.
+        // If a song was being replaced, this stop event belongs to it.
+        // Otherwise, it belongs to the CurrentSong.
+        Song? songThatJustStopped = _songBeingReplaced ?? CurrentSong;
+        if (_songBeingReplaced != null)
+        {
+            Debug.WriteLine($"[SessionManager] OnEngineCoordinatorPlaybackStopped: Attributing stop event to the song that was being replaced: '{_songBeingReplaced.Title}'.");
+            _songBeingReplaced = null; // Consume it.
+        }
 
         TimeSpan actualStoppedPosition = _playbackEngineCoordinator.CurrentPosition; // Position from the engine that stopped
         TimeSpan actualStoppedSongDuration = _playbackEngineCoordinator.CurrentSongDuration; // Duration from the engine that stopped
@@ -9978,7 +10021,9 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.VisualTree;
 using Sonorize.Models; // For ThemeColors
+using Sonorize.ViewModels;
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -10044,28 +10089,72 @@ public static class PlaybackTimeSliderPanel
             }
         });
 
+        // Handle clicking directly on the track (not the thumb)
         mainPlaybackSlider.PointerPressed += (sender, e) =>
         {
-            if (sender is not Slider slider) return;
+            if (sender is not Slider slider || slider.DataContext is not MainWindowViewModel { Playback: { } playbackVM }) return;
+
+            // This logic is for when the user clicks on the track to jump to a position.
+            // The thumb drag is handled by DragStarted/DragCompleted.
+            var thumb = slider.FindDescendantOfType<Thumb>();
+            if (thumb != null && thumb.IsPointerOver)
+            {
+                // Pointer is over the thumb, let the thumb's drag events handle this.
+                return;
+            }
+
+            playbackVM.BeginSliderDrag();
 
             var point = e.GetCurrentPoint(slider);
             if (point.Properties.IsLeftButtonPressed)
             {
-                var position = point.Position;
                 var bounds = slider.Bounds;
                 if (bounds.Width > 0)
                 {
-                    var ratio = Math.Clamp(position.X / bounds.Width, 0, 1);
+                    var ratio = Math.Clamp(point.Position.X / bounds.Width, 0, 1);
                     var newValue = slider.Minimum + (ratio * (slider.Maximum - slider.Minimum));
-                    slider.Value = newValue;
+                    slider.Value = newValue; // This updates SliderPosition via TwoWay binding
                     e.Handled = true;
                 }
             }
         };
 
+        // This handles the release from a track click.
+        mainPlaybackSlider.PointerReleased += (sender, e) =>
+        {
+            if (sender is not Slider slider || slider.DataContext is not MainWindowViewModel { Playback: { } playbackVM }) return;
+
+            var thumb = slider.FindDescendantOfType<Thumb>();
+            if (thumb != null && thumb.IsPointerOver)
+            {
+                // Pointer is over the thumb, let the thumb's drag events handle this.
+                return;
+            }
+
+            playbackVM.CompleteSliderDrag();
+            e.Handled = true;
+        };
+
+        // Add handlers specifically for the Thumb's drag operations
+        mainPlaybackSlider.AddHandler(Thumb.DragStartedEvent, (s, e) =>
+        {
+            if (s is Slider { DataContext: MainWindowViewModel { Playback: { } playbackVM } })
+            {
+                playbackVM.BeginSliderDrag();
+            }
+        });
+
+        mainPlaybackSlider.AddHandler(Thumb.DragCompletedEvent, (s, e) =>
+        {
+            if (s is Slider { DataContext: MainWindowViewModel { Playback: { } playbackVM } })
+            {
+                playbackVM.CompleteSliderDrag();
+            }
+        });
+
 
         mainPlaybackSlider.Bind(Slider.MaximumProperty, new Binding("Playback.CurrentSongDurationSeconds"));
-        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("Playback.CurrentPositionSeconds", BindingMode.TwoWay));
+        mainPlaybackSlider.Bind(Slider.ValueProperty, new Binding("Playback.SliderPosition", BindingMode.TwoWay));
         mainPlaybackSlider.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
 
         var timeSliderGrid = new Grid

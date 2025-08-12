@@ -1,5 +1,5 @@
 ﻿using System; // For EventArgs
-using System.ComponentModel; // For PropertyChangedEventArgs
+using System.ComponentModel; // For PropertyChangedEventArgs, CancelEventArgs
 using System.Diagnostics; // For Debug
 using Avalonia;
 using Avalonia.Controls;
@@ -78,6 +78,16 @@ public class MainWindow : Window
         Content = mainGrid;
 
         this.DataContextChanged += MainWindow_DataContextChanged;
+        this.Closing += OnMainWindowClosing; // Graceful shutdown hook
+    }
+
+    private void OnMainWindowClosing(object? sender, CancelEventArgs e)
+    {
+        if (DataContext is IDisposable disposable)
+        {
+            Debug.WriteLine("[MainWindow] Window is closing. Disposing ViewModel to ensure graceful shutdown.");
+            disposable.Dispose();
+        }
     }
 
     private void MainWindow_DataContextChanged(object? sender, EventArgs e)

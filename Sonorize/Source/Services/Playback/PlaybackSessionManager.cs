@@ -58,6 +58,8 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
 
     private volatile bool _explicitStopRequested = false;
     private Song? _songBeingReplaced;
+    private TimeSpan _positionOfSongBeingReplaced;
+    private TimeSpan _durationOfSongBeingReplaced;
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? SessionEndedNaturally;
@@ -104,7 +106,12 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
         if (CurrentPlaybackStatus != PlaybackStateStatus.Stopped && CurrentSong != null)
         {
             Debug.WriteLine($"[SessionManager] Current song '{CurrentSong.Title}' ({CurrentPlaybackStatus}) will be stopped for new/re-clicked song '{song?.Title ?? "null song"}'.");
-            _songBeingReplaced = CurrentSong; // Flag that this stop is part of a song switch
+
+            // CAPTURE STATE of the outgoing song before initiating the stop.
+            _songBeingReplaced = CurrentSong;
+            _positionOfSongBeingReplaced = this.CurrentPosition;
+            _durationOfSongBeingReplaced = this.CurrentSongDuration;
+
             _explicitStopRequested = false;
             _playbackEngineCoordinator.Stop();
         }
@@ -181,7 +188,8 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
               CurrentSong,
               this.CurrentPosition,
               this.CurrentSongDuration,
-              _explicitStopRequested // will be true here
+              _explicitStopRequested, // will be true here
+              isInternalStopForSongChange: false
           );
         }
     }
@@ -220,31 +228,36 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
 
     private void OnEngineCoordinatorPlaybackStopped(object? sender, StoppedEventArgs e)
     {
-        // If a song was being replaced, this stop event belongs to it.
-        // Otherwise, it belongs to the CurrentSong.
-        Song? songThatJustStopped = _songBeingReplaced ?? CurrentSong;
-        if (_songBeingReplaced != null)
+        bool isInternalStopForSongChange = _songBeingReplaced != null;
+        Song? songThatJustStopped;
+        TimeSpan actualStoppedPosition;
+        TimeSpan actualStoppedSongDuration;
+
+        if (isInternalStopForSongChange)
         {
-            Debug.WriteLine($"[SessionManager] OnEngineCoordinatorPlaybackStopped: Attributing stop event to the song that was being replaced: '{_songBeingReplaced.Title}'.");
-            _songBeingReplaced = null; // Consume it.
+            // Use the state snapshotted right before the stop was initiated.
+            songThatJustStopped = _songBeingReplaced;
+            actualStoppedPosition = _positionOfSongBeingReplaced;
+            actualStoppedSongDuration = _durationOfSongBeingReplaced;
+
+            Debug.WriteLine($"[SessionManager] OnEngineCoordinatorPlaybackStopped: Attributing stop event to the song that was being replaced: '{_songBeingReplaced.Title}'. Using captured position: {actualStoppedPosition}");
+            _songBeingReplaced = null; // Consume the snapshot.
         }
-
-        TimeSpan actualStoppedPosition = _playbackEngineCoordinator.CurrentPosition; // Position from the engine that stopped
-        TimeSpan actualStoppedSongDuration = _playbackEngineCoordinator.CurrentSongDuration; // Duration from the engine that stopped
-
-        // If the engine that stopped had a song, and its duration was zero (e.g., error during load),
-        // use the model's duration for scrobbling.
-        if (songThatJustStopped != null && actualStoppedSongDuration == TimeSpan.Zero)
+        else
         {
-            actualStoppedSongDuration = songThatJustStopped.Duration;
+            // For natural stops or explicit stops, the session state is still valid for the current song.
+            songThatJustStopped = CurrentSong;
+            actualStoppedPosition = this.CurrentPosition;
+            actualStoppedSongDuration = this.CurrentSongDuration;
         }
 
         _completionHandler.Handle(
             e,
-            songThatJustStopped, // Pass the song that was current when the stop occurred.
+            songThatJustStopped,
             actualStoppedPosition,
             actualStoppedSongDuration,
-            _explicitStopRequested // Use the flag as it was when Stop() was called or event occurred.
+            _explicitStopRequested,
+            isInternalStopForSongChange
         );
     }
 

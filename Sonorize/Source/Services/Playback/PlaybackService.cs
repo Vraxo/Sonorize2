@@ -106,6 +106,11 @@ public class PlaybackService : ViewModelBase, IDisposable
     public void Dispose()
     {
         Debug.WriteLine("[PlaybackService] Dispose() called.");
+
+        // Before disposing, perform a final, explicit stop.
+        // This ensures the current song is scrobbled if eligible upon app close.
+        Stop();
+
         if (_sessionManager != null)
         {
             _sessionManager.PropertyChanged -= SessionManager_PropertyChanged;

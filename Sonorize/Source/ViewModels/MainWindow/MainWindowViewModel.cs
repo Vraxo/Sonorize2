@@ -94,7 +94,10 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
         OpenSettingsCommand = new RelayCommand(async _ => await OpenSettingsDialogAsync(),
             _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
-        ExitCommand = new RelayCommand(_ => Environment.Exit(0));
+
+        // Correctly handle exit by closing the window, which triggers the disposal chain.
+        ExitCommand = new RelayCommand(_ => _ownerView?.Close(), _ => _ownerView != null);
+
         AddDirectoryAndRefreshCommand = new RelayCommand(async _ => await AddMusicDirectoryAndRefreshAsync(),
             _ => !Library.IsLoadingLibrary && (Playback.WaveformDisplay == null || !Playback.WaveformDisplay.IsWaveformLoading));
         OpenEditSongMetadataDialogCommand = new RelayCommand(async song => await HandleOpenEditSongMetadataDialogAsync(song), CanOpenEditSongMetadataDialog);
@@ -105,6 +108,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public void SetOwnerView(Window ownerView)
     {
         _ownerView = ownerView;
+        // Re-evaluate CanExecute for commands that depend on the owner view.
+        (ExitCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
     // PlaybackService_PlaybackEndedNaturally is now handled within MainWindowComponentsManager via its WorkflowManager
