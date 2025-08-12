@@ -4,6 +4,7 @@ using System.Linq;
 using Avalonia.Media.Imaging;
 using Sonorize.Models;
 using Sonorize.Services;
+using System;
 
 namespace Sonorize.ViewModels.LibraryManagement;
 
@@ -22,7 +23,13 @@ public class PlaylistCollectionManager
     {
         _playlistsCollection.Clear();
         var defaultIcon = _musicLibraryService.GetDefaultThumbnail();
-        foreach (var playlist in allPlaylists.OrderBy(p => p.Name))
+
+        // Sort auto-playlists first, then sort alphabetically within each group
+        var sortedPlaylists = allPlaylists
+            .OrderByDescending(p => p.IsAutoPlaylist)
+            .ThenBy(p => p.Name, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var playlist in sortedPlaylists)
         {
             _playlistsCollection.Add(new PlaylistViewModel(playlist, defaultIcon));
         }
