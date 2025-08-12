@@ -11,20 +11,21 @@ namespace Sonorize.ViewModels.LibraryManagement;
 
 public class LibraryDataOrchestrator
 {
-private readonly MusicLibraryService _musicLibraryService;
+    private readonly MusicLibraryService _musicLibraryService;
     private readonly ArtistAlbumCollectionManager _artistAlbumManager;
     private readonly SettingsService _settingsService;
-    private readonly AutoPlaylistGeneratorService _autoPlaylistGenerator;
+    private readonly AutoPlaylistManager _autoPlaylistManager;
 
     public LibraryDataOrchestrator(
         MusicLibraryService musicLibraryService,
         ArtistAlbumCollectionManager artistAlbumManager,
-        SettingsService settingsService)
+        SettingsService settingsService,
+        AutoPlaylistManager autoPlaylistManager)
     {
         _musicLibraryService = musicLibraryService ?? throw new ArgumentNullException(nameof(musicLibraryService));
         _artistAlbumManager = artistAlbumManager ?? throw new ArgumentNullException(nameof(artistAlbumManager));
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
-        _autoPlaylistGenerator = new AutoPlaylistGeneratorService();
+        _autoPlaylistManager = autoPlaylistManager ?? throw new ArgumentNullException(nameof(autoPlaylistManager));
     }
 
     public async Task<(List<Song> Songs, List<Playlist> Playlists)> LoadAndProcessLibraryDataAsync(Action<string> statusUpdateCallback)
@@ -55,8 +56,8 @@ private readonly MusicLibraryService _musicLibraryService;
             var filePlaylists = await _musicLibraryService.LoadPlaylistsAsync(settings.MusicDirectories, rawSongs);
 
             // Phase 2.5: Generate Auto-Playlists
-            var autoPlaylists = _autoPlaylistGenerator.GenerateAll(rawSongs);
-            
+            var autoPlaylists = _autoPlaylistManager.GenerateInitialAutoPlaylists(rawSongs);
+
             // Combine all playlists, auto-playlists first
             var allPlaylists = autoPlaylists.Concat(filePlaylists).ToList();
 

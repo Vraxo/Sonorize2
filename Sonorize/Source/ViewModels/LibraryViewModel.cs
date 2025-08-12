@@ -170,6 +170,17 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         await _libraryLoadProcess.ExecuteLoadAsync();
     }
 
+    public void RefreshAutoPlaylists()
+    {
+        if (IsLoadingLibrary)
+        {
+            return;
+        }
+
+        Debug.WriteLine("[LibraryVM] RefreshAutoPlaylists called.");
+        _components.AutoPlaylistManager.RefreshAutoPlaylists();
+    }
+
     private void ApplyFilter()
     {
         _components.SongList.ApplyFilter(

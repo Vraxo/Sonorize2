@@ -5,6 +5,7 @@ using Avalonia.Media.Imaging;
 using Sonorize.Models;
 using Sonorize.Services;
 using System;
+using System.Diagnostics;
 
 namespace Sonorize.ViewModels.LibraryManagement;
 
@@ -33,6 +34,29 @@ public class PlaylistCollectionManager
         {
             _playlistsCollection.Add(new PlaylistViewModel(playlist, defaultIcon));
         }
+    }
+
+    public void UpdateAutoPlaylists(IEnumerable<PlaylistViewModel> newAutoPlaylists)
+    {
+        Debug.WriteLine("[PlaylistCollectionManager] Updating auto-playlists.");
+        // Remove existing auto-playlists
+        var existingAutoPlaylists = _playlistsCollection.Where(p => p.IsAutoPlaylist).ToList();
+        foreach (var p in existingAutoPlaylists)
+        {
+            _playlistsCollection.Remove(p);
+        }
+
+        // Insert new ones at the top, respecting their own order
+        var sortedNewPlaylists = newAutoPlaylists
+            .OrderByDescending(p => p.PlaylistModel.IsAutoPlaylist) // Should all be true, but for safety
+            .ThenBy(p => p.PlaylistModel.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        for (int i = 0; i < sortedNewPlaylists.Count; i++)
+        {
+            _playlistsCollection.Insert(i, sortedNewPlaylists[i]);
+        }
+        Debug.WriteLine($"[PlaylistCollectionManager] Finished updating auto-playlists. Total playlists: {_playlistsCollection.Count}");
     }
 
     public void HandleSongThumbnailUpdate(Song updatedSong)

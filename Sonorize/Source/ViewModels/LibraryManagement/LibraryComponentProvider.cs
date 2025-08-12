@@ -9,6 +9,7 @@ public class LibraryComponentProvider
     public SongListManager SongList { get; }
     public LibraryDataOrchestrator DataOrchestrator { get; }
     public LibraryStatusTextGenerator StatusTextGenerator { get; }
+    public AutoPlaylistManager AutoPlaylistManager { get; }
 
     private readonly SongFilteringService _songFilteringService;
 
@@ -18,7 +19,8 @@ public class LibraryComponentProvider
         FilterState = new();
         _songFilteringService = new();
         SongList = new(_songFilteringService);
-        DataOrchestrator = new(musicLibraryService, Groupings.ArtistAlbumManager, settingsService);
+        AutoPlaylistManager = new AutoPlaylistManager(Groupings.PlaylistManager, SongList, musicLibraryService);
+        DataOrchestrator = new(musicLibraryService, Groupings.ArtistAlbumManager, settingsService, AutoPlaylistManager);
         StatusTextGenerator = new();
     }
 }

@@ -33,7 +33,23 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public AdvancedPanelViewModel AdvancedPanel => _componentsManager.AdvancedPanel;
 
     public string StatusBarText { get => field; set => SetProperty(ref field, value); } = "Welcome to Sonorize!";
-    public int ActiveTabIndex { get => field; set => SetProperty(ref field, value); } = 0;
+
+    private int _activeTabIndex;
+    public int ActiveTabIndex
+    {
+        get => _activeTabIndex;
+        set
+        {
+            if (SetProperty(ref _activeTabIndex, value))
+            {
+                // Playlist tab is index 3
+                if (_activeTabIndex == 3)
+                {
+                    Library.RefreshAutoPlaylists();
+                }
+            }
+        }
+    }
 
     public bool IsLoadingLibrary => Library.IsLoadingLibrary;
 
