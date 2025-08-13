@@ -617,9 +617,10 @@ namespace Sonorize.Models;
 
 public class Playlist
 {
-    public string Name { get; set; } = "Unknown Playlist";
-    public string FilePath { get; set; } = string.Empty;
+public string Name { get; set; } = "Unknown Playlist";
+    public string? FilePath { get; set; }
     public List<Song> Songs { get; set; } = new();
+    public bool IsAutoPlaylist { get; set; } = false;
 }
 </file>
 
@@ -672,6 +673,14 @@ public class Song : ViewModelBase
     }
 
     public Bitmap? Thumbnail
+    {
+        get;
+        set => SetProperty(ref field, value);
+    }
+
+    public DateTime DateAdded { get; set; }
+
+    public int PlayCount
     {
         get;
         set => SetProperty(ref field, value);
@@ -805,6 +814,66 @@ public class AlbumArtLoader
             Debug.WriteLine($"[AlbumArtLoader] Generic error loading album art for \"{Path.GetFileName(filePath)}\": {ex.Message}");
         }
         return null; // Return null on any error
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\AutoPlaylistGeneratorService.cs">
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Sonorize.Models;
+
+namespace Sonorize.Services;
+
+public class AutoPlaylistGeneratorService
+{
+    public List<Playlist> GenerateAll(IEnumerable<Song> allSongs)
+    {
+        var autoPlaylists = new List<Playlist>();
+
+        // Generate "Recently Added"
+        var recentlyAdded = GenerateRecentlyAddedPlaylist(allSongs, 50);
+        if (recentlyAdded.Songs.Any())
+        {
+            autoPlaylists.Add(recentlyAdded);
+        }
+
+        // Generate "Most Played" and always add it, even if empty.
+        var mostPlayed = GenerateMostPlayedPlaylist(allSongs, 25);
+        autoPlaylists.Add(mostPlayed);
+
+
+        return autoPlaylists;
+    }
+
+    private Playlist GenerateRecentlyAddedPlaylist(IEnumerable<Song> allSongs, int count)
+    {
+        var songs = allSongs.OrderByDescending(s => s.DateAdded).Take(count).ToList();
+        return new Playlist
+        {
+            Name = "Recently Added",
+            IsAutoPlaylist = true,
+            Songs = songs
+        };
+    }
+
+    private Playlist GenerateMostPlayedPlaylist(IEnumerable<Song> allSongs, int count)
+    {
+        // Now implemented to use the PlayCount property
+        var songs = allSongs
+            .Where(s => s.PlayCount > 0)
+            .OrderByDescending(s => s.PlayCount)
+            .ThenByDescending(s => s.DateAdded) // Secondary sort for ties
+            .Take(count)
+            .ToList();
+
+        return new Playlist
+        {
+            Name = "Most Played",
+            IsAutoPlaylist = true,
+            Songs = songs
+        };
     }
 }
 </file>
@@ -1745,6 +1814,96 @@ public class NextTrackSelectorService(Random shuffleRandom)
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\PlayCountDataService.cs">
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Text.Json;
+
+namespace Sonorize.Services;
+
+public class PlayCountDataService
+{
+    private readonly string _playCountFilePath;
+    private Dictionary<string, int> _playCountStore = new();
+    private readonly object _lock = new();
+
+    public PlayCountDataService()
+    {
+        var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var sonorizeAppDataPath = Path.Combine(appDataPath, "Sonorize");
+        Directory.CreateDirectory(sonorizeAppDataPath);
+        _playCountFilePath = Path.Combine(sonorizeAppDataPath, "playcounts.json");
+        LoadPlayCounts();
+        Debug.WriteLine($"[PlayCountDataService] Initialized. Data loaded from: {_playCountFilePath}");
+    }
+
+    private void LoadPlayCounts()
+    {
+        lock (_lock)
+        {
+            try
+            {
+                if (File.Exists(_playCountFilePath))
+                {
+                    var json = File.ReadAllText(_playCountFilePath);
+                    _playCountStore = JsonSerializer.Deserialize<Dictionary<string, int>>(json) ?? new();
+                }
+                else
+                {
+                    _playCountStore = new();
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[PlayCountDataService] Error loading play count data: {ex.Message}. Initializing with empty store.");
+                _playCountStore = new();
+            }
+        }
+    }
+
+    private void SavePlayCounts()
+    {
+        lock (_lock)
+        {
+            try
+            {
+                var options = new JsonSerializerOptions { WriteIndented = true };
+                var json = JsonSerializer.Serialize(_playCountStore, options);
+                File.WriteAllText(_playCountFilePath, json);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[PlayCountDataService] Error saving play count data: {ex.Message}");
+            }
+        }
+    }
+
+    public int GetPlayCount(string filePath)
+    {
+        if (string.IsNullOrEmpty(filePath)) return 0;
+        lock (_lock)
+        {
+            _playCountStore.TryGetValue(filePath, out var count);
+            return count;
+        }
+    }
+
+    public void IncrementPlayCount(string filePath)
+    {
+        if (string.IsNullOrEmpty(filePath)) return;
+        lock (_lock)
+        {
+            _playCountStore.TryGetValue(filePath, out var currentCount);
+            _playCountStore[filePath] = currentCount + 1;
+        }
+        SavePlayCounts(); // Save after every increment
+        Debug.WriteLine($"[PlayCountDataService] Incremented play count for \"{Path.GetFileName(filePath)}\" to {_playCountStore[filePath]}.");
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\PlaylistParserService.cs">
 using System;
 using System.Collections.Generic;
@@ -2250,10 +2409,12 @@ namespace Sonorize.Services;
 public class SongFactory
 {
     private readonly LoopDataService _loopDataService;
+    private readonly PlayCountDataService _playCountDataService;
 
-    public SongFactory(LoopDataService loopDataService)
+    public SongFactory(LoopDataService loopDataService, PlayCountDataService playCountDataService)
     {
         _loopDataService = loopDataService ?? throw new ArgumentNullException(nameof(loopDataService));
+        _playCountDataService = playCountDataService ?? throw new ArgumentNullException(nameof(playCountDataService));
         Debug.WriteLine("[SongFactory] Initialized.");
     }
 
@@ -2302,12 +2463,24 @@ public class SongFactory
             Debug.WriteLine($"[SongFactory] Error reading tags for \"{Path.GetFileName(filePath)}\": {ex.Message}. Song will use defaults.");
         }
 
+        try
+        {
+            song.DateAdded = new FileInfo(filePath).CreationTimeUtc;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[SongFactory] Could not read file creation time for {Path.GetFileName(filePath)}: {ex.Message}. Using current time as fallback.");
+            song.DateAdded = DateTime.UtcNow;
+        }
+
         var storedLoopData = _loopDataService.GetLoop(song.FilePath);
         if (storedLoopData is not null)
         {
             song.SavedLoop = new LoopRegion(storedLoopData.Start, storedLoopData.End);
             song.IsLoopActive = storedLoopData.IsActive;
         }
+
+        song.PlayCount = _playCountDataService.GetPlayCount(song.FilePath);
 
         return song;
     }
@@ -3674,6 +3847,17 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         await _libraryLoadProcess.ExecuteLoadAsync();
     }
 
+    public void RefreshAutoPlaylists()
+    {
+        if (IsLoadingLibrary)
+        {
+            return;
+        }
+
+        Debug.WriteLine("[LibraryVM] RefreshAutoPlaylists called.");
+        _components.AutoPlaylistManager.RefreshAutoPlaylists();
+    }
+
     private void ApplyFilter()
     {
         _components.SongList.ApplyFilter(
@@ -4169,6 +4353,7 @@ public class PlaylistViewModel : ViewModelBase
 
     public string Name => PlaylistModel.Name;
     public int SongCount => PlaylistModel.Songs.Count;
+    public bool IsAutoPlaylist => PlaylistModel.IsAutoPlaylist;
 
     public List<Bitmap?> SongThumbnailsForGrid
     {
@@ -5233,14 +5418,14 @@ public class ApplicationServicesBootstrapper
     {
         // Create all services
         var lastfmAuthenticatorService = new LastfmAuthenticatorService(settingsService);
-        // Removed: var scrobbleEligibilityService = new ScrobbleEligibilityService();
-        var scrobblingService = new ScrobblingService(settingsService, lastfmAuthenticatorService); // Updated instantiation
-        var playbackService = new PlaybackService(scrobblingService);
+        var scrobblingService = new ScrobblingService(settingsService, lastfmAuthenticatorService);
         var loopDataService = new LoopDataService();
+        var playCountDataService = new PlayCountDataService(); // NEW
+        var playbackService = new PlaybackService(scrobblingService, playCountDataService); // MODIFIED
         var defaultIconGenerator = new DefaultIconGenerator();
         var albumArtLoader = new AlbumArtLoader(); // Create AlbumArtLoader
         var thumbnailService = new ThumbnailService(defaultIconGenerator, albumArtLoader); // Pass both dependencies
-        var songFactory = new SongFactory(loopDataService);
+        var songFactory = new SongFactory(loopDataService, playCountDataService); // MODIFIED
         var musicLibraryService = new MusicLibraryService(loopDataService, thumbnailService, songFactory);
         var waveformService = new WaveformService();
         var songMetadataService = new SongMetadataService();
@@ -6507,12 +6692,12 @@ public class PlaybackService : ViewModelBase, IDisposable
     internal PlaybackSessionManager SessionManager => _sessionManager;
 
 
-    public PlaybackService(ScrobblingService scrobblingService)
+    public PlaybackService(ScrobblingService scrobblingService, PlayCountDataService playCountDataService)
     {
         Debug.WriteLine("[PlaybackService] Constructor called.");
         _scrobblingService = scrobblingService;
         _loopHandler = new PlaybackLoopHandler(this);
-        _sessionManager = new PlaybackSessionManager(scrobblingService, _loopHandler);
+        _sessionManager = new PlaybackSessionManager(scrobblingService, _loopHandler, playCountDataService);
         _sessionManager.PropertyChanged += SessionManager_PropertyChanged;
     }
 
@@ -6708,9 +6893,12 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
     private readonly PlaybackCompletionHandler _completionHandler;
     private readonly ScrobblingService _scrobblingService;
     private readonly PlaybackSessionState _sessionState;
+    private readonly PlayCountDataService _playCountDataService;
 
     private PlaybackInfrastructureProvider? _currentInfrastructure;
     private bool _hasBeenScrobbledThisSession = false; // New flag for threshold-based scrobbling
+    private bool _hasBeenCountedAsPlayedThisSession = false;
+
 
     // Delegated Properties to PlaybackSessionState
     public Song? CurrentSong => _sessionState.CurrentSong;
@@ -6749,10 +6937,11 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? SessionEndedNaturally;
 
-    public PlaybackSessionManager(ScrobblingService scrobblingService, PlaybackLoopHandler loopHandler)
+    public PlaybackSessionManager(ScrobblingService scrobblingService, PlaybackLoopHandler loopHandler, PlayCountDataService playCountDataService)
     {
         _scrobblingService = scrobblingService ?? throw new ArgumentNullException(nameof(scrobblingService));
         _loopHandler = loopHandler ?? throw new ArgumentNullException(nameof(loopHandler));
+        _playCountDataService = playCountDataService ?? throw new ArgumentNullException(nameof(playCountDataService));
         _sessionState = new PlaybackSessionState();
         _sessionState.PropertyChanged += SessionState_PropertyChanged;
         _completionHandler = new PlaybackCompletionHandler(this, _scrobblingService);
@@ -6811,6 +7000,7 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
         try
         {
             _hasBeenScrobbledThisSession = false; // Reset scrobble flag for the new session.
+            _hasBeenCountedAsPlayedThisSession = false;
             _currentInfrastructure = new PlaybackInfrastructureProvider(_loopHandler);
             _currentInfrastructure.Coordinator.EnginePlaybackStopped += OnEngineCoordinatorPlaybackStopped;
             _currentInfrastructure.Coordinator.EnginePositionUpdated += OnEngineCoordinatorPositionUpdated;
@@ -6902,20 +7092,33 @@ public class PlaybackSessionManager : INotifyPropertyChanged, IDisposable
 
     private void OnEngineCoordinatorPositionUpdated(object? sender, PositionEventArgs e)
     {
-        if (sender == _currentInfrastructure?.Coordinator)
+        if (sender != _currentInfrastructure?.Coordinator)
         {
-            _sessionState.CurrentPosition = e.Position;
-            _sessionState.CurrentSongDuration = e.Duration;
+            return;
+        }
+
+        _sessionState.CurrentPosition = e.Position;
+        _sessionState.CurrentSongDuration = e.Duration;
+
+        if (CurrentSong is not null)
+        {
+            bool playbackThresholdMet = _scrobblingService.ShouldScrobble(CurrentSong, e.Position);
 
             // Scrobble-on-threshold logic
-            if (!_hasBeenScrobbledThisSession && CurrentSong is not null)
+            if (!_hasBeenScrobbledThisSession && playbackThresholdMet)
             {
-                if (_scrobblingService.ShouldScrobble(CurrentSong, e.Position))
-                {
-                    Debug.WriteLine($"[SessionManager] Scrobble threshold met for '{CurrentSong.Title}'. Sending permanent scrobble now.");
-                    _scrobblingService.ScrobbleAsync(CurrentSong, DateTime.UtcNow); // Fire and forget
-                    _hasBeenScrobbledThisSession = true;
-                }
+                Debug.WriteLine($"[SessionManager] Scrobble threshold met for '{CurrentSong.Title}'. Sending permanent scrobble now.");
+                _ = _scrobblingService.ScrobbleAsync(CurrentSong, DateTime.UtcNow); // Fire and forget
+                _hasBeenScrobbledThisSession = true;
+            }
+
+            // Play count logic
+            if (!_hasBeenCountedAsPlayedThisSession && playbackThresholdMet)
+            {
+                Debug.WriteLine($"[SessionManager] Play count threshold met for '{CurrentSong.Title}'. Incrementing count.");
+                _playCountDataService.IncrementPlayCount(CurrentSong.FilePath);
+                CurrentSong.PlayCount++; // Update the live model
+                _hasBeenCountedAsPlayedThisSession = true;
             }
         }
     }
@@ -7525,6 +7728,52 @@ public class ArtistAlbumCollectionManager
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LibraryManagement\AutoPlaylistManager.cs">
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Avalonia.Media.Imaging;
+using Sonorize.Models;
+using Sonorize.Services;
+
+namespace Sonorize.ViewModels.LibraryManagement;
+
+public class AutoPlaylistManager
+{
+    private readonly AutoPlaylistGeneratorService _generator = new();
+    private readonly PlaylistCollectionManager _playlistCollectionManager;
+    private readonly SongListManager _songListManager;
+    private readonly MusicLibraryService _musicLibraryService;
+
+    public AutoPlaylistManager(
+        PlaylistCollectionManager playlistCollectionManager,
+        SongListManager songListManager,
+        MusicLibraryService musicLibraryService)
+    {
+        _playlistCollectionManager = playlistCollectionManager ?? throw new ArgumentNullException(nameof(playlistCollectionManager));
+        _songListManager = songListManager ?? throw new ArgumentNullException(nameof(songListManager));
+        _musicLibraryService = musicLibraryService ?? throw new ArgumentNullException(nameof(musicLibraryService));
+    }
+
+    public List<Playlist> GenerateInitialAutoPlaylists(IEnumerable<Song> allSongs)
+    {
+        return _generator.GenerateAll(allSongs);
+    }
+
+    public void RefreshAutoPlaylists()
+    {
+        var allSongs = _songListManager.GetAllSongsReadOnly();
+        var newAutoPlaylists = _generator.GenerateAll(allSongs);
+
+        var newAutoPlaylistVMs = newAutoPlaylists
+            .Select(p => new PlaylistViewModel(p, _musicLibraryService.GetDefaultThumbnail()))
+            .ToList();
+
+        _playlistCollectionManager.UpdateAutoPlaylists(newAutoPlaylistVMs);
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LibraryManagement\LibraryComponentProvider.cs">
 using Sonorize.Services;
 
@@ -7537,6 +7786,7 @@ public class LibraryComponentProvider
     public SongListManager SongList { get; }
     public LibraryDataOrchestrator DataOrchestrator { get; }
     public LibraryStatusTextGenerator StatusTextGenerator { get; }
+    public AutoPlaylistManager AutoPlaylistManager { get; }
 
     private readonly SongFilteringService _songFilteringService;
 
@@ -7546,7 +7796,8 @@ public class LibraryComponentProvider
         FilterState = new();
         _songFilteringService = new();
         SongList = new(_songFilteringService);
-        DataOrchestrator = new(musicLibraryService, Groupings.ArtistAlbumManager, settingsService);
+        AutoPlaylistManager = new AutoPlaylistManager(Groupings.PlaylistManager, SongList, musicLibraryService);
+        DataOrchestrator = new(musicLibraryService, Groupings.ArtistAlbumManager, settingsService, AutoPlaylistManager);
         StatusTextGenerator = new();
     }
 }
@@ -7569,15 +7820,18 @@ public class LibraryDataOrchestrator
     private readonly MusicLibraryService _musicLibraryService;
     private readonly ArtistAlbumCollectionManager _artistAlbumManager;
     private readonly SettingsService _settingsService;
+    private readonly AutoPlaylistManager _autoPlaylistManager;
 
     public LibraryDataOrchestrator(
         MusicLibraryService musicLibraryService,
         ArtistAlbumCollectionManager artistAlbumManager,
-        SettingsService settingsService)
+        SettingsService settingsService,
+        AutoPlaylistManager autoPlaylistManager)
     {
         _musicLibraryService = musicLibraryService ?? throw new ArgumentNullException(nameof(musicLibraryService));
         _artistAlbumManager = artistAlbumManager ?? throw new ArgumentNullException(nameof(artistAlbumManager));
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
+        _autoPlaylistManager = autoPlaylistManager ?? throw new ArgumentNullException(nameof(autoPlaylistManager));
     }
 
     public async Task<(List<Song> Songs, List<Playlist> Playlists)> LoadAndProcessLibraryDataAsync(Action<string> statusUpdateCallback)
@@ -7605,7 +7859,13 @@ public class LibraryDataOrchestrator
 
             // Phase 2: Load Playlists using the fully gathered rawSongs list
             await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Found {rawSongs.Count} songs. Scanning for playlists..."));
-            var playlists = await _musicLibraryService.LoadPlaylistsAsync(settings.MusicDirectories, rawSongs);
+            var filePlaylists = await _musicLibraryService.LoadPlaylistsAsync(settings.MusicDirectories, rawSongs);
+
+            // Phase 2.5: Generate Auto-Playlists
+            var autoPlaylists = _autoPlaylistManager.GenerateInitialAutoPlaylists(rawSongs);
+
+            // Combine all playlists, auto-playlists first
+            var allPlaylists = autoPlaylists.Concat(filePlaylists).ToList();
 
             // Phase 3: Populate Artist and Album collections
             await Dispatcher.UIThread.InvokeAsync(() =>
@@ -7613,7 +7873,7 @@ public class LibraryDataOrchestrator
                 _artistAlbumManager.PopulateCollections(rawSongs);
             });
 
-            return (rawSongs, playlists);
+            return (rawSongs, allPlaylists);
         }
         catch (Exception ex)
         {
@@ -8054,6 +8314,8 @@ using System.Linq;
 using Avalonia.Media.Imaging;
 using Sonorize.Models;
 using Sonorize.Services;
+using System;
+using System.Diagnostics;
 
 namespace Sonorize.ViewModels.LibraryManagement;
 
@@ -8072,10 +8334,39 @@ public class PlaylistCollectionManager
     {
         _playlistsCollection.Clear();
         var defaultIcon = _musicLibraryService.GetDefaultThumbnail();
-        foreach (var playlist in allPlaylists.OrderBy(p => p.Name))
+
+        // Sort auto-playlists first, then sort alphabetically within each group
+        var sortedPlaylists = allPlaylists
+            .OrderByDescending(p => p.IsAutoPlaylist)
+            .ThenBy(p => p.Name, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var playlist in sortedPlaylists)
         {
             _playlistsCollection.Add(new PlaylistViewModel(playlist, defaultIcon));
         }
+    }
+
+    public void UpdateAutoPlaylists(IEnumerable<PlaylistViewModel> newAutoPlaylists)
+    {
+        Debug.WriteLine("[PlaylistCollectionManager] Updating auto-playlists.");
+        // Remove existing auto-playlists
+        var existingAutoPlaylists = _playlistsCollection.Where(p => p.IsAutoPlaylist).ToList();
+        foreach (var p in existingAutoPlaylists)
+        {
+            _playlistsCollection.Remove(p);
+        }
+
+        // Insert new ones at the top, respecting their own order
+        var sortedNewPlaylists = newAutoPlaylists
+            .OrderByDescending(p => p.PlaylistModel.IsAutoPlaylist) // Should all be true, but for safety
+            .ThenBy(p => p.PlaylistModel.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        for (int i = 0; i < sortedNewPlaylists.Count; i++)
+        {
+            _playlistsCollection.Insert(i, sortedNewPlaylists[i]);
+        }
+        Debug.WriteLine($"[PlaylistCollectionManager] Finished updating auto-playlists. Total playlists: {_playlistsCollection.Count}");
     }
 
     public void HandleSongThumbnailUpdate(Song updatedSong)
@@ -8908,7 +9199,23 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public AdvancedPanelViewModel AdvancedPanel => _componentsManager.AdvancedPanel;
 
     public string StatusBarText { get => field; set => SetProperty(ref field, value); } = "Welcome to Sonorize!";
-    public int ActiveTabIndex { get => field; set => SetProperty(ref field, value); } = 0;
+
+    private int _activeTabIndex;
+    public int ActiveTabIndex
+    {
+        get => _activeTabIndex;
+        set
+        {
+            if (SetProperty(ref _activeTabIndex, value))
+            {
+                // Playlist tab is index 3
+                if (_activeTabIndex == 3)
+                {
+                    Library.RefreshAutoPlaylists();
+                }
+            }
+        }
+    }
 
     public bool IsLoadingLibrary => Library.IsLoadingLibrary;
 
@@ -10936,9 +11243,15 @@ public class SharedViewTemplates
             }
             Grid.SetColumn(imageGrid, 0); itemGrid.Children.Add(imageGrid);
 
+            var iconAndNamePanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+            var icon = new TextBlock { FontSize = 14, Text = "✨", VerticalAlignment = VerticalAlignment.Center };
+            icon.Bind(Visual.IsVisibleProperty, new Binding(nameof(PlaylistViewModel.IsAutoPlaylist)));
             var nameBlock = new TextBlock { FontSize = 14, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center };
             nameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(PlaylistViewModel.Name)));
-            Grid.SetColumn(nameBlock, 1); itemGrid.Children.Add(nameBlock);
+            iconAndNamePanel.Children.Add(icon);
+            iconAndNamePanel.Children.Add(nameBlock);
+            Grid.SetColumn(iconAndNamePanel, 1);
+            itemGrid.Children.Add(iconAndNamePanel);
 
             var countBlock = new TextBlock { FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
             countBlock.Bind(TextBlock.TextProperty, new Binding(nameof(PlaylistViewModel.SongCount)) { StringFormat = "{0} songs" });
@@ -10949,13 +11262,16 @@ public class SharedViewTemplates
 
         CompactPlaylistTemplate = new FuncDataTemplate<PlaylistViewModel>((dataContext, nameScope) =>
         {
+            var icon = new TextBlock { FontSize = 12, Text = "✨", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 5, 0) };
+            icon.Bind(Visual.IsVisibleProperty, new Binding(nameof(PlaylistViewModel.IsAutoPlaylist)));
+
             var nameBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
             nameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(PlaylistViewModel.Name)));
 
             var countBlock = new TextBlock { FontSize = 11, Foreground = _theme.B_SecondaryTextColor, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(5, 0, 0, 0) };
             countBlock.Bind(TextBlock.TextProperty, new Binding(nameof(PlaylistViewModel.SongCount)) { StringFormat = " - {0} songs" });
 
-            var panel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { nameBlock, countBlock } };
+            var panel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { icon, nameBlock, countBlock } };
             return new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = panel };
         }, supportsRecycling: true);
 
@@ -11021,6 +11337,9 @@ public class SharedViewTemplates
             };
             contentStack.Children.Add(imagePresenter);
 
+            var namePanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 2, 0, 0) };
+            var icon = new TextBlock { FontSize = 12, Text = "✨", VerticalAlignment = VerticalAlignment.Center };
+            icon.Bind(Visual.IsVisibleProperty, new Binding(nameof(PlaylistViewModel.IsAutoPlaylist)));
             var nameBlock = new TextBlock
             {
                 FontSize = 12,
@@ -11028,11 +11347,12 @@ public class SharedViewTemplates
                 TextWrapping = TextWrapping.Wrap,
                 MaxHeight = 30,
                 TextAlignment = TextAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 2, 0, 0)
+                HorizontalAlignment = HorizontalAlignment.Center
             };
             nameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(PlaylistViewModel.Name)));
-            contentStack.Children.Add(nameBlock);
+            namePanel.Children.Add(icon);
+            namePanel.Children.Add(nameBlock);
+            contentStack.Children.Add(namePanel);
 
             var countBlock = new TextBlock
             {

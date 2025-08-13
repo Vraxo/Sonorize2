@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives; // For Thumb, Track
 using Avalonia.Data;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
@@ -75,13 +76,13 @@ public static class PlaybackTimeSliderPanel
             }
         });
 
-        // Handle clicking directly on the track (not the thumb)
-        mainPlaybackSlider.PointerPressed += (sender, e) =>
+        // Use AddHandler with RoutingStrategies.Tunnel to intercept clicks on the track
+        // before the Slider's internal RepeatButtons can handle them. This fixes the
+        // inconsistent seeking behavior when clicking on different parts of the slider track.
+        mainPlaybackSlider.AddHandler(Slider.PointerPressedEvent, (sender, e) =>
         {
             if (sender is not Slider slider || slider.DataContext is not MainWindowViewModel { Playback: { } playbackVM }) return;
 
-            // This logic is for when the user clicks on the track to jump to a position.
-            // The thumb drag is handled by DragStarted/DragCompleted.
             var thumb = slider.FindDescendantOfType<Thumb>();
             if (thumb is not null && thumb.IsPointerOver)
             {
@@ -100,13 +101,13 @@ public static class PlaybackTimeSliderPanel
                     var ratio = Math.Clamp(point.Position.X / bounds.Width, 0, 1);
                     var newValue = slider.Minimum + (ratio * (slider.Maximum - slider.Minimum));
                     slider.Value = newValue; // This updates SliderPosition via TwoWay binding
-                    e.Handled = true;
                 }
             }
-        };
+            e.Handled = true; // Prevent the event from being handled by RepeatButtons
+        }, RoutingStrategies.Tunnel);
 
-        // This handles the release from a track click.
-        mainPlaybackSlider.PointerReleased += (sender, e) =>
+        // Handle the release from a track click.
+        mainPlaybackSlider.AddHandler(Slider.PointerReleasedEvent, (sender, e) =>
         {
             if (sender is not Slider slider || slider.DataContext is not MainWindowViewModel { Playback: { } playbackVM }) return;
 
@@ -118,8 +119,8 @@ public static class PlaybackTimeSliderPanel
             }
 
             playbackVM.CompleteSliderDrag();
-            e.Handled = true;
-        };
+            e.Handled = true; // Prevent the event from being handled by RepeatButtons
+        }, RoutingStrategies.Tunnel);
 
         // Add handlers specifically for the Thumb's drag operations
         mainPlaybackSlider.AddHandler(Thumb.DragStartedEvent, (s, e) =>
