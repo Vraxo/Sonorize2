@@ -14,16 +14,16 @@ namespace Sonorize.Views.MainWindowControls;
 public class SongItemTemplateProvider
 {
     private readonly ThemeColors _theme;
-    private readonly SongContextMenuHelper _contextMenuHelper;
+    private readonly ContextMenu _sharedSongContextMenu;
 
     public FuncDataTemplate<Song> DetailedSongTemplate { get; private set; }
     public FuncDataTemplate<Song> CompactSongTemplate { get; private set; }
     public FuncDataTemplate<Song> GridSongTemplate { get; private set; }
 
-    public SongItemTemplateProvider(ThemeColors theme, SongContextMenuHelper contextMenuHelper)
+    public SongItemTemplateProvider(ThemeColors theme, ContextMenu sharedSongContextMenu)
     {
         _theme = theme;
-        _contextMenuHelper = contextMenuHelper ?? throw new System.ArgumentNullException(nameof(contextMenuHelper));
+        _sharedSongContextMenu = sharedSongContextMenu ?? throw new System.ArgumentNullException(nameof(sharedSongContextMenu));
         Debug.WriteLine("[SongItemTemplateProvider] Initialized.");
         InitializeSongTemplates();
     }
@@ -51,7 +51,7 @@ public class SongItemTemplateProvider
             Grid.SetColumn(image, 0); Grid.SetColumn(textStack, 1); Grid.SetColumn(durationBlock, 2);
 
             var rootBorder = new Border { Padding = new Thickness(10, 6, 10, 6), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
-            rootBorder.ContextMenu = _contextMenuHelper.CreateSongContextMenu();
+            rootBorder.ContextMenu = _sharedSongContextMenu;
             return rootBorder;
         }, supportsRecycling: true);
 
@@ -75,7 +75,7 @@ public class SongItemTemplateProvider
             Grid.SetColumn(titleArtistPanel, 0); Grid.SetColumn(durationBlock, 1);
 
             var rootBorder = new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = itemGrid };
-            rootBorder.ContextMenu = _contextMenuHelper.CreateSongContextMenu();
+            rootBorder.ContextMenu = _sharedSongContextMenu;
             return rootBorder;
         }, supportsRecycling: true);
 
@@ -106,7 +106,7 @@ public class SongItemTemplateProvider
             var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { image, titleBlock, artistBlock } };
 
             var rootBorder = new Border { Width = 120, Height = 150, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-            rootBorder.ContextMenu = _contextMenuHelper.CreateSongContextMenu();
+            rootBorder.ContextMenu = _sharedSongContextMenu;
             return rootBorder;
         }, supportsRecycling: true);
     }

@@ -63,7 +63,7 @@ public static class AdvancedPlaybackPanelControls
         waveformDisplay.Bind(WaveformDisplayControl.WaveformPointsProperty, new Binding("Playback.WaveformDisplay.WaveformRenderData"));
         waveformDisplay.Bind(WaveformDisplayControl.CurrentPositionProperty, new Binding("Playback.CurrentPosition"));
         waveformDisplay.Bind(WaveformDisplayControl.DurationProperty, new Binding("Playback.CurrentSongDuration"));
-        waveformDisplay.Bind(WaveformDisplayControl.ActiveLoopProperty, new Binding("Playback.PlaybackService.CurrentSong.SavedLoop"));
+        waveformDisplay.Bind(WaveformDisplayControl.ActiveLoopProperty, new Binding("Playback.CurrentSong.SavedLoop"));
         waveformDisplay.SeekRequested += (s, time) =>
         {
             if (s is Control { DataContext: MainWindowViewModel mainWindowVM })
@@ -99,7 +99,7 @@ public static class AdvancedPlaybackPanelControls
 
         var clearLoopBtn = new Button { Content = "Clear Loop", FontSize = 11, Padding = new Thickness(10, 5), Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         clearLoopBtn.Bind(Button.CommandProperty, new Binding("LoopEditor.ClearLoopCommand"));
-        var clearLoopBinding = new Binding("PlaybackService.CurrentSong.SavedLoop") { Converter = NotNullToBooleanConverter.Instance };
+        var clearLoopBinding = new Binding("Playback.CurrentSong.SavedLoop") { Converter = NotNullToBooleanConverter.Instance };
         clearLoopBtn.Bind(Button.IsEnabledProperty, clearLoopBinding);
 
         loopActionsPanel.Children.Add(setStartBtn); loopActionsPanel.Children.Add(startDisp);
@@ -110,7 +110,7 @@ public static class AdvancedPlaybackPanelControls
         var loopActiveCheckBox = new CheckBox { Content = "Activate Loop", Foreground = theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
         // Bind to the new ActiveLoopViewModel
         loopActiveCheckBox.Bind(ToggleButton.IsCheckedProperty, new Binding("LoopEditor.ActiveLoop.IsLoopActive", BindingMode.TwoWay));
-        var loopActiveCheckBoxIsEnabledBinding = new Binding("PlaybackService.CurrentSong.SavedLoop") { Converter = NotNullToBooleanConverter.Instance };
+        var loopActiveCheckBoxIsEnabledBinding = new Binding("Playback.CurrentSong.SavedLoop") { Converter = NotNullToBooleanConverter.Instance };
         loopActiveCheckBox.Bind(Control.IsEnabledProperty, loopActiveCheckBoxIsEnabledBinding);
         loopActiveTogglePanel.Children.Add(loopActiveCheckBox);
 

@@ -15,17 +15,17 @@ namespace Sonorize.Views.MainWindowControls
     public class DataGridViewFactory
     {
         private readonly ThemeColors _theme;
-        private readonly SongContextMenuHelper _contextMenuHelper;
+        private readonly ContextMenu _sharedSongContextMenu;
 
-        public DataGridViewFactory(ThemeColors theme, SongContextMenuHelper contextMenuHelper)
+        public DataGridViewFactory(ThemeColors theme, ContextMenu sharedSongContextMenu)
         {
             _theme = theme;
-            _contextMenuHelper = contextMenuHelper;
+            _sharedSongContextMenu = sharedSongContextMenu;
             Debug.WriteLine("[DataGridViewFactory] Initialized.");
         }
 
         // Method for Songs DataGrid
-        public DataGrid CreateSongsDataGrid(string itemsSourcePath, string selectedItemPath)
+        public Control CreateSongsDataGrid(string itemsSourcePath, string selectedItemPath)
         {
             var dataGrid = CreateBaseDataGrid(itemsSourcePath, selectedItemPath);
 
@@ -35,32 +35,46 @@ namespace Sonorize.Views.MainWindowControls
             dataGrid.Columns.Add(new DataGridTextColumn { Header = "Duration", Binding = new Binding("DurationString"), Width = new DataGridLength(0.7, DataGridLengthUnitType.Star) });
 
             ApplyDataGridStyles(dataGrid, _theme, true);
-            return dataGrid;
+            return new DockPanel { Children = { dataGrid } };
+        }
+
+        public Control CreateCompactSongsDataGrid(string itemsSourcePath, string selectedItemPath)
+        {
+            var dataGrid = CreateBaseDataGrid(itemsSourcePath, selectedItemPath);
+
+            dataGrid.RowHeight = 32;
+
+            dataGrid.Columns.Add(new DataGridTextColumn { Header = "Title", Binding = new Binding("Title"), Width = new DataGridLength(4, DataGridLengthUnitType.Star) });
+            dataGrid.Columns.Add(new DataGridTextColumn { Header = "Artist", Binding = new Binding("Artist"), Width = new DataGridLength(2, DataGridLengthUnitType.Star) });
+            dataGrid.Columns.Add(new DataGridTextColumn { Header = "Duration", Binding = new Binding("DurationString"), Width = new DataGridLength(0.7, DataGridLengthUnitType.Star) });
+
+            ApplyDataGridStyles(dataGrid, _theme, true);
+            return new DockPanel { Children = { dataGrid } };
         }
 
         // Method for Artists DataGrid
-        public DataGrid CreateArtistsDataGrid(string itemsSourcePath, string selectedItemPath)
+        public Control CreateArtistsDataGrid(string itemsSourcePath, string selectedItemPath)
         {
             var dataGrid = CreateBaseDataGrid(itemsSourcePath, selectedItemPath);
             dataGrid.Columns.Add(new DataGridTextColumn { Header = "Artist", Binding = new Binding("Name"), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
             dataGrid.Columns.Add(new DataGridTextColumn { Header = "Songs", Binding = new Binding("SongCount"), Width = new DataGridLength(0.5, DataGridLengthUnitType.Star) });
             ApplyDataGridStyles(dataGrid, _theme, false);
-            return dataGrid;
+            return new DockPanel { Children = { dataGrid } };
         }
 
         // Method for Albums DataGrid
-        public DataGrid CreateAlbumsDataGrid(string itemsSourcePath, string selectedItemPath)
+        public Control CreateAlbumsDataGrid(string itemsSourcePath, string selectedItemPath)
         {
             var dataGrid = CreateBaseDataGrid(itemsSourcePath, selectedItemPath);
             dataGrid.Columns.Add(new DataGridTextColumn { Header = "Album", Binding = new Binding("Title"), Width = new DataGridLength(2, DataGridLengthUnitType.Star) });
             dataGrid.Columns.Add(new DataGridTextColumn { Header = "Artist", Binding = new Binding("Artist"), Width = new DataGridLength(2, DataGridLengthUnitType.Star) });
             dataGrid.Columns.Add(new DataGridTextColumn { Header = "Songs", Binding = new Binding("SongCount"), Width = new DataGridLength(0.5, DataGridLengthUnitType.Star) });
             ApplyDataGridStyles(dataGrid, _theme, false);
-            return dataGrid;
+            return new DockPanel { Children = { dataGrid } };
         }
 
         // Method for Playlists DataGrid
-        public DataGrid CreatePlaylistsDataGrid(string itemsSourcePath, string selectedItemPath)
+        public Control CreatePlaylistsDataGrid(string itemsSourcePath, string selectedItemPath)
         {
             var dataGrid = CreateBaseDataGrid(itemsSourcePath, selectedItemPath);
             dataGrid.Columns.Add(new DataGridTextColumn { Header = "Playlist", Binding = new Binding("Name"), Width = new DataGridLength(2, DataGridLengthUnitType.Star) });
@@ -79,7 +93,7 @@ namespace Sonorize.Views.MainWindowControls
             });
             dataGrid.Columns.Add(typeColumn);
             ApplyDataGridStyles(dataGrid, _theme, false);
-            return dataGrid;
+            return new DockPanel { Children = { dataGrid } };
         }
 
 
@@ -170,7 +184,7 @@ namespace Sonorize.Views.MainWindowControls
 
             if (addSongContextMenu)
             {
-                rowStyle.Setters.Add(new Setter(Control.ContextMenuProperty, _contextMenuHelper.CreateSongContextMenu()));
+                rowStyle.Setters.Add(new Setter(Control.ContextMenuProperty, _sharedSongContextMenu));
             }
 
             dataGrid.Styles.Add(rowStyle);
