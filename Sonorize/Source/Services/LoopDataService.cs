@@ -17,10 +17,11 @@ public class LoopDataService
 
     public LoopDataService()
     {
-        var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var sonorizeAppDataPath = Path.Combine(appDataPath, "Sonorize");
-        Directory.CreateDirectory(sonorizeAppDataPath);
-        _loopDataFilePath = Path.Combine(sonorizeAppDataPath, "loopdata.json");
+        var baseDirectory = AppContext.BaseDirectory;
+        var dataDirectory = Path.Combine(baseDirectory, "Data");
+        Directory.CreateDirectory(dataDirectory);
+        _loopDataFilePath = Path.Combine(dataDirectory, "loopdata.json");
+
         _loopDataMigrator = new LoopDataMigrator(); // Instantiate the migrator
         LoadLoopData();
         Debug.WriteLine($"[LoopDataService] Initialized. Data loaded from: {_loopDataFilePath}");

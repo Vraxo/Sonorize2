@@ -11,10 +11,10 @@ public class SettingsService
 
     public SettingsService()
     {
-        var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var sonorizeAppDataPath = Path.Combine(appDataPath, "Sonorize");
-        Directory.CreateDirectory(sonorizeAppDataPath); // Ensure directory exists
-        _settingsFilePath = Path.Combine(sonorizeAppDataPath, "settings.json");
+        var baseDirectory = AppContext.BaseDirectory;
+        var dataDirectory = Path.Combine(baseDirectory, "Data");
+        Directory.CreateDirectory(dataDirectory); // Ensure directory exists
+        _settingsFilePath = Path.Combine(dataDirectory, "settings.json");
     }
 
     public AppSettings LoadSettings()

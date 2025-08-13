@@ -19,9 +19,9 @@ public class ThemeService
 
     public ThemeService(string? preferredThemeNameFromSettings)
     {
-        var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var sonorizeAppDataPath = Path.Combine(appDataPath, "Sonorize");
-        _themesDirectory = Path.Combine(sonorizeAppDataPath, "Themes");
+        var baseDirectory = AppContext.BaseDirectory;
+        var dataDirectory = Path.Combine(baseDirectory, "Data");
+        _themesDirectory = Path.Combine(dataDirectory, "Themes");
         Directory.CreateDirectory(_themesDirectory);
 
         EnsureDefaultThemesExist();

@@ -14,10 +14,10 @@ public class PlayCountDataService
 
     public PlayCountDataService()
     {
-        var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var sonorizeAppDataPath = Path.Combine(appDataPath, "Sonorize");
-        Directory.CreateDirectory(sonorizeAppDataPath);
-        _playCountFilePath = Path.Combine(sonorizeAppDataPath, "playcounts.json");
+        var baseDirectory = AppContext.BaseDirectory;
+        var dataDirectory = Path.Combine(baseDirectory, "Data");
+        Directory.CreateDirectory(dataDirectory);
+        _playCountFilePath = Path.Combine(dataDirectory, "playcounts.json");
         LoadPlayCounts();
         Debug.WriteLine($"[PlayCountDataService] Initialized. Data loaded from: {_playCountFilePath}");
     }
