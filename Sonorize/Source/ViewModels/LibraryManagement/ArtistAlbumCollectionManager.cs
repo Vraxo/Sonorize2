@@ -40,6 +40,7 @@ public class ArtistAlbumCollectionManager
         {
             var artistVM = new ArtistViewModel { Name = artistName };
             var songsByArtist = allSongs.Where(s => s.Artist?.Equals(artistName, StringComparison.OrdinalIgnoreCase) ?? false).ToList();
+            artistVM.SongCount = songsByArtist.Count;
 
             List<Bitmap?> songThumbnailsForGrid = new(new Bitmap?[4]);
             List<Bitmap?> distinctSongThumbs = songsByArtist
@@ -79,7 +80,8 @@ public class ArtistAlbumCollectionManager
             AlbumViewModel albumVM = new()
             {
                 Title = albumData.AlbumTitle,
-                Artist = albumData.ArtistName
+                Artist = albumData.ArtistName,
+                SongCount = albumData.SongsInAlbum.Count
             };
 
             List<Bitmap?> songThumbnailsForGrid = new(new Bitmap?[4]);

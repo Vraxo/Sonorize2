@@ -8,6 +8,7 @@ public class AlbumViewModel : ViewModelBase
 {
     public string? Title { get; set; }
     public string? Artist { get; set; }
+    public int SongCount { get; set; }
     public List<Bitmap?> SongThumbnailsForGrid
     {
         get;

@@ -51,7 +51,7 @@ public class SongItemTemplateProvider
             Grid.SetColumn(image, 0); Grid.SetColumn(textStack, 1); Grid.SetColumn(durationBlock, 2);
 
             var rootBorder = new Border { Padding = new Thickness(10, 6, 10, 6), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
-            rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
+            rootBorder.ContextMenu = _contextMenuHelper.CreateSongContextMenu();
             return rootBorder;
         }, supportsRecycling: true);
 
@@ -75,7 +75,7 @@ public class SongItemTemplateProvider
             Grid.SetColumn(titleArtistPanel, 0); Grid.SetColumn(durationBlock, 1);
 
             var rootBorder = new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = itemGrid };
-            rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
+            rootBorder.ContextMenu = _contextMenuHelper.CreateSongContextMenu();
             return rootBorder;
         }, supportsRecycling: true);
 
@@ -106,7 +106,7 @@ public class SongItemTemplateProvider
             var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { image, titleBlock, artistBlock } };
 
             var rootBorder = new Border { Width = 120, Height = 150, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-            rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
+            rootBorder.ContextMenu = _contextMenuHelper.CreateSongContextMenu();
             return rootBorder;
         }, supportsRecycling: true);
     }

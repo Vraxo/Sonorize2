@@ -1,4 +1,4 @@
-﻿using System; // For EventArgs
+using System; // For EventArgs
 using System.ComponentModel; // For PropertyChangedEventArgs, CancelEventArgs
 using System.Diagnostics; // For Debug
 using Avalonia;
@@ -15,10 +15,6 @@ namespace Sonorize.Views;
 public class MainWindow : Window
 {
     private readonly ThemeColors _theme;
-    private ListBox _songListBox;
-    private ListBox _artistsListBox;
-    private ListBox _albumsListBox;
-    private ListBox _playlistsListBox;
     private LibraryViewModel? _currentLibraryVM;
     private readonly SharedViewTemplates _sharedViewTemplates;
     private readonly MainTabViewControls _mainTabViewControls;
@@ -57,7 +53,7 @@ public class MainWindow : Window
         Grid.SetRow(searchBarPanel, 1);
         mainGrid.Children.Add(searchBarPanel);
 
-        var tabControl = _mainTabViewControls.CreateMainTabView(out _songListBox, out _artistsListBox, out _albumsListBox, out _playlistsListBox);
+        var tabControl = _mainTabViewControls.CreateMainTabView();
         Grid.SetRow(tabControl, 2);
         mainGrid.Children.Add(tabControl);
 
@@ -106,12 +102,12 @@ public class MainWindow : Window
 
         _currentLibraryVM = vm.Library;
         _currentLibraryVM.PropertyChanged += LibraryViewModel_PropertyChanged;
-        // _sharedViewTemplates.SetLibraryViewModel(_currentLibraryVM); // No longer needed
 
-        ApplyListViewDisplayMode(_songListBox, _currentLibraryVM.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate);
-        ApplyListViewDisplayMode(_artistsListBox, _currentLibraryVM.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate);
-        ApplyListViewDisplayMode(_albumsListBox, _currentLibraryVM.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate);
-        ApplyListViewDisplayMode(_playlistsListBox, _currentLibraryVM.PlaylistViewMode, _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.CompactPlaylistTemplate, _sharedViewTemplates.GridPlaylistTemplate);
+        // Set initial view modes
+        _mainTabViewControls.UpdateListViewMode("Library", _currentLibraryVM.LibraryViewMode);
+        _mainTabViewControls.UpdateListViewMode("Artists", _currentLibraryVM.ArtistViewMode);
+        _mainTabViewControls.UpdateListViewMode("Albums", _currentLibraryVM.AlbumViewMode);
+        _mainTabViewControls.UpdateListViewMode("Playlists", _currentLibraryVM.PlaylistViewMode);
     }
 
     private void LibraryViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -121,33 +117,23 @@ public class MainWindow : Window
             return;
         }
 
+        // Delegate view mode changes to the control manager
         if (e.PropertyName == nameof(LibraryViewModel.LibraryViewMode))
         {
-            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_songListBox, lvm.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate));
+            Dispatcher.UIThread.InvokeAsync(() => _mainTabViewControls.UpdateListViewMode("Library", lvm.LibraryViewMode));
         }
         else if (e.PropertyName == nameof(LibraryViewModel.ArtistViewMode))
         {
-            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_artistsListBox, lvm.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate));
+            Dispatcher.UIThread.InvokeAsync(() => _mainTabViewControls.UpdateListViewMode("Artists", lvm.ArtistViewMode));
         }
         else if (e.PropertyName == nameof(LibraryViewModel.AlbumViewMode))
         {
-            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_albumsListBox, lvm.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate));
+            Dispatcher.UIThread.InvokeAsync(() => _mainTabViewControls.UpdateListViewMode("Albums", lvm.AlbumViewMode));
         }
         else if (e.PropertyName == nameof(LibraryViewModel.PlaylistViewMode))
         {
-            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_playlistsListBox, lvm.PlaylistViewMode, _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.CompactPlaylistTemplate, _sharedViewTemplates.GridPlaylistTemplate));
+            Dispatcher.UIThread.InvokeAsync(() => _mainTabViewControls.UpdateListViewMode("Playlists", lvm.PlaylistViewMode));
         }
-    }
-
-    private void ApplyListViewDisplayMode(ListBox listBox, SongDisplayMode mode, IDataTemplate detailedTemplate, IDataTemplate compactTemplate, IDataTemplate gridTemplate)
-    {
-        if (listBox is null)
-        {
-            Debug.WriteLine($"[MainWindow] ApplyListViewDisplayMode called but ListBox target is null. Mode: {mode}");
-            return;
-        }
-
-        _mainTabViewControls.UpdateListViewMode(mode, listBox, detailedTemplate, compactTemplate, gridTemplate);
     }
 
     private Border CreateStatusBar()
@@ -164,7 +150,6 @@ public class MainWindow : Window
         if (_currentLibraryVM is not null)
         {
             _currentLibraryVM.PropertyChanged -= LibraryViewModel_PropertyChanged;
-            // _sharedViewTemplates.SetLibraryViewModel(null); // No longer needed
         }
 
         if (DataContext is MainWindowViewModel vm)
