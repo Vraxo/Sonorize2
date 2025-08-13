@@ -76,53 +76,70 @@ public static class PlaybackTimeSliderPanel
             }
         });
 
-        // Use AddHandler with RoutingStrategies.Tunnel to intercept clicks on the track
-        // before the Slider's internal RepeatButtons can handle them. This fixes the
-        // inconsistent seeking behavior when clicking on different parts of the slider track.
+        // --- New Event Handling for "Snap-and-Drag" ---
+
         mainPlaybackSlider.AddHandler(Slider.PointerPressedEvent, (sender, e) =>
         {
             if (sender is not Slider slider || slider.DataContext is not MainWindowViewModel { Playback: { } playbackVM }) return;
 
+            var point = e.GetCurrentPoint(slider);
+            if (!point.Properties.IsLeftButtonPressed) return;
+
+            // Don't interfere with built-in thumb dragging
             var thumb = slider.FindDescendantOfType<Thumb>();
             if (thumb is not null && thumb.IsPointerOver)
             {
-                // Pointer is over the thumb, let the thumb's drag events handle this.
                 return;
             }
 
+            // This is a click on the track. Begin the operation.
             playbackVM.BeginSliderDrag();
 
-            var point = e.GetCurrentPoint(slider);
-            if (point.Properties.IsLeftButtonPressed)
+            // Immediately move the slider to the clicked position
+            var bounds = slider.Bounds;
+            if (bounds.Width > 0)
             {
-                var bounds = slider.Bounds;
-                if (bounds.Width > 0)
-                {
-                    var ratio = Math.Clamp(point.Position.X / bounds.Width, 0, 1);
-                    var newValue = slider.Minimum + (ratio * (slider.Maximum - slider.Minimum));
-                    slider.Value = newValue; // This updates SliderPosition via TwoWay binding
-                }
+                var ratio = Math.Clamp(point.Position.X / bounds.Width, 0, 1);
+                var newValue = slider.Minimum + (ratio * (slider.Maximum - slider.Minimum));
+                slider.Value = newValue;
             }
-            e.Handled = true; // Prevent the event from being handled by RepeatButtons
+
+            // Capture the pointer to receive PointerMoved events for dragging from the track.
+            e.Pointer.Capture(slider);
+            e.Handled = true;
         }, RoutingStrategies.Tunnel);
 
-        // Handle the release from a track click.
+        mainPlaybackSlider.AddHandler(Slider.PointerMovedEvent, (sender, e) =>
+        {
+            if (sender is not Slider slider) return;
+
+            // Only process moves if we have captured the pointer (i.e., we are in a track-drag operation).
+            if (e.Pointer.Captured != slider) return;
+
+            var point = e.GetCurrentPoint(slider);
+            var bounds = slider.Bounds;
+            if (bounds.Width > 0)
+            {
+                var ratio = Math.Clamp(point.Position.X / bounds.Width, 0, 1);
+                var newValue = slider.Minimum + (ratio * (slider.Maximum - slider.Minimum));
+                slider.Value = newValue;
+            }
+        });
+
         mainPlaybackSlider.AddHandler(Slider.PointerReleasedEvent, (sender, e) =>
         {
             if (sender is not Slider slider || slider.DataContext is not MainWindowViewModel { Playback: { } playbackVM }) return;
 
-            var thumb = slider.FindDescendantOfType<Thumb>();
-            if (thumb is not null && thumb.IsPointerOver)
-            {
-                // Pointer is over the thumb, let the thumb's drag events handle this.
-                return;
-            }
+            // Only process releases if we have captured the pointer.
+            if (e.Pointer.Captured != slider) return;
 
+            // Release pointer capture and finalize the seek.
+            e.Pointer.Capture(null);
             playbackVM.CompleteSliderDrag();
-            e.Handled = true; // Prevent the event from being handled by RepeatButtons
-        }, RoutingStrategies.Tunnel);
+            e.Handled = true;
+        });
 
-        // Add handlers specifically for the Thumb's drag operations
+        // Add handlers specifically for the Thumb's native drag operations
         mainPlaybackSlider.AddHandler(Thumb.DragStartedEvent, (s, e) =>
         {
             if (s is Slider { DataContext: MainWindowViewModel { Playback: { } playbackVM } })
