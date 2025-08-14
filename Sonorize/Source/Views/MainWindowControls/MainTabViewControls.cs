@@ -15,7 +15,6 @@ using System.Collections;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Sonorize.Converters;
-using System.Collections.Generic;
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -310,6 +309,7 @@ public class MainTabViewControls
     {
         Debug.WriteLine($"[MainTabViewControls] UpdateListViewMode called for mode '{mode}'. Container has {container.Children.Count} children.");
 
+        // Find controls
         if (container.Children.OfType<ScrollViewer>().FirstOrDefault() is not { Content: ListBox listBox } scrollViewer ||
             container.Children.OfType<DataGrid>().FirstOrDefault() is not { } dataGrid)
         {
@@ -317,39 +317,17 @@ public class MainTabViewControls
             return;
         }
 
+        // Visibility is now handled by bindings. We just update the templates for the ListBox.
+
         if (mode == SongDisplayMode.Compact)
         {
+            // Post a check to the UI thread to log the item count *after* the binding has had a chance to update.
             Dispatcher.UIThread.Post(() =>
             {
                 var items = dataGrid.ItemsSource as IEnumerable;
                 var itemCount = items?.Cast<object>().Count() ?? 0;
-
-                if (itemCount == 0 && dataGrid.IsVisible)
-                {
-                    Debug.WriteLine("[MainTabViewControls] DIAGNOSTIC MODE: DataGrid is visible but has 0 items. Forcing dummy data to be displayed for analysis.");
-
-                    var dummySongs = new List<Song>
-                    {
-                        new Song { Title = "--- DIAGNOSTIC DATA ---", Artist = "Binding Issue Suspected", Album = "Please Check Console Logs", Duration = System.TimeSpan.FromSeconds(1) },
-                        new Song { Title = "My DataGrid is Empty", Artist = "The Binding System", Album = "Race Conditions Vol. 1", Duration = System.TimeSpan.FromMinutes(3).Add(System.TimeSpan.FromSeconds(30)) },
-                        new Song { Title = "Why Won't You Show Up?", Artist = "A Desperate Developer", Album = "UI Nightmares", Duration = System.TimeSpan.FromMinutes(4).Add(System.TimeSpan.FromSeconds(15)) }
-                    };
-
-                    int vmItemCount = 0;
-                    var window = container.GetVisualRoot() as Window;
-                    if (window?.DataContext is MainWindowViewModel mainVm && mainVm.Library != null)
-                    {
-                        vmItemCount = mainVm.Library.FilteredSongs.Count;
-                    }
-                    Debug.WriteLine($"[MainTabViewControls] DIAGNOSTIC: ViewModel's FilteredSongs has {vmItemCount} items, but UI control ItemsSource has {itemCount}. This confirms a binding failure. Assigning dummy data directly.");
-
-                    dataGrid.ItemsSource = dummySongs;
-                }
-                else
-                {
-                    Debug.WriteLine($"[MainTabViewControls] In Compact mode. After UI thread post, DataGrid ItemsSource has {itemCount} items.");
-                }
-            }, DispatcherPriority.Loaded);
+                Debug.WriteLine($"[MainTabViewControls] In Compact mode. After UI thread post, DataGrid ItemsSource has {itemCount} items.");
+            }, DispatcherPriority.Background);
             return;
         }
 

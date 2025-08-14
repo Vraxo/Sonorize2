@@ -155,9 +155,15 @@ public class MainWindow : Window
 
         if (updateAction != null)
         {
-            // The call to lvm.ApplyFilter() is removed. The LibraryViewModel now handles this internally
-            // before it raises the property change event, ensuring data is ready when this handler runs.
-            Debug.WriteLine($"[MainWindow] Applying view templates for '{tabName}' tab to mode '{newMode}'.");
+            // By calling ApplyFilter first, we ensure the ItemsSource for the DataGrid
+            // is populated before any UI update logic proceeds. This should resolve
+            // the race condition where the DataGrid becomes visible before its data is ready.
+            Debug.WriteLine($"[MainWindow] View mode for '{tabName}' changed to '{newMode}'. Re-applying filter.");
+            lvm.ApplyFilter();
+
+            // The updateAction, which changes templates, can run synchronously.
+            // The UI will then update based on the new view model state and templates.
+            Debug.WriteLine($"[MainWindow] Applying view templates for '{newMode}' mode.");
             updateAction();
         }
     }

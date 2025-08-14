@@ -136,33 +136,20 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     private void DisplayModeService_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         Debug.WriteLine($"[LibraryVM] Received property change from DisplayModeService: {e.PropertyName}");
-
-        Action? raisePropertyChange = null;
-
         switch (e.PropertyName)
         {
             case nameof(LibraryDisplayModeService.LibraryViewMode):
-                raisePropertyChange = () => OnPropertyChanged(nameof(LibraryViewMode));
+                OnPropertyChanged(nameof(LibraryViewMode));
                 break;
             case nameof(LibraryDisplayModeService.ArtistViewMode):
-                raisePropertyChange = () => OnPropertyChanged(nameof(ArtistViewMode));
+                OnPropertyChanged(nameof(ArtistViewMode));
                 break;
             case nameof(LibraryDisplayModeService.AlbumViewMode):
-                raisePropertyChange = () => OnPropertyChanged(nameof(AlbumViewMode));
+                OnPropertyChanged(nameof(AlbumViewMode));
                 break;
             case nameof(LibraryDisplayModeService.PlaylistViewMode):
-                raisePropertyChange = () => OnPropertyChanged(nameof(PlaylistViewMode));
+                OnPropertyChanged(nameof(PlaylistViewMode));
                 break;
-        }
-
-        if (raisePropertyChange != null)
-        {
-            // This is the core fix: Apply the filter to update the data source *before*
-            // raising the property changed event that the UI is bound to. This ensures
-            // that when the UI (e.g., DataGrid visibility binding) reacts, the data is already there.
-            Debug.WriteLine($"[LibraryVM] View mode for {e.PropertyName} changed. Applying filter BEFORE notifying UI.");
-            ApplyFilter();
-            raisePropertyChange();
         }
     }
 
