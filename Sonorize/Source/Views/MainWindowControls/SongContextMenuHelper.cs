@@ -74,7 +74,7 @@ public class SongContextMenuHelper
         editMetadataMenuItem.Bind(MenuItem.CommandProperty, commandBinding);
 
         contextMenu.Items.Add(editMetadataMenuItem);
-        Debug.WriteLine($"[SongContextMenuHelper] CreateContextMenu for song: {songDataContext.Title}. MenuItem command bound to ListBox.DataContext.OpenEditSongMetadataDialogCommand.");
+        //Debug.WriteLine($"[SongContextMenuHelper] CreateContextMenu for song: {songDataContext.Title}. MenuItem command bound to ListBox.DataContext.OpenEditSongMetadataDialogCommand.");
 
         return contextMenu;
     }
