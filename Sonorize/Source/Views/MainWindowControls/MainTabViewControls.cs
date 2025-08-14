@@ -11,6 +11,8 @@ using Avalonia.Styling;
 using Sonorize.Models;
 using Sonorize.ViewModels;
 using System.Linq;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -138,7 +140,7 @@ public class MainTabViewControls
         IDataTemplate initialItemTemplate,
         ITemplate<Panel> initialItemsPanelTemplate)
     {
-        var container = new Grid(); // Use a Grid as the container for proper layouting.
+        var container = new Panel();
 
         // Create ListBox for Detailed/Grid views
         var listBox = new ListBox
@@ -176,29 +178,8 @@ public class MainTabViewControls
         dataGrid.Bind(ItemsControl.ItemsSourceProperty, new Binding(itemsSourcePath));
         dataGrid.Bind(DataGrid.SelectedItemProperty, new Binding(selectedItemPath, BindingMode.TwoWay));
 
-        // Use declarative bindings for visibility, which is more robust with a Grid container.
-        scrollViewer.Bind(Visual.IsVisibleProperty, new Binding(viewModePath)
-        {
-            Converter = new FuncValueConverter<SongDisplayMode, bool>(m =>
-            {
-                bool isVisible = m != SongDisplayMode.Compact;
-                Debug.WriteLine($"[VisibilityConverter] ScrollViewer for '{itemsSourcePath}': Mode is {m}, IsVisible={isVisible}");
-                return isVisible;
-            })
-        });
-        dataGrid.Bind(Visual.IsVisibleProperty, new Binding(viewModePath)
-        {
-            Converter = new FuncValueConverter<SongDisplayMode, bool>(m =>
-            {
-                bool isVisible = m == SongDisplayMode.Compact;
-                Debug.WriteLine($"[VisibilityConverter] DataGrid for '{itemsSourcePath}': Mode is {m}, IsVisible={isVisible}");
-                return isVisible;
-            })
-        });
-
-        // Add DataGrid first to the container, then the ScrollViewer.
-        container.Children.Add(dataGrid);
         container.Children.Add(scrollViewer);
+        container.Children.Add(dataGrid);
 
         return container;
     }
@@ -308,35 +289,77 @@ public class MainTabViewControls
         });
     }
 
-    public void UpdateListViewMode(SongDisplayMode mode, Panel container, IDataTemplate detailedTemplate, IDataTemplate compactTemplate, IDataTemplate gridTemplate, MainWindowViewModel? mvm = null)
+    public void UpdateListViewMode(SongDisplayMode mode, Panel container, IDataTemplate detailedTemplate, IDataTemplate compactTemplate, IDataTemplate gridTemplate)
     {
-        Debug.WriteLine($"[MainTabViewControls] UpdateListViewMode called for mode '{mode}'. Visibility is now handled by bindings.");
+        Debug.WriteLine($"[MainTabViewControls] Updating view mode to '{mode}'.");
 
-        // Visibility is handled by bindings. This method only needs to update the ListBox template.
-        if (mode == SongDisplayMode.Compact)
-        {
-            return; // Nothing to do for ListBox when DataGrid is visible.
-        }
+        var scrollViewer = container.Children.OfType<ScrollViewer>().FirstOrDefault();
+        var dataGrid = container.Children.OfType<DataGrid>().FirstOrDefault();
+        var listBox = scrollViewer?.Content as ListBox;
 
-        if (container.Children.OfType<ScrollViewer>().FirstOrDefault() is not { Content: ListBox listBox } scrollViewer)
+        if (scrollViewer == null || dataGrid == null || listBox == null)
         {
-            Debug.WriteLine("[MainTabViewControls] UpdateListViewMode failed to find ScrollViewer or ListBox inside it.");
+            Debug.WriteLine("[MainTabViewControls] CRITICAL: Could not find ScrollViewer, DataGrid, or ListBox in the container. Aborting view mode change.");
             return;
         }
 
-        Debug.WriteLine($"[MainTabViewControls] Updating ListBox template for mode '{mode}'.");
-        switch (mode)
+        Debug.WriteLine($"[MainTabViewControls] Before change: ScrollViewer.IsVisible={scrollViewer.IsVisible}, DataGrid.IsVisible={dataGrid.IsVisible}");
+
+        if (mode == SongDisplayMode.Compact)
         {
-            case SongDisplayMode.Detailed:
-                listBox.ItemTemplate = detailedTemplate;
-                listBox.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
-                scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
-                break;
-            case SongDisplayMode.Grid:
-                listBox.ItemTemplate = gridTemplate;
-                listBox.ItemsPanel = _sharedViewTemplates.WrapPanelItemsPanelTemplate;
-                scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
-                break;
+            Debug.WriteLine("[MainTabViewControls] Mode is Compact. Hiding ListBox, showing DataGrid.");
+            scrollViewer.IsVisible = false;
+            dataGrid.IsVisible = true;
+            Debug.WriteLine($"[MainTabViewControls] After change: ScrollViewer.IsVisible={scrollViewer.IsVisible}, DataGrid.IsVisible={dataGrid.IsVisible}");
+
+            // Use the dispatcher to check properties after the layout pass has had a chance to run
+            Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                var itemsSource = dataGrid.ItemsSource as System.Collections.IEnumerable;
+                var itemCount = itemsSource?.Cast<object>().Count() ?? 0;
+                var parentBounds = (dataGrid.Parent as Visual)?.Bounds ?? new Rect();
+
+                Debug.WriteLine($"[MainTabViewControls_PostLayout] DataGrid Check for Compact Mode:");
+                Debug.WriteLine($"  - IsVisible: {dataGrid.IsVisible}");
+                Debug.WriteLine($"  - DataContext Type: {dataGrid.DataContext?.GetType().Name ?? "null"}");
+                Debug.WriteLine($"  - ItemsSource Type: {dataGrid.ItemsSource?.GetType().Name ?? "null"}");
+                Debug.WriteLine($"  - Item Count: {itemCount}");
+                Debug.WriteLine($"  - Actual Bounds: {dataGrid.Bounds}");
+                Debug.WriteLine($"  - Parent Bounds: {parentBounds}");
+                if (itemCount > 0 && dataGrid.Bounds.Width > 0 && dataGrid.Bounds.Height > 0)
+                {
+                    Debug.WriteLine("[MainTabViewControls_PostLayout] DataGrid appears to have data and dimensions. The issue might be with row/cell rendering.");
+                }
+                else if (itemCount == 0)
+                {
+                    Debug.WriteLine("[MainTabViewControls_PostLayout] WARNING: DataGrid has no items to display.");
+                }
+                else
+                {
+                    Debug.WriteLine("[MainTabViewControls_PostLayout] WARNING: DataGrid might not be correctly measured or arranged (zero size).");
+                }
+            }, DispatcherPriority.Background);
+        }
+        else
+        {
+            Debug.WriteLine($"[MainTabViewControls] Mode is {mode}. Showing ListBox, hiding DataGrid.");
+            scrollViewer.IsVisible = true;
+            dataGrid.IsVisible = false;
+            Debug.WriteLine($"[MainTabViewControls] After change: ScrollViewer.IsVisible={scrollViewer.IsVisible}, DataGrid.IsVisible={dataGrid.IsVisible}");
+
+            switch (mode)
+            {
+                case SongDisplayMode.Detailed:
+                    listBox.ItemTemplate = detailedTemplate;
+                    listBox.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
+                    scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                    break;
+                case SongDisplayMode.Grid:
+                    listBox.ItemTemplate = gridTemplate;
+                    listBox.ItemsPanel = _sharedViewTemplates.WrapPanelItemsPanelTemplate;
+                    scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                    break;
+            }
         }
     }
 }

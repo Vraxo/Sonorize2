@@ -117,45 +117,26 @@ public class MainWindow : Window
 
     private void LibraryViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        Debug.WriteLine($"[MainWindow] LibraryViewModel_PropertyChanged fired for: {e.PropertyName}");
-
         if (sender is not LibraryViewModel lvm)
         {
-            Debug.WriteLine("[MainWindow] Sender is not LibraryViewModel, returning.");
             return;
         }
 
-        Action? updateAction = null;
-        string? tabName = null;
-
-        switch (e.PropertyName)
+        if (e.PropertyName == nameof(LibraryViewModel.LibraryViewMode))
         {
-            case nameof(LibraryViewModel.LibraryViewMode):
-                tabName = "Library";
-                updateAction = () => ApplyListViewDisplayMode((Panel)((TabItem)_tabControl.Items[0]).Content, lvm.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate);
-                break;
-            case nameof(LibraryViewModel.ArtistViewMode):
-                tabName = "Artist";
-                updateAction = () => ApplyListViewDisplayMode((Panel)((TabItem)_tabControl.Items[1]).Content, lvm.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate);
-                break;
-            case nameof(LibraryViewModel.AlbumViewMode):
-                tabName = "Album";
-                updateAction = () => ApplyListViewDisplayMode((Panel)((TabItem)_tabControl.Items[2]).Content, lvm.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate);
-                break;
-            case nameof(LibraryViewModel.PlaylistViewMode):
-                tabName = "Playlist";
-                updateAction = () => ApplyListViewDisplayMode((Panel)((TabItem)_tabControl.Items[3]).Content, lvm.PlaylistViewMode, _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.CompactPlaylistTemplate, _sharedViewTemplates.GridPlaylistTemplate);
-                break;
+            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode((Panel)((TabItem)_tabControl.Items[0]).Content, lvm.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate));
         }
-
-        if (updateAction != null)
+        else if (e.PropertyName == nameof(LibraryViewModel.ArtistViewMode))
         {
-            Debug.WriteLine($"[MainWindow] Scheduling UI update for {tabName} tab.");
-            Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                Debug.WriteLine($"[MainWindow] Executing UI update for {tabName} tab on UI thread.");
-                updateAction();
-            });
+            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode((Panel)((TabItem)_tabControl.Items[1]).Content, lvm.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate));
+        }
+        else if (e.PropertyName == nameof(LibraryViewModel.AlbumViewMode))
+        {
+            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode((Panel)((TabItem)_tabControl.Items[2]).Content, lvm.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate));
+        }
+        else if (e.PropertyName == nameof(LibraryViewModel.PlaylistViewMode))
+        {
+            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode((Panel)((TabItem)_tabControl.Items[3]).Content, lvm.PlaylistViewMode, _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.CompactPlaylistTemplate, _sharedViewTemplates.GridPlaylistTemplate));
         }
     }
 
