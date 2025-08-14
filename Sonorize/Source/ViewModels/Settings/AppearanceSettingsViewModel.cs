@@ -16,6 +16,7 @@ namespace Sonorize.ViewModels.Settings
         public bool ShowDurationInLibrary { get; set; }
         public bool ShowDateAddedInLibrary { get; set; }
         public bool ShowPlayCountInLibrary { get; set; }
+        public double LibraryRowHeight { get; set; }
 
         private readonly GridViewImageType _initialArtistGridType;
         private readonly GridViewImageType _initialAlbumGridType;
@@ -25,7 +26,8 @@ namespace Sonorize.ViewModels.Settings
         private readonly bool _initialShowDuration;
         private readonly bool _initialShowDateAdded;
         private readonly bool _initialShowPlayCount;
-        
+        private readonly double _initialLibraryRowHeight;
+
         public bool IsArtistGridSingle
         {
             get => ArtistGridType == GridViewImageType.Single;
@@ -66,12 +68,13 @@ namespace Sonorize.ViewModels.Settings
                                                   _initialShowAlbum != ShowAlbumInLibrary ||
                                                   _initialShowDuration != ShowDurationInLibrary ||
                                                   _initialShowDateAdded != ShowDateAddedInLibrary ||
-                                                  _initialShowPlayCount != ShowPlayCountInLibrary;
+                                                  _initialShowPlayCount != ShowPlayCountInLibrary ||
+                                                  Math.Abs(_initialLibraryRowHeight - LibraryRowHeight) > 0.01;
 
         public AppearanceSettingsViewModel(AppSettings settings, Action notifyParentSettingsChanged)
         {
             _notifyParentSettingsChanged = notifyParentSettingsChanged ?? throw new ArgumentNullException(nameof(notifyParentSettingsChanged));
-            
+
             _initialArtistGridType = Enum.TryParse<GridViewImageType>(settings.ArtistGridViewImageType, out var agt) ? agt : GridViewImageType.Composite;
             _initialAlbumGridType = Enum.TryParse<GridViewImageType>(settings.AlbumGridViewImageType, out var alhgt) ? alhgt : GridViewImageType.Composite;
             _initialPlaylistGridType = Enum.TryParse<GridViewImageType>(settings.PlaylistGridViewImageType, out var pgt) ? pgt : GridViewImageType.Composite;
@@ -80,6 +83,7 @@ namespace Sonorize.ViewModels.Settings
             _initialShowDuration = settings.ShowDurationInLibrary;
             _initialShowDateAdded = settings.ShowDateAddedInLibrary;
             _initialShowPlayCount = settings.ShowPlayCountInLibrary;
+            _initialLibraryRowHeight = settings.LibraryRowHeight;
 
             ArtistGridType = _initialArtistGridType;
             AlbumGridType = _initialAlbumGridType;
@@ -89,6 +93,7 @@ namespace Sonorize.ViewModels.Settings
             ShowDurationInLibrary = _initialShowDuration;
             ShowDateAddedInLibrary = _initialShowDateAdded;
             ShowPlayCountInLibrary = _initialShowPlayCount;
+            LibraryRowHeight = _initialLibraryRowHeight;
         }
 
         private void OnAppearanceChanged()
@@ -104,6 +109,7 @@ namespace Sonorize.ViewModels.Settings
             OnPropertyChanged(nameof(ShowDurationInLibrary));
             OnPropertyChanged(nameof(ShowDateAddedInLibrary));
             OnPropertyChanged(nameof(ShowPlayCountInLibrary));
+            OnPropertyChanged(nameof(LibraryRowHeight));
             OnPropertyChanged(nameof(HasChangesFromInitialState));
             _notifyParentSettingsChanged();
         }
@@ -118,6 +124,7 @@ namespace Sonorize.ViewModels.Settings
             settings.ShowDurationInLibrary = ShowDurationInLibrary;
             settings.ShowDateAddedInLibrary = ShowDateAddedInLibrary;
             settings.ShowPlayCountInLibrary = ShowPlayCountInLibrary;
+            settings.LibraryRowHeight = LibraryRowHeight;
         }
     }
 }

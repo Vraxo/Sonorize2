@@ -44,7 +44,8 @@ public class SettingsChangeProcessorService
                                          oldSettings.ShowAlbumInLibrary != newSettings.ShowAlbumInLibrary ||
                                          oldSettings.ShowDurationInLibrary != newSettings.ShowDurationInLibrary ||
                                          oldSettings.ShowDateAddedInLibrary != newSettings.ShowDateAddedInLibrary ||
-                                         oldSettings.ShowPlayCountInLibrary != newSettings.ShowPlayCountInLibrary;
+                                         oldSettings.ShowPlayCountInLibrary != newSettings.ShowPlayCountInLibrary ||
+                                         System.Math.Abs(oldSettings.LibraryRowHeight - newSettings.LibraryRowHeight) > 0.01;
 
         if (libraryViewOptionsChanged)
         {

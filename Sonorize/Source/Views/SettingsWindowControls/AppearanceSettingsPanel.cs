@@ -4,6 +4,7 @@ using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Sonorize.Models;
+using Sonorize.ViewModels;
 
 namespace Sonorize.Views.SettingsWindowControls;
 
@@ -31,20 +32,20 @@ public static class AppearanceSettingsPanel
 
         return panel;
     }
-    
+
     private static StackPanel CreateLibraryColumnsSelector(ThemeColors theme)
     {
         var sectionPanel = new StackPanel { Spacing = 8 };
 
         var title = new TextBlock
         {
-            Text = "Library List Columns",
+            Text = "Library List Columns & Sizing",
             FontSize = 14,
             FontWeight = FontWeight.Normal,
             Foreground = theme.B_TextColor,
             Margin = new Thickness(0, 0, 0, 5)
         };
-        
+
         var showArtistCheck = new CheckBox
         {
             Content = "Show Artist Column",
@@ -58,7 +59,7 @@ public static class AppearanceSettingsPanel
             Foreground = theme.B_TextColor
         };
         showAlbumCheck.Bind(CheckBox.IsCheckedProperty, new Binding("AppearanceSettings.ShowAlbumInLibrary", BindingMode.TwoWay));
-        
+
         var showDurationCheck = new CheckBox
         {
             Content = "Show Duration Column",
@@ -86,9 +87,32 @@ public static class AppearanceSettingsPanel
         checkPanel.Children.Add(showDurationCheck);
         checkPanel.Children.Add(showPlayCountCheck);
         checkPanel.Children.Add(showDateAddedCheck);
-        
+
         sectionPanel.Children.Add(title);
         sectionPanel.Children.Add(checkPanel);
+
+        var rowHeightPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(10, 10, 0, 0) };
+        var rowHeightLabel = new TextBlock
+        {
+            Text = "Row Height:",
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = theme.B_TextColor
+        };
+        var rowHeightUpDown = new NumericUpDown
+        {
+            Minimum = 20,
+            Maximum = 80,
+            Increment = 2,
+            Width = 120,
+            Background = theme.B_ControlBackgroundColor,
+            Foreground = theme.B_TextColor,
+            BorderBrush = theme.B_SecondaryTextColor
+        };
+        rowHeightUpDown.Bind(NumericUpDown.ValueProperty, new Binding("AppearanceSettings.LibraryRowHeight", BindingMode.TwoWay));
+        rowHeightPanel.Children.Add(rowHeightLabel);
+        rowHeightPanel.Children.Add(rowHeightUpDown);
+
+        sectionPanel.Children.Add(rowHeightPanel);
 
         return sectionPanel;
     }
@@ -103,7 +127,7 @@ public static class AppearanceSettingsPanel
             FontSize = 14,
             FontWeight = FontWeight.Normal,
             Foreground = theme.B_TextColor,
-            Margin = new Thickness(0, 0, 0, 5)
+            Margin = new Thickness(0, 10, 0, 5)
         };
 
         var singleRadio = new RadioButton
@@ -128,7 +152,6 @@ public static class AppearanceSettingsPanel
 
         sectionPanel.Children.Add(title);
         sectionPanel.Children.Add(radioPanel);
-        sectionPanel.Children.Add(new Separator { Background = theme.B_ControlBackgroundColor, Margin = new Thickness(0, 5) });
 
         return sectionPanel;
     }

@@ -135,7 +135,11 @@ public class SongItemTemplateProvider
             Grid.SetColumn(durationBlock, 6);
             itemGrid.Children.Add(durationBlock);
 
-            var rootBorder = new Border { Padding = new Thickness(10, 8), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
+            var rootBorder = new Border { Padding = new Thickness(10, 8), Background = Brushes.Transparent, Child = itemGrid };
+            rootBorder.Bind(Border.MinHeightProperty, new Binding("DataContext.Library.ViewOptions.RowHeight")
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+            });
             rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
             return rootBorder;
         }, supportsRecycling: true);
@@ -236,7 +240,11 @@ public class SongItemTemplateProvider
             Grid.SetColumn(durationBlock, 5);
             itemGrid.Children.Add(durationBlock);
 
-            var rootBorder = new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = itemGrid };
+            var rootBorder = new Border { Padding = new Thickness(10, 4, 10, 4), Background = Brushes.Transparent, Child = itemGrid };
+            rootBorder.Bind(Border.MinHeightProperty, new Binding("DataContext.Library.ViewOptions.RowHeight")
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+            });
             rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
             return rootBorder;
         }, supportsRecycling: true);

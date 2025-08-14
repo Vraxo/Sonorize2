@@ -40,6 +40,13 @@ public class LibraryViewOptionsViewModel : ViewModelBase
         set => SetProperty(ref _showPlayCount, value);
     }
 
+    private double _rowHeight;
+    public double RowHeight
+    {
+        get => _rowHeight;
+        set => SetProperty(ref _rowHeight, value);
+    }
+
     public void LoadFromSettings(AppSettings settings)
     {
         ShowArtist = settings.ShowArtistInLibrary;
@@ -47,5 +54,6 @@ public class LibraryViewOptionsViewModel : ViewModelBase
         ShowDuration = settings.ShowDurationInLibrary;
         ShowDateAdded = settings.ShowDateAddedInLibrary;
         ShowPlayCount = settings.ShowPlayCountInLibrary;
+        RowHeight = settings.LibraryRowHeight;
     }
 }
