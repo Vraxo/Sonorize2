@@ -18,6 +18,11 @@ public class AppSettings
     public string AlbumGridViewImageType { get; set; } = "Composite";
     public string PlaylistGridViewImageType { get; set; } = "Composite";
 
+    // Library List Column Preferences
+    public bool ShowArtistInLibrary { get; set; } = true;
+    public bool ShowAlbumInLibrary { get; set; } = true;
+    public bool ShowDurationInLibrary { get; set; } = true;
+
     // Last.fm Settings
     public bool LastfmScrobblingEnabled { get; set; } = false;
     public string? LastfmUsername { get; set; }

@@ -95,6 +95,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         _displayModeService = displayModeService ?? throw new ArgumentNullException(nameof(displayModeService));
 
         ViewOptions = new LibraryViewOptionsViewModel();
+        ViewOptions.LoadFromSettings(_settingsService.LoadSettings());
 
         _components = new LibraryComponentProvider(musicLibraryService, settingsService);
         _trackNavigationManager = new TrackNavigationManager(_components.SongList.FilteredSongs);

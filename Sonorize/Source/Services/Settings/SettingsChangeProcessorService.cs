@@ -39,6 +39,17 @@ public class SettingsChangeProcessorService
             statusMessages.Add("Theme changed. Restart Sonorize for full effect.");
         }
 
+        // Appearance changes (including library columns)
+        bool libraryViewOptionsChanged = oldSettings.ShowArtistInLibrary != newSettings.ShowArtistInLibrary ||
+                                         oldSettings.ShowAlbumInLibrary != newSettings.ShowAlbumInLibrary ||
+                                         oldSettings.ShowDurationInLibrary != newSettings.ShowDurationInLibrary;
+
+        if (libraryViewOptionsChanged)
+        {
+            Debug.WriteLine("[SettingsChangeProcessor] Library view options changed. Updating view model.");
+            _libraryViewModel.ViewOptions.LoadFromSettings(newSettings);
+        }
+
         // Scrobbling settings changes
         bool scrobbleSettingsActuallyChanged =
             oldSettings.LastfmScrobblingEnabled != newSettings.LastfmScrobblingEnabled ||

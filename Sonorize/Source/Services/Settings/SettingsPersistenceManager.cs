@@ -70,6 +70,9 @@ public class SettingsPersistenceManager
             newSettingsToSave.ArtistGridViewImageType = settingsOnDisk.ArtistGridViewImageType;
             newSettingsToSave.AlbumGridViewImageType = settingsOnDisk.AlbumGridViewImageType;
             newSettingsToSave.PlaylistGridViewImageType = settingsOnDisk.PlaylistGridViewImageType;
+            newSettingsToSave.ShowArtistInLibrary = settingsOnDisk.ShowArtistInLibrary;
+            newSettingsToSave.ShowAlbumInLibrary = settingsOnDisk.ShowAlbumInLibrary;
+            newSettingsToSave.ShowDurationInLibrary = settingsOnDisk.ShowDurationInLibrary;
         }
 
         // Last.fm Settings - Compare UI state against disk state for change detection
