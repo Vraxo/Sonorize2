@@ -4,7 +4,6 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
-using Avalonia.Data.Converters;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Sonorize.Models;
@@ -17,11 +16,15 @@ public class MainTabViewControls
     private readonly ThemeColors _theme;
     private readonly SharedViewTemplates _sharedViewTemplates;
 
-    // View controls for each tab
-    private Control _songsDetailedView, _songsCompactView, _songsGridView;
-    private Control _artistsDetailedView, _artistsCompactView, _artistsGridView;
-    private Control _albumsDetailedView, _albumsCompactView, _albumsGridView;
-    private Control _playlistsDetailedView, _playlistsCompactView, _playlistsGridView;
+    // Presenters for each tab's content
+    private ContentControl _libraryContentPresenter;
+    private ContentControl _artistsContentPresenter;
+    private ContentControl _albumsContentPresenter;
+    private ContentControl _playlistsContentPresenter;
+
+    // View controls for each tab (DataGrid and Grid ListBox)
+    private Control _songsDataGrid, _artistsDataGrid, _albumsDataGrid, _playlistsDataGrid;
+    private Control _songsGridView, _artistsGridView, _albumsGridView, _playlistsGridView;
 
 
     public MainTabViewControls(ThemeColors theme, SharedViewTemplates sharedViewTemplates)
@@ -33,53 +36,37 @@ public class MainTabViewControls
 
     private void CreateAllViews()
     {
-        // Library (Song) Views
-        _songsDetailedView = _sharedViewTemplates.DataGridTemplates.CreateSongsDataGrid("Library.FilteredSongs", "Library.SelectedSong");
-        _songsCompactView = _sharedViewTemplates.DataGridTemplates.CreateCompactSongsDataGrid("Library.FilteredSongs", "Library.SelectedSong");
-        var (songsGridScrollViewer, _) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "SongGridListBox", "Library.FilteredSongs", "Library.SelectedSong",
+        // Library Views
+        _songsDataGrid = _sharedViewTemplates.DataGridTemplates.CreateSongsDataGrid("Library.FilteredSongs", "Library.SelectedSong");
+        var (songsScrollViewer, _) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            _theme, _sharedViewTemplates, "SongListBox", "Library.FilteredSongs", "Library.SelectedSong",
             _sharedViewTemplates.SongTemplates.GridSongTemplate, _sharedViewTemplates.WrapPanelItemsPanelTemplate,
-            lb => { });
-        _songsGridView = songsGridScrollViewer;
+            lb => { /* Callback no longer needed here */ });
+        _songsGridView = songsScrollViewer;
 
         // Artists Views
-        _artistsDetailedView = _sharedViewTemplates.DataGridTemplates.CreateArtistsDataGrid("Library.Groupings.Artists", "Library.FilterState.SelectedArtist");
-        var (artistsCompactScrollViewer, _) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "ArtistCompactListBox", "Library.Groupings.Artists", "Library.FilterState.SelectedArtist",
-            _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
-            lb => { });
-        _artistsCompactView = artistsCompactScrollViewer;
-        var (artistsGridScrollViewer, _) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "ArtistsGridListBox", "Library.Groupings.Artists", "Library.FilterState.SelectedArtist",
+        _artistsDataGrid = _sharedViewTemplates.DataGridTemplates.CreateArtistsDataGrid("Library.Groupings.Artists", "Library.FilterState.SelectedArtist");
+        var (artistsScrollViewer, _) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            _theme, _sharedViewTemplates, "ArtistsListBox", "Library.Groupings.Artists", "Library.FilterState.SelectedArtist",
             _sharedViewTemplates.ArtistTemplates.GridArtistTemplate, _sharedViewTemplates.WrapPanelItemsPanelTemplate,
              lb => { });
-        _artistsGridView = artistsGridScrollViewer;
+        _artistsGridView = artistsScrollViewer;
 
         // Albums Views
-        _albumsDetailedView = _sharedViewTemplates.DataGridTemplates.CreateAlbumsDataGrid("Library.Groupings.Albums", "Library.FilterState.SelectedAlbum");
-        var (albumsCompactScrollViewer, _) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "AlbumCompactListBox", "Library.Groupings.Albums", "Library.FilterState.SelectedAlbum",
-            _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
-             lb => { });
-        _albumsCompactView = albumsCompactScrollViewer;
-        var (albumsGridScrollViewer, _) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "AlbumsGridListBox", "Library.Groupings.Albums", "Library.FilterState.SelectedAlbum",
+        _albumsDataGrid = _sharedViewTemplates.DataGridTemplates.CreateAlbumsDataGrid("Library.Groupings.Albums", "Library.FilterState.SelectedAlbum");
+        var (albumsScrollViewer, _) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            _theme, _sharedViewTemplates, "AlbumsListBox", "Library.Groupings.Albums", "Library.FilterState.SelectedAlbum",
             _sharedViewTemplates.GridAlbumTemplate, _sharedViewTemplates.WrapPanelItemsPanelTemplate,
             lb => { });
-        _albumsGridView = albumsGridScrollViewer;
+        _albumsGridView = albumsScrollViewer;
 
         // Playlists Views
-        _playlistsDetailedView = _sharedViewTemplates.DataGridTemplates.CreatePlaylistsDataGrid("Library.Groupings.Playlists", "Library.FilterState.SelectedPlaylist");
-        var (playlistsCompactScrollViewer, _) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "PlaylistCompactListBox", "Library.Groupings.Playlists", "Library.FilterState.SelectedPlaylist",
-            _sharedViewTemplates.CompactPlaylistTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
-            lb => { });
-        _playlistsCompactView = playlistsCompactScrollViewer;
-        var (playlistsGridScrollViewer, _) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "PlaylistsGridListBox", "Library.Groupings.Playlists", "Library.FilterState.SelectedPlaylist",
+        _playlistsDataGrid = _sharedViewTemplates.DataGridTemplates.CreatePlaylistsDataGrid("Library.Groupings.Playlists", "Library.FilterState.SelectedPlaylist");
+        var (playlistsScrollViewer, _) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            _theme, _sharedViewTemplates, "PlaylistsListBox", "Library.Groupings.Playlists", "Library.FilterState.SelectedPlaylist",
             _sharedViewTemplates.GridPlaylistTemplate, _sharedViewTemplates.WrapPanelItemsPanelTemplate,
             lb => { });
-        _playlistsGridView = playlistsGridScrollViewer;
+        _playlistsGridView = playlistsScrollViewer;
     }
 
 
@@ -115,27 +102,18 @@ public class MainTabViewControls
         tabControl.Styles.Add(selectedTabItemStyle);
         tabControl.Styles.Add(pointerOverTabItemStyle);
 
-        var viewModeToIntConverter = new FuncValueConverter<SongDisplayMode, int>(mode => (int)mode);
+        // Create ContentPresenters for each tab
+        _libraryContentPresenter = new ContentControl();
+        var libraryTab = new TabItem { Header = "LIBRARY", Content = _libraryContentPresenter };
 
-        // Library Tab
-        var libraryCarousel = new Carousel { ItemsSource = new Control[] { _songsDetailedView, _songsCompactView, _songsGridView } };
-        libraryCarousel.Bind(Carousel.SelectedIndexProperty, new Binding("Library.LibraryViewMode", BindingMode.OneWay) { Converter = viewModeToIntConverter });
-        var libraryTab = new TabItem { Header = "LIBRARY", Content = libraryCarousel };
+        _artistsContentPresenter = new ContentControl();
+        var artistsTab = new TabItem { Header = "ARTISTS", Content = _artistsContentPresenter };
 
-        // Artists Tab
-        var artistsCarousel = new Carousel { ItemsSource = new Control[] { _artistsDetailedView, _artistsCompactView, _artistsGridView } };
-        artistsCarousel.Bind(Carousel.SelectedIndexProperty, new Binding("Library.ArtistViewMode", BindingMode.OneWay) { Converter = viewModeToIntConverter });
-        var artistsTab = new TabItem { Header = "ARTISTS", Content = artistsCarousel };
+        _albumsContentPresenter = new ContentControl();
+        var albumsTab = new TabItem { Header = "ALBUMS", Content = _albumsContentPresenter };
 
-        // Albums Tab
-        var albumsCarousel = new Carousel { ItemsSource = new Control[] { _albumsDetailedView, _albumsCompactView, _albumsGridView } };
-        albumsCarousel.Bind(Carousel.SelectedIndexProperty, new Binding("Library.AlbumViewMode", BindingMode.OneWay) { Converter = viewModeToIntConverter });
-        var albumsTab = new TabItem { Header = "ALBUMS", Content = albumsCarousel };
-
-        // Playlists Tab
-        var playlistsCarousel = new Carousel { ItemsSource = new Control[] { _playlistsDetailedView, _playlistsCompactView, _playlistsGridView } };
-        playlistsCarousel.Bind(Carousel.SelectedIndexProperty, new Binding("Library.PlaylistViewMode", BindingMode.OneWay) { Converter = viewModeToIntConverter });
-        var playlistsTab = new TabItem { Header = "PLAYLISTS", Content = playlistsCarousel };
+        _playlistsContentPresenter = new ContentControl();
+        var playlistsTab = new TabItem { Header = "PLAYLISTS", Content = _playlistsContentPresenter };
 
         tabControl.Items.Add(libraryTab);
         tabControl.Items.Add(artistsTab);
@@ -147,7 +125,23 @@ public class MainTabViewControls
 
     public void UpdateListViewMode(string viewName, SongDisplayMode mode)
     {
-        // This method is now obsolete as the Carousel handles view switching via binding.
-        // It is no longer called by MainWindow.
+        bool useDataGrid = mode == SongDisplayMode.Detailed || mode == SongDisplayMode.Compact;
+        Debug.WriteLine($"[MainTabViewControls] Updating view '{viewName}' to mode '{mode}'. Use DataGrid: {useDataGrid}");
+
+        switch (viewName)
+        {
+            case "Library":
+                _libraryContentPresenter.Content = useDataGrid ? _songsDataGrid : _songsGridView;
+                break;
+            case "Artists":
+                _artistsContentPresenter.Content = useDataGrid ? _artistsDataGrid : _artistsGridView;
+                break;
+            case "Albums":
+                _albumsContentPresenter.Content = useDataGrid ? _albumsDataGrid : _albumsGridView;
+                break;
+            case "Playlists":
+                _playlistsContentPresenter.Content = useDataGrid ? _playlistsDataGrid : _playlistsGridView;
+                break;
+        }
     }
 }

@@ -23,7 +23,6 @@ public class SharedViewTemplates
     // Expose the provider for Artist templates
     public ArtistItemTemplateProvider ArtistTemplates { get; private set; }
     public DataGridViewFactory DataGridTemplates { get; private set; }
-    public ContextMenu SharedSongContextMenu { get; }
 
     public FuncDataTemplate<PlaylistViewModel> DetailedPlaylistTemplate { get; private set; }
     public FuncDataTemplate<PlaylistViewModel> CompactPlaylistTemplate { get; private set; }
@@ -40,10 +39,9 @@ public class SharedViewTemplates
     {
         _theme = theme;
         _contextMenuHelper = new SongContextMenuHelper(_theme);
-        SharedSongContextMenu = _contextMenuHelper.CreateSongContextMenu();
-        SongTemplates = new SongItemTemplateProvider(_theme, SharedSongContextMenu);
+        SongTemplates = new SongItemTemplateProvider(_theme, _contextMenuHelper);
         ArtistTemplates = new ArtistItemTemplateProvider(_theme);
-        DataGridTemplates = new DataGridViewFactory(_theme, SharedSongContextMenu);
+        DataGridTemplates = new DataGridViewFactory(_theme, _contextMenuHelper);
 
         Debug.WriteLine("[SharedViewTemplates] Constructor called.");
         InitializeAlbumTemplates();

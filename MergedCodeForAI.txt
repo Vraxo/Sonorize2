@@ -4964,11 +4964,38 @@ public class MainWindow : Window
 
         _currentLibraryVM = vm.Library;
         _currentLibraryVM.PropertyChanged += LibraryViewModel_PropertyChanged;
+
+        // Set initial view modes
+        _mainTabViewControls.UpdateListViewMode("Library", _currentLibraryVM.LibraryViewMode);
+        _mainTabViewControls.UpdateListViewMode("Artists", _currentLibraryVM.ArtistViewMode);
+        _mainTabViewControls.UpdateListViewMode("Albums", _currentLibraryVM.AlbumViewMode);
+        _mainTabViewControls.UpdateListViewMode("Playlists", _currentLibraryVM.PlaylistViewMode);
     }
 
     private void LibraryViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        // No longer needed, view switching is now handled by direct binding in MainTabViewControls
+        if (sender is not LibraryViewModel lvm)
+        {
+            return;
+        }
+
+        // Delegate view mode changes to the control manager
+        if (e.PropertyName == nameof(LibraryViewModel.LibraryViewMode))
+        {
+            Dispatcher.UIThread.InvokeAsync(() => _mainTabViewControls.UpdateListViewMode("Library", lvm.LibraryViewMode));
+        }
+        else if (e.PropertyName == nameof(LibraryViewModel.ArtistViewMode))
+        {
+            Dispatcher.UIThread.InvokeAsync(() => _mainTabViewControls.UpdateListViewMode("Artists", lvm.ArtistViewMode));
+        }
+        else if (e.PropertyName == nameof(LibraryViewModel.AlbumViewMode))
+        {
+            Dispatcher.UIThread.InvokeAsync(() => _mainTabViewControls.UpdateListViewMode("Albums", lvm.AlbumViewMode));
+        }
+        else if (e.PropertyName == nameof(LibraryViewModel.PlaylistViewMode))
+        {
+            Dispatcher.UIThread.InvokeAsync(() => _mainTabViewControls.UpdateListViewMode("Playlists", lvm.PlaylistViewMode));
+        }
     }
 
     private Border CreateStatusBar()
@@ -10300,7 +10327,7 @@ namespace Sonorize.Views.MainWindowControls
         }
 
         // Method for Songs DataGrid
-        public Control CreateSongsDataGrid(string itemsSourcePath, string selectedItemPath)
+        public DataGrid CreateSongsDataGrid(string itemsSourcePath, string selectedItemPath)
         {
             var dataGrid = CreateBaseDataGrid(itemsSourcePath, selectedItemPath);
 
@@ -10310,46 +10337,32 @@ namespace Sonorize.Views.MainWindowControls
             dataGrid.Columns.Add(new DataGridTextColumn { Header = "Duration", Binding = new Binding("DurationString"), Width = new DataGridLength(0.7, DataGridLengthUnitType.Star) });
 
             ApplyDataGridStyles(dataGrid, _theme, true);
-            return new DockPanel { Children = { dataGrid } };
-        }
-
-        public Control CreateCompactSongsDataGrid(string itemsSourcePath, string selectedItemPath)
-        {
-            var dataGrid = CreateBaseDataGrid(itemsSourcePath, selectedItemPath);
-
-            dataGrid.RowHeight = 32;
-
-            dataGrid.Columns.Add(new DataGridTextColumn { Header = "Title", Binding = new Binding("Title"), Width = new DataGridLength(4, DataGridLengthUnitType.Star) });
-            dataGrid.Columns.Add(new DataGridTextColumn { Header = "Artist", Binding = new Binding("Artist"), Width = new DataGridLength(2, DataGridLengthUnitType.Star) });
-            dataGrid.Columns.Add(new DataGridTextColumn { Header = "Duration", Binding = new Binding("DurationString"), Width = new DataGridLength(0.7, DataGridLengthUnitType.Star) });
-
-            ApplyDataGridStyles(dataGrid, _theme, true);
-            return new DockPanel { Children = { dataGrid } };
+            return dataGrid;
         }
 
         // Method for Artists DataGrid
-        public Control CreateArtistsDataGrid(string itemsSourcePath, string selectedItemPath)
+        public DataGrid CreateArtistsDataGrid(string itemsSourcePath, string selectedItemPath)
         {
             var dataGrid = CreateBaseDataGrid(itemsSourcePath, selectedItemPath);
             dataGrid.Columns.Add(new DataGridTextColumn { Header = "Artist", Binding = new Binding("Name"), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
             dataGrid.Columns.Add(new DataGridTextColumn { Header = "Songs", Binding = new Binding("SongCount"), Width = new DataGridLength(0.5, DataGridLengthUnitType.Star) });
             ApplyDataGridStyles(dataGrid, _theme, false);
-            return new DockPanel { Children = { dataGrid } };
+            return dataGrid;
         }
 
         // Method for Albums DataGrid
-        public Control CreateAlbumsDataGrid(string itemsSourcePath, string selectedItemPath)
+        public DataGrid CreateAlbumsDataGrid(string itemsSourcePath, string selectedItemPath)
         {
             var dataGrid = CreateBaseDataGrid(itemsSourcePath, selectedItemPath);
             dataGrid.Columns.Add(new DataGridTextColumn { Header = "Album", Binding = new Binding("Title"), Width = new DataGridLength(2, DataGridLengthUnitType.Star) });
             dataGrid.Columns.Add(new DataGridTextColumn { Header = "Artist", Binding = new Binding("Artist"), Width = new DataGridLength(2, DataGridLengthUnitType.Star) });
             dataGrid.Columns.Add(new DataGridTextColumn { Header = "Songs", Binding = new Binding("SongCount"), Width = new DataGridLength(0.5, DataGridLengthUnitType.Star) });
             ApplyDataGridStyles(dataGrid, _theme, false);
-            return new DockPanel { Children = { dataGrid } };
+            return dataGrid;
         }
 
         // Method for Playlists DataGrid
-        public Control CreatePlaylistsDataGrid(string itemsSourcePath, string selectedItemPath)
+        public DataGrid CreatePlaylistsDataGrid(string itemsSourcePath, string selectedItemPath)
         {
             var dataGrid = CreateBaseDataGrid(itemsSourcePath, selectedItemPath);
             dataGrid.Columns.Add(new DataGridTextColumn { Header = "Playlist", Binding = new Binding("Name"), Width = new DataGridLength(2, DataGridLengthUnitType.Star) });
@@ -10368,7 +10381,7 @@ namespace Sonorize.Views.MainWindowControls
             });
             dataGrid.Columns.Add(typeColumn);
             ApplyDataGridStyles(dataGrid, _theme, false);
-            return new DockPanel { Children = { dataGrid } };
+            return dataGrid;
         }
 
 
@@ -10459,7 +10472,18 @@ namespace Sonorize.Views.MainWindowControls
 
             if (addSongContextMenu)
             {
-                rowStyle.Setters.Add(new Setter(Control.ContextMenuProperty, _contextMenuHelper.CreateSongContextMenu()));
+                var contextMenuBinding = new Binding(".") // Bind to the DataContext of the row, which is the Song
+                {
+                    Converter = new FuncValueConverter<object?, ContextMenu?>(dataContext =>
+                    {
+                        if (dataContext is Song song)
+                        {
+                            return _contextMenuHelper.CreateContextMenu(song);
+                        }
+                        return null;
+                    })
+                };
+                rowStyle.Setters.Add(new Setter(Control.ContextMenuProperty, contextMenuBinding));
             }
 
             dataGrid.Styles.Add(rowStyle);
@@ -10780,7 +10804,6 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
-using Avalonia.Data.Converters;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Sonorize.Models;
@@ -10792,72 +10815,21 @@ public class MainTabViewControls
 {
     private readonly ThemeColors _theme;
     private readonly SharedViewTemplates _sharedViewTemplates;
-
-    // View controls for each tab
-    private Control _songsDetailedView, _songsCompactView, _songsGridView;
-    private Control _artistsDetailedView, _artistsCompactView, _artistsGridView;
-    private Control _albumsDetailedView, _albumsCompactView, _albumsGridView;
-    private Control _playlistsDetailedView, _playlistsCompactView, _playlistsGridView;
+    private ListBox? _songListBoxInstance;
+    private ListBox? _artistsListBoxInstance;
+    private ListBox? _albumsListBoxInstance;
+    private ListBox? _playlistsListBoxInstance;
+    private DataGrid? _songsDataGridInstance;
+    private DataGrid? _artistsDataGridInstance;
+    private DataGrid? _albumsDataGridInstance;
+    private DataGrid? _playlistsDataGridInstance;
 
 
     public MainTabViewControls(ThemeColors theme, SharedViewTemplates sharedViewTemplates)
     {
         _theme = theme;
         _sharedViewTemplates = sharedViewTemplates;
-        CreateAllViews();
     }
-
-    private void CreateAllViews()
-    {
-        // Library (Song) Views
-        _songsDetailedView = _sharedViewTemplates.DataGridTemplates.CreateSongsDataGrid("Library.FilteredSongs", "Library.SelectedSong");
-        _songsCompactView = _sharedViewTemplates.DataGridTemplates.CreateCompactSongsDataGrid("Library.FilteredSongs", "Library.SelectedSong");
-        var (songsGridScrollViewer, _) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "SongGridListBox", "Library.FilteredSongs", "Library.SelectedSong",
-            _sharedViewTemplates.SongTemplates.GridSongTemplate, _sharedViewTemplates.WrapPanelItemsPanelTemplate,
-            lb => { });
-        _songsGridView = songsGridScrollViewer;
-
-        // Artists Views
-        _artistsDetailedView = _sharedViewTemplates.DataGridTemplates.CreateArtistsDataGrid("Library.Groupings.Artists", "Library.FilterState.SelectedArtist");
-        var (artistsCompactScrollViewer, _) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "ArtistCompactListBox", "Library.Groupings.Artists", "Library.FilterState.SelectedArtist",
-            _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
-            lb => { });
-        _artistsCompactView = artistsCompactScrollViewer;
-        var (artistsGridScrollViewer, _) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "ArtistsGridListBox", "Library.Groupings.Artists", "Library.FilterState.SelectedArtist",
-            _sharedViewTemplates.ArtistTemplates.GridArtistTemplate, _sharedViewTemplates.WrapPanelItemsPanelTemplate,
-             lb => { });
-        _artistsGridView = artistsGridScrollViewer;
-
-        // Albums Views
-        _albumsDetailedView = _sharedViewTemplates.DataGridTemplates.CreateAlbumsDataGrid("Library.Groupings.Albums", "Library.FilterState.SelectedAlbum");
-        var (albumsCompactScrollViewer, _) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "AlbumCompactListBox", "Library.Groupings.Albums", "Library.FilterState.SelectedAlbum",
-            _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
-             lb => { });
-        _albumsCompactView = albumsCompactScrollViewer;
-        var (albumsGridScrollViewer, _) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "AlbumsGridListBox", "Library.Groupings.Albums", "Library.FilterState.SelectedAlbum",
-            _sharedViewTemplates.GridAlbumTemplate, _sharedViewTemplates.WrapPanelItemsPanelTemplate,
-            lb => { });
-        _albumsGridView = albumsGridScrollViewer;
-
-        // Playlists Views
-        _playlistsDetailedView = _sharedViewTemplates.DataGridTemplates.CreatePlaylistsDataGrid("Library.Groupings.Playlists", "Library.FilterState.SelectedPlaylist");
-        var (playlistsCompactScrollViewer, _) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "PlaylistCompactListBox", "Library.Groupings.Playlists", "Library.FilterState.SelectedPlaylist",
-            _sharedViewTemplates.CompactPlaylistTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
-            lb => { });
-        _playlistsCompactView = playlistsCompactScrollViewer;
-        var (playlistsGridScrollViewer, _) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "PlaylistsGridListBox", "Library.Groupings.Playlists", "Library.FilterState.SelectedPlaylist",
-            _sharedViewTemplates.GridPlaylistTemplate, _sharedViewTemplates.WrapPanelItemsPanelTemplate,
-            lb => { });
-        _playlistsGridView = playlistsGridScrollViewer;
-    }
-
 
     public TabControl CreateMainTabView()
     {
@@ -10891,27 +10863,49 @@ public class MainTabViewControls
         tabControl.Styles.Add(selectedTabItemStyle);
         tabControl.Styles.Add(pointerOverTabItemStyle);
 
-        var viewModeToIntConverter = new FuncValueConverter<SongDisplayMode, int>(mode => (int)mode);
+        // LIBRARY Tab
+        var (songsGridScrollViewer, slb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            _theme, _sharedViewTemplates, "SongListBox", "Library.FilteredSongs", "Library.SelectedSong",
+            _sharedViewTemplates.SongTemplates.GridSongTemplate, _sharedViewTemplates.WrapPanelItemsPanelTemplate,
+            lb => _songListBoxInstance = lb);
+        _songsDataGridInstance = _sharedViewTemplates.DataGridTemplates.CreateSongsDataGrid("Library.FilteredSongs", "Library.SelectedSong");
+        var libraryTabContent = new Grid();
+        libraryTabContent.Children.Add(_songsDataGridInstance);
+        libraryTabContent.Children.Add(songsGridScrollViewer);
+        var libraryTab = new TabItem { Header = "LIBRARY", Content = libraryTabContent };
 
-        // Library Tab
-        var libraryCarousel = new Carousel { ItemsSource = new Control[] { _songsDetailedView, _songsCompactView, _songsGridView } };
-        libraryCarousel.Bind(Carousel.SelectedIndexProperty, new Binding("Library.LibraryViewMode", BindingMode.OneWay) { Converter = viewModeToIntConverter });
-        var libraryTab = new TabItem { Header = "LIBRARY", Content = libraryCarousel };
+        // ARTISTS Tab
+        var (artistsGridScrollViewer, alb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            _theme, _sharedViewTemplates, "ArtistsListBox", "Library.Groupings.Artists", "Library.FilterState.SelectedArtist",
+            _sharedViewTemplates.ArtistTemplates.GridArtistTemplate, _sharedViewTemplates.WrapPanelItemsPanelTemplate,
+            lb => _artistsListBoxInstance = lb);
+        _artistsDataGridInstance = _sharedViewTemplates.DataGridTemplates.CreateArtistsDataGrid("Library.Groupings.Artists", "Library.FilterState.SelectedArtist");
+        var artistsTabContent = new Grid();
+        artistsTabContent.Children.Add(_artistsDataGridInstance);
+        artistsTabContent.Children.Add(artistsGridScrollViewer);
+        var artistsTab = new TabItem { Header = "ARTISTS", Content = artistsTabContent };
 
-        // Artists Tab
-        var artistsCarousel = new Carousel { ItemsSource = new Control[] { _artistsDetailedView, _artistsCompactView, _artistsGridView } };
-        artistsCarousel.Bind(Carousel.SelectedIndexProperty, new Binding("Library.ArtistViewMode", BindingMode.OneWay) { Converter = viewModeToIntConverter });
-        var artistsTab = new TabItem { Header = "ARTISTS", Content = artistsCarousel };
+        // ALBUMS Tab
+        var (albumsGridScrollViewer, alblb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+             _theme, _sharedViewTemplates, "AlbumsListBox", "Library.Groupings.Albums", "Library.FilterState.SelectedAlbum",
+             _sharedViewTemplates.GridAlbumTemplate, _sharedViewTemplates.WrapPanelItemsPanelTemplate,
+             lb => _albumsListBoxInstance = lb);
+        _albumsDataGridInstance = _sharedViewTemplates.DataGridTemplates.CreateAlbumsDataGrid("Library.Groupings.Albums", "Library.FilterState.SelectedAlbum");
+        var albumsTabContent = new Grid();
+        albumsTabContent.Children.Add(_albumsDataGridInstance);
+        albumsTabContent.Children.Add(albumsGridScrollViewer);
+        var albumsTab = new TabItem { Header = "ALBUMS", Content = albumsTabContent };
 
-        // Albums Tab
-        var albumsCarousel = new Carousel { ItemsSource = new Control[] { _albumsDetailedView, _albumsCompactView, _albumsGridView } };
-        albumsCarousel.Bind(Carousel.SelectedIndexProperty, new Binding("Library.AlbumViewMode", BindingMode.OneWay) { Converter = viewModeToIntConverter });
-        var albumsTab = new TabItem { Header = "ALBUMS", Content = albumsCarousel };
-
-        // Playlists Tab
-        var playlistsCarousel = new Carousel { ItemsSource = new Control[] { _playlistsDetailedView, _playlistsCompactView, _playlistsGridView } };
-        playlistsCarousel.Bind(Carousel.SelectedIndexProperty, new Binding("Library.PlaylistViewMode", BindingMode.OneWay) { Converter = viewModeToIntConverter });
-        var playlistsTab = new TabItem { Header = "PLAYLISTS", Content = playlistsCarousel };
+        // PLAYLISTS Tab
+        var (playlistsGridScrollViewer, plb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            _theme, _sharedViewTemplates, "PlaylistsListBox", "Library.Groupings.Playlists", "Library.FilterState.SelectedPlaylist",
+            _sharedViewTemplates.GridPlaylistTemplate, _sharedViewTemplates.WrapPanelItemsPanelTemplate,
+            lb => _playlistsListBoxInstance = lb);
+        _playlistsDataGridInstance = _sharedViewTemplates.DataGridTemplates.CreatePlaylistsDataGrid("Library.Groupings.Playlists", "Library.FilterState.SelectedPlaylist");
+        var playlistsTabContent = new Grid();
+        playlistsTabContent.Children.Add(_playlistsDataGridInstance);
+        playlistsTabContent.Children.Add(playlistsGridScrollViewer);
+        var playlistsTab = new TabItem { Header = "PLAYLISTS", Content = playlistsTabContent };
 
         tabControl.Items.Add(libraryTab);
         tabControl.Items.Add(artistsTab);
@@ -10923,8 +10917,40 @@ public class MainTabViewControls
 
     public void UpdateListViewMode(string viewName, SongDisplayMode mode)
     {
-        // This method is now obsolete as the Carousel handles view switching via binding.
-        // It is no longer called by MainWindow.
+        bool showDataGrid = mode == SongDisplayMode.Detailed || mode == SongDisplayMode.Compact;
+        Debug.WriteLine($"[MainTabViewControls] Updating view '{viewName}' to mode '{mode}'. Show DataGrid: {showDataGrid}");
+
+        switch (viewName)
+        {
+            case "Library":
+                if (_songsDataGridInstance != null && _songListBoxInstance?.Parent is Visual songsGridList)
+                {
+                    _songsDataGridInstance.IsVisible = showDataGrid;
+                    songsGridList.IsVisible = !showDataGrid;
+                }
+                break;
+            case "Artists":
+                if (_artistsDataGridInstance != null && _artistsListBoxInstance?.Parent is Visual artistsGridList)
+                {
+                    _artistsDataGridInstance.IsVisible = showDataGrid;
+                    artistsGridList.IsVisible = !showDataGrid;
+                }
+                break;
+            case "Albums":
+                if (_albumsDataGridInstance != null && _albumsListBoxInstance?.Parent is Visual albumsGridList)
+                {
+                    _albumsDataGridInstance.IsVisible = showDataGrid;
+                    albumsGridList.IsVisible = !showDataGrid;
+                }
+                break;
+            case "Playlists":
+                if (_playlistsDataGridInstance != null && _playlistsListBoxInstance?.Parent is Visual playlistsGridList)
+                {
+                    _playlistsDataGridInstance.IsVisible = showDataGrid;
+                    playlistsGridList.IsVisible = !showDataGrid;
+                }
+                break;
+        }
     }
 }
 </file>
@@ -11748,7 +11774,7 @@ public class SongContextMenuHelper
         Debug.WriteLine($"[SongContextMenuHelper] Initialized.");
     }
 
-    public ContextMenu CreateSongContextMenu()
+    public ContextMenu CreateContextMenu(Song songDataContext)
     {
         var contextMenu = new ContextMenu();
 
@@ -11788,24 +11814,22 @@ public class SongContextMenuHelper
         var editMetadataMenuItem = new MenuItem
         {
             Header = "Edit Metadata",
+            CommandParameter = songDataContext // The Song object itself
         };
 
-        // When the menu opens, its DataContext becomes the item (Song).
-        // We bind the CommandParameter to that DataContext.
-        editMetadataMenuItem.Bind(MenuItem.CommandParameterProperty, new Binding("."));
-
+        // Create the binding programmatically to avoid string parsing issues for AncestorType
         var commandBinding = new Binding
         {
-            Path = "DataContext.OpenEditSongMetadataDialogCommand", // Path from Window's DataContext (MainWindowViewModel)
+            Path = "DataContext.OpenEditSongMetadataDialogCommand", // Path from ListBox's DataContext (MainWindowViewModel)
             RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
             {
-                AncestorType = typeof(Window) // Find the parent Window - this is more robust
+                AncestorType = typeof(ListBox) // Find the parent ListBox
             }
         };
         editMetadataMenuItem.Bind(MenuItem.CommandProperty, commandBinding);
 
         contextMenu.Items.Add(editMetadataMenuItem);
-        Debug.WriteLine($"[SongContextMenuHelper] CreateSongContextMenu called.");
+        Debug.WriteLine($"[SongContextMenuHelper] CreateContextMenu for song: {songDataContext.Title}. MenuItem command bound to ListBox.DataContext.OpenEditSongMetadataDialogCommand.");
 
         return contextMenu;
     }
@@ -11943,7 +11967,7 @@ public class SongItemTemplateProvider
             Grid.SetColumn(image, 0); Grid.SetColumn(textStack, 1); Grid.SetColumn(durationBlock, 2);
 
             var rootBorder = new Border { Padding = new Thickness(10, 6, 10, 6), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
-            rootBorder.ContextMenu = _contextMenuHelper.CreateSongContextMenu();
+            rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
             return rootBorder;
         }, supportsRecycling: true);
 
@@ -11967,7 +11991,7 @@ public class SongItemTemplateProvider
             Grid.SetColumn(titleArtistPanel, 0); Grid.SetColumn(durationBlock, 1);
 
             var rootBorder = new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = itemGrid };
-            rootBorder.ContextMenu = _contextMenuHelper.CreateSongContextMenu();
+            rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
             return rootBorder;
         }, supportsRecycling: true);
 
@@ -11998,7 +12022,7 @@ public class SongItemTemplateProvider
             var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { image, titleBlock, artistBlock } };
 
             var rootBorder = new Border { Width = 120, Height = 150, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-            rootBorder.ContextMenu = _contextMenuHelper.CreateSongContextMenu();
+            rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
             return rootBorder;
         }, supportsRecycling: true);
     }

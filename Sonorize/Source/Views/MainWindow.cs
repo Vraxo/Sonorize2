@@ -102,11 +102,38 @@ public class MainWindow : Window
 
         _currentLibraryVM = vm.Library;
         _currentLibraryVM.PropertyChanged += LibraryViewModel_PropertyChanged;
+
+        // Set initial view modes
+        _mainTabViewControls.UpdateListViewMode("Library", _currentLibraryVM.LibraryViewMode);
+        _mainTabViewControls.UpdateListViewMode("Artists", _currentLibraryVM.ArtistViewMode);
+        _mainTabViewControls.UpdateListViewMode("Albums", _currentLibraryVM.AlbumViewMode);
+        _mainTabViewControls.UpdateListViewMode("Playlists", _currentLibraryVM.PlaylistViewMode);
     }
 
     private void LibraryViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        // No longer needed, view switching is now handled by direct binding in MainTabViewControls
+        if (sender is not LibraryViewModel lvm)
+        {
+            return;
+        }
+
+        // Delegate view mode changes to the control manager
+        if (e.PropertyName == nameof(LibraryViewModel.LibraryViewMode))
+        {
+            Dispatcher.UIThread.InvokeAsync(() => _mainTabViewControls.UpdateListViewMode("Library", lvm.LibraryViewMode));
+        }
+        else if (e.PropertyName == nameof(LibraryViewModel.ArtistViewMode))
+        {
+            Dispatcher.UIThread.InvokeAsync(() => _mainTabViewControls.UpdateListViewMode("Artists", lvm.ArtistViewMode));
+        }
+        else if (e.PropertyName == nameof(LibraryViewModel.AlbumViewMode))
+        {
+            Dispatcher.UIThread.InvokeAsync(() => _mainTabViewControls.UpdateListViewMode("Albums", lvm.AlbumViewMode));
+        }
+        else if (e.PropertyName == nameof(LibraryViewModel.PlaylistViewMode))
+        {
+            Dispatcher.UIThread.InvokeAsync(() => _mainTabViewControls.UpdateListViewMode("Playlists", lvm.PlaylistViewMode));
+        }
     }
 
     private Border CreateStatusBar()
