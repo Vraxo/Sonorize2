@@ -38,8 +38,8 @@ public class ArtistAlbumCollectionManager
         Bitmap? defaultSongThumbnail = _musicLibraryService.GetDefaultThumbnail();
         foreach (string? artistName in uniqueArtistNames)
         {
-            var artistVM = new ArtistViewModel { Name = artistName };
             var songsByArtist = allSongs.Where(s => s.Artist?.Equals(artistName, StringComparison.OrdinalIgnoreCase) ?? false).ToList();
+            var artistVM = new ArtistViewModel { Name = artistName, SongCount = songsByArtist.Count };
 
             List<Bitmap?> songThumbnailsForGrid = new(new Bitmap?[4]);
             List<Bitmap?> distinctSongThumbs = songsByArtist
@@ -79,7 +79,8 @@ public class ArtistAlbumCollectionManager
             AlbumViewModel albumVM = new()
             {
                 Title = albumData.AlbumTitle,
-                Artist = albumData.ArtistName
+                Artist = albumData.ArtistName,
+                SongCount = albumData.SongsInAlbum.Count
             };
 
             List<Bitmap?> songThumbnailsForGrid = new(new Bitmap?[4]);
@@ -108,6 +109,7 @@ public class ArtistAlbumCollectionManager
         if (artistVM is not null)
         {
             var songsByArtist = allSongs.Where(s => s.Artist?.Equals(artistVM.Name, StringComparison.OrdinalIgnoreCase) ?? false).ToList();
+            artistVM.SongCount = songsByArtist.Count;
             Bitmap? defaultIcon = _musicLibraryService.GetDefaultThumbnail();
 
             List<Bitmap?> newGridThumbnails = new(new Bitmap?[4]);
@@ -142,6 +144,7 @@ public class ArtistAlbumCollectionManager
             var songsInAlbum = allSongs.Where(s => (s.Album?.Equals(albumVM.Title, StringComparison.OrdinalIgnoreCase) ?? false) &&
                                                     (s.Artist?.Equals(albumVM.Artist, StringComparison.OrdinalIgnoreCase) ?? false))
                                          .ToList();
+            albumVM.SongCount = songsInAlbum.Count;
 
             Bitmap? defaultSongThumbnail = _musicLibraryService.GetDefaultThumbnail();
             List<Bitmap?> newSongThumbnailsForGrid = new List<Bitmap?>(new Bitmap?[4]);
