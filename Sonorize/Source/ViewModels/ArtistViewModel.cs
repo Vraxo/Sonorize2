@@ -6,7 +6,6 @@ namespace Sonorize.ViewModels;
 public class ArtistViewModel : ViewModelBase // Inherit from ViewModelBase
 {
     public string? Name { get; set; } // Name can remain simple if not changed after creation
-    public int SongCount { get; set; }
 
     public List<Bitmap?> SongThumbnailsForGrid
     {

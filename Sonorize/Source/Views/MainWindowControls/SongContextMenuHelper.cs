@@ -19,7 +19,7 @@ public class SongContextMenuHelper
         Debug.WriteLine($"[SongContextMenuHelper] Initialized.");
     }
 
-    public ContextMenu CreateSongContextMenu()
+    public ContextMenu CreateContextMenu(Song songDataContext)
     {
         var contextMenu = new ContextMenu();
 
@@ -59,24 +59,22 @@ public class SongContextMenuHelper
         var editMetadataMenuItem = new MenuItem
         {
             Header = "Edit Metadata",
+            CommandParameter = songDataContext // The Song object itself
         };
 
-        // When the menu opens, its DataContext becomes the item (Song).
-        // We bind the CommandParameter to that DataContext.
-        editMetadataMenuItem.Bind(MenuItem.CommandParameterProperty, new Binding("."));
-
+        // Create the binding programmatically to avoid string parsing issues for AncestorType
         var commandBinding = new Binding
         {
-            Path = "DataContext.OpenEditSongMetadataDialogCommand", // Path from Window's DataContext (MainWindowViewModel)
+            Path = "DataContext.OpenEditSongMetadataDialogCommand", // Path from ListBox's DataContext (MainWindowViewModel)
             RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
             {
-                AncestorType = typeof(Window) // Find the parent Window - this is more robust
+                AncestorType = typeof(ListBox) // Find the parent ListBox
             }
         };
         editMetadataMenuItem.Bind(MenuItem.CommandProperty, commandBinding);
 
         contextMenu.Items.Add(editMetadataMenuItem);
-        Debug.WriteLine($"[SongContextMenuHelper] CreateSongContextMenu called.");
+        Debug.WriteLine($"[SongContextMenuHelper] CreateContextMenu for song: {songDataContext.Title}. MenuItem command bound to ListBox.DataContext.OpenEditSongMetadataDialogCommand.");
 
         return contextMenu;
     }

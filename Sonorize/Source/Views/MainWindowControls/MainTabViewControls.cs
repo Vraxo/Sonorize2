@@ -15,62 +15,18 @@ public class MainTabViewControls
 {
     private readonly ThemeColors _theme;
     private readonly SharedViewTemplates _sharedViewTemplates;
-
-    // Presenters for each tab's content
-    private ContentControl _libraryContentPresenter;
-    private ContentControl _artistsContentPresenter;
-    private ContentControl _albumsContentPresenter;
-    private ContentControl _playlistsContentPresenter;
-
-    // View controls for each tab (DataGrid and Grid ListBox)
-    private Control _songsDataGrid, _artistsDataGrid, _albumsDataGrid, _playlistsDataGrid;
-    private Control _songsGridView, _artistsGridView, _albumsGridView, _playlistsGridView;
-
+    private ListBox? _songListBoxInstance;
+    private ListBox? _artistsListBoxInstance;
+    private ListBox? _albumsListBoxInstance;
+    private ListBox? _playlistsListBoxInstance;
 
     public MainTabViewControls(ThemeColors theme, SharedViewTemplates sharedViewTemplates)
     {
         _theme = theme;
         _sharedViewTemplates = sharedViewTemplates;
-        CreateAllViews();
     }
 
-    private void CreateAllViews()
-    {
-        // Library Views
-        _songsDataGrid = _sharedViewTemplates.DataGridTemplates.CreateSongsDataGrid("Library.FilteredSongs", "Library.SelectedSong");
-        var (songsScrollViewer, _) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "SongListBox", "Library.FilteredSongs", "Library.SelectedSong",
-            _sharedViewTemplates.SongTemplates.GridSongTemplate, _sharedViewTemplates.WrapPanelItemsPanelTemplate,
-            lb => { /* Callback no longer needed here */ });
-        _songsGridView = songsScrollViewer;
-
-        // Artists Views
-        _artistsDataGrid = _sharedViewTemplates.DataGridTemplates.CreateArtistsDataGrid("Library.Groupings.Artists", "Library.FilterState.SelectedArtist");
-        var (artistsScrollViewer, _) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "ArtistsListBox", "Library.Groupings.Artists", "Library.FilterState.SelectedArtist",
-            _sharedViewTemplates.ArtistTemplates.GridArtistTemplate, _sharedViewTemplates.WrapPanelItemsPanelTemplate,
-             lb => { });
-        _artistsGridView = artistsScrollViewer;
-
-        // Albums Views
-        _albumsDataGrid = _sharedViewTemplates.DataGridTemplates.CreateAlbumsDataGrid("Library.Groupings.Albums", "Library.FilterState.SelectedAlbum");
-        var (albumsScrollViewer, _) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "AlbumsListBox", "Library.Groupings.Albums", "Library.FilterState.SelectedAlbum",
-            _sharedViewTemplates.GridAlbumTemplate, _sharedViewTemplates.WrapPanelItemsPanelTemplate,
-            lb => { });
-        _albumsGridView = albumsScrollViewer;
-
-        // Playlists Views
-        _playlistsDataGrid = _sharedViewTemplates.DataGridTemplates.CreatePlaylistsDataGrid("Library.Groupings.Playlists", "Library.FilterState.SelectedPlaylist");
-        var (playlistsScrollViewer, _) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "PlaylistsListBox", "Library.Groupings.Playlists", "Library.FilterState.SelectedPlaylist",
-            _sharedViewTemplates.GridPlaylistTemplate, _sharedViewTemplates.WrapPanelItemsPanelTemplate,
-            lb => { });
-        _playlistsGridView = playlistsScrollViewer;
-    }
-
-
-    public TabControl CreateMainTabView()
+    public TabControl CreateMainTabView(out ListBox songListBox, out ListBox artistsListBox, out ListBox albumsListBox, out ListBox playlistsListBox)
     {
         var tabControl = new TabControl
         {
@@ -102,45 +58,93 @@ public class MainTabViewControls
         tabControl.Styles.Add(selectedTabItemStyle);
         tabControl.Styles.Add(pointerOverTabItemStyle);
 
-        // Create ContentPresenters for each tab
-        _libraryContentPresenter = new ContentControl();
-        var libraryTab = new TabItem { Header = "LIBRARY", Content = _libraryContentPresenter };
+        var (songListScrollViewer, slb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            _theme, _sharedViewTemplates, "SongListBox", "Library.FilteredSongs", "Library.SelectedSong",
+            _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
+            lb => _songListBoxInstance = lb);
+        _songListBoxInstance = slb;
 
-        _artistsContentPresenter = new ContentControl();
-        var artistsTab = new TabItem { Header = "ARTISTS", Content = _artistsContentPresenter };
+        var libraryTab = new TabItem
+        {
+            Header = "LIBRARY",
+            Content = songListScrollViewer
+        };
 
-        _albumsContentPresenter = new ContentControl();
-        var albumsTab = new TabItem { Header = "ALBUMS", Content = _albumsContentPresenter };
+        var (artistsListScrollViewer, alb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            _theme, _sharedViewTemplates, "ArtistsListBox", "Library.Groupings.Artists", "Library.FilterState.SelectedArtist",
+            _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
+            lb => _artistsListBoxInstance = lb);
+        _artistsListBoxInstance = alb;
 
-        _playlistsContentPresenter = new ContentControl();
-        var playlistsTab = new TabItem { Header = "PLAYLISTS", Content = _playlistsContentPresenter };
+        var artistsTab = new TabItem
+        {
+            Header = "ARTISTS",
+            Content = artistsListScrollViewer
+        };
+
+        var (albumsListScrollViewer, alblb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            _theme, _sharedViewTemplates, "AlbumsListBox", "Library.Groupings.Albums", "Library.FilterState.SelectedAlbum",
+            _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
+            lb => _albumsListBoxInstance = lb);
+        _albumsListBoxInstance = alblb;
+
+        var albumsTab = new TabItem
+        {
+            Header = "ALBUMS",
+            Content = albumsListScrollViewer
+        };
+        
+        var (playlistsListScrollViewer, plb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            _theme, _sharedViewTemplates, "PlaylistsListBox", "Library.Groupings.Playlists", "Library.FilterState.SelectedPlaylist",
+            _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
+            lb => _playlistsListBoxInstance = lb);
+        _playlistsListBoxInstance = plb;
+        
+        var playlistsTab = new TabItem
+        {
+            Header = "PLAYLISTS",
+            Content = playlistsListScrollViewer
+        };
 
         tabControl.Items.Add(libraryTab);
         tabControl.Items.Add(artistsTab);
         tabControl.Items.Add(albumsTab);
         tabControl.Items.Add(playlistsTab);
 
+        songListBox = _songListBoxInstance!;
+        artistsListBox = _artistsListBoxInstance!;
+        albumsListBox = _albumsListBoxInstance!;
+        playlistsListBox = _playlistsListBoxInstance!;
         return tabControl;
     }
 
-    public void UpdateListViewMode(string viewName, SongDisplayMode mode)
+    public void UpdateListViewMode(SongDisplayMode mode, ListBox listBox, IDataTemplate detailedTemplate, IDataTemplate compactTemplate, IDataTemplate gridTemplate)
     {
-        bool useDataGrid = mode == SongDisplayMode.Detailed || mode == SongDisplayMode.Compact;
-        Debug.WriteLine($"[MainTabViewControls] Updating view '{viewName}' to mode '{mode}'. Use DataGrid: {useDataGrid}");
-
-        switch (viewName)
+        if (listBox == null)
         {
-            case "Library":
-                _libraryContentPresenter.Content = useDataGrid ? _songsDataGrid : _songsGridView;
+            Debug.WriteLine($"[MainTabViewControls] UpdateListViewMode called but target ListBox is null.");
+            return;
+        }
+
+        Debug.WriteLine($"[MainTabViewControls] Applying display mode: {mode} to ListBox: {listBox.Name}");
+        var scrollViewer = listBox.Parent as ScrollViewer;
+
+        switch (mode)
+        {
+            case SongDisplayMode.Detailed:
+                listBox.ItemTemplate = detailedTemplate;
+                listBox.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
+                if (scrollViewer is not null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
                 break;
-            case "Artists":
-                _artistsContentPresenter.Content = useDataGrid ? _artistsDataGrid : _artistsGridView;
+            case SongDisplayMode.Compact:
+                listBox.ItemTemplate = compactTemplate;
+                listBox.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
+                if (scrollViewer is not null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
                 break;
-            case "Albums":
-                _albumsContentPresenter.Content = useDataGrid ? _albumsDataGrid : _albumsGridView;
-                break;
-            case "Playlists":
-                _playlistsContentPresenter.Content = useDataGrid ? _playlistsDataGrid : _playlistsGridView;
+            case SongDisplayMode.Grid:
+                listBox.ItemTemplate = gridTemplate;
+                listBox.ItemsPanel = _sharedViewTemplates.WrapPanelItemsPanelTemplate;
+                if (scrollViewer is not null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
                 break;
         }
     }
