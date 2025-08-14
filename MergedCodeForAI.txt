@@ -3827,6 +3827,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
     private void DisplayModeService_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        Debug.WriteLine($"[LibraryVM] Received property change from DisplayModeService: {e.PropertyName}");
         switch (e.PropertyName)
         {
             case nameof(LibraryDisplayModeService.LibraryViewMode):
@@ -4991,26 +4992,50 @@ public class MainWindow : Window
 
     private void LibraryViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        Debug.WriteLine($"[MainWindow] LibraryViewModel_PropertyChanged fired for: {e.PropertyName}");
+
         if (sender is not LibraryViewModel lvm)
         {
+            Debug.WriteLine("[MainWindow] Sender is not LibraryViewModel, returning.");
             return;
         }
 
-        if (e.PropertyName == nameof(LibraryViewModel.LibraryViewMode))
+        Action? updateAction = null;
+        string? tabName = null;
+        SongDisplayMode newMode = SongDisplayMode.Detailed;
+
+        switch (e.PropertyName)
         {
-            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode((Panel)((TabItem)_tabControl.Items[0]).Content, lvm.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate));
+            case nameof(LibraryViewModel.LibraryViewMode):
+                tabName = "Library";
+                newMode = lvm.LibraryViewMode;
+                updateAction = () => ApplyListViewDisplayMode((Panel)((TabItem)_tabControl.Items[0]).Content, lvm.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate);
+                break;
+            case nameof(LibraryViewModel.ArtistViewMode):
+                tabName = "Artist";
+                newMode = lvm.ArtistViewMode;
+                updateAction = () => ApplyListViewDisplayMode((Panel)((TabItem)_tabControl.Items[1]).Content, lvm.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate);
+                break;
+            case nameof(LibraryViewModel.AlbumViewMode):
+                tabName = "Album";
+                newMode = lvm.AlbumViewMode;
+                updateAction = () => ApplyListViewDisplayMode((Panel)((TabItem)_tabControl.Items[2]).Content, lvm.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate);
+                break;
+            case nameof(LibraryViewModel.PlaylistViewMode):
+                tabName = "Playlist";
+                newMode = lvm.PlaylistViewMode;
+                updateAction = () => ApplyListViewDisplayMode((Panel)((TabItem)_tabControl.Items[3]).Content, lvm.PlaylistViewMode, _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.CompactPlaylistTemplate, _sharedViewTemplates.GridPlaylistTemplate);
+                break;
         }
-        else if (e.PropertyName == nameof(LibraryViewModel.ArtistViewMode))
+
+        if (updateAction != null)
         {
-            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode((Panel)((TabItem)_tabControl.Items[1]).Content, lvm.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate));
-        }
-        else if (e.PropertyName == nameof(LibraryViewModel.AlbumViewMode))
-        {
-            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode((Panel)((TabItem)_tabControl.Items[2]).Content, lvm.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate));
-        }
-        else if (e.PropertyName == nameof(LibraryViewModel.PlaylistViewMode))
-        {
-            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode((Panel)((TabItem)_tabControl.Items[3]).Content, lvm.PlaylistViewMode, _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.CompactPlaylistTemplate, _sharedViewTemplates.GridPlaylistTemplate));
+            Debug.WriteLine($"[MainWindow] Scheduling UI update for {tabName} tab to mode {newMode}.");
+            Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                Debug.WriteLine($"[MainWindow] Executing UI update for {tabName} tab to mode {newMode} on UI thread.");
+                updateAction();
+            });
         }
     }
 
@@ -7900,6 +7925,7 @@ public class LibraryDataOrchestrator
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LibraryManagement\LibraryDisplayModeService.cs">
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Windows.Input;
 using Sonorize.Models;
 using Sonorize.Services;
@@ -7948,7 +7974,7 @@ public class LibraryDisplayModeService : ViewModelBase
             }
         }
     }
-    
+
     private SongDisplayMode _playlistViewMode;
     public SongDisplayMode PlaylistViewMode
     {
@@ -7981,6 +8007,8 @@ public class LibraryDisplayModeService : ViewModelBase
                     return;
                 }
 
+                Debug.WriteLine($"[LibraryDisplayModeService] SetDisplayModeCommand executed for '{targetView}' with mode '{mode}'.");
+
                 switch (targetView)
                 {
                     case "Library": LibraryViewMode = mode; break;
@@ -8005,7 +8033,7 @@ public class LibraryDisplayModeService : ViewModelBase
         _artistViewMode = Enum.TryParse<SongDisplayMode>(settings.ArtistViewModePreference, out var artMode) ? artMode : SongDisplayMode.Detailed;
         _albumViewMode = Enum.TryParse<SongDisplayMode>(settings.AlbumViewModePreference, out var albMode) ? albMode : SongDisplayMode.Detailed;
         _playlistViewMode = Enum.TryParse<SongDisplayMode>(settings.PlaylistViewModePreference, out var playMode) ? playMode : SongDisplayMode.Detailed;
-        
+
         ArtistGridDisplayType = Enum.TryParse<GridViewImageType>(settings.ArtistGridViewImageType, out var artistGridType) ? artistGridType : GridViewImageType.Composite;
         AlbumGridDisplayType = Enum.TryParse<GridViewImageType>(settings.AlbumGridViewImageType, out var albumGridType) ? albumGridType : GridViewImageType.Composite;
         PlaylistGridDisplayType = Enum.TryParse<GridViewImageType>(settings.PlaylistGridViewImageType, out var playlistGridType) ? playlistGridType : GridViewImageType.Composite;
@@ -10639,6 +10667,10 @@ using Avalonia.Media;
 using Avalonia.Styling;
 using Sonorize.Models;
 using Sonorize.ViewModels;
+using System.Linq;
+using System.Collections;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -10766,7 +10798,7 @@ public class MainTabViewControls
         IDataTemplate initialItemTemplate,
         ITemplate<Panel> initialItemsPanelTemplate)
     {
-        var container = new Panel();
+        var container = new Grid(); // Use a Grid as the container for proper layouting.
 
         // Create ListBox for Detailed/Grid views
         var listBox = new ListBox
@@ -10801,11 +10833,86 @@ public class MainTabViewControls
         };
         ApplyDataGridStyles(dataGrid, _theme);
         foreach (var col in dataGridColumns) dataGrid.Columns.Add(col);
+
+        // --- NEW DEBUG LOGGING ---
+        dataGrid.DataContextChanged += (s, e) =>
+        {
+            var dg = s as DataGrid;
+            if (dg == null) return;
+            Debug.WriteLine($"[DATAGRID_DEBUG] DataGrid for '{itemsSourcePath}' DataContextChanged. New DataContext: '{dg.DataContext?.GetType().Name ?? "null"}'");
+        };
+
+        dataGrid.PropertyChanged += (s, e) =>
+        {
+            var dg = s as DataGrid;
+            if (dg == null) return;
+
+            if (e.Property == ItemsControl.ItemsSourceProperty)
+            {
+                var items = e.NewValue as IEnumerable;
+                var itemCount = items?.Cast<object>().Count() ?? 0;
+                Debug.WriteLine($"[DATAGRID_DEBUG] DataGrid for '{itemsSourcePath}' ItemsSource property CHANGED. New collection has {itemCount} items.");
+            }
+
+            if (e.Property == Visual.IsVisibleProperty && (bool)(e.NewValue ?? false))
+            {
+                Debug.WriteLine($"[DATAGRID_DEBUG] DataGrid for '{itemsSourcePath}' became VISIBLE.");
+
+                var dc = dg.DataContext;
+                Debug.WriteLine($"[DATAGRID_DEBUG] ... DataContext: '{dc?.GetType().Name ?? "null"}'");
+
+                var items = dg.ItemsSource as IEnumerable;
+                var itemCount = items?.Cast<object>().Count() ?? 0;
+                Debug.WriteLine($"[DATAGRID_DEBUG] ... ItemsSource has {itemCount} items at the moment of becoming visible.");
+
+                if (itemCount > 0 && items != null)
+                {
+                    Debug.WriteLine($"[DATAGRID_DEBUG] ... First item is of type: '{items.Cast<object>().First().GetType().Name}'");
+                }
+
+                Dispatcher.UIThread.Post(() =>
+                {
+                    Debug.WriteLine($"[DATAGRID_DEBUG] ... Post-visibility layout check -> Bounds: {dg.Bounds}");
+                    var rowPresenter = dg.FindDescendantOfType<DataGridRowsPresenter>();
+                    if (rowPresenter != null)
+                    {
+                        Debug.WriteLine($"[DATAGRID_DEBUG] ... DataGridRowsPresenter found. Bounds: {rowPresenter.Bounds}");
+                    }
+                    else
+                    {
+                        Debug.WriteLine($"[DATAGRID_DEBUG] ... DataGridRowsPresenter NOT found.");
+                    }
+                }, DispatcherPriority.Loaded);
+            }
+        };
+        // --- END NEW DEBUG LOGGING ---
+
         dataGrid.Bind(ItemsControl.ItemsSourceProperty, new Binding(itemsSourcePath));
         dataGrid.Bind(DataGrid.SelectedItemProperty, new Binding(selectedItemPath, BindingMode.TwoWay));
 
-        container.Children.Add(scrollViewer);
+        // Use declarative bindings for visibility, which is more robust with a Grid container.
+        scrollViewer.Bind(Visual.IsVisibleProperty, new Binding(viewModePath)
+        {
+            Converter = new FuncValueConverter<SongDisplayMode, bool>(m =>
+            {
+                bool isVisible = m != SongDisplayMode.Compact;
+                Debug.WriteLine($"[VISIBILITY_CONVERTER] ScrollViewer for '{itemsSourcePath}': Mode is {m}, IsVisible={isVisible}");
+                return isVisible;
+            })
+        });
+        dataGrid.Bind(Visual.IsVisibleProperty, new Binding(viewModePath)
+        {
+            Converter = new FuncValueConverter<SongDisplayMode, bool>(m =>
+            {
+                bool isVisible = m == SongDisplayMode.Compact;
+                Debug.WriteLine($"[VISIBILITY_CONVERTER] DataGrid for '{itemsSourcePath}': Mode is {m}, IsVisible={isVisible}");
+                return isVisible;
+            })
+        });
+
+        // Add DataGrid first to the container, then the ScrollViewer.
         container.Children.Add(dataGrid);
+        container.Children.Add(scrollViewer);
 
         return container;
     }
@@ -10833,7 +10940,7 @@ public class MainTabViewControls
         tabControl.Styles.Add(selectedTabItemStyle);
         tabControl.Styles.Add(pointerOverTabItemStyle);
     }
-    
+
     private void ApplyListBoxItemStyles(ListBox listBox, ThemeColors theme)
     {
         listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>())
@@ -10915,35 +11022,35 @@ public class MainTabViewControls
         });
     }
 
-    public void UpdateListViewMode(SongDisplayMode mode, Panel container, IDataTemplate detailedTemplate, IDataTemplate compactTemplate, IDataTemplate gridTemplate)
+    public void UpdateListViewMode(SongDisplayMode mode, Panel container, IDataTemplate detailedTemplate, IDataTemplate compactTemplate, IDataTemplate gridTemplate, MainWindowViewModel? mvm = null)
     {
-        var scrollViewer = container.Children[0] as ScrollViewer;
-        var dataGrid = container.Children[1] as DataGrid;
-        var listBox = scrollViewer!.Content as ListBox;
+        Debug.WriteLine($"[MainTabViewControls] UpdateListViewMode called for mode '{mode}'. Container has {container.Children.Count} children.");
 
+        // Visibility is handled by bindings. This method only needs to update the ListBox template.
         if (mode == SongDisplayMode.Compact)
         {
-            scrollViewer.IsVisible = false;
-            dataGrid!.IsVisible = true;
+            return; // Nothing to do for ListBox when DataGrid is visible.
         }
-        else
-        {
-            scrollViewer.IsVisible = true;
-            dataGrid!.IsVisible = false;
 
-            switch (mode)
-            {
-                case SongDisplayMode.Detailed:
-                    listBox!.ItemTemplate = detailedTemplate;
-                    listBox.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
-                    scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
-                    break;
-                case SongDisplayMode.Grid:
-                    listBox!.ItemTemplate = gridTemplate;
-                    listBox.ItemsPanel = _sharedViewTemplates.WrapPanelItemsPanelTemplate;
-                    scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
-                    break;
-            }
+        if (container.Children.OfType<ScrollViewer>().FirstOrDefault() is not { Content: ListBox listBox } scrollViewer)
+        {
+            Debug.WriteLine("[MainTabViewControls] UpdateListViewMode failed to find ScrollViewer or ListBox inside it.");
+            return;
+        }
+
+        Debug.WriteLine($"[MainTabViewControls] Updating ListBox template for mode '{mode}'.");
+        switch (mode)
+        {
+            case SongDisplayMode.Detailed:
+                listBox.ItemTemplate = detailedTemplate;
+                listBox.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
+                scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                break;
+            case SongDisplayMode.Grid:
+                listBox.ItemTemplate = gridTemplate;
+                listBox.ItemsPanel = _sharedViewTemplates.WrapPanelItemsPanelTemplate;
+                scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                break;
         }
     }
 }
@@ -11821,7 +11928,7 @@ public class SongContextMenuHelper
         editMetadataMenuItem.Bind(MenuItem.CommandProperty, commandBinding);
 
         contextMenu.Items.Add(editMetadataMenuItem);
-        Debug.WriteLine($"[SongContextMenuHelper] CreateContextMenu for song: {songDataContext.Title}. MenuItem command bound to ListBox.DataContext.OpenEditSongMetadataDialogCommand.");
+        //Debug.WriteLine($"[SongContextMenuHelper] CreateContextMenu for song: {songDataContext.Title}. MenuItem command bound to ListBox.DataContext.OpenEditSongMetadataDialogCommand.");
 
         return contextMenu;
     }

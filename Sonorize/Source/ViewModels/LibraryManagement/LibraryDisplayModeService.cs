@@ -1,5 +1,6 @@
 ﻿using System;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Windows.Input;
 using Sonorize.Models;
 using Sonorize.Services;
@@ -48,7 +49,7 @@ public class LibraryDisplayModeService : ViewModelBase
             }
         }
     }
-    
+
     private SongDisplayMode _playlistViewMode;
     public SongDisplayMode PlaylistViewMode
     {
@@ -81,6 +82,8 @@ public class LibraryDisplayModeService : ViewModelBase
                     return;
                 }
 
+                Debug.WriteLine($"[LibraryDisplayModeService] SetDisplayModeCommand executed for '{targetView}' with mode '{mode}'.");
+
                 switch (targetView)
                 {
                     case "Library": LibraryViewMode = mode; break;
@@ -105,7 +108,7 @@ public class LibraryDisplayModeService : ViewModelBase
         _artistViewMode = Enum.TryParse<SongDisplayMode>(settings.ArtistViewModePreference, out var artMode) ? artMode : SongDisplayMode.Detailed;
         _albumViewMode = Enum.TryParse<SongDisplayMode>(settings.AlbumViewModePreference, out var albMode) ? albMode : SongDisplayMode.Detailed;
         _playlistViewMode = Enum.TryParse<SongDisplayMode>(settings.PlaylistViewModePreference, out var playMode) ? playMode : SongDisplayMode.Detailed;
-        
+
         ArtistGridDisplayType = Enum.TryParse<GridViewImageType>(settings.ArtistGridViewImageType, out var artistGridType) ? artistGridType : GridViewImageType.Composite;
         AlbumGridDisplayType = Enum.TryParse<GridViewImageType>(settings.AlbumGridViewImageType, out var albumGridType) ? albumGridType : GridViewImageType.Composite;
         PlaylistGridDisplayType = Enum.TryParse<GridViewImageType>(settings.PlaylistGridViewImageType, out var playlistGridType) ? playlistGridType : GridViewImageType.Composite;

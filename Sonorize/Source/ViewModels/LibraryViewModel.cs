@@ -135,6 +135,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
     private void DisplayModeService_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        Debug.WriteLine($"[LibraryVM] Received property change from DisplayModeService: {e.PropertyName}");
         switch (e.PropertyName)
         {
             case nameof(LibraryDisplayModeService.LibraryViewMode):
