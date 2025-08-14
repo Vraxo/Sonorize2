@@ -155,16 +155,16 @@ public class MainWindow : Window
 
         if (updateAction != null)
         {
-            // By calling ApplyFilter first, we ensure the ItemsSource for the DataGrid
-            // is populated before any UI update logic proceeds. This should resolve
-            // the race condition where the DataGrid becomes visible before its data is ready.
-            Debug.WriteLine($"[MainWindow] View mode for '{tabName}' changed to '{newMode}'. Re-applying filter.");
+            // This is the fix: Ensure the FilteredSongs collection is up-to-date *before* the UI is told to switch views.
+            Debug.WriteLine($"[MainWindow] View mode changed. Forcing a re-application of the current filter before UI updates.");
             lvm.ApplyFilter();
 
-            // The updateAction, which changes templates, can run synchronously.
-            // The UI will then update based on the new view model state and templates.
-            Debug.WriteLine($"[MainWindow] Applying view templates for '{newMode}' mode.");
-            updateAction();
+            Debug.WriteLine($"[MainWindow] Scheduling UI update for {tabName} tab to mode {newMode}.");
+            Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                Debug.WriteLine($"[MainWindow] Executing UI update for {tabName} tab to mode {newMode} on UI thread.");
+                updateAction();
+            });
         }
     }
 

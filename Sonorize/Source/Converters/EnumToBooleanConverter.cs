@@ -8,12 +8,9 @@ public class EnumToBooleanConverter : IValueConverter
 {
     public static readonly EnumToBooleanConverter Instance = new();
 
-    public bool Invert { get; set; }
-
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
-        bool result = value is not null && parameter is not null && value.Equals(parameter);
-        return Invert ? !result : result;
+        return value is not null && parameter is not null && value.Equals(parameter);
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)

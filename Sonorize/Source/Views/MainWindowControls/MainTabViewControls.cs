@@ -14,7 +14,6 @@ using System.Linq;
 using System.Collections;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
-using Sonorize.Converters;
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -26,8 +25,6 @@ public class MainTabViewControls
     private ListBox? _artistsListBoxInstance;
     private ListBox? _albumsListBoxInstance;
     private ListBox? _playlistsListBoxInstance;
-    private readonly EnumToBooleanConverter _invertedEnumConverter = new() { Invert = true };
-
 
     public MainTabViewControls(ThemeColors theme, SharedViewTemplates sharedViewTemplates)
     {
@@ -166,11 +163,6 @@ public class MainTabViewControls
             Padding = new Thickness(0, 0, 0, 5),
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
         };
-        scrollViewer.Bind(Visual.IsVisibleProperty, new Binding(viewModePath)
-        {
-            Converter = _invertedEnumConverter,
-            ConverterParameter = SongDisplayMode.Compact
-        });
 
         // Create DataGrid for Compact view
         var dataGrid = new DataGrid
@@ -187,11 +179,8 @@ public class MainTabViewControls
 
         dataGrid.Bind(ItemsControl.ItemsSourceProperty, new Binding(itemsSourcePath));
         dataGrid.Bind(DataGrid.SelectedItemProperty, new Binding(selectedItemPath, BindingMode.TwoWay));
-        dataGrid.Bind(Visual.IsVisibleProperty, new Binding(viewModePath)
-        {
-            Converter = EnumToBooleanConverter.Instance,
-            ConverterParameter = SongDisplayMode.Compact
-        });
+
+        // Visibility will now be controlled imperatively by UpdateListViewMode
 
         // Add DataGrid first to the container, then the ScrollViewer.
         container.Children.Add(dataGrid);
@@ -317,18 +306,17 @@ public class MainTabViewControls
             return;
         }
 
-        // Visibility is now handled by bindings. We just update the templates for the ListBox.
+        // Imperatively set visibility
+        scrollViewer.IsVisible = mode != SongDisplayMode.Compact;
+        dataGrid.IsVisible = mode == SongDisplayMode.Compact;
 
         if (mode == SongDisplayMode.Compact)
         {
-            // Post a check to the UI thread to log the item count *after* the binding has had a chance to update.
-            Dispatcher.UIThread.Post(() =>
-            {
-                var items = dataGrid.ItemsSource as IEnumerable;
-                var itemCount = items?.Cast<object>().Count() ?? 0;
-                Debug.WriteLine($"[MainTabViewControls] In Compact mode. After UI thread post, DataGrid ItemsSource has {itemCount} items.");
-            }, DispatcherPriority.Background);
-            return;
+            // Log to confirm
+            var items = dataGrid.ItemsSource as IEnumerable;
+            var itemCount = items?.Cast<object>().Count() ?? 0;
+            Debug.WriteLine($"[MainTabViewControls] Switched to Compact mode. DataGrid is now visible. Its ItemsSource has {itemCount} items.");
+            return; // Nothing more to do for ListBox when DataGrid is visible.
         }
 
         Debug.WriteLine($"[MainTabViewControls] Updating ListBox template for mode '{mode}'.");
