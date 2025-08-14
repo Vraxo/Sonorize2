@@ -320,6 +320,43 @@ public class WaveformRenderer
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Converters\BooleanToGridLengthConverter.cs">
+using System;
+using System.Globalization;
+using Avalonia.Controls;
+using Avalonia.Data.Converters;
+
+namespace Sonorize.Converters
+{
+    public class BooleanToGridLengthConverter : IValueConverter
+    {
+        public static readonly BooleanToGridLengthConverter Instance = new();
+
+        public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            if (value is bool isVisible && isVisible)
+            {
+                if (parameter is GridLength length)
+                {
+                    return length;
+                }
+                if (parameter is string lengthString)
+                {
+                    return GridLength.Parse(lengthString);
+                }
+            }
+            // If not visible, or parameter is wrong, collapse the column
+            return new GridLength(0);
+        }
+
+        public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            throw new NotSupportedException();
+        }
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Converters\BooleanToPlayPauseIconConverter.cs">
 using System;
 using System.Globalization;
@@ -3699,6 +3736,8 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     private readonly LibraryComponentProvider _components;
     private readonly LibraryLoadProcess _libraryLoadProcess;
 
+    public LibraryViewOptionsViewModel ViewOptions { get; }
+
     public LibraryDisplayModeService LibraryDisplayModeService => _displayModeService;
     public LibraryGroupingsViewModel Groupings => _components.Groupings;
     public ObservableCollection<Song> FilteredSongs => _components.SongList.FilteredSongs;
@@ -3769,6 +3808,8 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
         _displayModeService = displayModeService ?? throw new ArgumentNullException(nameof(displayModeService));
+
+        ViewOptions = new LibraryViewOptionsViewModel();
 
         _components = new LibraryComponentProvider(musicLibraryService, settingsService);
         _trackNavigationManager = new TrackNavigationManager(_components.SongList.FilteredSongs);
@@ -8308,6 +8349,36 @@ public class LibraryStatusTextGenerator
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LibraryManagement\LibraryViewOptionsViewModel.cs">
+using Sonorize.ViewModels;
+
+namespace Sonorize.ViewModels.LibraryManagement;
+
+public class LibraryViewOptionsViewModel : ViewModelBase
+{
+    private bool _showArtist = true;
+    public bool ShowArtist
+    {
+        get => _showArtist;
+        set => SetProperty(ref _showArtist, value);
+    }
+
+    private bool _showAlbum = true;
+    public bool ShowAlbum
+    {
+        get => _showAlbum;
+        set => SetProperty(ref _showAlbum, value);
+    }
+
+    private bool _showDuration = true;
+    public bool ShowDuration
+    {
+        get => _showDuration;
+        set => SetProperty(ref _showDuration, value);
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LibraryManagement\PlaylistCollectionManager.cs">
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -10476,7 +10547,7 @@ public static class MainMenu
         albumsViewSubMenu.Items.Add(albDetailed);
         albumsViewSubMenu.Items.Add(albCompact);
         albumsViewSubMenu.Items.Add(albGrid);
-        
+
         // Playlists View SubMenu
         var playlistsViewSubMenu = new MenuItem { Header = "Playlists View", Foreground = theme.B_TextColor };
         var playDetailed = new MenuItem { Header = "Detailed", Foreground = theme.B_TextColor };
@@ -10622,6 +10693,8 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
+using Avalonia.Data.Converters;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Sonorize.Models;
@@ -10642,6 +10715,52 @@ public class MainTabViewControls
     {
         _theme = theme;
         _sharedViewTemplates = sharedViewTemplates;
+    }
+
+    private StackPanel CreateLibraryViewOptionsPanel()
+    {
+        var optionsPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 15,
+            Margin = new Thickness(12, 0, 12, 8),
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+
+        var showArtistCheck = new CheckBox
+        {
+            Content = "Artist",
+            Foreground = _theme.B_SecondaryTextColor
+        };
+        showArtistCheck.Bind(ToggleButton.IsCheckedProperty, new Binding("Library.ViewOptions.ShowArtist", BindingMode.TwoWay));
+
+        var showAlbumCheck = new CheckBox
+        {
+            Content = "Album",
+            Foreground = _theme.B_SecondaryTextColor
+        };
+        showAlbumCheck.Bind(ToggleButton.IsCheckedProperty, new Binding("Library.ViewOptions.ShowAlbum", BindingMode.TwoWay));
+
+        var showDurationCheck = new CheckBox
+        {
+            Content = "Duration",
+            Foreground = _theme.B_SecondaryTextColor
+        };
+        showDurationCheck.Bind(ToggleButton.IsCheckedProperty, new Binding("Library.ViewOptions.ShowDuration", BindingMode.TwoWay));
+
+        optionsPanel.Children.Add(new TextBlock { Text = "Show:", VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor });
+        optionsPanel.Children.Add(showArtistCheck);
+        optionsPanel.Children.Add(showAlbumCheck);
+        optionsPanel.Children.Add(showDurationCheck);
+
+        // This panel should only be visible for Detailed and Compact views
+        var visibilityBinding = new Binding("Library.LibraryViewMode")
+        {
+            Converter = new FuncValueConverter<SongDisplayMode, bool>(mode => mode != SongDisplayMode.Grid)
+        };
+        optionsPanel.Bind(Visual.IsVisibleProperty, visibilityBinding);
+
+        return optionsPanel;
     }
 
     public TabControl CreateMainTabView(out ListBox songListBox, out ListBox artistsListBox, out ListBox albumsListBox, out ListBox playlistsListBox)
@@ -10682,10 +10801,16 @@ public class MainTabViewControls
             lb => _songListBoxInstance = lb);
         _songListBoxInstance = slb;
 
+        var libraryTabContent = new DockPanel();
+        var viewOptionsPanel = CreateLibraryViewOptionsPanel();
+        DockPanel.SetDock(viewOptionsPanel, Dock.Top);
+        libraryTabContent.Children.Add(viewOptionsPanel);
+        libraryTabContent.Children.Add(songListScrollViewer);
+
         var libraryTab = new TabItem
         {
             Header = "LIBRARY",
-            Content = songListScrollViewer
+            Content = libraryTabContent
         };
 
         var (artistsListScrollViewer, alb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
@@ -10711,13 +10836,13 @@ public class MainTabViewControls
             Header = "ALBUMS",
             Content = albumsListScrollViewer
         };
-        
+
         var (playlistsListScrollViewer, plb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
             _theme, _sharedViewTemplates, "PlaylistsListBox", "Library.Groupings.Playlists", "Library.FilterState.SelectedPlaylist",
             _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
             lb => _playlistsListBoxInstance = lb);
         _playlistsListBoxInstance = plb;
-        
+
         var playlistsTab = new TabItem
         {
             Header = "PLAYLISTS",
@@ -11733,6 +11858,7 @@ using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.ViewModels; // For Song model if not already included via Sonorize.Models
 using System.Diagnostics;
@@ -11761,51 +11887,143 @@ public class SongItemTemplateProvider
         // Detailed Song Template
         DetailedSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) =>
         {
-            var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 5, 0), Stretch = Stretch.UniformToFill };
+            var itemGrid = new Grid
+            {
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            // Bind the Grid's Tag to the ViewOptions ViewModel. This works because the Grid is a visual element.
+            // Using AncestorType = Window is more robust.
+            itemGrid.Bind(Control.TagProperty, new Binding("DataContext.Library.ViewOptions")
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+            });
+
+            // --- Column Definitions ---
+            var artistColumn = new ColumnDefinition();
+            artistColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowArtist")
+            {
+                Source = itemGrid, // Source the binding from the Grid itself, not an ancestor
+                Converter = BooleanToGridLengthConverter.Instance,
+                ConverterParameter = new GridLength(2, GridUnitType.Star)
+            });
+
+            var albumColumn = new ColumnDefinition();
+            albumColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowAlbum")
+            {
+                Source = itemGrid,
+                Converter = BooleanToGridLengthConverter.Instance,
+                ConverterParameter = new GridLength(2, GridUnitType.Star)
+            });
+
+            var durationColumn = new ColumnDefinition();
+            durationColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowDuration")
+            {
+                Source = itemGrid,
+                Converter = BooleanToGridLengthConverter.Instance,
+                ConverterParameter = GridLength.Auto
+            });
+
+            itemGrid.ColumnDefinitions = new ColumnDefinitions
+            {
+                new(GridLength.Auto), // 0: Image
+                new(3, GridUnitType.Star), // 1: Title
+                artistColumn, // 2: Artist
+                albumColumn, // 3: Album
+                durationColumn // 4: Duration
+            };
+
+            // --- Controls ---
+            var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 15, 0), Stretch = Stretch.UniformToFill };
             image.Bind(Image.SourceProperty, new Binding(nameof(Song.Thumbnail)));
             RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
+            Grid.SetColumn(image, 0);
+            itemGrid.Children.Add(image);
 
-            var titleBlock = new TextBlock { FontSize = 14, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 1) };
+            var titleBlock = new TextBlock { FontSize = 14, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
             titleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Title)));
+            Grid.SetColumn(titleBlock, 1);
+            itemGrid.Children.Add(titleBlock);
 
-            var artistBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
+            var artistBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
             artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
+            Grid.SetColumn(artistBlock, 2);
+            itemGrid.Children.Add(artistBlock);
 
-            var durationBlock = new TextBlock { FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
+            var albumBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
+            albumBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Album)));
+            Grid.SetColumn(albumBlock, 3);
+            itemGrid.Children.Add(albumBlock);
+
+            var durationBlock = new TextBlock { FontSize = 12, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
             durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
+            Grid.SetColumn(durationBlock, 4);
+            itemGrid.Children.Add(durationBlock);
 
-            var textStack = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Children = { titleBlock, artistBlock } };
-            var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), VerticalAlignment = VerticalAlignment.Center, Children = { image, textStack, durationBlock } };
-            Grid.SetColumn(image, 0); Grid.SetColumn(textStack, 1); Grid.SetColumn(durationBlock, 2);
-
-            var rootBorder = new Border { Padding = new Thickness(10, 6, 10, 6), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
+            var rootBorder = new Border { Padding = new Thickness(10, 8), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
             rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
             return rootBorder;
         }, supportsRecycling: true);
 
+
         // Compact Song Template
         CompactSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) =>
         {
-            var titleBlock = new TextBlock { FontSize = 12, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+            var itemGrid = new Grid
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            itemGrid.Bind(Control.TagProperty, new Binding("DataContext.Library.ViewOptions")
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+            });
+
+            // --- Column Definitions ---
+            var artistColumn = new ColumnDefinition();
+            artistColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowArtist")
+            {
+                Source = itemGrid,
+                Converter = BooleanToGridLengthConverter.Instance,
+                ConverterParameter = GridLength.Star
+            });
+
+            var durationColumn = new ColumnDefinition();
+            durationColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowDuration")
+            {
+                Source = itemGrid,
+                Converter = BooleanToGridLengthConverter.Instance,
+                ConverterParameter = GridLength.Auto
+            });
+
+            itemGrid.ColumnDefinitions = new ColumnDefinitions
+            {
+                new(GridLength.Star), // 0: Title
+                artistColumn, // 1: Artist
+                durationColumn // 2: Duration
+            };
+
+            // --- Controls ---
+            var titleBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
             titleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Title)));
+            Grid.SetColumn(titleBlock, 0);
+            itemGrid.Children.Add(titleBlock);
 
-            var artistBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(5, 0, 0, 0) };
-            artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)) { StringFormat = " - {0}" });
+            var artistBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
+            artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
+            Grid.SetColumn(artistBlock, 1);
+            itemGrid.Children.Add(artistBlock);
 
-
-            var titleArtistPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { titleBlock, artistBlock } };
-
-            var durationBlock = new TextBlock { FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, Margin = new Thickness(5, 0, 0, 0) };
+            var durationBlock = new TextBlock { FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
             durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
-
-            var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), VerticalAlignment = VerticalAlignment.Center };
-            itemGrid.Children.Add(titleArtistPanel); itemGrid.Children.Add(durationBlock);
-            Grid.SetColumn(titleArtistPanel, 0); Grid.SetColumn(durationBlock, 1);
+            Grid.SetColumn(durationBlock, 2);
+            itemGrid.Children.Add(durationBlock);
 
             var rootBorder = new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = itemGrid };
             rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
             return rootBorder;
         }, supportsRecycling: true);
+
 
         // Grid Song Template
         GridSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) =>

@@ -135,6 +135,14 @@ public class SongItemTemplateProvider
                 ConverterParameter = GridLength.Star
             });
 
+            var albumColumn = new ColumnDefinition();
+            albumColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowAlbum")
+            {
+                Source = itemGrid,
+                Converter = BooleanToGridLengthConverter.Instance,
+                ConverterParameter = GridLength.Star
+            });
+
             var durationColumn = new ColumnDefinition();
             durationColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowDuration")
             {
@@ -147,7 +155,8 @@ public class SongItemTemplateProvider
             {
                 new(GridLength.Star), // 0: Title
                 artistColumn, // 1: Artist
-                durationColumn // 2: Duration
+                albumColumn, // 2: Album
+                durationColumn // 3: Duration
             };
 
             // --- Controls ---
@@ -161,9 +170,14 @@ public class SongItemTemplateProvider
             Grid.SetColumn(artistBlock, 1);
             itemGrid.Children.Add(artistBlock);
 
+            var albumBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
+            albumBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Album)));
+            Grid.SetColumn(albumBlock, 2);
+            itemGrid.Children.Add(albumBlock);
+
             var durationBlock = new TextBlock { FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
             durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
-            Grid.SetColumn(durationBlock, 2);
+            Grid.SetColumn(durationBlock, 3);
             itemGrid.Children.Add(durationBlock);
 
             var rootBorder = new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = itemGrid };
