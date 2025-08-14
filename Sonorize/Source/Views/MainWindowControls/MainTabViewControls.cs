@@ -4,6 +4,8 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
+using Avalonia.Data.Converters;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Sonorize.Models;
@@ -24,6 +26,52 @@ public class MainTabViewControls
     {
         _theme = theme;
         _sharedViewTemplates = sharedViewTemplates;
+    }
+
+    private StackPanel CreateLibraryViewOptionsPanel()
+    {
+        var optionsPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 15,
+            Margin = new Thickness(12, 0, 12, 8),
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+
+        var showArtistCheck = new CheckBox
+        {
+            Content = "Artist",
+            Foreground = _theme.B_SecondaryTextColor
+        };
+        showArtistCheck.Bind(ToggleButton.IsCheckedProperty, new Binding("Library.ViewOptions.ShowArtist", BindingMode.TwoWay));
+
+        var showAlbumCheck = new CheckBox
+        {
+            Content = "Album",
+            Foreground = _theme.B_SecondaryTextColor
+        };
+        showAlbumCheck.Bind(ToggleButton.IsCheckedProperty, new Binding("Library.ViewOptions.ShowAlbum", BindingMode.TwoWay));
+
+        var showDurationCheck = new CheckBox
+        {
+            Content = "Duration",
+            Foreground = _theme.B_SecondaryTextColor
+        };
+        showDurationCheck.Bind(ToggleButton.IsCheckedProperty, new Binding("Library.ViewOptions.ShowDuration", BindingMode.TwoWay));
+
+        optionsPanel.Children.Add(new TextBlock { Text = "Show:", VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor });
+        optionsPanel.Children.Add(showArtistCheck);
+        optionsPanel.Children.Add(showAlbumCheck);
+        optionsPanel.Children.Add(showDurationCheck);
+
+        // This panel should only be visible for Detailed and Compact views
+        var visibilityBinding = new Binding("Library.LibraryViewMode")
+        {
+            Converter = new FuncValueConverter<SongDisplayMode, bool>(mode => mode != SongDisplayMode.Grid)
+        };
+        optionsPanel.Bind(Visual.IsVisibleProperty, visibilityBinding);
+
+        return optionsPanel;
     }
 
     public TabControl CreateMainTabView(out ListBox songListBox, out ListBox artistsListBox, out ListBox albumsListBox, out ListBox playlistsListBox)
@@ -64,10 +112,16 @@ public class MainTabViewControls
             lb => _songListBoxInstance = lb);
         _songListBoxInstance = slb;
 
+        var libraryTabContent = new DockPanel();
+        var viewOptionsPanel = CreateLibraryViewOptionsPanel();
+        DockPanel.SetDock(viewOptionsPanel, Dock.Top);
+        libraryTabContent.Children.Add(viewOptionsPanel);
+        libraryTabContent.Children.Add(songListScrollViewer);
+
         var libraryTab = new TabItem
         {
             Header = "LIBRARY",
-            Content = songListScrollViewer
+            Content = libraryTabContent
         };
 
         var (artistsListScrollViewer, alb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
@@ -93,13 +147,13 @@ public class MainTabViewControls
             Header = "ALBUMS",
             Content = albumsListScrollViewer
         };
-        
+
         var (playlistsListScrollViewer, plb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
             _theme, _sharedViewTemplates, "PlaylistsListBox", "Library.Groupings.Playlists", "Library.FilterState.SelectedPlaylist",
             _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
             lb => _playlistsListBoxInstance = lb);
         _playlistsListBoxInstance = plb;
-        
+
         var playlistsTab = new TabItem
         {
             Header = "PLAYLISTS",

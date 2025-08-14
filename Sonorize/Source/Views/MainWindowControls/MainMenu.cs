@@ -50,20 +50,6 @@ public static class MainMenu
         libraryViewSubMenu.Items.Add(libDetailed);
         libraryViewSubMenu.Items.Add(libCompact);
         libraryViewSubMenu.Items.Add(libGrid);
-        libraryViewSubMenu.Items.Add(new Separator());
-
-        var showArtistColumn = new MenuItem { Header = "Show Artist Column", Foreground = theme.B_TextColor };
-        showArtistColumn.Bind(MenuItem.IsCheckedProperty, new Binding("Library.ViewOptions.ShowArtist", BindingMode.TwoWay));
-        libraryViewSubMenu.Items.Add(showArtistColumn);
-
-        var showAlbumColumn = new MenuItem { Header = "Show Album Column", Foreground = theme.B_TextColor };
-        showAlbumColumn.Bind(MenuItem.IsCheckedProperty, new Binding("Library.ViewOptions.ShowAlbum", BindingMode.TwoWay));
-        libraryViewSubMenu.Items.Add(showAlbumColumn);
-
-        var showDurationColumn = new MenuItem { Header = "Show Duration Column", Foreground = theme.B_TextColor };
-        showDurationColumn.Bind(MenuItem.IsCheckedProperty, new Binding("Library.ViewOptions.ShowDuration", BindingMode.TwoWay));
-        libraryViewSubMenu.Items.Add(showDurationColumn);
-
 
         // Artists View SubMenu
         var artistsViewSubMenu = new MenuItem { Header = "Artists View", Foreground = theme.B_TextColor };

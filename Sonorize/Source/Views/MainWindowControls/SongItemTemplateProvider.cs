@@ -5,6 +5,7 @@ using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.ViewModels; // For Song model if not already included via Sonorize.Models
 using System.Diagnostics;
@@ -35,10 +36,51 @@ public class SongItemTemplateProvider
         {
             var itemGrid = new Grid
             {
-                ColumnDefinitions = new ColumnDefinitions("Auto, 3*, 2*, 2*, Auto"),
                 VerticalAlignment = VerticalAlignment.Center
             };
 
+            // Bind the Grid's Tag to the ViewOptions ViewModel. This works because the Grid is a visual element.
+            // Using AncestorType = Window is more robust.
+            itemGrid.Bind(Control.TagProperty, new Binding("DataContext.Library.ViewOptions")
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+            });
+
+            // --- Column Definitions ---
+            var artistColumn = new ColumnDefinition();
+            artistColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowArtist")
+            {
+                Source = itemGrid, // Source the binding from the Grid itself, not an ancestor
+                Converter = BooleanToGridLengthConverter.Instance,
+                ConverterParameter = new GridLength(2, GridUnitType.Star)
+            });
+
+            var albumColumn = new ColumnDefinition();
+            albumColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowAlbum")
+            {
+                Source = itemGrid,
+                Converter = BooleanToGridLengthConverter.Instance,
+                ConverterParameter = new GridLength(2, GridUnitType.Star)
+            });
+
+            var durationColumn = new ColumnDefinition();
+            durationColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowDuration")
+            {
+                Source = itemGrid,
+                Converter = BooleanToGridLengthConverter.Instance,
+                ConverterParameter = GridLength.Auto
+            });
+
+            itemGrid.ColumnDefinitions = new ColumnDefinitions
+            {
+                new(GridLength.Auto), // 0: Image
+                new(3, GridUnitType.Star), // 1: Title
+                artistColumn, // 2: Artist
+                albumColumn, // 3: Album
+                durationColumn // 4: Duration
+            };
+
+            // --- Controls ---
             var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 15, 0), Stretch = Stretch.UniformToFill };
             image.Bind(Image.SourceProperty, new Binding(nameof(Song.Thumbnail)));
             RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
@@ -52,28 +94,16 @@ public class SongItemTemplateProvider
 
             var artistBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
             artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
-            artistBlock.Bind(Visual.IsVisibleProperty, new Binding("DataContext.Library.ViewOptions.ShowArtist")
-            {
-                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
-            });
             Grid.SetColumn(artistBlock, 2);
             itemGrid.Children.Add(artistBlock);
 
             var albumBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
             albumBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Album)));
-            albumBlock.Bind(Visual.IsVisibleProperty, new Binding("DataContext.Library.ViewOptions.ShowAlbum")
-            {
-                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
-            });
             Grid.SetColumn(albumBlock, 3);
             itemGrid.Children.Add(albumBlock);
 
             var durationBlock = new TextBlock { FontSize = 12, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
             durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
-            durationBlock.Bind(Visual.IsVisibleProperty, new Binding("DataContext.Library.ViewOptions.ShowDuration")
-            {
-                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
-            });
             Grid.SetColumn(durationBlock, 4);
             itemGrid.Children.Add(durationBlock);
 
@@ -88,10 +118,39 @@ public class SongItemTemplateProvider
         {
             var itemGrid = new Grid
             {
-                ColumnDefinitions = new ColumnDefinitions("*, *, Auto"),
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
+            itemGrid.Bind(Control.TagProperty, new Binding("DataContext.Library.ViewOptions")
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+            });
+
+            // --- Column Definitions ---
+            var artistColumn = new ColumnDefinition();
+            artistColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowArtist")
+            {
+                Source = itemGrid,
+                Converter = BooleanToGridLengthConverter.Instance,
+                ConverterParameter = GridLength.Star
+            });
+
+            var durationColumn = new ColumnDefinition();
+            durationColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowDuration")
+            {
+                Source = itemGrid,
+                Converter = BooleanToGridLengthConverter.Instance,
+                ConverterParameter = GridLength.Auto
+            });
+
+            itemGrid.ColumnDefinitions = new ColumnDefinitions
+            {
+                new(GridLength.Star), // 0: Title
+                artistColumn, // 1: Artist
+                durationColumn // 2: Duration
+            };
+
+            // --- Controls ---
             var titleBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
             titleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Title)));
             Grid.SetColumn(titleBlock, 0);
@@ -99,19 +158,11 @@ public class SongItemTemplateProvider
 
             var artistBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
             artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
-            artistBlock.Bind(Visual.IsVisibleProperty, new Binding("DataContext.Library.ViewOptions.ShowArtist")
-            {
-                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
-            });
             Grid.SetColumn(artistBlock, 1);
             itemGrid.Children.Add(artistBlock);
 
             var durationBlock = new TextBlock { FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
             durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
-            durationBlock.Bind(Visual.IsVisibleProperty, new Binding("DataContext.Library.ViewOptions.ShowDuration")
-            {
-                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
-            });
             Grid.SetColumn(durationBlock, 2);
             itemGrid.Children.Add(durationBlock);
 
