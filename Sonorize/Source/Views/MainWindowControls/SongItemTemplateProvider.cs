@@ -33,51 +33,93 @@ public class SongItemTemplateProvider
         // Detailed Song Template
         DetailedSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) =>
         {
-            var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 5, 0), Stretch = Stretch.UniformToFill };
+            var itemGrid = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("Auto, 3*, 2*, 2*, Auto"),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 15, 0), Stretch = Stretch.UniformToFill };
             image.Bind(Image.SourceProperty, new Binding(nameof(Song.Thumbnail)));
             RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
+            Grid.SetColumn(image, 0);
+            itemGrid.Children.Add(image);
 
-            var titleBlock = new TextBlock { FontSize = 14, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 1) };
+            var titleBlock = new TextBlock { FontSize = 14, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
             titleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Title)));
+            Grid.SetColumn(titleBlock, 1);
+            itemGrid.Children.Add(titleBlock);
 
-            var artistBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
+            var artistBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
             artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
+            artistBlock.Bind(Visual.IsVisibleProperty, new Binding("DataContext.Library.ViewOptions.ShowArtist")
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+            });
+            Grid.SetColumn(artistBlock, 2);
+            itemGrid.Children.Add(artistBlock);
 
-            var durationBlock = new TextBlock { FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
+            var albumBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
+            albumBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Album)));
+            albumBlock.Bind(Visual.IsVisibleProperty, new Binding("DataContext.Library.ViewOptions.ShowAlbum")
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+            });
+            Grid.SetColumn(albumBlock, 3);
+            itemGrid.Children.Add(albumBlock);
+
+            var durationBlock = new TextBlock { FontSize = 12, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
             durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
+            durationBlock.Bind(Visual.IsVisibleProperty, new Binding("DataContext.Library.ViewOptions.ShowDuration")
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+            });
+            Grid.SetColumn(durationBlock, 4);
+            itemGrid.Children.Add(durationBlock);
 
-            var textStack = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Children = { titleBlock, artistBlock } };
-            var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), VerticalAlignment = VerticalAlignment.Center, Children = { image, textStack, durationBlock } };
-            Grid.SetColumn(image, 0); Grid.SetColumn(textStack, 1); Grid.SetColumn(durationBlock, 2);
-
-            var rootBorder = new Border { Padding = new Thickness(10, 6, 10, 6), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
+            var rootBorder = new Border { Padding = new Thickness(10, 8), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
             rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
             return rootBorder;
         }, supportsRecycling: true);
 
+
         // Compact Song Template
         CompactSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) =>
         {
-            var titleBlock = new TextBlock { FontSize = 12, FontWeight = FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+            var itemGrid = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("*, *, Auto"),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            var titleBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
             titleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Title)));
+            Grid.SetColumn(titleBlock, 0);
+            itemGrid.Children.Add(titleBlock);
 
-            var artistBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(5, 0, 0, 0) };
-            artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)) { StringFormat = " - {0}" });
+            var artistBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
+            artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
+            artistBlock.Bind(Visual.IsVisibleProperty, new Binding("DataContext.Library.ViewOptions.ShowArtist")
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+            });
+            Grid.SetColumn(artistBlock, 1);
+            itemGrid.Children.Add(artistBlock);
 
-
-            var titleArtistPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { titleBlock, artistBlock } };
-
-            var durationBlock = new TextBlock { FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, Margin = new Thickness(5, 0, 0, 0) };
+            var durationBlock = new TextBlock { FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
             durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
-
-            var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), VerticalAlignment = VerticalAlignment.Center };
-            itemGrid.Children.Add(titleArtistPanel); itemGrid.Children.Add(durationBlock);
-            Grid.SetColumn(titleArtistPanel, 0); Grid.SetColumn(durationBlock, 1);
+            durationBlock.Bind(Visual.IsVisibleProperty, new Binding("DataContext.Library.ViewOptions.ShowDuration")
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+            });
+            Grid.SetColumn(durationBlock, 2);
+            itemGrid.Children.Add(durationBlock);
 
             var rootBorder = new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = itemGrid };
             rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
             return rootBorder;
         }, supportsRecycling: true);
+
 
         // Grid Song Template
         GridSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) =>

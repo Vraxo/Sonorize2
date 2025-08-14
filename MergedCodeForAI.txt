@@ -1287,10 +1287,11 @@ public class LoopDataService
 
     public LoopDataService()
     {
-        var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var sonorizeAppDataPath = Path.Combine(appDataPath, "Sonorize");
-        Directory.CreateDirectory(sonorizeAppDataPath);
-        _loopDataFilePath = Path.Combine(sonorizeAppDataPath, "loopdata.json");
+        var baseDirectory = AppContext.BaseDirectory;
+        var dataDirectory = Path.Combine(baseDirectory, "Data");
+        Directory.CreateDirectory(dataDirectory);
+        _loopDataFilePath = Path.Combine(dataDirectory, "loopdata.json");
+
         _loopDataMigrator = new LoopDataMigrator(); // Instantiate the migrator
         LoadLoopData();
         Debug.WriteLine($"[LoopDataService] Initialized. Data loaded from: {_loopDataFilePath}");
@@ -1831,10 +1832,10 @@ public class PlayCountDataService
 
     public PlayCountDataService()
     {
-        var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var sonorizeAppDataPath = Path.Combine(appDataPath, "Sonorize");
-        Directory.CreateDirectory(sonorizeAppDataPath);
-        _playCountFilePath = Path.Combine(sonorizeAppDataPath, "playcounts.json");
+        var baseDirectory = AppContext.BaseDirectory;
+        var dataDirectory = Path.Combine(baseDirectory, "Data");
+        Directory.CreateDirectory(dataDirectory);
+        _playCountFilePath = Path.Combine(dataDirectory, "playcounts.json");
         LoadPlayCounts();
         Debug.WriteLine($"[PlayCountDataService] Initialized. Data loaded from: {_playCountFilePath}");
     }
@@ -2682,9 +2683,9 @@ public class ThemeService
 
     public ThemeService(string? preferredThemeNameFromSettings)
     {
-        var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var sonorizeAppDataPath = Path.Combine(appDataPath, "Sonorize");
-        _themesDirectory = Path.Combine(sonorizeAppDataPath, "Themes");
+        var baseDirectory = AppContext.BaseDirectory;
+        var dataDirectory = Path.Combine(baseDirectory, "Data");
+        _themesDirectory = Path.Combine(dataDirectory, "Themes");
         Directory.CreateDirectory(_themesDirectory);
 
         EnsureDefaultThemesExist();
@@ -7514,10 +7515,10 @@ public class SettingsService
 
     public SettingsService()
     {
-        var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var sonorizeAppDataPath = Path.Combine(appDataPath, "Sonorize");
-        Directory.CreateDirectory(sonorizeAppDataPath); // Ensure directory exists
-        _settingsFilePath = Path.Combine(sonorizeAppDataPath, "settings.json");
+        var baseDirectory = AppContext.BaseDirectory;
+        var dataDirectory = Path.Combine(baseDirectory, "Data");
+        Directory.CreateDirectory(dataDirectory); // Ensure directory exists
+        _settingsFilePath = Path.Combine(dataDirectory, "settings.json");
     }
 
     public AppSettings LoadSettings()

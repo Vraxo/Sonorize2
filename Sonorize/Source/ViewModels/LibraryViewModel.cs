@@ -21,6 +21,8 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     private readonly LibraryComponentProvider _components;
     private readonly LibraryLoadProcess _libraryLoadProcess;
 
+    public LibraryViewOptionsViewModel ViewOptions { get; }
+
     public LibraryDisplayModeService LibraryDisplayModeService => _displayModeService;
     public LibraryGroupingsViewModel Groupings => _components.Groupings;
     public ObservableCollection<Song> FilteredSongs => _components.SongList.FilteredSongs;
@@ -91,6 +93,8 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
         _displayModeService = displayModeService ?? throw new ArgumentNullException(nameof(displayModeService));
+
+        ViewOptions = new LibraryViewOptionsViewModel();
 
         _components = new LibraryComponentProvider(musicLibraryService, settingsService);
         _trackNavigationManager = new TrackNavigationManager(_components.SongList.FilteredSongs);
