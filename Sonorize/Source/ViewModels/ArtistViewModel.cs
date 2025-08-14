@@ -7,13 +7,6 @@ public class ArtistViewModel : ViewModelBase // Inherit from ViewModelBase
 {
     public string? Name { get; set; } // Name can remain simple if not changed after creation
 
-    private int _songCount;
-    public int SongCount
-    {
-        get => _songCount;
-        set => SetProperty(ref _songCount, value);
-    }
-
     public List<Bitmap?> SongThumbnailsForGrid
     {
         get;
@@ -26,4 +19,5 @@ public class ArtistViewModel : ViewModelBase // Inherit from ViewModelBase
         get => _thumbnail;
         set => SetProperty(ref _thumbnail, value); // Use SetProperty for INotifyPropertyChanged
     }
+    // You could add more properties later, like SongCount or AlbumCount
 }

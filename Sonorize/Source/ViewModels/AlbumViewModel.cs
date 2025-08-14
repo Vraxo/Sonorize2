@@ -8,14 +8,6 @@ public class AlbumViewModel : ViewModelBase
 {
     public string? Title { get; set; }
     public string? Artist { get; set; }
-
-    private int _songCount;
-    public int SongCount
-    {
-        get => _songCount;
-        set => SetProperty(ref _songCount, value);
-    }
-
     public List<Bitmap?> SongThumbnailsForGrid
     {
         get;
