@@ -177,10 +177,81 @@ public class MainTabViewControls
         ApplyDataGridStyles(dataGrid, _theme);
         foreach (var col in dataGridColumns) dataGrid.Columns.Add(col);
 
+        // --- NEW DEBUG LOGGING ---
+        dataGrid.DataContextChanged += (s, e) =>
+        {
+            var dg = s as DataGrid;
+            if (dg == null) return;
+            Debug.WriteLine($"[DATAGRID_DEBUG] DataGrid for '{itemsSourcePath}' DataContextChanged. New DataContext: '{dg.DataContext?.GetType().Name ?? "null"}'");
+        };
+
+        dataGrid.PropertyChanged += (s, e) =>
+        {
+            var dg = s as DataGrid;
+            if (dg == null) return;
+
+            if (e.Property == ItemsControl.ItemsSourceProperty)
+            {
+                var items = e.NewValue as IEnumerable;
+                var itemCount = items?.Cast<object>().Count() ?? 0;
+                Debug.WriteLine($"[DATAGRID_DEBUG] DataGrid for '{itemsSourcePath}' ItemsSource property CHANGED. New collection has {itemCount} items.");
+            }
+
+            if (e.Property == Visual.IsVisibleProperty && (bool)(e.NewValue ?? false))
+            {
+                Debug.WriteLine($"[DATAGRID_DEBUG] DataGrid for '{itemsSourcePath}' became VISIBLE.");
+
+                var dc = dg.DataContext;
+                Debug.WriteLine($"[DATAGRID_DEBUG] ... DataContext: '{dc?.GetType().Name ?? "null"}'");
+
+                var items = dg.ItemsSource as IEnumerable;
+                var itemCount = items?.Cast<object>().Count() ?? 0;
+                Debug.WriteLine($"[DATAGRID_DEBUG] ... ItemsSource has {itemCount} items at the moment of becoming visible.");
+
+                if (itemCount > 0 && items != null)
+                {
+                    Debug.WriteLine($"[DATAGRID_DEBUG] ... First item is of type: '{items.Cast<object>().First().GetType().Name}'");
+                }
+
+                Dispatcher.UIThread.Post(() =>
+                {
+                    Debug.WriteLine($"[DATAGRID_DEBUG] ... Post-visibility layout check -> Bounds: {dg.Bounds}");
+                    var rowPresenter = dg.FindDescendantOfType<DataGridRowsPresenter>();
+                    if (rowPresenter != null)
+                    {
+                        Debug.WriteLine($"[DATAGRID_DEBUG] ... DataGridRowsPresenter found. Bounds: {rowPresenter.Bounds}");
+                    }
+                    else
+                    {
+                        Debug.WriteLine($"[DATAGRID_DEBUG] ... DataGridRowsPresenter NOT found.");
+                    }
+                }, DispatcherPriority.Loaded);
+            }
+        };
+        // --- END NEW DEBUG LOGGING ---
+
         dataGrid.Bind(ItemsControl.ItemsSourceProperty, new Binding(itemsSourcePath));
         dataGrid.Bind(DataGrid.SelectedItemProperty, new Binding(selectedItemPath, BindingMode.TwoWay));
 
-        // Visibility will now be controlled imperatively by UpdateListViewMode
+        // Use declarative bindings for visibility, which is more robust with a Grid container.
+        scrollViewer.Bind(Visual.IsVisibleProperty, new Binding(viewModePath)
+        {
+            Converter = new FuncValueConverter<SongDisplayMode, bool>(m =>
+            {
+                bool isVisible = m != SongDisplayMode.Compact;
+                Debug.WriteLine($"[VISIBILITY_CONVERTER] ScrollViewer for '{itemsSourcePath}': Mode is {m}, IsVisible={isVisible}");
+                return isVisible;
+            })
+        });
+        dataGrid.Bind(Visual.IsVisibleProperty, new Binding(viewModePath)
+        {
+            Converter = new FuncValueConverter<SongDisplayMode, bool>(m =>
+            {
+                bool isVisible = m == SongDisplayMode.Compact;
+                Debug.WriteLine($"[VISIBILITY_CONVERTER] DataGrid for '{itemsSourcePath}': Mode is {m}, IsVisible={isVisible}");
+                return isVisible;
+            })
+        });
 
         // Add DataGrid first to the container, then the ScrollViewer.
         container.Children.Add(dataGrid);
@@ -298,25 +369,16 @@ public class MainTabViewControls
     {
         Debug.WriteLine($"[MainTabViewControls] UpdateListViewMode called for mode '{mode}'. Container has {container.Children.Count} children.");
 
-        // Find controls
-        if (container.Children.OfType<ScrollViewer>().FirstOrDefault() is not { Content: ListBox listBox } scrollViewer ||
-            container.Children.OfType<DataGrid>().FirstOrDefault() is not { } dataGrid)
-        {
-            Debug.WriteLine("[MainTabViewControls] UpdateListViewMode failed to find ScrollViewer/ListBox or DataGrid inside container.");
-            return;
-        }
-
-        // Imperatively set visibility
-        scrollViewer.IsVisible = mode != SongDisplayMode.Compact;
-        dataGrid.IsVisible = mode == SongDisplayMode.Compact;
-
+        // Visibility is handled by bindings. This method only needs to update the ListBox template.
         if (mode == SongDisplayMode.Compact)
         {
-            // Log to confirm
-            var items = dataGrid.ItemsSource as IEnumerable;
-            var itemCount = items?.Cast<object>().Count() ?? 0;
-            Debug.WriteLine($"[MainTabViewControls] Switched to Compact mode. DataGrid is now visible. Its ItemsSource has {itemCount} items.");
-            return; // Nothing more to do for ListBox when DataGrid is visible.
+            return; // Nothing to do for ListBox when DataGrid is visible.
+        }
+
+        if (container.Children.OfType<ScrollViewer>().FirstOrDefault() is not { Content: ListBox listBox } scrollViewer)
+        {
+            Debug.WriteLine("[MainTabViewControls] UpdateListViewMode failed to find ScrollViewer or ListBox inside it.");
+            return;
         }
 
         Debug.WriteLine($"[MainTabViewControls] Updating ListBox template for mode '{mode}'.");
