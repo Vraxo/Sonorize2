@@ -127,38 +127,33 @@ public class MainWindow : Window
 
         Action? updateAction = null;
         string? tabName = null;
-        SongDisplayMode newMode = SongDisplayMode.Detailed;
 
         switch (e.PropertyName)
         {
             case nameof(LibraryViewModel.LibraryViewMode):
                 tabName = "Library";
-                newMode = lvm.LibraryViewMode;
                 updateAction = () => ApplyListViewDisplayMode((Panel)((TabItem)_tabControl.Items[0]).Content, lvm.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate);
                 break;
             case nameof(LibraryViewModel.ArtistViewMode):
                 tabName = "Artist";
-                newMode = lvm.ArtistViewMode;
                 updateAction = () => ApplyListViewDisplayMode((Panel)((TabItem)_tabControl.Items[1]).Content, lvm.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate);
                 break;
             case nameof(LibraryViewModel.AlbumViewMode):
                 tabName = "Album";
-                newMode = lvm.AlbumViewMode;
                 updateAction = () => ApplyListViewDisplayMode((Panel)((TabItem)_tabControl.Items[2]).Content, lvm.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate);
                 break;
             case nameof(LibraryViewModel.PlaylistViewMode):
                 tabName = "Playlist";
-                newMode = lvm.PlaylistViewMode;
                 updateAction = () => ApplyListViewDisplayMode((Panel)((TabItem)_tabControl.Items[3]).Content, lvm.PlaylistViewMode, _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.CompactPlaylistTemplate, _sharedViewTemplates.GridPlaylistTemplate);
                 break;
         }
 
         if (updateAction != null)
         {
-            Debug.WriteLine($"[MainWindow] Scheduling UI update for {tabName} tab to mode {newMode}.");
+            Debug.WriteLine($"[MainWindow] Scheduling UI update for {tabName} tab.");
             Dispatcher.UIThread.InvokeAsync(() =>
             {
-                Debug.WriteLine($"[MainWindow] Executing UI update for {tabName} tab to mode {newMode} on UI thread.");
+                Debug.WriteLine($"[MainWindow] Executing UI update for {tabName} tab on UI thread.");
                 updateAction();
             });
         }
