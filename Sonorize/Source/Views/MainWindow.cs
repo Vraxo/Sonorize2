@@ -155,6 +155,10 @@ public class MainWindow : Window
 
         if (updateAction != null)
         {
+            // This is the fix: Ensure the FilteredSongs collection is up-to-date *before* the UI is told to switch views.
+            Debug.WriteLine($"[MainWindow] View mode changed. Forcing a re-application of the current filter before UI updates.");
+            lvm.ApplyFilter();
+
             Debug.WriteLine($"[MainWindow] Scheduling UI update for {tabName} tab to mode {newMode}.");
             Dispatcher.UIThread.InvokeAsync(() =>
             {

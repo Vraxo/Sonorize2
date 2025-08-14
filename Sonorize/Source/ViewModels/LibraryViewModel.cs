@@ -182,7 +182,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         _components.AutoPlaylistManager.RefreshAutoPlaylists();
     }
 
-    private void ApplyFilter()
+    public void ApplyFilter()
     {
         _components.SongList.ApplyFilter(
             _components.FilterState.SearchQuery,
