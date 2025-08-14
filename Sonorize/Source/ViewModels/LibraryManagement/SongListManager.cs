@@ -56,17 +56,18 @@ public class SongListManager : ViewModelBase
         var currentSelectedSongBeforeFilter = SelectedSong;
 
         FilteredSongs.Clear();
-        var filtered = _songFilteringService.ApplyFilter(
+        var filteredList = _songFilteringService.ApplyFilter(
             _allSongs,
             searchQuery,
             selectedArtist,
             selectedAlbum,
-            selectedPlaylist);
+            selectedPlaylist).ToList(); // Materialize to a list
 
-        foreach (var song in filtered)
+        foreach (var song in filteredList)
         {
             FilteredSongs.Add(song);
         }
+        Debug.WriteLine($"[SongListManager.ApplyFilter] Repopulated FilteredSongs. Count: {FilteredSongs.Count}");
 
         // Preserve selection if possible
         if (currentSelectedSongBeforeFilter is not null && FilteredSongs.Contains(currentSelectedSongBeforeFilter))
