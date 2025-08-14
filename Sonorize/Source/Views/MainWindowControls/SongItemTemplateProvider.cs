@@ -68,7 +68,7 @@ public class SongItemTemplateProvider
             {
                 Source = itemGrid,
                 Converter = BooleanToGridLengthConverter.Instance,
-                ConverterParameter = GridLength.Auto
+                ConverterParameter = new GridLength(0.8, GridUnitType.Star) // Changed from Auto
             });
 
             itemGrid.ColumnDefinitions = new ColumnDefinitions
@@ -132,7 +132,7 @@ public class SongItemTemplateProvider
             {
                 Source = itemGrid,
                 Converter = BooleanToGridLengthConverter.Instance,
-                ConverterParameter = GridLength.Star
+                ConverterParameter = new GridLength(1.5, GridUnitType.Star)
             });
 
             var albumColumn = new ColumnDefinition();
@@ -140,7 +140,7 @@ public class SongItemTemplateProvider
             {
                 Source = itemGrid,
                 Converter = BooleanToGridLengthConverter.Instance,
-                ConverterParameter = GridLength.Star
+                ConverterParameter = new GridLength(1.5, GridUnitType.Star)
             });
 
             var durationColumn = new ColumnDefinition();
@@ -148,12 +148,12 @@ public class SongItemTemplateProvider
             {
                 Source = itemGrid,
                 Converter = BooleanToGridLengthConverter.Instance,
-                ConverterParameter = GridLength.Auto
+                ConverterParameter = new GridLength(0.8, GridUnitType.Star) // Changed from Auto
             });
 
             itemGrid.ColumnDefinitions = new ColumnDefinitions
             {
-                new(GridLength.Star), // 0: Title
+                new(2, GridUnitType.Star), // 0: Title
                 artistColumn, // 1: Artist
                 albumColumn, // 2: Album
                 durationColumn // 3: Duration
