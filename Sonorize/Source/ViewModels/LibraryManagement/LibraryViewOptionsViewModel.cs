@@ -26,10 +26,26 @@ public class LibraryViewOptionsViewModel : ViewModelBase
         set => SetProperty(ref _showDuration, value);
     }
 
+    private bool _showDateAdded;
+    public bool ShowDateAdded
+    {
+        get => _showDateAdded;
+        set => SetProperty(ref _showDateAdded, value);
+    }
+
+    private bool _showPlayCount;
+    public bool ShowPlayCount
+    {
+        get => _showPlayCount;
+        set => SetProperty(ref _showPlayCount, value);
+    }
+
     public void LoadFromSettings(AppSettings settings)
     {
         ShowArtist = settings.ShowArtistInLibrary;
         ShowAlbum = settings.ShowAlbumInLibrary;
         ShowDuration = settings.ShowDurationInLibrary;
+        ShowDateAdded = settings.ShowDateAddedInLibrary;
+        ShowPlayCount = settings.ShowPlayCountInLibrary;
     }
 }

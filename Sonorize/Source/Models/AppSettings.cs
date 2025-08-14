@@ -22,6 +22,8 @@ public class AppSettings
     public bool ShowArtistInLibrary { get; set; } = true;
     public bool ShowAlbumInLibrary { get; set; } = true;
     public bool ShowDurationInLibrary { get; set; } = true;
+    public bool ShowDateAddedInLibrary { get; set; } = false;
+    public bool ShowPlayCountInLibrary { get; set; } = false;
 
     // Last.fm Settings
     public bool LastfmScrobblingEnabled { get; set; } = false;

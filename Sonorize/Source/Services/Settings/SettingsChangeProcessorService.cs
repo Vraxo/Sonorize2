@@ -42,7 +42,9 @@ public class SettingsChangeProcessorService
         // Appearance changes (including library columns)
         bool libraryViewOptionsChanged = oldSettings.ShowArtistInLibrary != newSettings.ShowArtistInLibrary ||
                                          oldSettings.ShowAlbumInLibrary != newSettings.ShowAlbumInLibrary ||
-                                         oldSettings.ShowDurationInLibrary != newSettings.ShowDurationInLibrary;
+                                         oldSettings.ShowDurationInLibrary != newSettings.ShowDurationInLibrary ||
+                                         oldSettings.ShowDateAddedInLibrary != newSettings.ShowDateAddedInLibrary ||
+                                         oldSettings.ShowPlayCountInLibrary != newSettings.ShowPlayCountInLibrary;
 
         if (libraryViewOptionsChanged)
         {

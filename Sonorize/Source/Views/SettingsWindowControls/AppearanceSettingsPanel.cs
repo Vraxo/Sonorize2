@@ -66,10 +66,26 @@ public static class AppearanceSettingsPanel
         };
         showDurationCheck.Bind(CheckBox.IsCheckedProperty, new Binding("AppearanceSettings.ShowDurationInLibrary", BindingMode.TwoWay));
 
+        var showPlayCountCheck = new CheckBox
+        {
+            Content = "Show Play Count Column",
+            Foreground = theme.B_TextColor
+        };
+        showPlayCountCheck.Bind(CheckBox.IsCheckedProperty, new Binding("AppearanceSettings.ShowPlayCountInLibrary", BindingMode.TwoWay));
+
+        var showDateAddedCheck = new CheckBox
+        {
+            Content = "Show Date Added Column",
+            Foreground = theme.B_TextColor
+        };
+        showDateAddedCheck.Bind(CheckBox.IsCheckedProperty, new Binding("AppearanceSettings.ShowDateAddedInLibrary", BindingMode.TwoWay));
+
         var checkPanel = new StackPanel { Spacing = 5, Margin = new Thickness(10, 0, 0, 0) };
         checkPanel.Children.Add(showArtistCheck);
         checkPanel.Children.Add(showAlbumCheck);
         checkPanel.Children.Add(showDurationCheck);
+        checkPanel.Children.Add(showPlayCountCheck);
+        checkPanel.Children.Add(showDateAddedCheck);
         
         sectionPanel.Children.Add(title);
         sectionPanel.Children.Add(checkPanel);

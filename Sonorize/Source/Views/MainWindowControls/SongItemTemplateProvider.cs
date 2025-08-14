@@ -63,6 +63,22 @@ public class SongItemTemplateProvider
                 ConverterParameter = new GridLength(2, GridUnitType.Star)
             });
 
+            var playCountColumn = new ColumnDefinition();
+            playCountColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowPlayCount")
+            {
+                Source = itemGrid,
+                Converter = BooleanToGridLengthConverter.Instance,
+                ConverterParameter = new GridLength(0.6, GridUnitType.Star)
+            });
+
+            var dateAddedColumn = new ColumnDefinition();
+            dateAddedColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowDateAdded")
+            {
+                Source = itemGrid,
+                Converter = BooleanToGridLengthConverter.Instance,
+                ConverterParameter = new GridLength(1.2, GridUnitType.Star)
+            });
+
             var durationColumn = new ColumnDefinition();
             durationColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowDuration")
             {
@@ -77,7 +93,9 @@ public class SongItemTemplateProvider
                 new(3, GridUnitType.Star), // 1: Title
                 artistColumn, // 2: Artist
                 albumColumn, // 3: Album
-                durationColumn // 4: Duration
+                playCountColumn, // 4: Play Count
+                dateAddedColumn, // 5: Date Added
+                durationColumn // 6: Duration
             };
 
             // --- Controls ---
@@ -102,9 +120,19 @@ public class SongItemTemplateProvider
             Grid.SetColumn(albumBlock, 3);
             itemGrid.Children.Add(albumBlock);
 
+            var playCountBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0), HorizontalAlignment = HorizontalAlignment.Right };
+            playCountBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.PlayCount)));
+            Grid.SetColumn(playCountBlock, 4);
+            itemGrid.Children.Add(playCountBlock);
+
+            var dateAddedBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0), HorizontalAlignment = HorizontalAlignment.Right };
+            dateAddedBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DateAdded)) { StringFormat = "{0:yyyy-MM-dd}" });
+            Grid.SetColumn(dateAddedBlock, 5);
+            itemGrid.Children.Add(dateAddedBlock);
+
             var durationBlock = new TextBlock { FontSize = 12, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
             durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
-            Grid.SetColumn(durationBlock, 4);
+            Grid.SetColumn(durationBlock, 6);
             itemGrid.Children.Add(durationBlock);
 
             var rootBorder = new Border { Padding = new Thickness(10, 8), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
@@ -143,6 +171,22 @@ public class SongItemTemplateProvider
                 ConverterParameter = new GridLength(1.5, GridUnitType.Star)
             });
 
+            var playCountColumn = new ColumnDefinition();
+            playCountColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowPlayCount")
+            {
+                Source = itemGrid,
+                Converter = BooleanToGridLengthConverter.Instance,
+                ConverterParameter = new GridLength(0.6, GridUnitType.Star)
+            });
+
+            var dateAddedColumn = new ColumnDefinition();
+            dateAddedColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowDateAdded")
+            {
+                Source = itemGrid,
+                Converter = BooleanToGridLengthConverter.Instance,
+                ConverterParameter = new GridLength(1.2, GridUnitType.Star)
+            });
+
             var durationColumn = new ColumnDefinition();
             durationColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowDuration")
             {
@@ -156,7 +200,9 @@ public class SongItemTemplateProvider
                 new(2, GridUnitType.Star), // 0: Title
                 artistColumn, // 1: Artist
                 albumColumn, // 2: Album
-                durationColumn // 3: Duration
+                playCountColumn, // 3: Play Count
+                dateAddedColumn, // 4: Date Added
+                durationColumn // 5: Duration
             };
 
             // --- Controls ---
@@ -175,9 +221,19 @@ public class SongItemTemplateProvider
             Grid.SetColumn(albumBlock, 2);
             itemGrid.Children.Add(albumBlock);
 
+            var playCountBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0), HorizontalAlignment = HorizontalAlignment.Right };
+            playCountBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.PlayCount)));
+            Grid.SetColumn(playCountBlock, 3);
+            itemGrid.Children.Add(playCountBlock);
+
+            var dateAddedBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0), HorizontalAlignment = HorizontalAlignment.Right };
+            dateAddedBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DateAdded)) { StringFormat = "{0:yyyy-MM-dd}" });
+            Grid.SetColumn(dateAddedBlock, 4);
+            itemGrid.Children.Add(dateAddedBlock);
+
             var durationBlock = new TextBlock { FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
             durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
-            Grid.SetColumn(durationBlock, 3);
+            Grid.SetColumn(durationBlock, 5);
             itemGrid.Children.Add(durationBlock);
 
             var rootBorder = new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = itemGrid };

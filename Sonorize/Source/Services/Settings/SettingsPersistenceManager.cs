@@ -73,6 +73,8 @@ public class SettingsPersistenceManager
             newSettingsToSave.ShowArtistInLibrary = settingsOnDisk.ShowArtistInLibrary;
             newSettingsToSave.ShowAlbumInLibrary = settingsOnDisk.ShowAlbumInLibrary;
             newSettingsToSave.ShowDurationInLibrary = settingsOnDisk.ShowDurationInLibrary;
+            newSettingsToSave.ShowDateAddedInLibrary = settingsOnDisk.ShowDateAddedInLibrary;
+            newSettingsToSave.ShowPlayCountInLibrary = settingsOnDisk.ShowPlayCountInLibrary;
         }
 
         // Last.fm Settings - Compare UI state against disk state for change detection

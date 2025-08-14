@@ -14,6 +14,8 @@ namespace Sonorize.ViewModels.Settings
         public bool ShowArtistInLibrary { get; set; }
         public bool ShowAlbumInLibrary { get; set; }
         public bool ShowDurationInLibrary { get; set; }
+        public bool ShowDateAddedInLibrary { get; set; }
+        public bool ShowPlayCountInLibrary { get; set; }
 
         private readonly GridViewImageType _initialArtistGridType;
         private readonly GridViewImageType _initialAlbumGridType;
@@ -21,6 +23,8 @@ namespace Sonorize.ViewModels.Settings
         private readonly bool _initialShowArtist;
         private readonly bool _initialShowAlbum;
         private readonly bool _initialShowDuration;
+        private readonly bool _initialShowDateAdded;
+        private readonly bool _initialShowPlayCount;
         
         public bool IsArtistGridSingle
         {
@@ -60,7 +64,9 @@ namespace Sonorize.ViewModels.Settings
                                                   _initialPlaylistGridType != PlaylistGridType ||
                                                   _initialShowArtist != ShowArtistInLibrary ||
                                                   _initialShowAlbum != ShowAlbumInLibrary ||
-                                                  _initialShowDuration != ShowDurationInLibrary;
+                                                  _initialShowDuration != ShowDurationInLibrary ||
+                                                  _initialShowDateAdded != ShowDateAddedInLibrary ||
+                                                  _initialShowPlayCount != ShowPlayCountInLibrary;
 
         public AppearanceSettingsViewModel(AppSettings settings, Action notifyParentSettingsChanged)
         {
@@ -72,6 +78,8 @@ namespace Sonorize.ViewModels.Settings
             _initialShowArtist = settings.ShowArtistInLibrary;
             _initialShowAlbum = settings.ShowAlbumInLibrary;
             _initialShowDuration = settings.ShowDurationInLibrary;
+            _initialShowDateAdded = settings.ShowDateAddedInLibrary;
+            _initialShowPlayCount = settings.ShowPlayCountInLibrary;
 
             ArtistGridType = _initialArtistGridType;
             AlbumGridType = _initialAlbumGridType;
@@ -79,6 +87,8 @@ namespace Sonorize.ViewModels.Settings
             ShowArtistInLibrary = _initialShowArtist;
             ShowAlbumInLibrary = _initialShowAlbum;
             ShowDurationInLibrary = _initialShowDuration;
+            ShowDateAddedInLibrary = _initialShowDateAdded;
+            ShowPlayCountInLibrary = _initialShowPlayCount;
         }
 
         private void OnAppearanceChanged()
@@ -92,6 +102,8 @@ namespace Sonorize.ViewModels.Settings
             OnPropertyChanged(nameof(ShowArtistInLibrary));
             OnPropertyChanged(nameof(ShowAlbumInLibrary));
             OnPropertyChanged(nameof(ShowDurationInLibrary));
+            OnPropertyChanged(nameof(ShowDateAddedInLibrary));
+            OnPropertyChanged(nameof(ShowPlayCountInLibrary));
             OnPropertyChanged(nameof(HasChangesFromInitialState));
             _notifyParentSettingsChanged();
         }
@@ -104,6 +116,8 @@ namespace Sonorize.ViewModels.Settings
             settings.ShowArtistInLibrary = ShowArtistInLibrary;
             settings.ShowAlbumInLibrary = ShowAlbumInLibrary;
             settings.ShowDurationInLibrary = ShowDurationInLibrary;
+            settings.ShowDateAddedInLibrary = ShowDateAddedInLibrary;
+            settings.ShowPlayCountInLibrary = ShowPlayCountInLibrary;
         }
     }
 }
