@@ -52,7 +52,7 @@ public class SettingsWindow : Window
         mainGrid.Children.Add(menuPanelContainer);
 
         // --- Right Content Area ---
-        var contentArea = CreateContentAreaPanel(); // This method remains to manage visibility
+        var contentArea = CreateContentAreaScrollViewer(); // This now returns a ScrollViewer
         Grid.SetColumn(contentArea, 1);
         Grid.SetRow(contentArea, 0);
         mainGrid.Children.Add(contentArea);
@@ -67,7 +67,7 @@ public class SettingsWindow : Window
         Content = mainGrid;
     }
 
-    private Panel CreateContentAreaPanel()
+    private ScrollViewer CreateContentAreaScrollViewer()
     {
         var contentPanel = new Panel { Margin = new Thickness(15) };
 
@@ -84,7 +84,7 @@ public class SettingsWindow : Window
             Converter = EnumToBooleanConverter.Instance,
             ConverterParameter = SettingsViewSection.Theme
         });
-        
+
         var appearanceSettingsPanel = AppearanceSettingsPanel.Create(_theme);
         appearanceSettingsPanel.Bind(Visual.IsVisibleProperty, new Binding("CurrentSettingsViewSection")
         {
@@ -104,6 +104,13 @@ public class SettingsWindow : Window
         contentPanel.Children.Add(appearanceSettingsPanel);
         contentPanel.Children.Add(scrobblingSettingsPanel);
 
-        return contentPanel;
+        var scrollViewer = new ScrollViewer
+        {
+            Content = contentPanel,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+        };
+
+        return scrollViewer;
     }
 }
