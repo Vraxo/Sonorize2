@@ -39,12 +39,13 @@ public class SongItemTemplateProvider
                 VerticalAlignment = VerticalAlignment.Center
             };
 
-            // Bind the Grid's Tag to the ViewOptions ViewModel. This works because the Grid is a visual element.
-            // Using AncestorType = Window is more robust.
-            itemGrid.Bind(Control.TagProperty, new Binding("DataContext.Library.ViewOptions")
+            // This is the key change. Bind the Grid's Tag to the TemplatedParent's (ListBoxItem's) Tag.
+            // This is much more performant than walking the visual tree for every item.
+            itemGrid.Bind(Control.TagProperty, new Binding("Tag")
             {
-                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+                RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent)
             });
+
 
             // --- Column Definitions ---
             var artistColumn = new ColumnDefinition();
@@ -136,9 +137,9 @@ public class SongItemTemplateProvider
             itemGrid.Children.Add(durationBlock);
 
             var rootBorder = new Border { Padding = new Thickness(10, 8), Background = Brushes.Transparent, Child = itemGrid };
-            rootBorder.Bind(Border.MinHeightProperty, new Binding("DataContext.Library.ViewOptions.RowHeight")
+            rootBorder.Bind(Border.MinHeightProperty, new Binding("Tag.RowHeight")
             {
-                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+                RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent)
             });
             rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
             return rootBorder;
@@ -153,9 +154,9 @@ public class SongItemTemplateProvider
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
-            itemGrid.Bind(Control.TagProperty, new Binding("DataContext.Library.ViewOptions")
+            itemGrid.Bind(Control.TagProperty, new Binding("Tag")
             {
-                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+                RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent)
             });
 
             // --- Column Definitions ---
@@ -241,9 +242,9 @@ public class SongItemTemplateProvider
             itemGrid.Children.Add(durationBlock);
 
             var rootBorder = new Border { Padding = new Thickness(10, 4, 10, 4), Background = Brushes.Transparent, Child = itemGrid };
-            rootBorder.Bind(Border.MinHeightProperty, new Binding("DataContext.Library.ViewOptions.RowHeight")
+            rootBorder.Bind(Border.MinHeightProperty, new Binding("Tag.RowHeight")
             {
-                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+                RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent)
             });
             rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
             return rootBorder;

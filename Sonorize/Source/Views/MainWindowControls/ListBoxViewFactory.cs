@@ -57,7 +57,15 @@ public static class ListBoxViewFactory
             Setters = {
                 new Setter(TemplatedControl.BackgroundProperty, theme.B_ListBoxBackground),
                 new Setter(TextBlock.ForegroundProperty, theme.B_TextColor),
-                new Setter(ListBoxItem.PaddingProperty, new Thickness(3))
+                new Setter(ListBoxItem.PaddingProperty, new Thickness(3)),
+                // This setter provides the ViewOptions to each item efficiently.
+                new Setter(Control.TagProperty, new Binding("DataContext.Library.ViewOptions")
+                {
+                    RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
+                    {
+                        AncestorType = typeof(Window)
+                    }
+                })
             }
         });
         listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":pointerover").Not(xx => xx.Class(":selected")))
