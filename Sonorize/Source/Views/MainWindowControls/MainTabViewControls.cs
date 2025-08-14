@@ -177,7 +177,6 @@ public class MainTabViewControls
         ApplyDataGridStyles(dataGrid, _theme);
         foreach (var col in dataGridColumns) dataGrid.Columns.Add(col);
 
-        // --- NEW DEBUG LOGGING ---
         dataGrid.DataContextChanged += (s, e) =>
         {
             var dg = s as DataGrid;
@@ -199,15 +198,19 @@ public class MainTabViewControls
 
             if (e.Property == Visual.IsVisibleProperty && (bool)(e.NewValue ?? false))
             {
-                Debug.WriteLine($"[DATAGRID_DEBUG] DataGrid for '{itemsSourcePath}' became VISIBLE.");
+                // FIX: Re-apply the ItemsSource binding when the DataGrid becomes visible.
+                // This forces it to re-evaluate the source collection, which might not have been
+                // correctly populated initially if the grid was initialized while invisible.
+                Debug.WriteLine($"[DATAGRID_HACK] DataGrid for '{itemsSourcePath}' became visible. Re-applying ItemsSource binding.");
+                dg.ClearValue(ItemsControl.ItemsSourceProperty);
+                dg.Bind(ItemsControl.ItemsSourceProperty, new Binding(itemsSourcePath));
 
+                Debug.WriteLine($"[DATAGRID_DEBUG] DataGrid for '{itemsSourcePath}' became VISIBLE.");
                 var dc = dg.DataContext;
                 Debug.WriteLine($"[DATAGRID_DEBUG] ... DataContext: '{dc?.GetType().Name ?? "null"}'");
-
                 var items = dg.ItemsSource as IEnumerable;
                 var itemCount = items?.Cast<object>().Count() ?? 0;
                 Debug.WriteLine($"[DATAGRID_DEBUG] ... ItemsSource has {itemCount} items at the moment of becoming visible.");
-
                 if (itemCount > 0 && items != null)
                 {
                     Debug.WriteLine($"[DATAGRID_DEBUG] ... First item is of type: '{items.Cast<object>().First().GetType().Name}'");
@@ -228,32 +231,19 @@ public class MainTabViewControls
                 }, DispatcherPriority.Loaded);
             }
         };
-        // --- END NEW DEBUG LOGGING ---
 
         dataGrid.Bind(ItemsControl.ItemsSourceProperty, new Binding(itemsSourcePath));
         dataGrid.Bind(DataGrid.SelectedItemProperty, new Binding(selectedItemPath, BindingMode.TwoWay));
 
-        // Use declarative bindings for visibility, which is more robust with a Grid container.
         scrollViewer.Bind(Visual.IsVisibleProperty, new Binding(viewModePath)
         {
-            Converter = new FuncValueConverter<SongDisplayMode, bool>(m =>
-            {
-                bool isVisible = m != SongDisplayMode.Compact;
-                Debug.WriteLine($"[VISIBILITY_CONVERTER] ScrollViewer for '{itemsSourcePath}': Mode is {m}, IsVisible={isVisible}");
-                return isVisible;
-            })
+            Converter = new FuncValueConverter<SongDisplayMode, bool>(m => m != SongDisplayMode.Compact)
         });
         dataGrid.Bind(Visual.IsVisibleProperty, new Binding(viewModePath)
         {
-            Converter = new FuncValueConverter<SongDisplayMode, bool>(m =>
-            {
-                bool isVisible = m == SongDisplayMode.Compact;
-                Debug.WriteLine($"[VISIBILITY_CONVERTER] DataGrid for '{itemsSourcePath}': Mode is {m}, IsVisible={isVisible}");
-                return isVisible;
-            })
+            Converter = new FuncValueConverter<SongDisplayMode, bool>(m => m == SongDisplayMode.Compact)
         });
 
-        // Add DataGrid first to the container, then the ScrollViewer.
         container.Children.Add(dataGrid);
         container.Children.Add(scrollViewer);
 
