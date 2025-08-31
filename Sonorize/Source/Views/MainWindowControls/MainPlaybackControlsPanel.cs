@@ -13,45 +13,6 @@ public static class MainPlaybackControlsPanel
 {
     public static Grid Create(ThemeColors theme) // Root is a Grid
     {
-        var toggleAdvPanelButton = new Button
-        {
-            Content = "+",
-            Background = theme.B_SlightlyLighterBackground,
-            Foreground = theme.B_TextColor, // Default color
-            BorderBrush = theme.B_ControlBackgroundColor, // Default border color
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(3),
-            Padding = new Thickness(8, 4),
-            MinWidth = 30, // Give it a minimum size to occupy space
-            FontWeight = FontWeight.Bold,
-            Width = 32, // Fixed width for consistency
-            Height = 32, // Fixed height for consistency
-            HorizontalContentAlignment = HorizontalAlignment.Center, // Center content horizontally
-            VerticalContentAlignment = VerticalAlignment.Center     // Center content vertically
-        };
-        // Change BorderBrush color based on IsAdvancedPanelVisible
-        toggleAdvPanelButton[!Button.BorderBrushProperty] = new Binding("IsAdvancedPanelVisible")
-        {
-            Converter = new FuncValueConverter<bool, IBrush>(isVisible => isVisible ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
-        };
-        toggleAdvPanelButton[!Button.ForegroundProperty] = new Binding("IsAdvancedPanelVisible")
-        {
-            Converter = new FuncValueConverter<bool, IBrush>(isVisible => isVisible ? theme.B_AccentColor : theme.B_TextColor)
-        };
-        toggleAdvPanelButton.Bind(Button.CommandProperty, new Binding("ToggleAdvancedPanelCommand"));
-        toggleAdvPanelButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
-
-
-        var rightControlsPanel = new StackPanel // Holds toggle button
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 5,
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Right, // Align to the right within its grid cell
-            Margin = new Thickness(0, 0, 10, 0) // Margin from the right edge of the grid cell
-        };
-        rightControlsPanel.Children.Add(toggleAdvPanelButton);
-
         // --- Standard Vertical Layout ---
         var verticalLayout = new StackPanel
         {
@@ -63,12 +24,29 @@ public static class MainPlaybackControlsPanel
         };
         verticalLayout.Children.Add(PlaybackNavigationButtonsPanel.Create(theme));
         verticalLayout.Children.Add(PlaybackTimeSliderPanel.Create(theme));
-        verticalLayout.Bind(Visual.IsVisibleProperty, new Binding("!UseCompactPlaybackControls"));
 
-        // --- New Compact Horizontal Layout ---
+        var songInfoPanel_Std = SongInfoDisplayPanel.Create(theme);
+        var rightControlsPanel_Std = CreateRightControlsPanel(theme);
+
+        var standardContentGrid = new Grid
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            RowDefinitions = new RowDefinitions("Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,*"),
+            Background = Brushes.Transparent,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(songInfoPanel_Std, 0);
+        Grid.SetColumn(verticalLayout, 1);
+        Grid.SetColumn(rightControlsPanel_Std, 2);
+        standardContentGrid.Children.Add(songInfoPanel_Std);
+        standardContentGrid.Children.Add(verticalLayout);
+        standardContentGrid.Children.Add(rightControlsPanel_Std);
+        standardContentGrid.Bind(Visual.IsVisibleProperty, new Binding("!UseCompactPlaybackControls"));
+
+        // --- Compact Horizontal Layout ---
         var timeSliderGrid_Compact = PlaybackTimeSliderPanel.Create(theme);
         timeSliderGrid_Compact.MinWidth = 400;
-
         var horizontalLayout = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -79,40 +57,30 @@ public static class MainPlaybackControlsPanel
         };
         horizontalLayout.Children.Add(PlaybackNavigationButtonsPanel.Create(theme));
         horizontalLayout.Children.Add(timeSliderGrid_Compact);
-        horizontalLayout.Bind(Visual.IsVisibleProperty, new Binding("UseCompactPlaybackControls"));
 
-        // --- Center Playback Controls Container ---
-        var centerPlaybackControlsContainer = new Panel
-        {
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        centerPlaybackControlsContainer.Children.Add(verticalLayout);
-        centerPlaybackControlsContainer.Children.Add(horizontalLayout);
+        var songInfoPanel_Cpt = SongInfoDisplayPanel.Create(theme);
+        var rightControlsPanel_Cpt = CreateRightControlsPanel(theme);
 
-
-        // --- Currently Playing Song Info Panel (Extracted) ---
-        var songInfoPanel = SongInfoDisplayPanel.Create(theme);
-
-
-        // --- Grid to hold the content and determine the component's size ---
-        var contentGrid = new Grid
+        var compactContentGrid = new Grid
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
             RowDefinitions = new RowDefinitions("Auto"),
-            ColumnDefinitions = new ColumnDefinitions("*,Auto,*"),
-            Background = Brushes.Transparent, // This grid is for layout, not appearance.
+            ColumnDefinitions = new ColumnDefinitions("2*,Auto,*"),
+            Background = Brushes.Transparent,
             VerticalAlignment = VerticalAlignment.Center
         };
+        Grid.SetColumn(songInfoPanel_Cpt, 0);
+        Grid.SetColumn(horizontalLayout, 1);
+        Grid.SetColumn(rightControlsPanel_Cpt, 2);
+        compactContentGrid.Children.Add(songInfoPanel_Cpt);
+        compactContentGrid.Children.Add(horizontalLayout);
+        compactContentGrid.Children.Add(rightControlsPanel_Cpt);
+        compactContentGrid.Bind(Visual.IsVisibleProperty, new Binding("UseCompactPlaybackControls"));
 
-        // Place all visible controls into the contentGrid. Their alignment properties will position them correctly.
-        Grid.SetColumn(songInfoPanel, 0);
-        Grid.SetColumn(centerPlaybackControlsContainer, 1);
-        Grid.SetColumn(rightControlsPanel, 2);
-        contentGrid.Children.Add(songInfoPanel);
-        contentGrid.Children.Add(centerPlaybackControlsContainer);
-        contentGrid.Children.Add(rightControlsPanel);
-
+        // --- Panel to hold the two switchable layouts ---
+        var contentContainer = new Panel();
+        contentContainer.Children.Add(standardContentGrid);
+        contentContainer.Children.Add(compactContentGrid);
 
         // --- Root Grid for background and layering ---
         var outerGrid = new Grid
@@ -128,7 +96,7 @@ public static class MainPlaybackControlsPanel
             Stretch = Stretch.Fill,
             Opacity = 0.2
         };
-        stretchBackgroundImage.Bind(Image.MaxHeightProperty, new Binding("Bounds.Height") { Source = contentGrid });
+        stretchBackgroundImage.Bind(Image.MaxHeightProperty, new Binding("Bounds.Height") { Source = contentContainer });
         stretchBackgroundImage.Bind(Image.SourceProperty, new Binding("AlbumArtForStretchBackground"));
         stretchBackgroundImage.Bind(Visual.IsVisibleProperty, new Binding("ShowAlbumArtStretchBackground"));
 
@@ -137,7 +105,7 @@ public static class MainPlaybackControlsPanel
             Stretch = Stretch.Fill,
             Opacity = 0.35 // Increased opacity for more color presence
         };
-        abstractBackgroundImage.Bind(Image.MaxHeightProperty, new Binding("Bounds.Height") { Source = contentGrid });
+        abstractBackgroundImage.Bind(Image.MaxHeightProperty, new Binding("Bounds.Height") { Source = contentContainer });
         abstractBackgroundImage.Bind(Image.SourceProperty, new Binding("AlbumArtForAbstractBackground"));
         abstractBackgroundImage.Bind(Visual.IsVisibleProperty, new Binding("ShowAlbumArtAbstractBackground"));
 
@@ -160,8 +128,50 @@ public static class MainPlaybackControlsPanel
         outerGrid.Children.Add(stretchBackgroundImage);
         outerGrid.Children.Add(abstractBackgroundImage);
         outerGrid.Children.Add(backgroundOverlay);
-        outerGrid.Children.Add(contentGrid);
+        outerGrid.Children.Add(contentContainer);
 
         return outerGrid;
+    }
+
+    private static StackPanel CreateRightControlsPanel(ThemeColors theme)
+    {
+        var toggleAdvPanelButton = new Button
+        {
+            Content = "+",
+            Background = theme.B_SlightlyLighterBackground,
+            Foreground = theme.B_TextColor, // Default color
+            BorderBrush = theme.B_ControlBackgroundColor, // Default border color
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(3),
+            Padding = new Thickness(8, 4),
+            MinWidth = 30, // Give it a minimum size to occupy space
+            FontWeight = FontWeight.Bold,
+            Width = 32, // Fixed width for consistency
+            Height = 32, // Fixed height for consistency
+            HorizontalContentAlignment = HorizontalAlignment.Center, // Center content horizontally
+            VerticalContentAlignment = VerticalAlignment.Center     // Center content vertically
+        };
+
+        toggleAdvPanelButton[!Button.BorderBrushProperty] = new Binding("IsAdvancedPanelVisible")
+        {
+            Converter = new FuncValueConverter<bool, IBrush>(isVisible => isVisible ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
+        };
+        toggleAdvPanelButton[!Button.ForegroundProperty] = new Binding("IsAdvancedPanelVisible")
+        {
+            Converter = new FuncValueConverter<bool, IBrush>(isVisible => isVisible ? theme.B_AccentColor : theme.B_TextColor)
+        };
+        toggleAdvPanelButton.Bind(Button.CommandProperty, new Binding("ToggleAdvancedPanelCommand"));
+        toggleAdvPanelButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));
+
+        var rightControlsPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 5,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 0, 10, 0)
+        };
+        rightControlsPanel.Children.Add(toggleAdvPanelButton);
+        return rightControlsPanel;
     }
 }
