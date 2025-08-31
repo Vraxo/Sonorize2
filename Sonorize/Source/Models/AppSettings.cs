@@ -26,6 +26,7 @@ public class AppSettings
     public bool ShowDateAddedInLibrary { get; set; } = false;
     public bool ShowPlayCountInLibrary { get; set; } = false;
     public double LibraryRowHeight { get; set; } = 44.0;
+    public bool EnableAlternatingRowColors { get; set; } = true;
 
     // Last.fm Settings
     public bool LastfmScrobblingEnabled { get; set; } = false;

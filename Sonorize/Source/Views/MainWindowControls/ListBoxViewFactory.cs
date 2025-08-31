@@ -5,6 +5,7 @@ using Avalonia.Controls.Templates; // Required for IDataTemplate
 using Avalonia.Data;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Sonorize.Converters;
 using Sonorize.Models; // For ThemeColors
 using Sonorize.ViewModels; // For Binding paths (though not directly used for VM types here)
 using System; // For Action
@@ -55,7 +56,26 @@ public static class ListBoxViewFactory
         listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>())
         {
             Setters = {
-                new Setter(TemplatedControl.BackgroundProperty, theme.B_ListBoxBackground),
+                new Setter(TemplatedControl.BackgroundProperty, new MultiBinding
+                {
+                    Converter = new AlternatingRowBackgroundConverter
+                    {
+                        DefaultBrush = theme.B_ListBoxBackground,
+                        AlternateBrush = theme.B_ListBoxAlternateBackground
+                    },
+                    Bindings =
+                    {
+                        new Binding("."), // Item's DataContext
+                        new Binding("ItemsSource")
+                        {
+                            RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(ListBox) }
+                        },
+                        new Binding("Tag.EnableAlternatingRowColors")
+                        {
+                            RelativeSource = new RelativeSource(RelativeSourceMode.Self)
+                        }
+                    }
+                }),
                 new Setter(TextBlock.ForegroundProperty, theme.B_TextColor),
                 new Setter(ListBoxItem.PaddingProperty, new Thickness(3)),
                 // This setter provides the ViewOptions to each item efficiently.
@@ -68,6 +88,7 @@ public static class ListBoxViewFactory
                 })
             }
         });
+
         listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":pointerover").Not(xx => xx.Class(":selected")))
         { Setters = { new Setter(TemplatedControl.BackgroundProperty, theme.B_ControlBackgroundColor) } });
         listBox.Styles.Add(new Style(s => s.Is<ListBoxItem>().Class(":selected"))

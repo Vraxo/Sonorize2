@@ -47,6 +47,13 @@ public class LibraryViewOptionsViewModel : ViewModelBase
         set => SetProperty(ref _rowHeight, value);
     }
 
+    private bool _enableAlternatingRowColors;
+    public bool EnableAlternatingRowColors
+    {
+        get => _enableAlternatingRowColors;
+        set => SetProperty(ref _enableAlternatingRowColors, value);
+    }
+
     public void LoadFromSettings(AppSettings settings)
     {
         ShowArtist = settings.ShowArtistInLibrary;
@@ -55,5 +62,6 @@ public class LibraryViewOptionsViewModel : ViewModelBase
         ShowDateAdded = settings.ShowDateAddedInLibrary;
         ShowPlayCount = settings.ShowPlayCountInLibrary;
         RowHeight = settings.LibraryRowHeight;
+        EnableAlternatingRowColors = settings.EnableAlternatingRowColors;
     }
 }

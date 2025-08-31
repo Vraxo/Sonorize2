@@ -57,7 +57,7 @@ public class SettingsPersistenceManager
         {
             newSettingsToSave.PreferredThemeFileName = settingsOnDisk.PreferredThemeFileName;
         }
-        
+
         // Appearance
         if (appearanceSettings.HasChangesFromInitialState)
         {
@@ -70,12 +70,14 @@ public class SettingsPersistenceManager
             newSettingsToSave.ArtistGridViewImageType = settingsOnDisk.ArtistGridViewImageType;
             newSettingsToSave.AlbumGridViewImageType = settingsOnDisk.AlbumGridViewImageType;
             newSettingsToSave.PlaylistGridViewImageType = settingsOnDisk.PlaylistGridViewImageType;
+            newSettingsToSave.PlaybackAreaBackgroundStyle = settingsOnDisk.PlaybackAreaBackgroundStyle;
             newSettingsToSave.ShowArtistInLibrary = settingsOnDisk.ShowArtistInLibrary;
             newSettingsToSave.ShowAlbumInLibrary = settingsOnDisk.ShowAlbumInLibrary;
             newSettingsToSave.ShowDurationInLibrary = settingsOnDisk.ShowDurationInLibrary;
             newSettingsToSave.ShowDateAddedInLibrary = settingsOnDisk.ShowDateAddedInLibrary;
             newSettingsToSave.ShowPlayCountInLibrary = settingsOnDisk.ShowPlayCountInLibrary;
             newSettingsToSave.LibraryRowHeight = settingsOnDisk.LibraryRowHeight;
+            newSettingsToSave.EnableAlternatingRowColors = settingsOnDisk.EnableAlternatingRowColors;
         }
 
         // Last.fm Settings - Compare UI state against disk state for change detection
@@ -84,9 +86,9 @@ public class SettingsPersistenceManager
                              !string.IsNullOrEmpty(lastfmSettings.LastfmPassword) ||
                              settingsOnDisk.ScrobbleThresholdPercentage != lastfmSettings.ScrobbleThresholdPercentage ||
                              settingsOnDisk.ScrobbleThresholdAbsoluteSeconds != lastfmSettings.ScrobbleThresholdAbsoluteSeconds;
-        
+
         if (lastfmChanged) actualChangesMade = true;
-        
+
         lastfmSettings.UpdateAppSettings(newSettingsToSave);
         if (lastfmChanged)
         {

@@ -45,7 +45,8 @@ public class SettingsChangeProcessorService
                                          oldSettings.ShowDurationInLibrary != newSettings.ShowDurationInLibrary ||
                                          oldSettings.ShowDateAddedInLibrary != newSettings.ShowDateAddedInLibrary ||
                                          oldSettings.ShowPlayCountInLibrary != newSettings.ShowPlayCountInLibrary ||
-                                         System.Math.Abs(oldSettings.LibraryRowHeight - newSettings.LibraryRowHeight) > 0.01;
+                                         System.Math.Abs(oldSettings.LibraryRowHeight - newSettings.LibraryRowHeight) > 0.01 ||
+                                         oldSettings.EnableAlternatingRowColors != newSettings.EnableAlternatingRowColors;
 
         if (libraryViewOptionsChanged)
         {

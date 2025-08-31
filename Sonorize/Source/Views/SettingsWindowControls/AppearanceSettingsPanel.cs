@@ -85,12 +85,21 @@ public static class AppearanceSettingsPanel
         };
         showDateAddedCheck.Bind(CheckBox.IsCheckedProperty, new Binding("AppearanceSettings.ShowDateAddedInLibrary", BindingMode.TwoWay));
 
+        var alternatingRowCheck = new CheckBox
+        {
+            Content = "Enable alternating row colors (Detailed/Compact)",
+            Foreground = theme.B_TextColor,
+            Margin = new Thickness(0, 8, 0, 0)
+        };
+        alternatingRowCheck.Bind(CheckBox.IsCheckedProperty, new Binding("AppearanceSettings.EnableAlternatingRowColors", BindingMode.TwoWay));
+
         var checkPanel = new StackPanel { Spacing = 5, Margin = new Thickness(10, 0, 0, 0) };
         checkPanel.Children.Add(showArtistCheck);
         checkPanel.Children.Add(showAlbumCheck);
         checkPanel.Children.Add(showDurationCheck);
         checkPanel.Children.Add(showPlayCountCheck);
         checkPanel.Children.Add(showDateAddedCheck);
+        checkPanel.Children.Add(alternatingRowCheck);
 
         sectionPanel.Children.Add(title);
         sectionPanel.Children.Add(checkPanel);

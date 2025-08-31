@@ -29,6 +29,7 @@ namespace Sonorize.ViewModels.Settings
         private bool _showDateAddedInLibrary;
         private bool _showPlayCountInLibrary;
         private double _libraryRowHeight;
+        private bool _enableAlternatingRowColors;
 
         // Initial state fields
         private readonly GridViewImageType _initialArtistGridType;
@@ -41,6 +42,7 @@ namespace Sonorize.ViewModels.Settings
         private readonly bool _initialShowDateAdded;
         private readonly bool _initialShowPlayCount;
         private readonly double _initialLibraryRowHeight;
+        private readonly bool _initialEnableAlternatingRowColors;
 
         // Properties
         public GridViewImageType ArtistGridType { get => _artistGridType; private set { if (_artistGridType != value) { _artistGridType = value; OnAppearanceChanged(); } } }
@@ -53,6 +55,7 @@ namespace Sonorize.ViewModels.Settings
         public bool ShowDateAddedInLibrary { get => _showDateAddedInLibrary; set { if (_showDateAddedInLibrary != value) { _showDateAddedInLibrary = value; OnAppearanceChanged(); } } }
         public bool ShowPlayCountInLibrary { get => _showPlayCountInLibrary; set { if (_showPlayCountInLibrary != value) { _showPlayCountInLibrary = value; OnAppearanceChanged(); } } }
         public double LibraryRowHeight { get => _libraryRowHeight; set { if (Math.Abs(_libraryRowHeight - value) > 0.01) { _libraryRowHeight = value; OnAppearanceChanged(); } } }
+        public bool EnableAlternatingRowColors { get => _enableAlternatingRowColors; set { if (_enableAlternatingRowColors != value) { _enableAlternatingRowColors = value; OnAppearanceChanged(); } } }
 
         // Radio Button Helpers
         public bool IsArtistGridSingle { get => ArtistGridType == GridViewImageType.Single; set { if (value) ArtistGridType = GridViewImageType.Single; } }
@@ -76,7 +79,8 @@ namespace Sonorize.ViewModels.Settings
             _initialShowDuration != ShowDurationInLibrary ||
             _initialShowDateAdded != ShowDateAddedInLibrary ||
             _initialShowPlayCount != ShowPlayCountInLibrary ||
-            Math.Abs(_initialLibraryRowHeight - LibraryRowHeight) > 0.01;
+            Math.Abs(_initialLibraryRowHeight - LibraryRowHeight) > 0.01 ||
+            _initialEnableAlternatingRowColors != EnableAlternatingRowColors;
 
         public AppearanceSettingsViewModel(AppSettings settings, Action notifyParentSettingsChanged)
         {
@@ -92,6 +96,7 @@ namespace Sonorize.ViewModels.Settings
             _initialShowDateAdded = settings.ShowDateAddedInLibrary;
             _initialShowPlayCount = settings.ShowPlayCountInLibrary;
             _initialLibraryRowHeight = settings.LibraryRowHeight;
+            _initialEnableAlternatingRowColors = settings.EnableAlternatingRowColors;
 
             _artistGridType = _initialArtistGridType;
             _albumGridType = _initialAlbumGridType;
@@ -103,6 +108,7 @@ namespace Sonorize.ViewModels.Settings
             _showDateAddedInLibrary = _initialShowDateAdded;
             _showPlayCountInLibrary = _initialShowPlayCount;
             _libraryRowHeight = _initialLibraryRowHeight;
+            _enableAlternatingRowColors = _initialEnableAlternatingRowColors;
         }
 
         private void OnAppearanceChanged([CallerMemberName] string? propertyName = null)
@@ -138,6 +144,7 @@ namespace Sonorize.ViewModels.Settings
             settings.ShowDateAddedInLibrary = ShowDateAddedInLibrary;
             settings.ShowPlayCountInLibrary = ShowPlayCountInLibrary;
             settings.LibraryRowHeight = LibraryRowHeight;
+            settings.EnableAlternatingRowColors = EnableAlternatingRowColors;
         }
     }
 }

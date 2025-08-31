@@ -16,6 +16,7 @@ public class ThemeColors
 
     // --- ListBox Specific Colors ---
     public string ListBoxBackground { get; set; } = "#FF2D2D30"; // Default: Same as SlightlyLighterBackground
+    public string ListBoxAlternateBackground { get; set; } = "#FF252525";
 
     // --- Brush Properties ---
     [JsonIgnore] public IBrush B_BackgroundColor => SolidColorBrush.Parse(BackgroundColor);
@@ -26,6 +27,7 @@ public class ThemeColors
     [JsonIgnore] public IBrush B_AccentColor => SolidColorBrush.Parse(AccentColor);
     [JsonIgnore] public IBrush B_AccentForeground => SolidColorBrush.Parse(AccentForeground);
     [JsonIgnore] public IBrush B_ListBoxBackground => SolidColorBrush.Parse(ListBoxBackground);
+    [JsonIgnore] public IBrush B_ListBoxAlternateBackground => SolidColorBrush.Parse(ListBoxAlternateBackground);
 
     public static ThemeColors CreateAmoledSpotifyTheme()
     {
@@ -38,7 +40,8 @@ public class ThemeColors
             SecondaryTextColor = "#FFB3B3B3",
             AccentColor = "#FF1DB954",      // Spotify Green
             AccentForeground = "#FF000000",  // Black text on green buttons
-            ListBoxBackground = "#FF000000"   // <<< CRUCIAL FOR AMOLED LIST ITEMS (unselected)
+            ListBoxBackground = "#FF000000",   // <<< CRUCIAL FOR AMOLED LIST ITEMS (unselected)
+            ListBoxAlternateBackground = "#FF121212"
         };
     }
 }
