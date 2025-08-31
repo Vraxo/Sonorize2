@@ -6,6 +6,7 @@ using System.IO; // Required for Path.GetFullPath, Directory.Exists
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using Avalonia;
 using Avalonia.Controls;
 // Removed: using Avalonia.Platform.Storage; // No longer directly used here for Application.Current
 using Avalonia.Media;
@@ -38,7 +39,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     // --- Background Properties ---
     public IBrush PlaybackAreaBackground { get; private set; }
-    public Bitmap? AlbumArtForBackground { get; private set; }
+    public Bitmap? AlbumArtForStretchBackground { get; private set; }
+    public Bitmap? AlbumArtForAbstractBackground { get; private set; }
     public bool ShowAlbumArtStretchBackground { get; private set; }
     public bool ShowAlbumArtAbstractBackground { get; private set; }
 
@@ -188,34 +190,40 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         var settings = _componentsManager.SettingsServiceProperty.LoadSettings();
         var style = Enum.TryParse<PlaybackAreaBackgroundStyle>(settings.PlaybackAreaBackgroundStyle, out var s) ? s : PlaybackAreaBackgroundStyle.Solid;
 
+        // Dispose previous abstract bitmap if it exists
+        AlbumArtForAbstractBackground?.Dispose();
+
         // Reset state
         ShowAlbumArtStretchBackground = false;
         ShowAlbumArtAbstractBackground = false;
-        AlbumArtForBackground = null;
+        AlbumArtForStretchBackground = null;
+        AlbumArtForAbstractBackground = null;
         PlaybackAreaBackground = CurrentTheme.B_BackgroundColor;
 
-        if (style == PlaybackAreaBackgroundStyle.AlbumArtStretch || style == PlaybackAreaBackgroundStyle.AlbumArtAbstract)
+        Bitmap? defaultThumb = _componentsManager.MusicLibraryServiceProperty.GetDefaultThumbnail();
+        Bitmap? currentArt = Playback.CurrentSong?.Thumbnail;
+
+        if (currentArt != null && currentArt != defaultThumb)
         {
-            Bitmap? defaultThumb = _componentsManager.MusicLibraryServiceProperty.GetDefaultThumbnail();
+            PlaybackAreaBackground = Brushes.Transparent; // Make panel transparent to see image behind it
 
-            if (Playback.CurrentSong?.Thumbnail != null && Playback.CurrentSong.Thumbnail != defaultThumb)
+            if (style == PlaybackAreaBackgroundStyle.AlbumArtStretch)
             {
-                AlbumArtForBackground = Playback.CurrentSong.Thumbnail;
-                PlaybackAreaBackground = Brushes.Transparent; // Make panel transparent to see image behind it
-
-                if (style == PlaybackAreaBackgroundStyle.AlbumArtStretch)
-                {
-                    ShowAlbumArtStretchBackground = true;
-                }
-                else // AlbumArtAbstract
-                {
-                    ShowAlbumArtAbstractBackground = true;
-                }
+                AlbumArtForStretchBackground = currentArt;
+                ShowAlbumArtStretchBackground = true;
+            }
+            else if (style == PlaybackAreaBackgroundStyle.AlbumArtAbstract)
+            {
+                // Create a tiny, pixelated version for the abstract effect
+                var abstractBitmap = currentArt.CreateScaledBitmap(new PixelSize(8, 8), BitmapInterpolationMode.HighQuality);
+                AlbumArtForAbstractBackground = abstractBitmap;
+                ShowAlbumArtAbstractBackground = true;
             }
         }
 
         OnPropertyChanged(nameof(PlaybackAreaBackground));
-        OnPropertyChanged(nameof(AlbumArtForBackground));
+        OnPropertyChanged(nameof(AlbumArtForStretchBackground));
+        OnPropertyChanged(nameof(AlbumArtForAbstractBackground));
         OnPropertyChanged(nameof(ShowAlbumArtStretchBackground));
         OnPropertyChanged(nameof(ShowAlbumArtAbstractBackground));
     }
@@ -274,6 +282,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        AlbumArtForAbstractBackground?.Dispose();
         _componentsManager?.Dispose();
         _ownerView = null;
     }

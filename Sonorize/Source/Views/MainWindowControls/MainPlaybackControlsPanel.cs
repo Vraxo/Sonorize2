@@ -110,22 +110,22 @@ public static class MainPlaybackControlsPanel
             Opacity = 0.2
         };
         stretchBackgroundImage.Bind(Image.MaxHeightProperty, new Binding("Bounds.Height") { Source = contentGrid });
-        stretchBackgroundImage.Bind(Image.SourceProperty, new Binding("AlbumArtForBackground"));
+        stretchBackgroundImage.Bind(Image.SourceProperty, new Binding("AlbumArtForStretchBackground"));
         stretchBackgroundImage.Bind(Visual.IsVisibleProperty, new Binding("ShowAlbumArtStretchBackground"));
 
         var abstractBackgroundImage = new Image
         {
-            Stretch = Stretch.UniformToFill, // Keeps aspect ratio, will zoom and crop to fill space
-            Opacity = 0.15
+            Stretch = Stretch.Fill,
+            Opacity = 0.35 // Increased opacity for more color presence
         };
         abstractBackgroundImage.Bind(Image.MaxHeightProperty, new Binding("Bounds.Height") { Source = contentGrid });
-        abstractBackgroundImage.Bind(Image.SourceProperty, new Binding("AlbumArtForBackground"));
+        abstractBackgroundImage.Bind(Image.SourceProperty, new Binding("AlbumArtForAbstractBackground"));
         abstractBackgroundImage.Bind(Visual.IsVisibleProperty, new Binding("ShowAlbumArtAbstractBackground"));
 
 
         var backgroundOverlay = new Border
         {
-            Background = new SolidColorBrush(Colors.Black, 0.6) // Semi-transparent black overlay to darken the image
+            Background = new SolidColorBrush(Colors.Black, 0.4) // Reduced opacity further
         };
         backgroundOverlay.Bind(Visual.IsVisibleProperty, new MultiBinding
         {
