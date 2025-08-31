@@ -56,14 +56,20 @@ public class SongListManager : ViewModelBase
         var currentSelectedSongBeforeFilter = SelectedSong;
 
         FilteredSongs.Clear();
-        var filtered = _songFilteringService.ApplyFilter(
+        var filteredResults = _songFilteringService.ApplyFilter(
             _allSongs,
             searchQuery,
             selectedArtist,
             selectedAlbum,
-            selectedPlaylist);
+            selectedPlaylist).ToList(); // Materialize the list once
 
-        foreach (var song in filtered)
+        // Set the index for each song in the view for performant alternating rows.
+        for (int i = 0; i < filteredResults.Count; i++)
+        {
+            filteredResults[i].IndexInView = i;
+        }
+
+        foreach (var song in filteredResults)
         {
             FilteredSongs.Add(song);
         }

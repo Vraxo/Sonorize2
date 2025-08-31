@@ -65,11 +65,9 @@ public static class ListBoxViewFactory
                     },
                     Bindings =
                     {
-                        new Binding("."), // Item's DataContext
-                        new Binding("ItemsSource")
-                        {
-                            RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(ListBox) }
-                        },
+                        // Pass the Song object itself (the DataContext of the ListBoxItem).
+                        new Binding("."),
+                        // Bind to the EnableAlternatingRowColors boolean on the Tag property.
                         new Binding("Tag.EnableAlternatingRowColors")
                         {
                             RelativeSource = new RelativeSource(RelativeSourceMode.Self)

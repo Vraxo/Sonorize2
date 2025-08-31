@@ -73,4 +73,7 @@ public class Song : ViewModelBase
             Debug.WriteLine($"[SongModel] {Title} - IsLoopActive set to: {value}");
         }
     }
+
+    // This property will be set by the SongListManager for efficient alternating row coloring.
+    public int IndexInView { get; set; }
 }

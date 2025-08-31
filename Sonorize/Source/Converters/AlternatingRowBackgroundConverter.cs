@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using Avalonia.Data.Converters;
 using Avalonia.Media;
+using Sonorize.Models; // Required for Song model
 
 namespace Sonorize.Converters;
 
@@ -15,11 +16,10 @@ public class AlternatingRowBackgroundConverter : IMultiValueConverter
 
     public object? Convert(IList<object?> values, Type targetType, object? parameter, CultureInfo culture)
     {
-        // This converter now receives the item, its parent list, and the boolean setting.
-        if (values.Count < 3 ||
-            values[0] is not { } item ||
-            values[1] is not IList list ||
-            values[2] is not bool enableAlternating)
+        // This converter now receives the Song object and the boolean setting.
+        if (values.Count < 2 ||
+            values[0] is not Song song ||
+            values[1] is not bool enableAlternating)
         {
             return DefaultBrush;
         }
@@ -29,8 +29,7 @@ public class AlternatingRowBackgroundConverter : IMultiValueConverter
             return DefaultBrush;
         }
 
-        int index = list.IndexOf(item);
-
-        return (index != -1 && index % 2 == 1) ? AlternateBrush : DefaultBrush;
+        // Use the pre-calculated index from the view model for high performance.
+        return (song.IndexInView % 2 == 1) ? AlternateBrush : DefaultBrush;
     }
 }
