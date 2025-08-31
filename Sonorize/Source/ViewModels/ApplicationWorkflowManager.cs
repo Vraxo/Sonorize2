@@ -18,12 +18,10 @@ public class ApplicationWorkflowManager : IDisposable
     private readonly PlaybackService _playbackService;
 
     private readonly NextTrackSelectorService _nextTrackSelectorService;
-    // Removed: private readonly StatusBarTextProvider _statusBarTextProvider;
     private readonly SettingsChangeProcessorService _settingsChangeProcessorService;
     private readonly PlaybackFlowManagerService _playbackFlowManagerService;
     private readonly ApplicationInteractionService _applicationInteractionService;
     private readonly LibraryPlaybackLinkService _libraryPlaybackLinkService;
-    // Removed: private readonly SongMetadataService _songMetadataService; 
 
 
     private readonly Random _shuffleRandom = new();
@@ -43,11 +41,9 @@ public class ApplicationWorkflowManager : IDisposable
         _libraryViewModel = libraryViewModel ?? throw new ArgumentNullException(nameof(libraryViewModel));
         _playbackViewModel = playbackViewModel ?? throw new ArgumentNullException(nameof(playbackViewModel));
         _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
-        // Removed: _songMetadataService = songMetadataService ?? throw new ArgumentNullException(nameof(songMetadataService)); 
 
         // Create internal services
         _nextTrackSelectorService = new NextTrackSelectorService(_shuffleRandom);
-        // Removed: _statusBarTextProvider = new StatusBarTextProvider(_playbackViewModel, null!, _libraryViewModel); // Placeholder
 
         _settingsChangeProcessorService = new SettingsChangeProcessorService(_libraryViewModel, _scrobblingService);
         _playbackFlowManagerService = new PlaybackFlowManagerService(_libraryViewModel, _playbackViewModel, _playbackService, _nextTrackSelectorService);
@@ -55,7 +51,7 @@ public class ApplicationWorkflowManager : IDisposable
         _applicationInteractionService = new ApplicationInteractionService(
             _settingsService,
             _settingsChangeProcessorService,
-            _currentTheme); // Removed _songMetadataService from instantiation
+            _currentTheme);
 
         _libraryPlaybackLinkService = new LibraryPlaybackLinkService(_libraryViewModel, _playbackService, _playbackViewModel);
     }

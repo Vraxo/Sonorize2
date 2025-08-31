@@ -8,13 +8,11 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
-// Removed: using Avalonia.Platform.Storage; // No longer directly used here for Application.Current
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Sonorize.Models;
 using Sonorize.Services;
-// Removed: using Sonorize.ViewModels.Status; // StatusBarTextProvider usage moved
 using Sonorize.ViewModels.LibraryManagement; // Required for LibraryDisplayModeService
 using Sonorize.ViewModels.MainWindow; // Added for MainWindowInteractionCoordinator
 
@@ -141,15 +139,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         (ExitCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
-    // PlaybackService_PlaybackEndedNaturally is now handled within MainWindowComponentsManager via its WorkflowManager
-
     private void UpdateAllUIDependentStates()
     {
         OnPropertyChanged(nameof(IsLoadingLibrary));
-        // Properties of child VMs (Playback.CurrentSong etc.) will notify through their own INPC.
-        // MainWindowViewModel itself doesn't need to raise OnPropertyChanged for them unless it has direct proxy properties.
-        // However, if bindings are to "Playback.CurrentSong" directly from MainWindowViewModel's XAML, they will work.
-        // Let's ensure relevant top-level states that might affect commands are refreshed.
         OnPropertyChanged(nameof(IsAdvancedPanelVisible));
         OnPropertyChanged(nameof(ActiveTabIndex));
 
@@ -166,13 +158,10 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             (ExitCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenEditSongMetadataDialogCommand as RelayCommand)?.RaiseCanExecuteChanged();
-
-            // Child VMs manage their own command executability updates based on their state.
-            // If MainWindowViewModel needs to explicitly trigger updates in child VMs' commands:
+            
             Library.RaiseLibraryCommandsCanExecuteChanged();
             Playback.RaisePlaybackCommandCanExecuteChanged();
             LoopEditor.RaiseMainLoopCommandsCanExecuteChanged();
-            // AdvancedPanel's ToggleVisibilityCommand CanExecute will be updated by AdvancedPanelViewModel itself.
         });
     }
 
@@ -180,7 +169,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     {
         Dispatcher.UIThread.InvokeAsync(() =>
         {
-            // WorkflowManager is now accessed via _componentsManager
             StatusBarText = _componentsManager.WorkflowManager.GetCurrentStatusText(LoopEditor);
         });
     }
@@ -190,10 +178,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         var settings = _componentsManager.SettingsServiceProperty.LoadSettings();
         var style = Enum.TryParse<PlaybackAreaBackgroundStyle>(settings.PlaybackAreaBackgroundStyle, out var s) ? s : PlaybackAreaBackgroundStyle.Solid;
 
-        // Dispose previous abstract bitmap if it exists
         AlbumArtForAbstractBackground?.Dispose();
 
-        // Reset state
         ShowAlbumArtStretchBackground = false;
         ShowAlbumArtAbstractBackground = false;
         AlbumArtForStretchBackground = null;
@@ -214,7 +200,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             }
             else if (style == PlaybackAreaBackgroundStyle.AlbumArtAbstract)
             {
-                // Create a tiny, pixelated version for the abstract effect
                 var abstractBitmap = currentArt.CreateScaledBitmap(new PixelSize(8, 8), BitmapInterpolationMode.HighQuality);
                 AlbumArtForAbstractBackground = abstractBitmap;
                 ShowAlbumArtAbstractBackground = true;
@@ -231,7 +216,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private async Task OpenSettingsDialogAsync()
     {
-        // InteractionCoordinator is accessed via _componentsManager
         var (statusMessages, settingsChanged) = await _componentsManager.InteractionCoordinator.CoordinateAndProcessSettingsAsync();
         if (settingsChanged)
         {
@@ -250,15 +234,14 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private async Task AddMusicDirectoryAndRefreshAsync()
     {
-        // InteractionCoordinator is accessed via _componentsManager
         var (refreshNeeded, statusMessage) = await _componentsManager.InteractionCoordinator.CoordinateAddMusicDirectoryAsync();
         StatusBarText = statusMessage;
 
         if (refreshNeeded)
         {
-            await Library.LoadLibraryAsync(); // Library is from _componentsManager
+            await Library.LoadLibraryAsync();
         }
-        else if (string.IsNullOrEmpty(statusMessage)) // If no specific message (e.g. "already exists")
+        else if (string.IsNullOrEmpty(statusMessage))
         {
             UpdateStatusBarText();
         }
@@ -266,10 +249,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private async Task HandleOpenEditSongMetadataDialogAsync(object? songObject)
     {
-        // InteractionCoordinator is accessed via _componentsManager
         string statusMessage = await _componentsManager.InteractionCoordinator.CoordinateEditSongMetadataAsync(songObject as Song);
         StatusBarText = statusMessage;
-        if (string.IsNullOrEmpty(statusMessage)) // Ensure status bar updates if no message
+        if (string.IsNullOrEmpty(statusMessage))
         {
             UpdateStatusBarText();
         }
