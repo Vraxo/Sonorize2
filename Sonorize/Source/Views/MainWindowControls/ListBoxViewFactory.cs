@@ -71,10 +71,13 @@ public static class ListBoxViewFactory
                     {
                         // Pass the Song object itself (the DataContext of the ListBoxItem).
                         new Binding("."),
-                        // Bind to the EnableAlternatingRowColors boolean on the Tag property.
+                        // Bind to the EnableAlternatingRowColors boolean on the ListBox's Tag.
                         new Binding("Tag.EnableAlternatingRowColors")
                         {
-                            RelativeSource = new RelativeSource(RelativeSourceMode.Self)
+                            RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
+                            {
+                                AncestorType = typeof(ListBox)
+                            }
                         }
                     }
                 }),

@@ -10704,6 +10704,10 @@ public static class ListBoxViewFactory
             Name = name
         };
 
+        // PERF: Bind the ListBox's Tag to the ViewOptions once.
+        // Each ListBoxItem will then bind to this Tag, avoiding a costly FindAncestor call for every single item.
+        listBoxInstance.Bind(Control.TagProperty, new Binding("Library.ViewOptions"));
+
         ApplyListBoxItemStyles(listBoxInstance, theme);
 
         listBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding(itemsSourcePath));
@@ -10748,12 +10752,13 @@ public static class ListBoxViewFactory
                 }),
                 new Setter(TextBlock.ForegroundProperty, theme.B_TextColor),
                 new Setter(ListBoxItem.PaddingProperty, new Thickness(3)),
-                // This setter provides the ViewOptions to each item efficiently.
-                new Setter(Control.TagProperty, new Binding("DataContext.Library.ViewOptions")
+                // PERF: This setter provides the ViewOptions to each item by binding to the parent ListBox's Tag.
+                // This is much more efficient than finding the Window ancestor for every item.
+                new Setter(Control.TagProperty, new Binding("Tag")
                 {
                     RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
                     {
-                        AncestorType = typeof(Window)
+                        AncestorType = typeof(ListBox)
                     }
                 })
             }
@@ -11628,13 +11633,13 @@ using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.ViewModels;
 using System.Diagnostics;
+using System;
 
 namespace Sonorize.Views.MainWindowControls;
 
 public class SharedViewTemplates
 {
     private readonly ThemeColors _theme;
-    private readonly SongContextMenuHelper _contextMenuHelper;
 
     // Expose the provider for Song templates
     public SongItemTemplateProvider SongTemplates { get; private set; }
@@ -11655,8 +11660,7 @@ public class SharedViewTemplates
     public SharedViewTemplates(ThemeColors theme)
     {
         _theme = theme;
-        _contextMenuHelper = new SongContextMenuHelper(_theme);
-        SongTemplates = new SongItemTemplateProvider(_theme, _contextMenuHelper);
+        SongTemplates = new SongItemTemplateProvider(_theme);
         ArtistTemplates = new ArtistItemTemplateProvider(_theme);
 
         Debug.WriteLine("[SharedViewTemplates] Constructor called.");
@@ -12165,28 +12169,58 @@ using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.ViewModels; // For Song model if not already included via Sonorize.Models
 using System.Diagnostics;
+using Avalonia.Input;
+using Avalonia.VisualTree;
+using Avalonia.Data.Converters;
 
 namespace Sonorize.Views.MainWindowControls;
 
 public class SongItemTemplateProvider
 {
     private readonly ThemeColors _theme;
-    private readonly SongContextMenuHelper _contextMenuHelper;
 
     public FuncDataTemplate<Song> DetailedSongTemplate { get; private set; }
     public FuncDataTemplate<Song> CompactSongTemplate { get; private set; }
     public FuncDataTemplate<Song> GridSongTemplate { get; private set; }
 
-    public SongItemTemplateProvider(ThemeColors theme, SongContextMenuHelper contextMenuHelper)
+    public SongItemTemplateProvider(ThemeColors theme)
     {
         _theme = theme;
-        _contextMenuHelper = contextMenuHelper ?? throw new System.ArgumentNullException(nameof(contextMenuHelper));
         Debug.WriteLine("[SongItemTemplateProvider] Initialized.");
         InitializeSongTemplates();
     }
 
+    private void OnRootBorderContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        if (sender is not Border border || border.DataContext is not Song song)
+        {
+            return;
+        }
+
+        var mainWindowViewModel = (border.FindAncestorOfType<Window>())?.DataContext as MainWindowViewModel;
+        if (mainWindowViewModel == null)
+        {
+            return;
+        }
+
+        var flyout = new MenuFlyout();
+        var editMenuItem = new MenuItem
+        {
+            Header = "Edit Metadata",
+            Command = mainWindowViewModel.OpenEditSongMetadataDialogCommand,
+            CommandParameter = song
+        };
+
+        flyout.Items.Add(editMenuItem);
+
+        flyout.ShowAt(border);
+        e.Handled = true;
+    }
+
     private void InitializeSongTemplates()
     {
+        var boolToOpacityConverter = new FuncValueConverter<bool, double>(v => v ? 1.0 : 0.0);
+
         // Detailed Song Template
         DetailedSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) =>
         {
@@ -12195,64 +12229,21 @@ public class SongItemTemplateProvider
                 VerticalAlignment = VerticalAlignment.Center
             };
 
-            // This is the key change. Bind the Grid's Tag to the TemplatedParent's (ListBoxItem's) Tag.
-            // This is much more performant than walking the visual tree for every item.
             itemGrid.Bind(Control.TagProperty, new Binding("Tag")
             {
                 RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent)
             });
 
-
-            // --- Column Definitions ---
-            var artistColumn = new ColumnDefinition();
-            artistColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowArtist")
-            {
-                Source = itemGrid, // Source the binding from the Grid itself, not an ancestor
-                Converter = BooleanToGridLengthConverter.Instance,
-                ConverterParameter = new GridLength(2, GridUnitType.Star)
-            });
-
-            var albumColumn = new ColumnDefinition();
-            albumColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowAlbum")
-            {
-                Source = itemGrid,
-                Converter = BooleanToGridLengthConverter.Instance,
-                ConverterParameter = new GridLength(2, GridUnitType.Star)
-            });
-
-            var playCountColumn = new ColumnDefinition();
-            playCountColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowPlayCount")
-            {
-                Source = itemGrid,
-                Converter = BooleanToGridLengthConverter.Instance,
-                ConverterParameter = new GridLength(0.6, GridUnitType.Star)
-            });
-
-            var dateAddedColumn = new ColumnDefinition();
-            dateAddedColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowDateAdded")
-            {
-                Source = itemGrid,
-                Converter = BooleanToGridLengthConverter.Instance,
-                ConverterParameter = new GridLength(1.2, GridUnitType.Star)
-            });
-
-            var durationColumn = new ColumnDefinition();
-            durationColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowDuration")
-            {
-                Source = itemGrid,
-                Converter = BooleanToGridLengthConverter.Instance,
-                ConverterParameter = new GridLength(0.8, GridUnitType.Star) // Changed from Auto
-            });
-
+            // --- Column Definitions (PERF: Now static) ---
             itemGrid.ColumnDefinitions = new ColumnDefinitions
             {
-                new(GridLength.Auto), // 0: Image
-                new(3, GridUnitType.Star), // 1: Title
-                artistColumn, // 2: Artist
-                albumColumn, // 3: Album
-                playCountColumn, // 4: Play Count
-                dateAddedColumn, // 5: Date Added
-                durationColumn // 6: Duration
+                new(GridLength.Auto),            // 0: Image
+                new(3, GridUnitType.Star),       // 1: Title
+                new(2, GridUnitType.Star),       // 2: Artist
+                new(2, GridUnitType.Star),       // 3: Album
+                new(0.6, GridUnitType.Star),     // 4: Play Count
+                new(1.2, GridUnitType.Star),     // 5: Date Added
+                new(0.8, GridUnitType.Star)      // 6: Duration
             };
 
             // --- Controls ---
@@ -12269,26 +12260,36 @@ public class SongItemTemplateProvider
 
             var artistBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
             artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
+            // PERF: Bind Opacity instead of IsVisible to avoid layout recalculation.
+            artistBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowArtist") { Source = itemGrid, Converter = boolToOpacityConverter });
             Grid.SetColumn(artistBlock, 2);
             itemGrid.Children.Add(artistBlock);
 
             var albumBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
             albumBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Album)));
+            // PERF: Bind Opacity instead of IsVisible.
+            albumBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowAlbum") { Source = itemGrid, Converter = boolToOpacityConverter });
             Grid.SetColumn(albumBlock, 3);
             itemGrid.Children.Add(albumBlock);
 
             var playCountBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0), HorizontalAlignment = HorizontalAlignment.Right };
             playCountBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.PlayCount)));
+            // PERF: Bind Opacity instead of IsVisible.
+            playCountBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowPlayCount") { Source = itemGrid, Converter = boolToOpacityConverter });
             Grid.SetColumn(playCountBlock, 4);
             itemGrid.Children.Add(playCountBlock);
 
             var dateAddedBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0), HorizontalAlignment = HorizontalAlignment.Right };
             dateAddedBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DateAdded)) { StringFormat = "{0:yyyy-MM-dd}" });
+            // PERF: Bind Opacity instead of IsVisible.
+            dateAddedBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowDateAdded") { Source = itemGrid, Converter = boolToOpacityConverter });
             Grid.SetColumn(dateAddedBlock, 5);
             itemGrid.Children.Add(dateAddedBlock);
 
             var durationBlock = new TextBlock { FontSize = 12, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
             durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
+            // PERF: Bind Opacity instead of IsVisible.
+            durationBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowDuration") { Source = itemGrid, Converter = boolToOpacityConverter });
             Grid.SetColumn(durationBlock, 6);
             itemGrid.Children.Add(durationBlock);
 
@@ -12297,7 +12298,8 @@ public class SongItemTemplateProvider
             {
                 RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent)
             });
-            rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
+
+            rootBorder.ContextRequested += OnRootBorderContextRequested;
             return rootBorder;
         }, supportsRecycling: true);
 
@@ -12315,55 +12317,15 @@ public class SongItemTemplateProvider
                 RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent)
             });
 
-            // --- Column Definitions ---
-            var artistColumn = new ColumnDefinition();
-            artistColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowArtist")
-            {
-                Source = itemGrid,
-                Converter = BooleanToGridLengthConverter.Instance,
-                ConverterParameter = new GridLength(1.5, GridUnitType.Star)
-            });
-
-            var albumColumn = new ColumnDefinition();
-            albumColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowAlbum")
-            {
-                Source = itemGrid,
-                Converter = BooleanToGridLengthConverter.Instance,
-                ConverterParameter = new GridLength(1.5, GridUnitType.Star)
-            });
-
-            var playCountColumn = new ColumnDefinition();
-            playCountColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowPlayCount")
-            {
-                Source = itemGrid,
-                Converter = BooleanToGridLengthConverter.Instance,
-                ConverterParameter = new GridLength(0.6, GridUnitType.Star)
-            });
-
-            var dateAddedColumn = new ColumnDefinition();
-            dateAddedColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowDateAdded")
-            {
-                Source = itemGrid,
-                Converter = BooleanToGridLengthConverter.Instance,
-                ConverterParameter = new GridLength(1.2, GridUnitType.Star)
-            });
-
-            var durationColumn = new ColumnDefinition();
-            durationColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowDuration")
-            {
-                Source = itemGrid,
-                Converter = BooleanToGridLengthConverter.Instance,
-                ConverterParameter = new GridLength(0.8, GridUnitType.Star) // Changed from Auto
-            });
-
+            // --- Column Definitions (PERF: Now static) ---
             itemGrid.ColumnDefinitions = new ColumnDefinitions
             {
-                new(2, GridUnitType.Star), // 0: Title
-                artistColumn, // 1: Artist
-                albumColumn, // 2: Album
-                playCountColumn, // 3: Play Count
-                dateAddedColumn, // 4: Date Added
-                durationColumn // 5: Duration
+                new(2, GridUnitType.Star),       // 0: Title
+                new(1.5, GridUnitType.Star),     // 1: Artist
+                new(1.5, GridUnitType.Star),     // 2: Album
+                new(0.6, GridUnitType.Star),     // 3: Play Count
+                new(1.2, GridUnitType.Star),     // 4: Date Added
+                new(0.8, GridUnitType.Star)      // 5: Duration
             };
 
             // --- Controls ---
@@ -12374,26 +12336,36 @@ public class SongItemTemplateProvider
 
             var artistBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
             artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
+            // PERF: Bind Opacity instead of IsVisible.
+            artistBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowArtist") { Source = itemGrid, Converter = boolToOpacityConverter });
             Grid.SetColumn(artistBlock, 1);
             itemGrid.Children.Add(artistBlock);
 
             var albumBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
             albumBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Album)));
+            // PERF: Bind Opacity instead of IsVisible.
+            albumBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowAlbum") { Source = itemGrid, Converter = boolToOpacityConverter });
             Grid.SetColumn(albumBlock, 2);
             itemGrid.Children.Add(albumBlock);
 
             var playCountBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0), HorizontalAlignment = HorizontalAlignment.Right };
             playCountBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.PlayCount)));
+            // PERF: Bind Opacity instead of IsVisible.
+            playCountBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowPlayCount") { Source = itemGrid, Converter = boolToOpacityConverter });
             Grid.SetColumn(playCountBlock, 3);
             itemGrid.Children.Add(playCountBlock);
 
             var dateAddedBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0), HorizontalAlignment = HorizontalAlignment.Right };
             dateAddedBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DateAdded)) { StringFormat = "{0:yyyy-MM-dd}" });
+            // PERF: Bind Opacity instead of IsVisible.
+            dateAddedBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowDateAdded") { Source = itemGrid, Converter = boolToOpacityConverter });
             Grid.SetColumn(dateAddedBlock, 4);
             itemGrid.Children.Add(dateAddedBlock);
 
             var durationBlock = new TextBlock { FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
             durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
+            // PERF: Bind Opacity instead of IsVisible.
+            durationBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowDuration") { Source = itemGrid, Converter = boolToOpacityConverter });
             Grid.SetColumn(durationBlock, 5);
             itemGrid.Children.Add(durationBlock);
 
@@ -12402,7 +12374,8 @@ public class SongItemTemplateProvider
             {
                 RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent)
             });
-            rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
+
+            rootBorder.ContextRequested += OnRootBorderContextRequested;
             return rootBorder;
         }, supportsRecycling: true);
 
@@ -12434,7 +12407,8 @@ public class SongItemTemplateProvider
             var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { image, titleBlock, artistBlock } };
 
             var rootBorder = new Border { Width = 120, Height = 150, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-            rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
+
+            rootBorder.ContextRequested += OnRootBorderContextRequested;
             return rootBorder;
         }, supportsRecycling: true);
     }
