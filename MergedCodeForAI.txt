@@ -537,6 +537,26 @@ public class NotNullToBooleanConverter : IValueConverter
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Converters\OrBooleanConverter.cs">
+using Avalonia.Data.Converters;
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+
+namespace Sonorize.Converters;
+
+public class OrBooleanConverter : IMultiValueConverter
+{
+    public static readonly OrBooleanConverter Instance = new();
+
+    public object Convert(IList<object?> values, Type targetType, object? parameter, CultureInfo culture)
+    {
+        return values.Any(v => v is bool b && b);
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Converters\SliderFillWidthConverter.cs">
 using System;
 using Avalonia;
@@ -616,6 +636,7 @@ public class AppSettings
     public string ArtistGridViewImageType { get; set; } = "Composite";
     public string AlbumGridViewImageType { get; set; } = "Composite";
     public string PlaylistGridViewImageType { get; set; } = "Composite";
+    public string PlaybackAreaBackgroundStyle { get; set; } = "Solid";
 
     // Library List Column Preferences
     public bool ShowArtistInLibrary { get; set; } = true;
@@ -3987,6 +4008,17 @@ public class LibraryViewModel : ViewModelBase, IDisposable
             _components.SongList.PropertyChanged -= SongListManager_PropertyChanged;
         }
     }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\PlaybackAreaBackgroundStyle.cs">
+namespace Sonorize.ViewModels;
+
+public enum PlaybackAreaBackgroundStyle
+{
+    Solid,
+    AlbumArtStretch,
+    AlbumArtAbstract
 }
 </file>
 
@@ -9312,8 +9344,11 @@ using System.IO; // Required for Path.GetFullPath, Directory.Exists
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using Avalonia;
 using Avalonia.Controls;
 // Removed: using Avalonia.Platform.Storage; // No longer directly used here for Application.Current
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Sonorize.Models;
 using Sonorize.Services;
@@ -9339,6 +9374,14 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public AdvancedPanelViewModel AdvancedPanel => _componentsManager.AdvancedPanel;
 
     public string StatusBarText { get => field; set => SetProperty(ref field, value); } = "Welcome to Sonorize!";
+
+    // --- Background Properties ---
+    public IBrush PlaybackAreaBackground { get; private set; }
+    public Bitmap? AlbumArtForStretchBackground { get; private set; }
+    public Bitmap? AlbumArtForAbstractBackground { get; private set; }
+    public bool ShowAlbumArtStretchBackground { get; private set; }
+    public bool ShowAlbumArtAbstractBackground { get; private set; }
+
 
     private int _activeTabIndex;
     public int ActiveTabIndex
@@ -9392,6 +9435,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         SongLoopService songLoopService)
     {
         CurrentTheme = theme; // Store theme directly
+        PlaybackAreaBackground = CurrentTheme.B_BackgroundColor;
 
         _componentsManager = new MainWindowComponentsManager(
             this, // Pass self as parent
@@ -9425,6 +9469,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         OpenEditSongMetadataDialogCommand = new RelayCommand(async song => await HandleOpenEditSongMetadataDialogAsync(song), CanOpenEditSongMetadataDialog);
 
         Dispatcher.UIThread.InvokeAsync(UpdateAllUIDependentStates);
+        UpdatePlaybackAreaBackground();
     }
 
     public void SetOwnerView(Window ownerView)
@@ -9478,6 +9523,50 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         });
     }
 
+    public void UpdatePlaybackAreaBackground()
+    {
+        var settings = _componentsManager.SettingsServiceProperty.LoadSettings();
+        var style = Enum.TryParse<PlaybackAreaBackgroundStyle>(settings.PlaybackAreaBackgroundStyle, out var s) ? s : PlaybackAreaBackgroundStyle.Solid;
+
+        // Dispose previous abstract bitmap if it exists
+        AlbumArtForAbstractBackground?.Dispose();
+
+        // Reset state
+        ShowAlbumArtStretchBackground = false;
+        ShowAlbumArtAbstractBackground = false;
+        AlbumArtForStretchBackground = null;
+        AlbumArtForAbstractBackground = null;
+        PlaybackAreaBackground = CurrentTheme.B_BackgroundColor;
+
+        Bitmap? defaultThumb = _componentsManager.MusicLibraryServiceProperty.GetDefaultThumbnail();
+        Bitmap? currentArt = Playback.CurrentSong?.Thumbnail;
+
+        if (currentArt != null && currentArt != defaultThumb)
+        {
+            PlaybackAreaBackground = Brushes.Transparent; // Make panel transparent to see image behind it
+
+            if (style == PlaybackAreaBackgroundStyle.AlbumArtStretch)
+            {
+                AlbumArtForStretchBackground = currentArt;
+                ShowAlbumArtStretchBackground = true;
+            }
+            else if (style == PlaybackAreaBackgroundStyle.AlbumArtAbstract)
+            {
+                // Create a tiny, pixelated version for the abstract effect
+                var abstractBitmap = currentArt.CreateScaledBitmap(new PixelSize(8, 8), BitmapInterpolationMode.HighQuality);
+                AlbumArtForAbstractBackground = abstractBitmap;
+                ShowAlbumArtAbstractBackground = true;
+            }
+        }
+
+        OnPropertyChanged(nameof(PlaybackAreaBackground));
+        OnPropertyChanged(nameof(AlbumArtForStretchBackground));
+        OnPropertyChanged(nameof(AlbumArtForAbstractBackground));
+        OnPropertyChanged(nameof(ShowAlbumArtStretchBackground));
+        OnPropertyChanged(nameof(ShowAlbumArtAbstractBackground));
+    }
+
+
     private async Task OpenSettingsDialogAsync()
     {
         // InteractionCoordinator is accessed via _componentsManager
@@ -9485,6 +9574,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         if (settingsChanged)
         {
             Library.LibraryDisplayModeService.ReloadDisplayPreferences();
+            UpdatePlaybackAreaBackground();
             if (statusMessages.Any())
             {
                 StatusBarText = string.Join(" | ", statusMessages);
@@ -9530,6 +9620,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        AlbumArtForAbstractBackground?.Dispose();
         _componentsManager?.Dispose();
         _ownerView = null;
     }
@@ -9552,6 +9643,7 @@ public class MainWindowViewModelOrchestrator : IDisposable
     private readonly Action _raiseAllCommandsCanExecuteChangedCallback;
     private readonly Action _updateStatusBarTextCallback;
     private readonly Action<string> _notifyMainWindowVMPropertyChangedCallback;
+    private readonly Action _updatePlaybackAreaBackgroundCallback;
 
     public MainWindowViewModelOrchestrator(
         LibraryViewModel libraryViewModel,
@@ -9559,7 +9651,8 @@ public class MainWindowViewModelOrchestrator : IDisposable
         AdvancedPanelViewModel advancedPanelViewModel,
         Action raiseAllCommandsCanExecuteChangedCallback,
         Action updateStatusBarTextCallback,
-        Action<string> notifyMainWindowVMPropertyChangedCallback)
+        Action<string> notifyMainWindowVMPropertyChangedCallback,
+        Action updatePlaybackAreaBackgroundCallback)
     {
         _libraryViewModel = libraryViewModel ?? throw new ArgumentNullException(nameof(libraryViewModel));
         _playbackViewModel = playbackViewModel ?? throw new ArgumentNullException(nameof(playbackViewModel));
@@ -9567,6 +9660,7 @@ public class MainWindowViewModelOrchestrator : IDisposable
         _raiseAllCommandsCanExecuteChangedCallback = raiseAllCommandsCanExecuteChangedCallback ?? throw new ArgumentNullException(nameof(raiseAllCommandsCanExecuteChangedCallback));
         _updateStatusBarTextCallback = updateStatusBarTextCallback ?? throw new ArgumentNullException(nameof(updateStatusBarTextCallback));
         _notifyMainWindowVMPropertyChangedCallback = notifyMainWindowVMPropertyChangedCallback ?? throw new ArgumentNullException(nameof(notifyMainWindowVMPropertyChangedCallback));
+        _updatePlaybackAreaBackgroundCallback = updatePlaybackAreaBackgroundCallback ?? throw new ArgumentNullException(nameof(updatePlaybackAreaBackgroundCallback));
 
         SubscribeToEvents();
     }
@@ -9647,6 +9741,7 @@ public class MainWindowViewModelOrchestrator : IDisposable
                 _updateStatusBarTextCallback();
                 _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentTimeDisplay));
                 _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.TotalTimeDisplay));
+                _updatePlaybackAreaBackgroundCallback();
                 break;
             case nameof(PlaybackViewModel.CurrentPlaybackStatus):
                 _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentPlaybackStatus));
@@ -9690,8 +9785,18 @@ public class MainWindowViewModelOrchestrator : IDisposable
 
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\Settings\AppearanceSettingsViewModel.cs">
 using System;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+using Avalonia.Controls;
+using Avalonia.Data.Converters;
+using Avalonia.Data;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia;
 using Sonorize.Models;
 using Sonorize.Services;
+using Sonorize.ViewModels;
+using Sonorize.Views.MainWindowControls;
 
 namespace Sonorize.ViewModels.Settings
 {
@@ -9699,19 +9804,23 @@ namespace Sonorize.ViewModels.Settings
     {
         private readonly Action _notifyParentSettingsChanged;
 
-        public GridViewImageType ArtistGridType { get; set; }
-        public GridViewImageType AlbumGridType { get; set; }
-        public GridViewImageType PlaylistGridType { get; set; }
-        public bool ShowArtistInLibrary { get; set; }
-        public bool ShowAlbumInLibrary { get; set; }
-        public bool ShowDurationInLibrary { get; set; }
-        public bool ShowDateAddedInLibrary { get; set; }
-        public bool ShowPlayCountInLibrary { get; set; }
-        public double LibraryRowHeight { get; set; }
+        // Backing fields
+        private GridViewImageType _artistGridType;
+        private GridViewImageType _albumGridType;
+        private GridViewImageType _playlistGridType;
+        private PlaybackAreaBackgroundStyle _playbackBackgroundStyle;
+        private bool _showArtistInLibrary;
+        private bool _showAlbumInLibrary;
+        private bool _showDurationInLibrary;
+        private bool _showDateAddedInLibrary;
+        private bool _showPlayCountInLibrary;
+        private double _libraryRowHeight;
 
+        // Initial state fields
         private readonly GridViewImageType _initialArtistGridType;
         private readonly GridViewImageType _initialAlbumGridType;
         private readonly GridViewImageType _initialPlaylistGridType;
+        private readonly PlaybackAreaBackgroundStyle _initialPlaybackBackgroundStyle;
         private readonly bool _initialShowArtist;
         private readonly bool _initialShowAlbum;
         private readonly bool _initialShowDuration;
@@ -9719,48 +9828,41 @@ namespace Sonorize.ViewModels.Settings
         private readonly bool _initialShowPlayCount;
         private readonly double _initialLibraryRowHeight;
 
-        public bool IsArtistGridSingle
-        {
-            get => ArtistGridType == GridViewImageType.Single;
-            set { if (value && ArtistGridType != GridViewImageType.Single) { ArtistGridType = GridViewImageType.Single; OnAppearanceChanged(); } }
-        }
-        public bool IsArtistGridComposite
-        {
-            get => ArtistGridType == GridViewImageType.Composite;
-            set { if (value && ArtistGridType != GridViewImageType.Composite) { ArtistGridType = GridViewImageType.Composite; OnAppearanceChanged(); } }
-        }
+        // Properties
+        public GridViewImageType ArtistGridType { get => _artistGridType; private set { if (_artistGridType != value) { _artistGridType = value; OnAppearanceChanged(); } } }
+        public GridViewImageType AlbumGridType { get => _albumGridType; private set { if (_albumGridType != value) { _albumGridType = value; OnAppearanceChanged(); } } }
+        public GridViewImageType PlaylistGridType { get => _playlistGridType; private set { if (_playlistGridType != value) { _playlistGridType = value; OnAppearanceChanged(); } } }
+        public PlaybackAreaBackgroundStyle PlaybackBackgroundStyle { get => _playbackBackgroundStyle; private set { if (_playbackBackgroundStyle != value) { _playbackBackgroundStyle = value; OnAppearanceChanged(); } } }
+        public bool ShowArtistInLibrary { get => _showArtistInLibrary; set { if (_showArtistInLibrary != value) { _showArtistInLibrary = value; OnAppearanceChanged(); } } }
+        public bool ShowAlbumInLibrary { get => _showAlbumInLibrary; set { if (_showAlbumInLibrary != value) { _showAlbumInLibrary = value; OnAppearanceChanged(); } } }
+        public bool ShowDurationInLibrary { get => _showDurationInLibrary; set { if (_showDurationInLibrary != value) { _showDurationInLibrary = value; OnAppearanceChanged(); } } }
+        public bool ShowDateAddedInLibrary { get => _showDateAddedInLibrary; set { if (_showDateAddedInLibrary != value) { _showDateAddedInLibrary = value; OnAppearanceChanged(); } } }
+        public bool ShowPlayCountInLibrary { get => _showPlayCountInLibrary; set { if (_showPlayCountInLibrary != value) { _showPlayCountInLibrary = value; OnAppearanceChanged(); } } }
+        public double LibraryRowHeight { get => _libraryRowHeight; set { if (Math.Abs(_libraryRowHeight - value) > 0.01) { _libraryRowHeight = value; OnAppearanceChanged(); } } }
 
-        public bool IsAlbumGridSingle
-        {
-            get => AlbumGridType == GridViewImageType.Single;
-            set { if (value && AlbumGridType != GridViewImageType.Single) { AlbumGridType = GridViewImageType.Single; OnAppearanceChanged(); } }
-        }
-        public bool IsAlbumGridComposite
-        {
-            get => AlbumGridType == GridViewImageType.Composite;
-            set { if (value && AlbumGridType != GridViewImageType.Composite) { AlbumGridType = GridViewImageType.Composite; OnAppearanceChanged(); } }
-        }
+        // Radio Button Helpers
+        public bool IsArtistGridSingle { get => ArtistGridType == GridViewImageType.Single; set { if (value) ArtistGridType = GridViewImageType.Single; } }
+        public bool IsArtistGridComposite { get => ArtistGridType == GridViewImageType.Composite; set { if (value) ArtistGridType = GridViewImageType.Composite; } }
+        public bool IsAlbumGridSingle { get => AlbumGridType == GridViewImageType.Single; set { if (value) AlbumGridType = GridViewImageType.Single; } }
+        public bool IsAlbumGridComposite { get => AlbumGridType == GridViewImageType.Composite; set { if (value) AlbumGridType = GridViewImageType.Composite; } }
+        public bool IsPlaylistGridSingle { get => PlaylistGridType == GridViewImageType.Single; set { if (value) PlaylistGridType = GridViewImageType.Single; } }
+        public bool IsPlaylistGridComposite { get => PlaylistGridType == GridViewImageType.Composite; set { if (value) PlaylistGridType = GridViewImageType.Composite; } }
+        public bool IsPlaybackBackgroundSolid { get => PlaybackBackgroundStyle == PlaybackAreaBackgroundStyle.Solid; set { if (value) PlaybackBackgroundStyle = PlaybackAreaBackgroundStyle.Solid; } }
+        public bool IsPlaybackBackgroundAlbumArtStretch { get => PlaybackBackgroundStyle == PlaybackAreaBackgroundStyle.AlbumArtStretch; set { if (value) PlaybackBackgroundStyle = PlaybackAreaBackgroundStyle.AlbumArtStretch; } }
+        public bool IsPlaybackBackgroundAlbumArtAbstract { get => PlaybackBackgroundStyle == PlaybackAreaBackgroundStyle.AlbumArtAbstract; set { if (value) PlaybackBackgroundStyle = PlaybackAreaBackgroundStyle.AlbumArtAbstract; } }
 
-        public bool IsPlaylistGridSingle
-        {
-            get => PlaylistGridType == GridViewImageType.Single;
-            set { if (value && PlaylistGridType != GridViewImageType.Single) { PlaylistGridType = GridViewImageType.Single; OnAppearanceChanged(); } }
-        }
-        public bool IsPlaylistGridComposite
-        {
-            get => PlaylistGridType == GridViewImageType.Composite;
-            set { if (value && PlaylistGridType != GridViewImageType.Composite) { PlaylistGridType = GridViewImageType.Composite; OnAppearanceChanged(); } }
-        }
 
-        public bool HasChangesFromInitialState => _initialArtistGridType != ArtistGridType ||
-                                                  _initialAlbumGridType != AlbumGridType ||
-                                                  _initialPlaylistGridType != PlaylistGridType ||
-                                                  _initialShowArtist != ShowArtistInLibrary ||
-                                                  _initialShowAlbum != ShowAlbumInLibrary ||
-                                                  _initialShowDuration != ShowDurationInLibrary ||
-                                                  _initialShowDateAdded != ShowDateAddedInLibrary ||
-                                                  _initialShowPlayCount != ShowPlayCountInLibrary ||
-                                                  Math.Abs(_initialLibraryRowHeight - LibraryRowHeight) > 0.01;
+        public bool HasChangesFromInitialState =>
+            _initialArtistGridType != ArtistGridType ||
+            _initialAlbumGridType != AlbumGridType ||
+            _initialPlaylistGridType != PlaylistGridType ||
+            _initialPlaybackBackgroundStyle != PlaybackBackgroundStyle ||
+            _initialShowArtist != ShowArtistInLibrary ||
+            _initialShowAlbum != ShowAlbumInLibrary ||
+            _initialShowDuration != ShowDurationInLibrary ||
+            _initialShowDateAdded != ShowDateAddedInLibrary ||
+            _initialShowPlayCount != ShowPlayCountInLibrary ||
+            Math.Abs(_initialLibraryRowHeight - LibraryRowHeight) > 0.01;
 
         public AppearanceSettingsViewModel(AppSettings settings, Action notifyParentSettingsChanged)
         {
@@ -9769,6 +9871,7 @@ namespace Sonorize.ViewModels.Settings
             _initialArtistGridType = Enum.TryParse<GridViewImageType>(settings.ArtistGridViewImageType, out var agt) ? agt : GridViewImageType.Composite;
             _initialAlbumGridType = Enum.TryParse<GridViewImageType>(settings.AlbumGridViewImageType, out var alhgt) ? alhgt : GridViewImageType.Composite;
             _initialPlaylistGridType = Enum.TryParse<GridViewImageType>(settings.PlaylistGridViewImageType, out var pgt) ? pgt : GridViewImageType.Composite;
+            _initialPlaybackBackgroundStyle = Enum.TryParse<PlaybackAreaBackgroundStyle>(settings.PlaybackAreaBackgroundStyle, out var pbs) ? pbs : PlaybackAreaBackgroundStyle.Solid;
             _initialShowArtist = settings.ShowArtistInLibrary;
             _initialShowAlbum = settings.ShowAlbumInLibrary;
             _initialShowDuration = settings.ShowDurationInLibrary;
@@ -9776,31 +9879,35 @@ namespace Sonorize.ViewModels.Settings
             _initialShowPlayCount = settings.ShowPlayCountInLibrary;
             _initialLibraryRowHeight = settings.LibraryRowHeight;
 
-            ArtistGridType = _initialArtistGridType;
-            AlbumGridType = _initialAlbumGridType;
-            PlaylistGridType = _initialPlaylistGridType;
-            ShowArtistInLibrary = _initialShowArtist;
-            ShowAlbumInLibrary = _initialShowAlbum;
-            ShowDurationInLibrary = _initialShowDuration;
-            ShowDateAddedInLibrary = _initialShowDateAdded;
-            ShowPlayCountInLibrary = _initialShowPlayCount;
-            LibraryRowHeight = _initialLibraryRowHeight;
+            _artistGridType = _initialArtistGridType;
+            _albumGridType = _initialAlbumGridType;
+            _playlistGridType = _initialPlaylistGridType;
+            _playbackBackgroundStyle = _initialPlaybackBackgroundStyle;
+            _showArtistInLibrary = _initialShowArtist;
+            _showAlbumInLibrary = _initialShowAlbum;
+            _showDurationInLibrary = _initialShowDuration;
+            _showDateAddedInLibrary = _initialShowDateAdded;
+            _showPlayCountInLibrary = _initialShowPlayCount;
+            _libraryRowHeight = _initialLibraryRowHeight;
         }
 
-        private void OnAppearanceChanged()
+        private void OnAppearanceChanged([CallerMemberName] string? propertyName = null)
         {
+            OnPropertyChanged(propertyName);
+
+            // Notify dependent radio button properties
             OnPropertyChanged(nameof(IsArtistGridSingle));
             OnPropertyChanged(nameof(IsArtistGridComposite));
             OnPropertyChanged(nameof(IsAlbumGridSingle));
             OnPropertyChanged(nameof(IsAlbumGridComposite));
             OnPropertyChanged(nameof(IsPlaylistGridSingle));
             OnPropertyChanged(nameof(IsPlaylistGridComposite));
-            OnPropertyChanged(nameof(ShowArtistInLibrary));
-            OnPropertyChanged(nameof(ShowAlbumInLibrary));
-            OnPropertyChanged(nameof(ShowDurationInLibrary));
-            OnPropertyChanged(nameof(ShowDateAddedInLibrary));
-            OnPropertyChanged(nameof(ShowPlayCountInLibrary));
-            OnPropertyChanged(nameof(LibraryRowHeight));
+            OnPropertyChanged(nameof(IsPlaybackBackgroundSolid));
+            OnPropertyChanged(nameof(IsPlaybackBackgroundAlbumArtStretch));
+            OnPropertyChanged(nameof(IsPlaybackBackgroundAlbumArtAbstract));
+
+
+            // Notify change detection and parent
             OnPropertyChanged(nameof(HasChangesFromInitialState));
             _notifyParentSettingsChanged();
         }
@@ -9810,6 +9917,7 @@ namespace Sonorize.ViewModels.Settings
             settings.ArtistGridViewImageType = ArtistGridType.ToString();
             settings.AlbumGridViewImageType = AlbumGridType.ToString();
             settings.PlaylistGridViewImageType = PlaylistGridType.ToString();
+            settings.PlaybackAreaBackgroundStyle = PlaybackBackgroundStyle.ToString();
             settings.ShowArtistInLibrary = ShowArtistInLibrary;
             settings.ShowAlbumInLibrary = ShowAlbumInLibrary;
             settings.ShowDurationInLibrary = ShowDurationInLibrary;
@@ -10129,8 +10237,8 @@ public class MainWindowComponentsManager : IDisposable
 {
     // Keep direct service references if they are passed to multiple components
     // or if MainWindowViewModel needs them directly (though preferably through properties here)
-    private readonly SettingsService _settingsService;
-    private readonly MusicLibraryService _musicLibraryService;
+    public SettingsService SettingsServiceProperty { get; }
+    public MusicLibraryService MusicLibraryServiceProperty { get; }
     // PlaybackService is now a property for MainWindowViewModel to expose
     public PlaybackService PlaybackServiceProperty { get; }
     private readonly ThemeColors _currentTheme;
@@ -10167,8 +10275,8 @@ public class MainWindowComponentsManager : IDisposable
         Action updateStatusBarTextCallback,
         Action<string> notifyMainWindowVMPropertyChangedCallback)
     {
-        _settingsService = settingsService;
-        _musicLibraryService = musicLibraryService;
+        SettingsServiceProperty = settingsService;
+        MusicLibraryServiceProperty = musicLibraryService;
         PlaybackServiceProperty = playbackService; // Store the passed service
         _currentTheme = currentTheme;
         _waveformService = waveformService;
@@ -10178,15 +10286,15 @@ public class MainWindowComponentsManager : IDisposable
         _songEditInteractionService = songEditInteractionService;
         _songLoopService = songLoopService;
 
-        LibraryDisplayModeService = new LibraryDisplayModeService(_settingsService);
+        LibraryDisplayModeService = new LibraryDisplayModeService(SettingsServiceProperty);
         // Pass parentMainWindowViewModel to LibraryViewModel as per its constructor
-        Library = new LibraryViewModel(parentMainWindowViewModel, _settingsService, _musicLibraryService, _loopDataService, LibraryDisplayModeService);
+        Library = new LibraryViewModel(parentMainWindowViewModel, SettingsServiceProperty, MusicLibraryServiceProperty, _loopDataService, LibraryDisplayModeService);
         Playback = new PlaybackViewModel(PlaybackServiceProperty, _waveformService); // Use the stored PlaybackService
         LoopEditor = new LoopEditorViewModel(PlaybackServiceProperty, _loopDataService, _songLoopService); // Use stored PlaybackService
         AdvancedPanel = new AdvancedPanelViewModel(Playback, Library);
 
         WorkflowManager = new ApplicationWorkflowManager(
-            _settingsService,
+            SettingsServiceProperty,
             ScrobblingServiceProperty, // Use stored ScrobblingService
             _currentTheme,
             Library,
@@ -10209,7 +10317,8 @@ public class MainWindowComponentsManager : IDisposable
             AdvancedPanel,
             raiseAllCommandsCanExecuteChangedCallback,
             updateStatusBarTextCallback,
-            notifyMainWindowVMPropertyChangedCallback
+            notifyMainWindowVMPropertyChangedCallback,
+            parentMainWindowViewModel.UpdatePlaybackAreaBackground
         );
 
         // Subscribe to PlaybackServiceProperty events here, as this manager owns the WorkflowManager that handles it.
@@ -10700,6 +10809,7 @@ using Avalonia.Data;
 using Avalonia.Data.Converters; // Added required using directive for FuncValueConverter
 using Avalonia.Layout;
 using Avalonia.Media;
+using Sonorize.Converters;
 using Sonorize.Models;
 
 namespace Sonorize.Views.MainWindowControls;
@@ -10747,7 +10857,6 @@ public static class MainPlaybackControlsPanel
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Right, // Align to the right within its grid cell
             Margin = new Thickness(0, 0, 10, 0) // Margin from the right edge of the grid cell
-            // MinWidth/Width could be added here if needed to reserve space even when invisible
         };
         rightControlsPanel.Children.Add(toggleAdvPanelButton);
 
@@ -10756,7 +10865,6 @@ public static class MainPlaybackControlsPanel
 
 
         // --- Center Playback Controls Stack (Combined Buttons Panel + Slider) ---
-        // This stack panel contains the combined button panel (now includes shuffle/loop, prev/play/next) and the time/slider grid.
         var centerPlaybackControlsStack = new StackPanel
         {
             Orientation = Orientation.Vertical,
@@ -10765,7 +10873,6 @@ public static class MainPlaybackControlsPanel
             HorizontalAlignment = HorizontalAlignment.Center, // Center this stack panel within its parent grid cell
             VerticalAlignment = VerticalAlignment.Center
         };
-        // Add the combined button panel (now includes shuffle/loop, prev/play/next)
         centerPlaybackControlsStack.Children.Add(combinedPlaybackButtonControlsPanel);
         centerPlaybackControlsStack.Children.Add(timeSliderGrid);
 
@@ -10774,30 +10881,72 @@ public static class MainPlaybackControlsPanel
         var songInfoPanel = SongInfoDisplayPanel.Create(theme);
 
 
-        // --- Main Grid Layout (Restored Single Column Centering) ---
-        // Use a single star (*) column. All children are placed in this column.
-        // Their HorizontalAlignment determines their position within the column.
-        // The centerPlaybackControlsStack has HorizontalAlignment.Center, ensuring it's centered
-        // regardless of the width of the left (songInfoPanel) or right (rightControlsPanel) elements.
-        var outerGrid = new Grid // This is the root panel
+        // --- Grid to hold the content and determine the component's size ---
+        var contentGrid = new Grid
         {
-            Background = theme.B_BackgroundColor,
-            Margin = new Thickness(0, 5, 0, 5), // Vertical margin for the whole control
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            RowDefinitions = new RowDefinitions("Auto"), // Single row, height is Auto based on content
-            ColumnDefinitions = new ColumnDefinitions("*") // Single column spanning the width
+            RowDefinitions = new RowDefinitions("Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,*"),
+            Background = Brushes.Transparent, // This grid is for layout, not appearance.
+            VerticalAlignment = VerticalAlignment.Center
         };
 
-        // Place all panels in the single column (column 0).
-        // Their HorizontalAlignment will handle horizontal positioning.
+        // Place all visible controls into the contentGrid. Their alignment properties will position them correctly.
         Grid.SetColumn(songInfoPanel, 0);
-        Grid.SetColumn(centerPlaybackControlsStack, 0);
-        Grid.SetColumn(rightControlsPanel, 0);
+        Grid.SetColumn(centerPlaybackControlsStack, 1);
+        Grid.SetColumn(rightControlsPanel, 2);
+        contentGrid.Children.Add(songInfoPanel);
+        contentGrid.Children.Add(centerPlaybackControlsStack);
+        contentGrid.Children.Add(rightControlsPanel);
 
-        // Add children in any order; their position is determined by grid layout and alignment.
-        outerGrid.Children.Add(songInfoPanel);
-        outerGrid.Children.Add(centerPlaybackControlsStack);
-        outerGrid.Children.Add(rightControlsPanel);
+
+        // --- Root Grid for background and layering ---
+        var outerGrid = new Grid
+        {
+            Margin = new Thickness(0, 5, 0, 5),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            ClipToBounds = true
+        };
+        outerGrid.Bind(Grid.BackgroundProperty, new Binding("PlaybackAreaBackground"));
+
+        var stretchBackgroundImage = new Image
+        {
+            Stretch = Stretch.Fill,
+            Opacity = 0.2
+        };
+        stretchBackgroundImage.Bind(Image.MaxHeightProperty, new Binding("Bounds.Height") { Source = contentGrid });
+        stretchBackgroundImage.Bind(Image.SourceProperty, new Binding("AlbumArtForStretchBackground"));
+        stretchBackgroundImage.Bind(Visual.IsVisibleProperty, new Binding("ShowAlbumArtStretchBackground"));
+
+        var abstractBackgroundImage = new Image
+        {
+            Stretch = Stretch.Fill,
+            Opacity = 0.35 // Increased opacity for more color presence
+        };
+        abstractBackgroundImage.Bind(Image.MaxHeightProperty, new Binding("Bounds.Height") { Source = contentGrid });
+        abstractBackgroundImage.Bind(Image.SourceProperty, new Binding("AlbumArtForAbstractBackground"));
+        abstractBackgroundImage.Bind(Visual.IsVisibleProperty, new Binding("ShowAlbumArtAbstractBackground"));
+
+
+        var backgroundOverlay = new Border
+        {
+            Background = new SolidColorBrush(Colors.Black, 0.4) // Reduced opacity further
+        };
+        backgroundOverlay.Bind(Visual.IsVisibleProperty, new MultiBinding
+        {
+            Converter = OrBooleanConverter.Instance,
+            Bindings =
+            {
+                new Binding("ShowAlbumArtStretchBackground"),
+                new Binding("ShowAlbumArtAbstractBackground")
+            }
+        });
+
+        // Add layers to the outer grid. Backgrounds first, then the contentGrid on top.
+        outerGrid.Children.Add(stretchBackgroundImage);
+        outerGrid.Children.Add(abstractBackgroundImage);
+        outerGrid.Children.Add(backgroundOverlay);
+        outerGrid.Children.Add(contentGrid);
 
         return outerGrid;
     }
@@ -12237,6 +12386,10 @@ public static class AppearanceSettingsPanel
         panel.Children.Add(CreateGridImageTypeSelector(theme, "Album", "AppearanceSettings.IsAlbumGridSingle", "AppearanceSettings.IsAlbumGridComposite"));
         panel.Children.Add(CreateGridImageTypeSelector(theme, "Playlist", "AppearanceSettings.IsPlaylistGridSingle", "AppearanceSettings.IsPlaylistGridComposite"));
 
+        panel.Children.Add(new Separator { Background = theme.B_ControlBackgroundColor, Margin = new Thickness(0, 5) });
+        panel.Children.Add(CreatePlaybackBackgroundSelector(theme));
+
+
         return panel;
     }
 
@@ -12356,6 +12509,55 @@ public static class AppearanceSettingsPanel
         var radioPanel = new StackPanel { Orientation = Orientation.Vertical, Spacing = 5, Margin = new Thickness(10, 0, 0, 0) };
         radioPanel.Children.Add(singleRadio);
         radioPanel.Children.Add(compositeRadio);
+
+        sectionPanel.Children.Add(title);
+        sectionPanel.Children.Add(radioPanel);
+
+        return sectionPanel;
+    }
+
+    private static StackPanel CreatePlaybackBackgroundSelector(ThemeColors theme)
+    {
+        var sectionPanel = new StackPanel { Spacing = 8 };
+
+        var title = new TextBlock
+        {
+            Text = "Playback Area Background",
+            FontSize = 14,
+            FontWeight = FontWeight.Normal,
+            Foreground = theme.B_TextColor,
+            Margin = new Thickness(0, 10, 0, 5)
+        };
+
+        var solidRadio = new RadioButton
+        {
+            Content = "Solid Color (from theme)",
+            GroupName = "PlaybackBackgroundStyle",
+            Foreground = theme.B_TextColor
+        };
+        solidRadio.Bind(RadioButton.IsCheckedProperty, new Binding("AppearanceSettings.IsPlaybackBackgroundSolid", BindingMode.TwoWay));
+
+        var stretchRadio = new RadioButton
+        {
+            Content = "Stretched Album Art (of current song)",
+            GroupName = "PlaybackBackgroundStyle",
+            Foreground = theme.B_TextColor
+        };
+        stretchRadio.Bind(RadioButton.IsCheckedProperty, new Binding("AppearanceSettings.IsPlaybackBackgroundAlbumArtStretch", BindingMode.TwoWay));
+
+        var abstractRadio = new RadioButton
+        {
+            Content = "Abstract Album Art (of current song)",
+            GroupName = "PlaybackBackgroundStyle",
+            Foreground = theme.B_TextColor
+        };
+        abstractRadio.Bind(RadioButton.IsCheckedProperty, new Binding("AppearanceSettings.IsPlaybackBackgroundAlbumArtAbstract", BindingMode.TwoWay));
+
+
+        var radioPanel = new StackPanel { Orientation = Orientation.Vertical, Spacing = 5, Margin = new Thickness(10, 0, 0, 0) };
+        radioPanel.Children.Add(solidRadio);
+        radioPanel.Children.Add(stretchRadio);
+        radioPanel.Children.Add(abstractRadio);
 
         sectionPanel.Children.Add(title);
         sectionPanel.Children.Add(radioPanel);

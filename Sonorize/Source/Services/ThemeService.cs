@@ -55,6 +55,7 @@ public class ThemeService
         string defaultThemePath = Path.Combine(_themesDirectory, DefaultThemeFileName);
         if (!File.Exists(defaultThemePath))
         {
+            // Pass a new instance with default values, including new metrics
             SaveThemeToFile(new ThemeColors(), DefaultThemeFileName);
         }
 

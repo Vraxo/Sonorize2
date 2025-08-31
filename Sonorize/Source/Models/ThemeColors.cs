@@ -1,4 +1,5 @@
 ﻿using System.Text.Json.Serialization;
+using Avalonia;
 using Avalonia.Media;
 
 namespace Sonorize.Models;
@@ -17,6 +18,10 @@ public class ThemeColors
     // --- ListBox Specific Colors ---
     public string ListBoxBackground { get; set; } = "#FF2D2D30"; // Default: Same as SlightlyLighterBackground
 
+    // --- New: Metrics for skinning ---
+    public double ControlCornerRadiusValue { get; set; } = 3.0;
+    public double DefaultBorderThicknessValue { get; set; } = 1.0;
+
     // --- Brush Properties ---
     [JsonIgnore] public IBrush B_BackgroundColor => SolidColorBrush.Parse(BackgroundColor);
     [JsonIgnore] public IBrush B_SlightlyLighterBackground => SolidColorBrush.Parse(SlightlyLighterBackground);
@@ -26,6 +31,11 @@ public class ThemeColors
     [JsonIgnore] public IBrush B_AccentColor => SolidColorBrush.Parse(AccentColor);
     [JsonIgnore] public IBrush B_AccentForeground => SolidColorBrush.Parse(AccentForeground);
     [JsonIgnore] public IBrush B_ListBoxBackground => SolidColorBrush.Parse(ListBoxBackground);
+
+    // --- New: Metric Struct Properties ---
+    [JsonIgnore] public CornerRadius C_ControlCornerRadius => new(ControlCornerRadiusValue);
+    [JsonIgnore] public Thickness T_DefaultBorderThickness => new(DefaultBorderThicknessValue);
+
 
     public static ThemeColors CreateAmoledSpotifyTheme()
     {
@@ -38,7 +48,9 @@ public class ThemeColors
             SecondaryTextColor = "#FFB3B3B3",
             AccentColor = "#FF1DB954",      // Spotify Green
             AccentForeground = "#FF000000",  // Black text on green buttons
-            ListBoxBackground = "#FF000000"   // <<< CRUCIAL FOR AMOLED LIST ITEMS (unselected)
+            ListBoxBackground = "#FF000000",   // <<< CRUCIAL FOR AMOLED LIST ITEMS (unselected)
+            ControlCornerRadiusValue = 22.0, // Spotify has very rounded buttons
+            DefaultBorderThicknessValue = 1.0
         };
     }
 }

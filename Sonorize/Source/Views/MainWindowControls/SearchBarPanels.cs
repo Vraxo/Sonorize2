@@ -1,6 +1,7 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
+using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Styling;
 using Sonorize.Models; // For ThemeColors
 
@@ -18,12 +19,13 @@ public static class SearchBarPanel
             Background = theme.B_SlightlyLighterBackground,
             Foreground = theme.B_TextColor,
             BorderBrush = theme.B_ControlBackgroundColor,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4),
             FontSize = 14
         };
         // Bind to Library.FilterState.SearchQuery
         searchBox.Bind(TextBox.TextProperty, new Binding("Library.FilterState.SearchQuery", BindingMode.TwoWay));
+        searchBox.Bind(TextBox.BorderThicknessProperty, new DynamicResourceExtension("ThemeBorderThickness"));
+        searchBox.Bind(TextBox.CornerRadiusProperty, new DynamicResourceExtension("ThemeControlCornerRadius"));
+
 
         searchBox.Styles.Add(new Style(s => s.Is<TextBox>().Class(":focus"))
         {

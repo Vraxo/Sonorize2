@@ -1,6 +1,7 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
+using Avalonia.Markup.Xaml.MarkupExtensions;
 using Sonorize.Models; // For ThemeColors
 using Sonorize.ViewModels; // For SettingsViewModel
 
@@ -18,7 +19,8 @@ public static class SettingsButtonPanel
             Margin = new Thickness(15) // Consistent margin
         };
 
-        var saveButton = new Button { Content = "Save & Close", Background = theme.B_AccentColor, Foreground = theme.B_AccentForeground, Padding = new Thickness(15, 8), CornerRadius = new CornerRadius(3) };
+        var saveButton = new Button { Content = "Save & Close", Background = theme.B_AccentColor, Foreground = theme.B_AccentForeground, Padding = new Thickness(15, 8) };
+        saveButton.Bind(Button.CornerRadiusProperty, new DynamicResourceExtension("ThemeControlCornerRadius"));
         saveButton.Click += (s, e) =>
         {
             if (ownerWindow.DataContext is SettingsViewModel vm)
@@ -28,7 +30,8 @@ public static class SettingsButtonPanel
             ownerWindow.Close();
         };
 
-        var cancelButton = new Button { Content = "Cancel", Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor, Padding = new Thickness(15, 8), CornerRadius = new CornerRadius(3) };
+        var cancelButton = new Button { Content = "Cancel", Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor, Padding = new Thickness(15, 8) };
+        cancelButton.Bind(Button.CornerRadiusProperty, new DynamicResourceExtension("ThemeControlCornerRadius"));
         cancelButton.Click += (s, e) => ownerWindow.Close();
 
         buttonsPanel.Children.Add(saveButton);

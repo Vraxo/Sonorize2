@@ -2,6 +2,7 @@
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Layout;
+using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Media;
 using Avalonia.Media.Imaging; // Required for BitmapInterpolationMode
 using Sonorize.Models; // For ThemeColors
@@ -127,9 +128,9 @@ public class SongMetadataEditorWindow : Window
             Content = "Save",
             Background = _theme.B_AccentColor,
             Foreground = _theme.B_AccentForeground,
-            Padding = new Thickness(15, 8),
-            CornerRadius = new CornerRadius(3)
+            Padding = new Thickness(15, 8)
         };
+        saveButton.Bind(Button.CornerRadiusProperty, new DynamicResourceExtension("ThemeControlCornerRadius"));
         saveButton.Bind(Button.CommandProperty, new Binding("SaveCommand"));
 
         var cancelButton = new Button
@@ -137,9 +138,9 @@ public class SongMetadataEditorWindow : Window
             Content = "Cancel",
             Background = _theme.B_ControlBackgroundColor,
             Foreground = _theme.B_TextColor,
-            Padding = new Thickness(15, 8),
-            CornerRadius = new CornerRadius(3)
+            Padding = new Thickness(15, 8)
         };
+        cancelButton.Bind(Button.CornerRadiusProperty, new DynamicResourceExtension("ThemeControlCornerRadius"));
         cancelButton.Bind(Button.CommandProperty, new Binding("CancelCommand"));
 
         buttonPanel.Children.Add(saveButton);
