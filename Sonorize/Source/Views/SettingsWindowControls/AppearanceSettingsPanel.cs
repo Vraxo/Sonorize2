@@ -23,6 +23,8 @@ public static class AppearanceSettingsPanel
             Margin = new Thickness(0, 0, 0, 5)
         });
 
+        panel.Children.Add(CreatePlatformEffectsSelector(theme));
+        panel.Children.Add(new Separator { Background = theme.B_ControlBackgroundColor, Margin = new Thickness(0, 5) });
         panel.Children.Add(CreateLibraryColumnsSelector(theme));
         panel.Children.Add(new Separator { Background = theme.B_ControlBackgroundColor, Margin = new Thickness(0, 5) });
 
@@ -35,6 +37,46 @@ public static class AppearanceSettingsPanel
 
 
         return panel;
+    }
+
+    private static StackPanel CreatePlatformEffectsSelector(ThemeColors theme)
+    {
+        var sectionPanel = new StackPanel { Spacing = 8 };
+
+        var title = new TextBlock
+        {
+            Text = "Platform Effects (Windows 11)",
+            FontSize = 14,
+            FontWeight = FontWeight.Normal,
+            Foreground = theme.B_TextColor,
+            Margin = new Thickness(0, 0, 0, 5)
+        };
+
+        var micaCheck = new CheckBox
+        {
+            Content = "Enable Mica background effect",
+            Foreground = theme.B_TextColor,
+        };
+        micaCheck.Bind(CheckBox.IsCheckedProperty, new Binding("AppearanceSettings.EnableMicaEffect", BindingMode.TwoWay));
+
+        var checkPanel = new StackPanel { Spacing = 5, Margin = new Thickness(10, 0, 0, 0) };
+        checkPanel.Children.Add(micaCheck);
+
+        var restartLabel = new TextBlock
+        {
+            Text = "Requires application restart to apply.",
+            FontSize = 10,
+            Foreground = theme.B_SecondaryTextColor,
+            FontStyle = FontStyle.Italic,
+            Margin = new Thickness(10, 2, 0, 0),
+            TextWrapping = TextWrapping.Wrap
+        };
+
+        sectionPanel.Children.Add(title);
+        sectionPanel.Children.Add(checkPanel);
+        sectionPanel.Children.Add(restartLabel);
+
+        return sectionPanel;
     }
 
     private static StackPanel CreateLibraryColumnsSelector(ThemeColors theme)

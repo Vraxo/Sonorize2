@@ -22,7 +22,7 @@ public class MainWindow : Window
     private LibraryViewModel? _currentLibraryVM;
     private readonly SharedViewTemplates _sharedViewTemplates;
     private readonly MainTabViewControls _mainTabViewControls;
-    public MainWindow(ThemeColors theme)
+    public MainWindow(ThemeColors theme, bool isMicaEnabled = false)
     {
         _theme = theme;
         _sharedViewTemplates = new SharedViewTemplates(_theme);
@@ -48,6 +48,13 @@ public class MainWindow : Window
                 new(GridLength.Auto)
             ]
         };
+
+        if (isMicaEnabled)
+        {
+            // Add margin to push content below the title bar area
+            // when client area is extended.
+            mainGrid.Margin = new Thickness(0, 30, 0, 0);
+        }
 
         var menu = MainMenu.Create(_theme, this);
         Grid.SetRow(menu, 0);

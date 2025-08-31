@@ -18,6 +18,7 @@ public class AppSettings
     public string AlbumGridViewImageType { get; set; } = "Composite";
     public string PlaylistGridViewImageType { get; set; } = "Composite";
     public string PlaybackAreaBackgroundStyle { get; set; } = "Solid";
+    public bool EnableMicaEffect { get; set; } = false;
 
     // Library List Column Preferences
     public bool ShowArtistInLibrary { get; set; } = true;

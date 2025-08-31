@@ -31,12 +31,13 @@ public class SettingsChangeProcessorService
             // Status text during library loading is handled by LibraryViewModel/MusicLibraryService
         }
 
-        // Theme changes
+        // Theme or Mica changes that require restart
         bool themeActuallyChanged = oldSettings.PreferredThemeFileName != newSettings.PreferredThemeFileName;
-        if (themeActuallyChanged)
+        bool micaActuallyChanged = oldSettings.EnableMicaEffect != newSettings.EnableMicaEffect;
+        if (themeActuallyChanged || micaActuallyChanged)
         {
-            Debug.WriteLine("[SettingsChangeProcessor] Theme changed. Restart recommended.");
-            statusMessages.Add("Theme changed. Restart Sonorize for full effect.");
+            Debug.WriteLine("[SettingsChangeProcessor] Theme or Mica effect setting changed. Restart recommended.");
+            statusMessages.Add("Appearance settings changed. Restart Sonorize for full effect.");
         }
 
         // Appearance changes (including library columns)
@@ -72,40 +73,40 @@ public class SettingsChangeProcessorService
             if (_scrobblingService.IsScrobblingEnabled && _scrobblingService.AreCredentialsEffectivelyConfigured)
             {
                 // Check if already added "Theme changed..." to avoid overwriting it with a less critical message
-                if (!statusMessages.Any(m => m.Contains("Theme changed")))
+                if (!statusMessages.Any(m => m.Contains("Appearance settings changed")))
                 {
                     statusMessages.Add("Scrobbling enabled and configured.");
                 }
                 else
                 {
                     // Append if theme change message exists
-                    var themeMsgIndex = statusMessages.FindIndex(m => m.Contains("Theme changed"));
+                    var themeMsgIndex = statusMessages.FindIndex(m => m.Contains("Appearance settings changed"));
                     if (themeMsgIndex != -1) statusMessages[themeMsgIndex] += " Scrobbling enabled.";
                     else statusMessages.Add("Scrobbling enabled and configured.");
                 }
             }
             else if (_scrobblingService.IsScrobblingEnabled && !_scrobblingService.AreCredentialsEffectivelyConfigured)
             {
-                if (!statusMessages.Any(m => m.Contains("Theme changed")))
+                if (!statusMessages.Any(m => m.Contains("Appearance settings changed")))
                 {
                     statusMessages.Add("Scrobbling enabled, but not configured. Check settings.");
                 }
                 else
                 {
-                    var themeMsgIndex = statusMessages.FindIndex(m => m.Contains("Theme changed"));
+                    var themeMsgIndex = statusMessages.FindIndex(m => m.Contains("Appearance settings changed"));
                     if (themeMsgIndex != -1) statusMessages[themeMsgIndex] += " Scrobbling enabled (check config).";
                     else statusMessages.Add("Scrobbling enabled, but not configured. Check settings.");
                 }
             }
             else if (!_scrobblingService.IsScrobblingEnabled && oldSettings.LastfmScrobblingEnabled)
             {
-                if (!statusMessages.Any(m => m.Contains("Theme changed")))
+                if (!statusMessages.Any(m => m.Contains("Appearance settings changed")))
                 {
                     statusMessages.Add("Scrobbling disabled.");
                 }
                 else
                 {
-                    var themeMsgIndex = statusMessages.FindIndex(m => m.Contains("Theme changed"));
+                    var themeMsgIndex = statusMessages.FindIndex(m => m.Contains("Appearance settings changed"));
                     if (themeMsgIndex != -1) statusMessages[themeMsgIndex] += " Scrobbling disabled.";
                     else statusMessages.Add("Scrobbling disabled.");
                 }
