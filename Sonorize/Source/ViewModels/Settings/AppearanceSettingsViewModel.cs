@@ -1,8 +1,16 @@
 using System;
+using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using Avalonia.Controls;
+using Avalonia.Data.Converters;
+using Avalonia.Data;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia;
 using Sonorize.Models;
 using Sonorize.Services;
 using Sonorize.ViewModels;
+using Sonorize.Views.MainWindowControls;
 
 namespace Sonorize.ViewModels.Settings
 {
@@ -54,7 +62,9 @@ namespace Sonorize.ViewModels.Settings
         public bool IsPlaylistGridSingle { get => PlaylistGridType == GridViewImageType.Single; set { if (value) PlaylistGridType = GridViewImageType.Single; } }
         public bool IsPlaylistGridComposite { get => PlaylistGridType == GridViewImageType.Composite; set { if (value) PlaylistGridType = GridViewImageType.Composite; } }
         public bool IsPlaybackBackgroundSolid { get => PlaybackBackgroundStyle == PlaybackAreaBackgroundStyle.Solid; set { if (value) PlaybackBackgroundStyle = PlaybackAreaBackgroundStyle.Solid; } }
-        public bool IsPlaybackBackgroundAlbumArtBlur { get => PlaybackBackgroundStyle == PlaybackAreaBackgroundStyle.AlbumArtBlur; set { if (value) PlaybackBackgroundStyle = PlaybackAreaBackgroundStyle.AlbumArtBlur; } }
+        public bool IsPlaybackBackgroundAlbumArtStretch { get => PlaybackBackgroundStyle == PlaybackAreaBackgroundStyle.AlbumArtStretch; set { if (value) PlaybackBackgroundStyle = PlaybackAreaBackgroundStyle.AlbumArtStretch; } }
+        public bool IsPlaybackBackgroundAlbumArtAbstract { get => PlaybackBackgroundStyle == PlaybackAreaBackgroundStyle.AlbumArtAbstract; set { if (value) PlaybackBackgroundStyle = PlaybackAreaBackgroundStyle.AlbumArtAbstract; } }
+
 
         public bool HasChangesFromInitialState =>
             _initialArtistGridType != ArtistGridType ||
@@ -107,7 +117,9 @@ namespace Sonorize.ViewModels.Settings
             OnPropertyChanged(nameof(IsPlaylistGridSingle));
             OnPropertyChanged(nameof(IsPlaylistGridComposite));
             OnPropertyChanged(nameof(IsPlaybackBackgroundSolid));
-            OnPropertyChanged(nameof(IsPlaybackBackgroundAlbumArtBlur));
+            OnPropertyChanged(nameof(IsPlaybackBackgroundAlbumArtStretch));
+            OnPropertyChanged(nameof(IsPlaybackBackgroundAlbumArtAbstract));
+
 
             // Notify change detection and parent
             OnPropertyChanged(nameof(HasChangesFromInitialState));

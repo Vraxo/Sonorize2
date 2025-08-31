@@ -181,17 +181,27 @@ public static class AppearanceSettingsPanel
         };
         solidRadio.Bind(RadioButton.IsCheckedProperty, new Binding("AppearanceSettings.IsPlaybackBackgroundSolid", BindingMode.TwoWay));
 
-        var blurRadio = new RadioButton
+        var stretchRadio = new RadioButton
         {
-            Content = "Blurred Album Art (of current song)",
+            Content = "Stretched Album Art (of current song)",
             GroupName = "PlaybackBackgroundStyle",
             Foreground = theme.B_TextColor
         };
-        blurRadio.Bind(RadioButton.IsCheckedProperty, new Binding("AppearanceSettings.IsPlaybackBackgroundAlbumArtBlur", BindingMode.TwoWay));
+        stretchRadio.Bind(RadioButton.IsCheckedProperty, new Binding("AppearanceSettings.IsPlaybackBackgroundAlbumArtStretch", BindingMode.TwoWay));
+
+        var abstractRadio = new RadioButton
+        {
+            Content = "Abstract Album Art (of current song)",
+            GroupName = "PlaybackBackgroundStyle",
+            Foreground = theme.B_TextColor
+        };
+        abstractRadio.Bind(RadioButton.IsCheckedProperty, new Binding("AppearanceSettings.IsPlaybackBackgroundAlbumArtAbstract", BindingMode.TwoWay));
+
 
         var radioPanel = new StackPanel { Orientation = Orientation.Vertical, Spacing = 5, Margin = new Thickness(10, 0, 0, 0) };
         radioPanel.Children.Add(solidRadio);
-        radioPanel.Children.Add(blurRadio);
+        radioPanel.Children.Add(stretchRadio);
+        radioPanel.Children.Add(abstractRadio);
 
         sectionPanel.Children.Add(title);
         sectionPanel.Children.Add(radioPanel);

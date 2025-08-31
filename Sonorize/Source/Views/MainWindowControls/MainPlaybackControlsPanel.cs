@@ -4,6 +4,7 @@ using Avalonia.Data;
 using Avalonia.Data.Converters; // Added required using directive for FuncValueConverter
 using Avalonia.Layout;
 using Avalonia.Media;
+using Sonorize.Converters;
 using Sonorize.Models;
 
 namespace Sonorize.Views.MainWindowControls;
@@ -103,25 +104,42 @@ public static class MainPlaybackControlsPanel
         };
         outerGrid.Bind(Grid.BackgroundProperty, new Binding("PlaybackAreaBackground"));
 
-        var backgroundImage = new Image
+        var stretchBackgroundImage = new Image
         {
             Stretch = Stretch.Fill,
             Opacity = 0.2
         };
-        // Bind MaxHeight to the content grid's height to prevent the image from expanding its parent.
-        // Use a direct source binding instead of ElementName to avoid NameScope issues in code-behind.
-        backgroundImage.Bind(Image.MaxHeightProperty, new Binding("Bounds.Height") { Source = contentGrid });
-        backgroundImage.Bind(Image.SourceProperty, new Binding("AlbumArtForBackground"));
-        backgroundImage.Bind(Visual.IsVisibleProperty, new Binding("ShowAlbumArtBackground"));
+        stretchBackgroundImage.Bind(Image.MaxHeightProperty, new Binding("Bounds.Height") { Source = contentGrid });
+        stretchBackgroundImage.Bind(Image.SourceProperty, new Binding("AlbumArtForBackground"));
+        stretchBackgroundImage.Bind(Visual.IsVisibleProperty, new Binding("ShowAlbumArtStretchBackground"));
+
+        var abstractBackgroundImage = new Image
+        {
+            Stretch = Stretch.UniformToFill, // Keeps aspect ratio, will zoom and crop to fill space
+            Opacity = 0.15
+        };
+        abstractBackgroundImage.Bind(Image.MaxHeightProperty, new Binding("Bounds.Height") { Source = contentGrid });
+        abstractBackgroundImage.Bind(Image.SourceProperty, new Binding("AlbumArtForBackground"));
+        abstractBackgroundImage.Bind(Visual.IsVisibleProperty, new Binding("ShowAlbumArtAbstractBackground"));
+
 
         var backgroundOverlay = new Border
         {
             Background = new SolidColorBrush(Colors.Black, 0.6) // Semi-transparent black overlay to darken the image
         };
-        backgroundOverlay.Bind(Visual.IsVisibleProperty, new Binding("ShowAlbumArtBackground"));
+        backgroundOverlay.Bind(Visual.IsVisibleProperty, new MultiBinding
+        {
+            Converter = OrBooleanConverter.Instance,
+            Bindings =
+            {
+                new Binding("ShowAlbumArtStretchBackground"),
+                new Binding("ShowAlbumArtAbstractBackground")
+            }
+        });
 
         // Add layers to the outer grid. Backgrounds first, then the contentGrid on top.
-        outerGrid.Children.Add(backgroundImage);
+        outerGrid.Children.Add(stretchBackgroundImage);
+        outerGrid.Children.Add(abstractBackgroundImage);
         outerGrid.Children.Add(backgroundOverlay);
         outerGrid.Children.Add(contentGrid);
 

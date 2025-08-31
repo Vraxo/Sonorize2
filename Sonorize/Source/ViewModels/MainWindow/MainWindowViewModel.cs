@@ -39,7 +39,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     // --- Background Properties ---
     public IBrush PlaybackAreaBackground { get; private set; }
     public Bitmap? AlbumArtForBackground { get; private set; }
-    public bool ShowAlbumArtBackground { get; private set; }
+    public bool ShowAlbumArtStretchBackground { get; private set; }
+    public bool ShowAlbumArtAbstractBackground { get; private set; }
+
 
     private int _activeTabIndex;
     public int ActiveTabIndex
@@ -186,33 +188,36 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         var settings = _componentsManager.SettingsServiceProperty.LoadSettings();
         var style = Enum.TryParse<PlaybackAreaBackgroundStyle>(settings.PlaybackAreaBackgroundStyle, out var s) ? s : PlaybackAreaBackgroundStyle.Solid;
 
-        if (style == PlaybackAreaBackgroundStyle.Solid)
-        {
-            ShowAlbumArtBackground = false;
-            AlbumArtForBackground = null;
-            PlaybackAreaBackground = CurrentTheme.B_BackgroundColor;
-        }
-        else // AlbumArtBlur
+        // Reset state
+        ShowAlbumArtStretchBackground = false;
+        ShowAlbumArtAbstractBackground = false;
+        AlbumArtForBackground = null;
+        PlaybackAreaBackground = CurrentTheme.B_BackgroundColor;
+
+        if (style == PlaybackAreaBackgroundStyle.AlbumArtStretch || style == PlaybackAreaBackgroundStyle.AlbumArtAbstract)
         {
             Bitmap? defaultThumb = _componentsManager.MusicLibraryServiceProperty.GetDefaultThumbnail();
 
             if (Playback.CurrentSong?.Thumbnail != null && Playback.CurrentSong.Thumbnail != defaultThumb)
             {
-                ShowAlbumArtBackground = true;
                 AlbumArtForBackground = Playback.CurrentSong.Thumbnail;
-                PlaybackAreaBackground = Brushes.Transparent;
-            }
-            else
-            {
-                ShowAlbumArtBackground = false;
-                AlbumArtForBackground = null;
-                PlaybackAreaBackground = CurrentTheme.B_BackgroundColor;
+                PlaybackAreaBackground = Brushes.Transparent; // Make panel transparent to see image behind it
+
+                if (style == PlaybackAreaBackgroundStyle.AlbumArtStretch)
+                {
+                    ShowAlbumArtStretchBackground = true;
+                }
+                else // AlbumArtAbstract
+                {
+                    ShowAlbumArtAbstractBackground = true;
+                }
             }
         }
 
         OnPropertyChanged(nameof(PlaybackAreaBackground));
         OnPropertyChanged(nameof(AlbumArtForBackground));
-        OnPropertyChanged(nameof(ShowAlbumArtBackground));
+        OnPropertyChanged(nameof(ShowAlbumArtStretchBackground));
+        OnPropertyChanged(nameof(ShowAlbumArtAbstractBackground));
     }
 
 

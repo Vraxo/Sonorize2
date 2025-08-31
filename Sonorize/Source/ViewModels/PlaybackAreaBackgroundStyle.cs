@@ -3,5 +3,6 @@
 public enum PlaybackAreaBackgroundStyle
 {
     Solid,
-    AlbumArtBlur
+    AlbumArtStretch,
+    AlbumArtAbstract
 }
