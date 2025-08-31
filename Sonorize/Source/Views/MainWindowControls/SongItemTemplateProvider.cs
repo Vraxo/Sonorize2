@@ -19,6 +19,11 @@ public class SongItemTemplateProvider
 {
     private readonly ThemeColors _theme;
 
+    // PERF: Create a single, static converter instance to be shared by all list items.
+    // This avoids creating thousands of new converter objects during fast scrolling.
+    private static readonly IValueConverter BoolToOpacityConverter =
+        new FuncValueConverter<bool, double>(v => v ? 1.0 : 0.0);
+
     public FuncDataTemplate<Song> DetailedSongTemplate { get; private set; }
     public FuncDataTemplate<Song> CompactSongTemplate { get; private set; }
     public FuncDataTemplate<Song> GridSongTemplate { get; private set; }
@@ -59,8 +64,6 @@ public class SongItemTemplateProvider
 
     private void InitializeSongTemplates()
     {
-        var boolToOpacityConverter = new FuncValueConverter<bool, double>(v => v ? 1.0 : 0.0);
-
         // Detailed Song Template
         DetailedSongTemplate = new FuncDataTemplate<Song>((dataContext, nameScope) =>
         {
@@ -100,36 +103,36 @@ public class SongItemTemplateProvider
 
             var artistBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
             artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
-            // PERF: Bind Opacity instead of IsVisible to avoid layout recalculation.
-            artistBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowArtist") { Source = itemGrid, Converter = boolToOpacityConverter });
+            // PERF: Bind Opacity instead of IsVisible to avoid layout recalculation. Use the static converter.
+            artistBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowArtist") { Source = itemGrid, Converter = BoolToOpacityConverter });
             Grid.SetColumn(artistBlock, 2);
             itemGrid.Children.Add(artistBlock);
 
             var albumBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
             albumBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Album)));
-            // PERF: Bind Opacity instead of IsVisible.
-            albumBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowAlbum") { Source = itemGrid, Converter = boolToOpacityConverter });
+            // PERF: Bind Opacity instead of IsVisible. Use the static converter.
+            albumBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowAlbum") { Source = itemGrid, Converter = BoolToOpacityConverter });
             Grid.SetColumn(albumBlock, 3);
             itemGrid.Children.Add(albumBlock);
 
             var playCountBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0), HorizontalAlignment = HorizontalAlignment.Right };
             playCountBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.PlayCount)));
-            // PERF: Bind Opacity instead of IsVisible.
-            playCountBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowPlayCount") { Source = itemGrid, Converter = boolToOpacityConverter });
+            // PERF: Bind Opacity instead of IsVisible. Use the static converter.
+            playCountBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowPlayCount") { Source = itemGrid, Converter = BoolToOpacityConverter });
             Grid.SetColumn(playCountBlock, 4);
             itemGrid.Children.Add(playCountBlock);
 
             var dateAddedBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0), HorizontalAlignment = HorizontalAlignment.Right };
             dateAddedBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DateAdded)) { StringFormat = "{0:yyyy-MM-dd}" });
-            // PERF: Bind Opacity instead of IsVisible.
-            dateAddedBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowDateAdded") { Source = itemGrid, Converter = boolToOpacityConverter });
+            // PERF: Bind Opacity instead of IsVisible. Use the static converter.
+            dateAddedBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowDateAdded") { Source = itemGrid, Converter = BoolToOpacityConverter });
             Grid.SetColumn(dateAddedBlock, 5);
             itemGrid.Children.Add(dateAddedBlock);
 
             var durationBlock = new TextBlock { FontSize = 12, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
             durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
-            // PERF: Bind Opacity instead of IsVisible.
-            durationBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowDuration") { Source = itemGrid, Converter = boolToOpacityConverter });
+            // PERF: Bind Opacity instead of IsVisible. Use the static converter.
+            durationBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowDuration") { Source = itemGrid, Converter = BoolToOpacityConverter });
             Grid.SetColumn(durationBlock, 6);
             itemGrid.Children.Add(durationBlock);
 
@@ -176,36 +179,36 @@ public class SongItemTemplateProvider
 
             var artistBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
             artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
-            // PERF: Bind Opacity instead of IsVisible.
-            artistBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowArtist") { Source = itemGrid, Converter = boolToOpacityConverter });
+            // PERF: Bind Opacity instead of IsVisible. Use the static converter.
+            artistBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowArtist") { Source = itemGrid, Converter = BoolToOpacityConverter });
             Grid.SetColumn(artistBlock, 1);
             itemGrid.Children.Add(artistBlock);
 
             var albumBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
             albumBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Album)));
-            // PERF: Bind Opacity instead of IsVisible.
-            albumBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowAlbum") { Source = itemGrid, Converter = boolToOpacityConverter });
+            // PERF: Bind Opacity instead of IsVisible. Use the static converter.
+            albumBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowAlbum") { Source = itemGrid, Converter = BoolToOpacityConverter });
             Grid.SetColumn(albumBlock, 2);
             itemGrid.Children.Add(albumBlock);
 
             var playCountBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0), HorizontalAlignment = HorizontalAlignment.Right };
             playCountBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.PlayCount)));
-            // PERF: Bind Opacity instead of IsVisible.
-            playCountBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowPlayCount") { Source = itemGrid, Converter = boolToOpacityConverter });
+            // PERF: Bind Opacity instead of IsVisible. Use the static converter.
+            playCountBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowPlayCount") { Source = itemGrid, Converter = BoolToOpacityConverter });
             Grid.SetColumn(playCountBlock, 3);
             itemGrid.Children.Add(playCountBlock);
 
             var dateAddedBlock = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0), HorizontalAlignment = HorizontalAlignment.Right };
             dateAddedBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DateAdded)) { StringFormat = "{0:yyyy-MM-dd}" });
-            // PERF: Bind Opacity instead of IsVisible.
-            dateAddedBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowDateAdded") { Source = itemGrid, Converter = boolToOpacityConverter });
+            // PERF: Bind Opacity instead of IsVisible. Use the static converter.
+            dateAddedBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowDateAdded") { Source = itemGrid, Converter = BoolToOpacityConverter });
             Grid.SetColumn(dateAddedBlock, 4);
             itemGrid.Children.Add(dateAddedBlock);
 
             var durationBlock = new TextBlock { FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
             durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
-            // PERF: Bind Opacity instead of IsVisible.
-            durationBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowDuration") { Source = itemGrid, Converter = boolToOpacityConverter });
+            // PERF: Bind Opacity instead of IsVisible. Use the static converter.
+            durationBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowDuration") { Source = itemGrid, Converter = BoolToOpacityConverter });
             Grid.SetColumn(durationBlock, 5);
             itemGrid.Children.Add(durationBlock);
 
