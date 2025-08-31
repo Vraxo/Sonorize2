@@ -23,7 +23,6 @@ namespace Sonorize.ViewModels.Settings
         private GridViewImageType _albumGridType;
         private GridViewImageType _playlistGridType;
         private PlaybackAreaBackgroundStyle _playbackBackgroundStyle;
-        private bool _enableMicaEffect;
         private bool _showArtistInLibrary;
         private bool _showAlbumInLibrary;
         private bool _showDurationInLibrary;
@@ -36,7 +35,6 @@ namespace Sonorize.ViewModels.Settings
         private readonly GridViewImageType _initialAlbumGridType;
         private readonly GridViewImageType _initialPlaylistGridType;
         private readonly PlaybackAreaBackgroundStyle _initialPlaybackBackgroundStyle;
-        private readonly bool _initialEnableMicaEffect;
         private readonly bool _initialShowArtist;
         private readonly bool _initialShowAlbum;
         private readonly bool _initialShowDuration;
@@ -49,7 +47,6 @@ namespace Sonorize.ViewModels.Settings
         public GridViewImageType AlbumGridType { get => _albumGridType; private set { if (_albumGridType != value) { _albumGridType = value; OnAppearanceChanged(); } } }
         public GridViewImageType PlaylistGridType { get => _playlistGridType; private set { if (_playlistGridType != value) { _playlistGridType = value; OnAppearanceChanged(); } } }
         public PlaybackAreaBackgroundStyle PlaybackBackgroundStyle { get => _playbackBackgroundStyle; private set { if (_playbackBackgroundStyle != value) { _playbackBackgroundStyle = value; OnAppearanceChanged(); } } }
-        public bool EnableMicaEffect { get => _enableMicaEffect; set { if (_enableMicaEffect != value) { _enableMicaEffect = value; OnAppearanceChanged(); } } }
         public bool ShowArtistInLibrary { get => _showArtistInLibrary; set { if (_showArtistInLibrary != value) { _showArtistInLibrary = value; OnAppearanceChanged(); } } }
         public bool ShowAlbumInLibrary { get => _showAlbumInLibrary; set { if (_showAlbumInLibrary != value) { _showAlbumInLibrary = value; OnAppearanceChanged(); } } }
         public bool ShowDurationInLibrary { get => _showDurationInLibrary; set { if (_showDurationInLibrary != value) { _showDurationInLibrary = value; OnAppearanceChanged(); } } }
@@ -74,7 +71,6 @@ namespace Sonorize.ViewModels.Settings
             _initialAlbumGridType != AlbumGridType ||
             _initialPlaylistGridType != PlaylistGridType ||
             _initialPlaybackBackgroundStyle != PlaybackBackgroundStyle ||
-            _initialEnableMicaEffect != EnableMicaEffect ||
             _initialShowArtist != ShowArtistInLibrary ||
             _initialShowAlbum != ShowAlbumInLibrary ||
             _initialShowDuration != ShowDurationInLibrary ||
@@ -90,7 +86,6 @@ namespace Sonorize.ViewModels.Settings
             _initialAlbumGridType = Enum.TryParse<GridViewImageType>(settings.AlbumGridViewImageType, out var alhgt) ? alhgt : GridViewImageType.Composite;
             _initialPlaylistGridType = Enum.TryParse<GridViewImageType>(settings.PlaylistGridViewImageType, out var pgt) ? pgt : GridViewImageType.Composite;
             _initialPlaybackBackgroundStyle = Enum.TryParse<PlaybackAreaBackgroundStyle>(settings.PlaybackAreaBackgroundStyle, out var pbs) ? pbs : PlaybackAreaBackgroundStyle.Solid;
-            _initialEnableMicaEffect = settings.EnableMicaEffect;
             _initialShowArtist = settings.ShowArtistInLibrary;
             _initialShowAlbum = settings.ShowAlbumInLibrary;
             _initialShowDuration = settings.ShowDurationInLibrary;
@@ -102,7 +97,6 @@ namespace Sonorize.ViewModels.Settings
             _albumGridType = _initialAlbumGridType;
             _playlistGridType = _initialPlaylistGridType;
             _playbackBackgroundStyle = _initialPlaybackBackgroundStyle;
-            _enableMicaEffect = _initialEnableMicaEffect;
             _showArtistInLibrary = _initialShowArtist;
             _showAlbumInLibrary = _initialShowAlbum;
             _showDurationInLibrary = _initialShowDuration;
@@ -138,7 +132,6 @@ namespace Sonorize.ViewModels.Settings
             settings.AlbumGridViewImageType = AlbumGridType.ToString();
             settings.PlaylistGridViewImageType = PlaylistGridType.ToString();
             settings.PlaybackAreaBackgroundStyle = PlaybackBackgroundStyle.ToString();
-            settings.EnableMicaEffect = EnableMicaEffect;
             settings.ShowArtistInLibrary = ShowArtistInLibrary;
             settings.ShowAlbumInLibrary = ShowAlbumInLibrary;
             settings.ShowDurationInLibrary = ShowDurationInLibrary;
