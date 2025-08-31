@@ -11,6 +11,7 @@ using System.Diagnostics;
 using Avalonia.Input;
 using Avalonia.VisualTree;
 using Avalonia.Data.Converters;
+using Sonorize.Converters; // Added for BooleanToGridLengthConverter
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -65,11 +66,18 @@ public class SongItemTemplateProvider
 
     private FuncDataTemplate<Song> CreateListSongTemplate(bool isDetailed)
     {
-        var boolToOpacityConverter = new FuncValueConverter<bool, double>(v => v ? 1.0 : 0.0);
-
         return new FuncDataTemplate<Song>((dataContext, nameScope) =>
         {
             var itemGrid = new Grid { VerticalAlignment = VerticalAlignment.Center };
+
+            // This proxy element will live in the visual tree and can find the ancestor.
+            // Other bindings that can't do tree traversal will use this as their source.
+            var proxy = new Border { IsVisible = false };
+            proxy.Bind(Border.TagProperty, new Binding("Tag")
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(ListBoxItem) }
+            });
+            itemGrid.Children.Add(proxy); // Add proxy to the tree so its binding can resolve.
 
             var rootBorder = new Border
             {
@@ -78,30 +86,75 @@ public class SongItemTemplateProvider
                 Child = itemGrid
             };
 
+            // Bind MinHeight using the proxy as the source.
             rootBorder.Bind(Border.MinHeightProperty, new Binding("Tag.RowHeight")
             {
-                RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent)
+                Source = proxy
             });
 
             // --- Column Definitions ---
-            var columns = new ColumnDefinitions();
+            var columns = itemGrid.ColumnDefinitions;
+
             if (isDetailed)
             {
-                columns.Add(new(GridLength.Auto));          // 0: Image
-                columns.Add(new(3, GridUnitType.Star));     // 1: Title
-                columns.Add(new(2, GridUnitType.Star));     // 2: Artist
-                columns.Add(new(2, GridUnitType.Star));     // 3: Album
+                columns.Add(new ColumnDefinition(GridLength.Auto)); // 0: Image
+                columns.Add(new ColumnDefinition(3, GridUnitType.Star)); // 1: Title
             }
             else
             {
-                columns.Add(new(2, GridUnitType.Star));     // 0: Title
-                columns.Add(new(1.5, GridUnitType.Star));   // 1: Artist
-                columns.Add(new(1.5, GridUnitType.Star));   // 2: Album
+                columns.Add(new ColumnDefinition(2, GridUnitType.Star)); // 0: Title
             }
-            columns.Add(new(0.6, GridUnitType.Star));       // Play Count
-            columns.Add(new(1.2, GridUnitType.Star));       // Date Added
-            columns.Add(new(0.8, GridUnitType.Star));       // Duration
-            itemGrid.ColumnDefinitions = columns;
+
+            // Artist Column
+            var artistCol = new ColumnDefinition();
+            artistCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowArtist")
+            {
+                Source = proxy,
+                Converter = BooleanToGridLengthConverter.Instance,
+                ConverterParameter = isDetailed ? "2*" : "1.5*"
+            });
+            columns.Add(artistCol);
+
+            // Album Column
+            var albumCol = new ColumnDefinition();
+            albumCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowAlbum")
+            {
+                Source = proxy,
+                Converter = BooleanToGridLengthConverter.Instance,
+                ConverterParameter = isDetailed ? "2*" : "1.5*"
+            });
+            columns.Add(albumCol);
+
+            // Play Count Column
+            var playCountCol = new ColumnDefinition();
+            playCountCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowPlayCount")
+            {
+                Source = proxy,
+                Converter = BooleanToGridLengthConverter.Instance,
+                ConverterParameter = "0.6*"
+            });
+            columns.Add(playCountCol);
+
+            // Date Added Column
+            var dateAddedCol = new ColumnDefinition();
+            dateAddedCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowDateAdded")
+            {
+                Source = proxy,
+                Converter = BooleanToGridLengthConverter.Instance,
+                ConverterParameter = "1.2*"
+            });
+            columns.Add(dateAddedCol);
+
+            // Duration Column
+            var durationCol = new ColumnDefinition();
+            durationCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowDuration")
+            {
+                Source = proxy,
+                Converter = BooleanToGridLengthConverter.Instance,
+                ConverterParameter = "0.8*"
+            });
+            columns.Add(durationCol);
+
 
             // --- Controls ---
             int currentColumn = 0;
@@ -122,31 +175,26 @@ public class SongItemTemplateProvider
 
             var artistBlock = new TextBlock { FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
             artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
-            artistBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowArtist") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent), Converter = boolToOpacityConverter });
             Grid.SetColumn(artistBlock, currentColumn++);
             itemGrid.Children.Add(artistBlock);
 
             var albumBlock = new TextBlock { FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
             albumBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Album)));
-            albumBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowAlbum") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent), Converter = boolToOpacityConverter });
             Grid.SetColumn(albumBlock, currentColumn++);
             itemGrid.Children.Add(albumBlock);
 
             var playCountBlock = new TextBlock { FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0), HorizontalAlignment = HorizontalAlignment.Right };
             playCountBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.PlayCount)));
-            playCountBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowPlayCount") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent), Converter = boolToOpacityConverter });
             Grid.SetColumn(playCountBlock, currentColumn++);
             itemGrid.Children.Add(playCountBlock);
 
             var dateAddedBlock = new TextBlock { FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0), HorizontalAlignment = HorizontalAlignment.Right };
             dateAddedBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DateAdded)) { StringFormat = "{0:yyyy-MM-dd}" });
-            dateAddedBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowDateAdded") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent), Converter = boolToOpacityConverter });
             Grid.SetColumn(dateAddedBlock, currentColumn++);
             itemGrid.Children.Add(dateAddedBlock);
 
             var durationBlock = new TextBlock { FontSize = isDetailed ? 12 : 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
             durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
-            durationBlock.Bind(Visual.OpacityProperty, new Binding("Tag.ShowDuration") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent), Converter = boolToOpacityConverter });
             Grid.SetColumn(durationBlock, currentColumn++);
             itemGrid.Children.Add(durationBlock);
 
