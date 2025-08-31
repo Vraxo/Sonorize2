@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Text.Json.Serialization;
 using Avalonia.Media.Imaging;
 using Sonorize.ViewModels;
+using Sonorize.ViewModels.LibraryManagement;
 
 namespace Sonorize.Models;
 
@@ -76,4 +78,7 @@ public class Song : ViewModelBase
 
     // This property will be set by the SongListManager for efficient alternating row coloring.
     public int IndexInView { get; set; }
+
+    [JsonIgnore]
+    public LibraryViewOptionsViewModel? ViewOptions { get; set; }
 }

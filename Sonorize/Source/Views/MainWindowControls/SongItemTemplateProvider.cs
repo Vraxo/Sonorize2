@@ -70,26 +70,22 @@ public class SongItemTemplateProvider
         {
             var itemGrid = new Grid { VerticalAlignment = VerticalAlignment.Center };
 
-            // This proxy element will live in the visual tree and can find the ancestor.
-            // Other bindings that can't do tree traversal will use this as their source.
-            var proxy = new Border { IsVisible = false };
-            proxy.Bind(Border.TagProperty, new Binding("Tag")
-            {
-                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(ListBoxItem) }
-            });
-            itemGrid.Children.Add(proxy); // Add proxy to the tree so its binding can resolve.
+            // Create a proxy element. It will be in the visual tree and get a DataContext.
+            var proxy = new Border { Name = "Proxy", IsVisible = false, DataContext = dataContext };
+            itemGrid.Children.Add(proxy);
 
             var rootBorder = new Border
             {
-                Padding = isDetailed ? new Thickness(10, 8) : new Thickness(10, 4, 10, 4),
+                Padding = new Thickness(0, isDetailed ? 8 : 4),
                 Background = Brushes.Transparent,
                 Child = itemGrid
             };
 
-            // Bind MinHeight using the proxy as the source.
-            rootBorder.Bind(Border.MinHeightProperty, new Binding("Tag.RowHeight")
+            // Bind MinHeight using the proxy as a stable binding source.
+            rootBorder.Bind(Border.MinHeightProperty, new Binding("DataContext.ViewOptions.RowHeight")
             {
-                Source = proxy
+                Source = proxy,
+                FallbackValue = 44.0
             });
 
             // --- Column Definitions ---
@@ -97,61 +93,70 @@ public class SongItemTemplateProvider
 
             if (isDetailed)
             {
-                columns.Add(new ColumnDefinition(GridLength.Auto)); // 0: Image
-                columns.Add(new ColumnDefinition(3, GridUnitType.Star)); // 1: Title
+                columns.Add(new ColumnDefinition(32 + 10 + 10, GridUnitType.Pixel)); // 0: Image
+                columns.Add(new ColumnDefinition(3, GridUnitType.Star));             // 1: Title
             }
             else
             {
-                columns.Add(new ColumnDefinition(2, GridUnitType.Star)); // 0: Title
+                columns.Add(new ColumnDefinition(10, GridUnitType.Pixel)); // 0: Left Padding
+                columns.Add(new ColumnDefinition(2, GridUnitType.Star));    // 1: Title
             }
 
             // Artist Column
             var artistCol = new ColumnDefinition();
-            artistCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowArtist")
+            artistCol.Bind(ColumnDefinition.WidthProperty, new Binding("DataContext.ViewOptions.ShowArtist")
             {
                 Source = proxy,
+                FallbackValue = GridLength.Parse("1.5*"),
                 Converter = BooleanToGridLengthConverter.Instance,
-                ConverterParameter = isDetailed ? "2*" : "1.5*"
+                ConverterParameter = "1.5*"
             });
             columns.Add(artistCol);
 
             // Album Column
             var albumCol = new ColumnDefinition();
-            albumCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowAlbum")
+            albumCol.Bind(ColumnDefinition.WidthProperty, new Binding("DataContext.ViewOptions.ShowAlbum")
             {
                 Source = proxy,
+                FallbackValue = GridLength.Parse("1.5*"),
                 Converter = BooleanToGridLengthConverter.Instance,
-                ConverterParameter = isDetailed ? "2*" : "1.5*"
+                ConverterParameter = "1.5*"
             });
             columns.Add(albumCol);
 
+            // Spacer Column
+            columns.Add(new ColumnDefinition(GridLength.Star));
+
             // Play Count Column
             var playCountCol = new ColumnDefinition();
-            playCountCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowPlayCount")
+            playCountCol.Bind(ColumnDefinition.WidthProperty, new Binding("DataContext.ViewOptions.ShowPlayCount")
             {
                 Source = proxy,
+                FallbackValue = new GridLength(0),
                 Converter = BooleanToGridLengthConverter.Instance,
-                ConverterParameter = "0.6*"
+                ConverterParameter = "Auto"
             });
             columns.Add(playCountCol);
 
             // Date Added Column
             var dateAddedCol = new ColumnDefinition();
-            dateAddedCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowDateAdded")
+            dateAddedCol.Bind(ColumnDefinition.WidthProperty, new Binding("DataContext.ViewOptions.ShowDateAdded")
             {
                 Source = proxy,
+                FallbackValue = new GridLength(0),
                 Converter = BooleanToGridLengthConverter.Instance,
-                ConverterParameter = "1.2*"
+                ConverterParameter = "Auto"
             });
             columns.Add(dateAddedCol);
 
             // Duration Column
             var durationCol = new ColumnDefinition();
-            durationCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowDuration")
+            durationCol.Bind(ColumnDefinition.WidthProperty, new Binding("DataContext.ViewOptions.ShowDuration")
             {
                 Source = proxy,
+                FallbackValue = GridLength.Auto,
                 Converter = BooleanToGridLengthConverter.Instance,
-                ConverterParameter = "0.8*"
+                ConverterParameter = "Auto"
             });
             columns.Add(durationCol);
 
@@ -161,39 +166,45 @@ public class SongItemTemplateProvider
 
             if (isDetailed)
             {
-                var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 15, 0), Stretch = Stretch.UniformToFill };
+                var image = new Image { Width = 32, Height = 32, Margin = new Thickness(10, 0), Stretch = Stretch.UniformToFill };
                 image.Bind(Image.SourceProperty, new Binding(nameof(Song.Thumbnail)));
                 RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
                 Grid.SetColumn(image, currentColumn++);
                 itemGrid.Children.Add(image);
             }
+            else
+            {
+                currentColumn++; // Skip the padding column
+            }
 
-            var titleBlock = new TextBlock { FontSize = isDetailed ? 14 : 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
+            var titleBlock = new TextBlock { Padding = new Thickness(10, 0), FontSize = isDetailed ? 14 : 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
             titleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Title)));
             Grid.SetColumn(titleBlock, currentColumn++);
             itemGrid.Children.Add(titleBlock);
 
-            var artistBlock = new TextBlock { FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
+            var artistBlock = new TextBlock { Padding = new Thickness(10, 0), FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis };
             artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
             Grid.SetColumn(artistBlock, currentColumn++);
             itemGrid.Children.Add(artistBlock);
 
-            var albumBlock = new TextBlock { FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
+            var albumBlock = new TextBlock { Padding = new Thickness(10, 0), FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis };
             albumBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Album)));
             Grid.SetColumn(albumBlock, currentColumn++);
             itemGrid.Children.Add(albumBlock);
 
-            var playCountBlock = new TextBlock { FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0), HorizontalAlignment = HorizontalAlignment.Right };
+            currentColumn++; // Skip Spacer column
+
+            var playCountBlock = new TextBlock { Padding = new Thickness(10, 0), FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = HorizontalAlignment.Right };
             playCountBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.PlayCount)));
             Grid.SetColumn(playCountBlock, currentColumn++);
             itemGrid.Children.Add(playCountBlock);
 
-            var dateAddedBlock = new TextBlock { FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0), HorizontalAlignment = HorizontalAlignment.Right };
+            var dateAddedBlock = new TextBlock { Padding = new Thickness(10, 0), FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = HorizontalAlignment.Right };
             dateAddedBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DateAdded)) { StringFormat = "{0:yyyy-MM-dd}" });
             Grid.SetColumn(dateAddedBlock, currentColumn++);
             itemGrid.Children.Add(dateAddedBlock);
 
-            var durationBlock = new TextBlock { FontSize = isDetailed ? 12 : 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
+            var durationBlock = new TextBlock { Padding = new Thickness(10, 0), FontSize = isDetailed ? 12 : 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
             durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
             Grid.SetColumn(durationBlock, currentColumn++);
             itemGrid.Children.Add(durationBlock);

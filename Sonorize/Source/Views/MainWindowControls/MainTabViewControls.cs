@@ -181,6 +181,7 @@ public class MainTabViewControls
         headerGrid.Bind(Visual.IsVisibleProperty, new Binding("Tag.Library.LibraryViewMode")
         {
             Source = proxy,
+            FallbackValue = false,
             Converter = new FuncValueConverter<SongDisplayMode, bool>(m => m == SongDisplayMode.Detailed || m == SongDisplayMode.Compact)
         });
 
@@ -190,7 +191,8 @@ public class MainTabViewControls
         imageCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.Library.LibraryViewMode")
         {
             Source = proxy,
-            Converter = new FuncValueConverter<SongDisplayMode, GridLength>(m => m == SongDisplayMode.Detailed ? new GridLength(32 + 5 + 15) : new GridLength(0))
+            FallbackValue = new GridLength(0),
+            Converter = new FuncValueConverter<SongDisplayMode, GridLength>(m => m == SongDisplayMode.Detailed ? new GridLength(32 + 10 + 10) : new GridLength(10))
         });
         columns.Add(imageCol);
 
@@ -198,34 +200,40 @@ public class MainTabViewControls
         titleCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.Library.LibraryViewMode")
         {
             Source = proxy,
+            FallbackValue = new GridLength(2, GridUnitType.Star),
             Converter = new FuncValueConverter<SongDisplayMode, GridLength>(m => m == SongDisplayMode.Detailed ? new GridLength(3, GridUnitType.Star) : new GridLength(2, GridUnitType.Star))
         });
         columns.Add(titleCol);
 
         var artistCol = new ColumnDefinition();
-        artistCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.Library.ViewOptions.ShowArtist") { Source = proxy, Converter = BooleanToGridLengthConverter.Instance, ConverterParameter = "1.5*" });
+        artistCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.Library.ViewOptions.ShowArtist") { Source = proxy, FallbackValue = GridLength.Parse("1.5*"), Converter = BooleanToGridLengthConverter.Instance, ConverterParameter = "1.5*" });
         columns.Add(artistCol);
 
         var albumCol = new ColumnDefinition();
-        albumCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.Library.ViewOptions.ShowAlbum") { Source = proxy, Converter = BooleanToGridLengthConverter.Instance, ConverterParameter = "1.5*" });
+        albumCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.Library.ViewOptions.ShowAlbum") { Source = proxy, FallbackValue = GridLength.Parse("1.5*"), Converter = BooleanToGridLengthConverter.Instance, ConverterParameter = "1.5*" });
         columns.Add(albumCol);
 
+        columns.Add(new ColumnDefinition(GridLength.Star)); // Spacer Column
+
         var playCountCol = new ColumnDefinition();
-        playCountCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.Library.ViewOptions.ShowPlayCount") { Source = proxy, Converter = BooleanToGridLengthConverter.Instance, ConverterParameter = "0.6*" });
+        playCountCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.Library.ViewOptions.ShowPlayCount") { Source = proxy, FallbackValue = new GridLength(0), Converter = BooleanToGridLengthConverter.Instance, ConverterParameter = "Auto" });
         columns.Add(playCountCol);
 
         var dateAddedCol = new ColumnDefinition();
-        dateAddedCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.Library.ViewOptions.ShowDateAdded") { Source = proxy, Converter = BooleanToGridLengthConverter.Instance, ConverterParameter = "1.2*" });
+        dateAddedCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.Library.ViewOptions.ShowDateAdded") { Source = proxy, FallbackValue = new GridLength(0), Converter = BooleanToGridLengthConverter.Instance, ConverterParameter = "Auto" });
         columns.Add(dateAddedCol);
 
         var durationCol = new ColumnDefinition();
-        durationCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.Library.ViewOptions.ShowDuration") { Source = proxy, Converter = BooleanToGridLengthConverter.Instance, ConverterParameter = "0.8*" });
+        durationCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.Library.ViewOptions.ShowDuration") { Source = proxy, FallbackValue = GridLength.Auto, Converter = BooleanToGridLengthConverter.Instance, ConverterParameter = "Auto" });
         columns.Add(durationCol);
 
         int currentCol = 1;
         headerGrid.Children.Add(CreateHeaderButton(theme, "Title", SortProperty.Title, currentCol++, proxy));
         headerGrid.Children.Add(CreateHeaderButton(theme, "Artist", SortProperty.Artist, currentCol++, proxy));
         headerGrid.Children.Add(CreateHeaderButton(theme, "Album", SortProperty.Album, currentCol++, proxy));
+
+        currentCol++; // Skip spacer column
+
         headerGrid.Children.Add(CreateHeaderButton(theme, "Plays", SortProperty.PlayCount, currentCol++, proxy, HorizontalAlignment.Right));
         headerGrid.Children.Add(CreateHeaderButton(theme, "Date Added", SortProperty.DateAdded, currentCol++, proxy, HorizontalAlignment.Right));
         headerGrid.Children.Add(CreateHeaderButton(theme, "Duration", SortProperty.Duration, currentCol++, proxy, HorizontalAlignment.Right));
@@ -239,7 +247,7 @@ public class MainTabViewControls
         {
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
-            Padding = new Thickness(10, 5, 0, 5),
+            Padding = new Thickness(10, 5),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = alignment
         };
@@ -267,12 +275,14 @@ public class MainTabViewControls
         var visibilityBinding = new Binding("Tag.Library.CurrentSortProperty")
         {
             Source = proxy,
+            FallbackValue = false,
             Converter = new FuncValueConverter<SortProperty, bool>(p => p == sortProperty)
         };
         sortIndicator.Bind(Visual.IsVisibleProperty, visibilityBinding);
         sortIndicator.Bind(TextBlock.TextProperty, new Binding("Tag.Library.CurrentSortDirection")
         {
             Source = proxy,
+            FallbackValue = SortDirection.Ascending,
             Converter = new FuncValueConverter<SortDirection, string>(d => d == SortDirection.Ascending ? "▲" : "▼")
         });
 

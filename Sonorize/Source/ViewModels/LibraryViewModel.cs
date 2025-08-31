@@ -224,7 +224,8 @@ public class LibraryViewModel : ViewModelBase, IDisposable
             _components.FilterState.SelectedAlbum,
             _components.FilterState.SelectedPlaylist,
             CurrentSortProperty,
-            CurrentSortDirection);
+            CurrentSortDirection,
+            ViewOptions);
 
         _trackNavigationManager.UpdateSelectedSong(_components.SongList.SelectedSong);
         UpdateStatusBarText();
