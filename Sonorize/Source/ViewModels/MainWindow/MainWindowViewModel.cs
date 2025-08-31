@@ -8,6 +8,8 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Controls;
 // Removed: using Avalonia.Platform.Storage; // No longer directly used here for Application.Current
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Sonorize.Models;
 using Sonorize.Services;
@@ -33,6 +35,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public AdvancedPanelViewModel AdvancedPanel => _componentsManager.AdvancedPanel;
 
     public string StatusBarText { get => field; set => SetProperty(ref field, value); } = "Welcome to Sonorize!";
+
+    // --- Background Properties ---
+    public IBrush PlaybackAreaBackground { get; private set; }
+    public Bitmap? AlbumArtForBackground { get; private set; }
+    public bool ShowAlbumArtBackground { get; private set; }
 
     private int _activeTabIndex;
     public int ActiveTabIndex
@@ -86,6 +93,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         SongLoopService songLoopService)
     {
         CurrentTheme = theme; // Store theme directly
+        PlaybackAreaBackground = CurrentTheme.B_BackgroundColor;
 
         _componentsManager = new MainWindowComponentsManager(
             this, // Pass self as parent
@@ -119,6 +127,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         OpenEditSongMetadataDialogCommand = new RelayCommand(async song => await HandleOpenEditSongMetadataDialogAsync(song), CanOpenEditSongMetadataDialog);
 
         Dispatcher.UIThread.InvokeAsync(UpdateAllUIDependentStates);
+        UpdatePlaybackAreaBackground();
     }
 
     public void SetOwnerView(Window ownerView)
@@ -172,6 +181,41 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         });
     }
 
+    public void UpdatePlaybackAreaBackground()
+    {
+        var settings = _componentsManager.SettingsServiceProperty.LoadSettings();
+        var style = Enum.TryParse<PlaybackAreaBackgroundStyle>(settings.PlaybackAreaBackgroundStyle, out var s) ? s : PlaybackAreaBackgroundStyle.Solid;
+
+        if (style == PlaybackAreaBackgroundStyle.Solid)
+        {
+            ShowAlbumArtBackground = false;
+            AlbumArtForBackground = null;
+            PlaybackAreaBackground = CurrentTheme.B_BackgroundColor;
+        }
+        else // AlbumArtBlur
+        {
+            Bitmap? defaultThumb = _componentsManager.MusicLibraryServiceProperty.GetDefaultThumbnail();
+
+            if (Playback.CurrentSong?.Thumbnail != null && Playback.CurrentSong.Thumbnail != defaultThumb)
+            {
+                ShowAlbumArtBackground = true;
+                AlbumArtForBackground = Playback.CurrentSong.Thumbnail;
+                PlaybackAreaBackground = Brushes.Transparent;
+            }
+            else
+            {
+                ShowAlbumArtBackground = false;
+                AlbumArtForBackground = null;
+                PlaybackAreaBackground = CurrentTheme.B_BackgroundColor;
+            }
+        }
+
+        OnPropertyChanged(nameof(PlaybackAreaBackground));
+        OnPropertyChanged(nameof(AlbumArtForBackground));
+        OnPropertyChanged(nameof(ShowAlbumArtBackground));
+    }
+
+
     private async Task OpenSettingsDialogAsync()
     {
         // InteractionCoordinator is accessed via _componentsManager
@@ -179,6 +223,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         if (settingsChanged)
         {
             Library.LibraryDisplayModeService.ReloadDisplayPreferences();
+            UpdatePlaybackAreaBackground();
             if (statusMessages.Any())
             {
                 StatusBarText = string.Join(" | ", statusMessages);

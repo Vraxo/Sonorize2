@@ -11,8 +11,8 @@ public class MainWindowComponentsManager : IDisposable
 {
     // Keep direct service references if they are passed to multiple components
     // or if MainWindowViewModel needs them directly (though preferably through properties here)
-    private readonly SettingsService _settingsService;
-    private readonly MusicLibraryService _musicLibraryService;
+    public SettingsService SettingsServiceProperty { get; }
+    public MusicLibraryService MusicLibraryServiceProperty { get; }
     // PlaybackService is now a property for MainWindowViewModel to expose
     public PlaybackService PlaybackServiceProperty { get; }
     private readonly ThemeColors _currentTheme;
@@ -49,8 +49,8 @@ public class MainWindowComponentsManager : IDisposable
         Action updateStatusBarTextCallback,
         Action<string> notifyMainWindowVMPropertyChangedCallback)
     {
-        _settingsService = settingsService;
-        _musicLibraryService = musicLibraryService;
+        SettingsServiceProperty = settingsService;
+        MusicLibraryServiceProperty = musicLibraryService;
         PlaybackServiceProperty = playbackService; // Store the passed service
         _currentTheme = currentTheme;
         _waveformService = waveformService;
@@ -60,15 +60,15 @@ public class MainWindowComponentsManager : IDisposable
         _songEditInteractionService = songEditInteractionService;
         _songLoopService = songLoopService;
 
-        LibraryDisplayModeService = new LibraryDisplayModeService(_settingsService);
+        LibraryDisplayModeService = new LibraryDisplayModeService(SettingsServiceProperty);
         // Pass parentMainWindowViewModel to LibraryViewModel as per its constructor
-        Library = new LibraryViewModel(parentMainWindowViewModel, _settingsService, _musicLibraryService, _loopDataService, LibraryDisplayModeService);
+        Library = new LibraryViewModel(parentMainWindowViewModel, SettingsServiceProperty, MusicLibraryServiceProperty, _loopDataService, LibraryDisplayModeService);
         Playback = new PlaybackViewModel(PlaybackServiceProperty, _waveformService); // Use the stored PlaybackService
         LoopEditor = new LoopEditorViewModel(PlaybackServiceProperty, _loopDataService, _songLoopService); // Use stored PlaybackService
         AdvancedPanel = new AdvancedPanelViewModel(Playback, Library);
 
         WorkflowManager = new ApplicationWorkflowManager(
-            _settingsService,
+            SettingsServiceProperty,
             ScrobblingServiceProperty, // Use stored ScrobblingService
             _currentTheme,
             Library,
@@ -91,7 +91,8 @@ public class MainWindowComponentsManager : IDisposable
             AdvancedPanel,
             raiseAllCommandsCanExecuteChangedCallback,
             updateStatusBarTextCallback,
-            notifyMainWindowVMPropertyChangedCallback
+            notifyMainWindowVMPropertyChangedCallback,
+            parentMainWindowViewModel.UpdatePlaybackAreaBackground
         );
 
         // Subscribe to PlaybackServiceProperty events here, as this manager owns the WorkflowManager that handles it.

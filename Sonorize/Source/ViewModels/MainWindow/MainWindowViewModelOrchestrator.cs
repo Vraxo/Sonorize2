@@ -13,6 +13,7 @@ public class MainWindowViewModelOrchestrator : IDisposable
     private readonly Action _raiseAllCommandsCanExecuteChangedCallback;
     private readonly Action _updateStatusBarTextCallback;
     private readonly Action<string> _notifyMainWindowVMPropertyChangedCallback;
+    private readonly Action _updatePlaybackAreaBackgroundCallback;
 
     public MainWindowViewModelOrchestrator(
         LibraryViewModel libraryViewModel,
@@ -20,7 +21,8 @@ public class MainWindowViewModelOrchestrator : IDisposable
         AdvancedPanelViewModel advancedPanelViewModel,
         Action raiseAllCommandsCanExecuteChangedCallback,
         Action updateStatusBarTextCallback,
-        Action<string> notifyMainWindowVMPropertyChangedCallback)
+        Action<string> notifyMainWindowVMPropertyChangedCallback,
+        Action updatePlaybackAreaBackgroundCallback)
     {
         _libraryViewModel = libraryViewModel ?? throw new ArgumentNullException(nameof(libraryViewModel));
         _playbackViewModel = playbackViewModel ?? throw new ArgumentNullException(nameof(playbackViewModel));
@@ -28,6 +30,7 @@ public class MainWindowViewModelOrchestrator : IDisposable
         _raiseAllCommandsCanExecuteChangedCallback = raiseAllCommandsCanExecuteChangedCallback ?? throw new ArgumentNullException(nameof(raiseAllCommandsCanExecuteChangedCallback));
         _updateStatusBarTextCallback = updateStatusBarTextCallback ?? throw new ArgumentNullException(nameof(updateStatusBarTextCallback));
         _notifyMainWindowVMPropertyChangedCallback = notifyMainWindowVMPropertyChangedCallback ?? throw new ArgumentNullException(nameof(notifyMainWindowVMPropertyChangedCallback));
+        _updatePlaybackAreaBackgroundCallback = updatePlaybackAreaBackgroundCallback ?? throw new ArgumentNullException(nameof(updatePlaybackAreaBackgroundCallback));
 
         SubscribeToEvents();
     }
@@ -108,6 +111,7 @@ public class MainWindowViewModelOrchestrator : IDisposable
                 _updateStatusBarTextCallback();
                 _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentTimeDisplay));
                 _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.TotalTimeDisplay));
+                _updatePlaybackAreaBackgroundCallback();
                 break;
             case nameof(PlaybackViewModel.CurrentPlaybackStatus):
                 _notifyMainWindowVMPropertyChangedCallback(nameof(MainWindowViewModel.Playback.CurrentPlaybackStatus));

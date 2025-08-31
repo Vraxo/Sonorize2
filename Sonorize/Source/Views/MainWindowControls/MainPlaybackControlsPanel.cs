@@ -51,7 +51,6 @@ public static class MainPlaybackControlsPanel
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Right, // Align to the right within its grid cell
             Margin = new Thickness(0, 0, 10, 0) // Margin from the right edge of the grid cell
-            // MinWidth/Width could be added here if needed to reserve space even when invisible
         };
         rightControlsPanel.Children.Add(toggleAdvPanelButton);
 
@@ -60,7 +59,6 @@ public static class MainPlaybackControlsPanel
 
 
         // --- Center Playback Controls Stack (Combined Buttons Panel + Slider) ---
-        // This stack panel contains the combined button panel (now includes shuffle/loop, prev/play/next) and the time/slider grid.
         var centerPlaybackControlsStack = new StackPanel
         {
             Orientation = Orientation.Vertical,
@@ -69,7 +67,6 @@ public static class MainPlaybackControlsPanel
             HorizontalAlignment = HorizontalAlignment.Center, // Center this stack panel within its parent grid cell
             VerticalAlignment = VerticalAlignment.Center
         };
-        // Add the combined button panel (now includes shuffle/loop, prev/play/next)
         centerPlaybackControlsStack.Children.Add(combinedPlaybackButtonControlsPanel);
         centerPlaybackControlsStack.Children.Add(timeSliderGrid);
 
@@ -78,30 +75,55 @@ public static class MainPlaybackControlsPanel
         var songInfoPanel = SongInfoDisplayPanel.Create(theme);
 
 
-        // --- Main Grid Layout (Restored Single Column Centering) ---
-        // Use a single star (*) column. All children are placed in this column.
-        // Their HorizontalAlignment determines their position within the column.
-        // The centerPlaybackControlsStack has HorizontalAlignment.Center, ensuring it's centered
-        // regardless of the width of the left (songInfoPanel) or right (rightControlsPanel) elements.
-        var outerGrid = new Grid // This is the root panel
+        // --- Grid to hold the content and determine the component's size ---
+        var contentGrid = new Grid
         {
-            Background = theme.B_BackgroundColor,
-            Margin = new Thickness(0, 5, 0, 5), // Vertical margin for the whole control
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            RowDefinitions = new RowDefinitions("Auto"), // Single row, height is Auto based on content
-            ColumnDefinitions = new ColumnDefinitions("*") // Single column spanning the width
+            RowDefinitions = new RowDefinitions("Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,*"),
+            Background = Brushes.Transparent, // This grid is for layout, not appearance.
+            VerticalAlignment = VerticalAlignment.Center
         };
 
-        // Place all panels in the single column (column 0).
-        // Their HorizontalAlignment will handle horizontal positioning.
+        // Place all visible controls into the contentGrid. Their alignment properties will position them correctly.
         Grid.SetColumn(songInfoPanel, 0);
-        Grid.SetColumn(centerPlaybackControlsStack, 0);
-        Grid.SetColumn(rightControlsPanel, 0);
+        Grid.SetColumn(centerPlaybackControlsStack, 1);
+        Grid.SetColumn(rightControlsPanel, 2);
+        contentGrid.Children.Add(songInfoPanel);
+        contentGrid.Children.Add(centerPlaybackControlsStack);
+        contentGrid.Children.Add(rightControlsPanel);
 
-        // Add children in any order; their position is determined by grid layout and alignment.
-        outerGrid.Children.Add(songInfoPanel);
-        outerGrid.Children.Add(centerPlaybackControlsStack);
-        outerGrid.Children.Add(rightControlsPanel);
+
+        // --- Root Grid for background and layering ---
+        var outerGrid = new Grid
+        {
+            Margin = new Thickness(0, 5, 0, 5),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            ClipToBounds = true
+        };
+        outerGrid.Bind(Grid.BackgroundProperty, new Binding("PlaybackAreaBackground"));
+
+        var backgroundImage = new Image
+        {
+            Stretch = Stretch.UniformToFill,
+            Opacity = 0.2
+        };
+        // Bind MaxHeight to the content grid's height to prevent the image from expanding its parent.
+        // Use a direct source binding instead of ElementName to avoid NameScope issues in code-behind.
+        backgroundImage.Bind(Image.MaxHeightProperty, new Binding("Bounds.Height") { Source = contentGrid });
+        backgroundImage.Bind(Image.SourceProperty, new Binding("AlbumArtForBackground"));
+        backgroundImage.Bind(Visual.IsVisibleProperty, new Binding("ShowAlbumArtBackground"));
+
+        var backgroundOverlay = new Border
+        {
+            Background = new SolidColorBrush(Colors.Black, 0.6) // Semi-transparent black overlay to darken the image
+        };
+        backgroundOverlay.Bind(Visual.IsVisibleProperty, new Binding("ShowAlbumArtBackground"));
+
+        // Add layers to the outer grid. Backgrounds first, then the contentGrid on top.
+        outerGrid.Children.Add(backgroundImage);
+        outerGrid.Children.Add(backgroundOverlay);
+        outerGrid.Children.Add(contentGrid);
 
         return outerGrid;
     }

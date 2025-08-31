@@ -17,6 +17,7 @@ public class AppSettings
     public string ArtistGridViewImageType { get; set; } = "Composite";
     public string AlbumGridViewImageType { get; set; } = "Composite";
     public string PlaylistGridViewImageType { get; set; } = "Composite";
+    public string PlaybackAreaBackgroundStyle { get; set; } = "Solid";
 
     // Library List Column Preferences
     public bool ShowArtistInLibrary { get; set; } = true;

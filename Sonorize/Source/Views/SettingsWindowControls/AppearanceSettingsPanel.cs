@@ -30,6 +30,10 @@ public static class AppearanceSettingsPanel
         panel.Children.Add(CreateGridImageTypeSelector(theme, "Album", "AppearanceSettings.IsAlbumGridSingle", "AppearanceSettings.IsAlbumGridComposite"));
         panel.Children.Add(CreateGridImageTypeSelector(theme, "Playlist", "AppearanceSettings.IsPlaylistGridSingle", "AppearanceSettings.IsPlaylistGridComposite"));
 
+        panel.Children.Add(new Separator { Background = theme.B_ControlBackgroundColor, Margin = new Thickness(0, 5) });
+        panel.Children.Add(CreatePlaybackBackgroundSelector(theme));
+
+
         return panel;
     }
 
@@ -149,6 +153,45 @@ public static class AppearanceSettingsPanel
         var radioPanel = new StackPanel { Orientation = Orientation.Vertical, Spacing = 5, Margin = new Thickness(10, 0, 0, 0) };
         radioPanel.Children.Add(singleRadio);
         radioPanel.Children.Add(compositeRadio);
+
+        sectionPanel.Children.Add(title);
+        sectionPanel.Children.Add(radioPanel);
+
+        return sectionPanel;
+    }
+
+    private static StackPanel CreatePlaybackBackgroundSelector(ThemeColors theme)
+    {
+        var sectionPanel = new StackPanel { Spacing = 8 };
+
+        var title = new TextBlock
+        {
+            Text = "Playback Area Background",
+            FontSize = 14,
+            FontWeight = FontWeight.Normal,
+            Foreground = theme.B_TextColor,
+            Margin = new Thickness(0, 10, 0, 5)
+        };
+
+        var solidRadio = new RadioButton
+        {
+            Content = "Solid Color (from theme)",
+            GroupName = "PlaybackBackgroundStyle",
+            Foreground = theme.B_TextColor
+        };
+        solidRadio.Bind(RadioButton.IsCheckedProperty, new Binding("AppearanceSettings.IsPlaybackBackgroundSolid", BindingMode.TwoWay));
+
+        var blurRadio = new RadioButton
+        {
+            Content = "Blurred Album Art (of current song)",
+            GroupName = "PlaybackBackgroundStyle",
+            Foreground = theme.B_TextColor
+        };
+        blurRadio.Bind(RadioButton.IsCheckedProperty, new Binding("AppearanceSettings.IsPlaybackBackgroundAlbumArtBlur", BindingMode.TwoWay));
+
+        var radioPanel = new StackPanel { Orientation = Orientation.Vertical, Spacing = 5, Margin = new Thickness(10, 0, 0, 0) };
+        radioPanel.Children.Add(solidRadio);
+        radioPanel.Children.Add(blurRadio);
 
         sectionPanel.Children.Add(title);
         sectionPanel.Children.Add(radioPanel);

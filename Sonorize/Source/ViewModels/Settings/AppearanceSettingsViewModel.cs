@@ -1,6 +1,8 @@
 using System;
+using System.Runtime.CompilerServices;
 using Sonorize.Models;
 using Sonorize.Services;
+using Sonorize.ViewModels;
 
 namespace Sonorize.ViewModels.Settings
 {
@@ -8,19 +10,23 @@ namespace Sonorize.ViewModels.Settings
     {
         private readonly Action _notifyParentSettingsChanged;
 
-        public GridViewImageType ArtistGridType { get; set; }
-        public GridViewImageType AlbumGridType { get; set; }
-        public GridViewImageType PlaylistGridType { get; set; }
-        public bool ShowArtistInLibrary { get; set; }
-        public bool ShowAlbumInLibrary { get; set; }
-        public bool ShowDurationInLibrary { get; set; }
-        public bool ShowDateAddedInLibrary { get; set; }
-        public bool ShowPlayCountInLibrary { get; set; }
-        public double LibraryRowHeight { get; set; }
+        // Backing fields
+        private GridViewImageType _artistGridType;
+        private GridViewImageType _albumGridType;
+        private GridViewImageType _playlistGridType;
+        private PlaybackAreaBackgroundStyle _playbackBackgroundStyle;
+        private bool _showArtistInLibrary;
+        private bool _showAlbumInLibrary;
+        private bool _showDurationInLibrary;
+        private bool _showDateAddedInLibrary;
+        private bool _showPlayCountInLibrary;
+        private double _libraryRowHeight;
 
+        // Initial state fields
         private readonly GridViewImageType _initialArtistGridType;
         private readonly GridViewImageType _initialAlbumGridType;
         private readonly GridViewImageType _initialPlaylistGridType;
+        private readonly PlaybackAreaBackgroundStyle _initialPlaybackBackgroundStyle;
         private readonly bool _initialShowArtist;
         private readonly bool _initialShowAlbum;
         private readonly bool _initialShowDuration;
@@ -28,48 +34,39 @@ namespace Sonorize.ViewModels.Settings
         private readonly bool _initialShowPlayCount;
         private readonly double _initialLibraryRowHeight;
 
-        public bool IsArtistGridSingle
-        {
-            get => ArtistGridType == GridViewImageType.Single;
-            set { if (value && ArtistGridType != GridViewImageType.Single) { ArtistGridType = GridViewImageType.Single; OnAppearanceChanged(); } }
-        }
-        public bool IsArtistGridComposite
-        {
-            get => ArtistGridType == GridViewImageType.Composite;
-            set { if (value && ArtistGridType != GridViewImageType.Composite) { ArtistGridType = GridViewImageType.Composite; OnAppearanceChanged(); } }
-        }
+        // Properties
+        public GridViewImageType ArtistGridType { get => _artistGridType; private set { if (_artistGridType != value) { _artistGridType = value; OnAppearanceChanged(); } } }
+        public GridViewImageType AlbumGridType { get => _albumGridType; private set { if (_albumGridType != value) { _albumGridType = value; OnAppearanceChanged(); } } }
+        public GridViewImageType PlaylistGridType { get => _playlistGridType; private set { if (_playlistGridType != value) { _playlistGridType = value; OnAppearanceChanged(); } } }
+        public PlaybackAreaBackgroundStyle PlaybackBackgroundStyle { get => _playbackBackgroundStyle; private set { if (_playbackBackgroundStyle != value) { _playbackBackgroundStyle = value; OnAppearanceChanged(); } } }
+        public bool ShowArtistInLibrary { get => _showArtistInLibrary; set { if (_showArtistInLibrary != value) { _showArtistInLibrary = value; OnAppearanceChanged(); } } }
+        public bool ShowAlbumInLibrary { get => _showAlbumInLibrary; set { if (_showAlbumInLibrary != value) { _showAlbumInLibrary = value; OnAppearanceChanged(); } } }
+        public bool ShowDurationInLibrary { get => _showDurationInLibrary; set { if (_showDurationInLibrary != value) { _showDurationInLibrary = value; OnAppearanceChanged(); } } }
+        public bool ShowDateAddedInLibrary { get => _showDateAddedInLibrary; set { if (_showDateAddedInLibrary != value) { _showDateAddedInLibrary = value; OnAppearanceChanged(); } } }
+        public bool ShowPlayCountInLibrary { get => _showPlayCountInLibrary; set { if (_showPlayCountInLibrary != value) { _showPlayCountInLibrary = value; OnAppearanceChanged(); } } }
+        public double LibraryRowHeight { get => _libraryRowHeight; set { if (Math.Abs(_libraryRowHeight - value) > 0.01) { _libraryRowHeight = value; OnAppearanceChanged(); } } }
 
-        public bool IsAlbumGridSingle
-        {
-            get => AlbumGridType == GridViewImageType.Single;
-            set { if (value && AlbumGridType != GridViewImageType.Single) { AlbumGridType = GridViewImageType.Single; OnAppearanceChanged(); } }
-        }
-        public bool IsAlbumGridComposite
-        {
-            get => AlbumGridType == GridViewImageType.Composite;
-            set { if (value && AlbumGridType != GridViewImageType.Composite) { AlbumGridType = GridViewImageType.Composite; OnAppearanceChanged(); } }
-        }
+        // Radio Button Helpers
+        public bool IsArtistGridSingle { get => ArtistGridType == GridViewImageType.Single; set { if (value) ArtistGridType = GridViewImageType.Single; } }
+        public bool IsArtistGridComposite { get => ArtistGridType == GridViewImageType.Composite; set { if (value) ArtistGridType = GridViewImageType.Composite; } }
+        public bool IsAlbumGridSingle { get => AlbumGridType == GridViewImageType.Single; set { if (value) AlbumGridType = GridViewImageType.Single; } }
+        public bool IsAlbumGridComposite { get => AlbumGridType == GridViewImageType.Composite; set { if (value) AlbumGridType = GridViewImageType.Composite; } }
+        public bool IsPlaylistGridSingle { get => PlaylistGridType == GridViewImageType.Single; set { if (value) PlaylistGridType = GridViewImageType.Single; } }
+        public bool IsPlaylistGridComposite { get => PlaylistGridType == GridViewImageType.Composite; set { if (value) PlaylistGridType = GridViewImageType.Composite; } }
+        public bool IsPlaybackBackgroundSolid { get => PlaybackBackgroundStyle == PlaybackAreaBackgroundStyle.Solid; set { if (value) PlaybackBackgroundStyle = PlaybackAreaBackgroundStyle.Solid; } }
+        public bool IsPlaybackBackgroundAlbumArtBlur { get => PlaybackBackgroundStyle == PlaybackAreaBackgroundStyle.AlbumArtBlur; set { if (value) PlaybackBackgroundStyle = PlaybackAreaBackgroundStyle.AlbumArtBlur; } }
 
-        public bool IsPlaylistGridSingle
-        {
-            get => PlaylistGridType == GridViewImageType.Single;
-            set { if (value && PlaylistGridType != GridViewImageType.Single) { PlaylistGridType = GridViewImageType.Single; OnAppearanceChanged(); } }
-        }
-        public bool IsPlaylistGridComposite
-        {
-            get => PlaylistGridType == GridViewImageType.Composite;
-            set { if (value && PlaylistGridType != GridViewImageType.Composite) { PlaylistGridType = GridViewImageType.Composite; OnAppearanceChanged(); } }
-        }
-
-        public bool HasChangesFromInitialState => _initialArtistGridType != ArtistGridType ||
-                                                  _initialAlbumGridType != AlbumGridType ||
-                                                  _initialPlaylistGridType != PlaylistGridType ||
-                                                  _initialShowArtist != ShowArtistInLibrary ||
-                                                  _initialShowAlbum != ShowAlbumInLibrary ||
-                                                  _initialShowDuration != ShowDurationInLibrary ||
-                                                  _initialShowDateAdded != ShowDateAddedInLibrary ||
-                                                  _initialShowPlayCount != ShowPlayCountInLibrary ||
-                                                  Math.Abs(_initialLibraryRowHeight - LibraryRowHeight) > 0.01;
+        public bool HasChangesFromInitialState =>
+            _initialArtistGridType != ArtistGridType ||
+            _initialAlbumGridType != AlbumGridType ||
+            _initialPlaylistGridType != PlaylistGridType ||
+            _initialPlaybackBackgroundStyle != PlaybackBackgroundStyle ||
+            _initialShowArtist != ShowArtistInLibrary ||
+            _initialShowAlbum != ShowAlbumInLibrary ||
+            _initialShowDuration != ShowDurationInLibrary ||
+            _initialShowDateAdded != ShowDateAddedInLibrary ||
+            _initialShowPlayCount != ShowPlayCountInLibrary ||
+            Math.Abs(_initialLibraryRowHeight - LibraryRowHeight) > 0.01;
 
         public AppearanceSettingsViewModel(AppSettings settings, Action notifyParentSettingsChanged)
         {
@@ -78,6 +75,7 @@ namespace Sonorize.ViewModels.Settings
             _initialArtistGridType = Enum.TryParse<GridViewImageType>(settings.ArtistGridViewImageType, out var agt) ? agt : GridViewImageType.Composite;
             _initialAlbumGridType = Enum.TryParse<GridViewImageType>(settings.AlbumGridViewImageType, out var alhgt) ? alhgt : GridViewImageType.Composite;
             _initialPlaylistGridType = Enum.TryParse<GridViewImageType>(settings.PlaylistGridViewImageType, out var pgt) ? pgt : GridViewImageType.Composite;
+            _initialPlaybackBackgroundStyle = Enum.TryParse<PlaybackAreaBackgroundStyle>(settings.PlaybackAreaBackgroundStyle, out var pbs) ? pbs : PlaybackAreaBackgroundStyle.Solid;
             _initialShowArtist = settings.ShowArtistInLibrary;
             _initialShowAlbum = settings.ShowAlbumInLibrary;
             _initialShowDuration = settings.ShowDurationInLibrary;
@@ -85,31 +83,33 @@ namespace Sonorize.ViewModels.Settings
             _initialShowPlayCount = settings.ShowPlayCountInLibrary;
             _initialLibraryRowHeight = settings.LibraryRowHeight;
 
-            ArtistGridType = _initialArtistGridType;
-            AlbumGridType = _initialAlbumGridType;
-            PlaylistGridType = _initialPlaylistGridType;
-            ShowArtistInLibrary = _initialShowArtist;
-            ShowAlbumInLibrary = _initialShowAlbum;
-            ShowDurationInLibrary = _initialShowDuration;
-            ShowDateAddedInLibrary = _initialShowDateAdded;
-            ShowPlayCountInLibrary = _initialShowPlayCount;
-            LibraryRowHeight = _initialLibraryRowHeight;
+            _artistGridType = _initialArtistGridType;
+            _albumGridType = _initialAlbumGridType;
+            _playlistGridType = _initialPlaylistGridType;
+            _playbackBackgroundStyle = _initialPlaybackBackgroundStyle;
+            _showArtistInLibrary = _initialShowArtist;
+            _showAlbumInLibrary = _initialShowAlbum;
+            _showDurationInLibrary = _initialShowDuration;
+            _showDateAddedInLibrary = _initialShowDateAdded;
+            _showPlayCountInLibrary = _initialShowPlayCount;
+            _libraryRowHeight = _initialLibraryRowHeight;
         }
 
-        private void OnAppearanceChanged()
+        private void OnAppearanceChanged([CallerMemberName] string? propertyName = null)
         {
+            OnPropertyChanged(propertyName);
+
+            // Notify dependent radio button properties
             OnPropertyChanged(nameof(IsArtistGridSingle));
             OnPropertyChanged(nameof(IsArtistGridComposite));
             OnPropertyChanged(nameof(IsAlbumGridSingle));
             OnPropertyChanged(nameof(IsAlbumGridComposite));
             OnPropertyChanged(nameof(IsPlaylistGridSingle));
             OnPropertyChanged(nameof(IsPlaylistGridComposite));
-            OnPropertyChanged(nameof(ShowArtistInLibrary));
-            OnPropertyChanged(nameof(ShowAlbumInLibrary));
-            OnPropertyChanged(nameof(ShowDurationInLibrary));
-            OnPropertyChanged(nameof(ShowDateAddedInLibrary));
-            OnPropertyChanged(nameof(ShowPlayCountInLibrary));
-            OnPropertyChanged(nameof(LibraryRowHeight));
+            OnPropertyChanged(nameof(IsPlaybackBackgroundSolid));
+            OnPropertyChanged(nameof(IsPlaybackBackgroundAlbumArtBlur));
+
+            // Notify change detection and parent
             OnPropertyChanged(nameof(HasChangesFromInitialState));
             _notifyParentSettingsChanged();
         }
@@ -119,6 +119,7 @@ namespace Sonorize.ViewModels.Settings
             settings.ArtistGridViewImageType = ArtistGridType.ToString();
             settings.AlbumGridViewImageType = AlbumGridType.ToString();
             settings.PlaylistGridViewImageType = PlaylistGridType.ToString();
+            settings.PlaybackAreaBackgroundStyle = PlaybackBackgroundStyle.ToString();
             settings.ShowArtistInLibrary = ShowArtistInLibrary;
             settings.ShowAlbumInLibrary = ShowAlbumInLibrary;
             settings.ShowDurationInLibrary = ShowDurationInLibrary;
