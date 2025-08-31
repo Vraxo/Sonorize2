@@ -10,6 +10,7 @@ using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.ViewModels;
 using System.Diagnostics;
+using System;
 
 namespace Sonorize.Views.MainWindowControls;
 

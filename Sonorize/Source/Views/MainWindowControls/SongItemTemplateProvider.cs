@@ -9,6 +9,8 @@ using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.ViewModels; // For Song model if not already included via Sonorize.Models
 using System.Diagnostics;
+using Avalonia.Input;
+using Avalonia.VisualTree;
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -27,6 +29,33 @@ public class SongItemTemplateProvider
         InitializeSongTemplates();
     }
 
+    private void OnRootBorderContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        if (sender is not Border border || border.DataContext is not Song song)
+        {
+            return;
+        }
+
+        var mainWindowViewModel = (border.FindAncestorOfType<Window>())?.DataContext as MainWindowViewModel;
+        if (mainWindowViewModel == null)
+        {
+            return;
+        }
+
+        var flyout = new MenuFlyout();
+        var editMenuItem = new MenuItem
+        {
+            Header = "Edit Metadata",
+            Command = mainWindowViewModel.OpenEditSongMetadataDialogCommand,
+            CommandParameter = song
+        };
+
+        flyout.Items.Add(editMenuItem);
+
+        flyout.ShowAt(border);
+        e.Handled = true;
+    }
+
     private void InitializeSongTemplates()
     {
         // Detailed Song Template
@@ -37,8 +66,6 @@ public class SongItemTemplateProvider
                 VerticalAlignment = VerticalAlignment.Center
             };
 
-            // This is the key change. Bind the Grid's Tag to the TemplatedParent's (ListBoxItem's) Tag.
-            // This is much more performant than walking the visual tree for every item.
             itemGrid.Bind(Control.TagProperty, new Binding("Tag")
             {
                 RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent)
@@ -49,7 +76,7 @@ public class SongItemTemplateProvider
             var artistColumn = new ColumnDefinition();
             artistColumn.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.ShowArtist")
             {
-                Source = itemGrid, // Source the binding from the Grid itself, not an ancestor
+                Source = itemGrid,
                 Converter = BooleanToGridLengthConverter.Instance,
                 ConverterParameter = new GridLength(2, GridUnitType.Star)
             });
@@ -83,7 +110,7 @@ public class SongItemTemplateProvider
             {
                 Source = itemGrid,
                 Converter = BooleanToGridLengthConverter.Instance,
-                ConverterParameter = new GridLength(0.8, GridUnitType.Star) // Changed from Auto
+                ConverterParameter = new GridLength(0.8, GridUnitType.Star)
             });
 
             itemGrid.ColumnDefinitions = new ColumnDefinitions
@@ -140,18 +167,7 @@ public class SongItemTemplateProvider
                 RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent)
             });
 
-            // PERF: Use a lightweight ContextFlyout instead of a heavy ContextMenu.
-            var flyout = new MenuFlyout();
-            var editMenuItem = new MenuItem { Header = "Edit Metadata" };
-            // Bind CommandParameter to the DataContext of the control that owns the flyout (the song).
-            editMenuItem.Bind(MenuItem.CommandParameterProperty, new Binding("."));
-            // Bind command to the main view model by finding the parent ListBox.
-            editMenuItem.Bind(MenuItem.CommandProperty, new Binding("DataContext.OpenEditSongMetadataDialogCommand")
-            {
-                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(ListBox) }
-            });
-            flyout.Items.Add(editMenuItem);
-            rootBorder.ContextFlyout = flyout;
+            rootBorder.ContextRequested += OnRootBorderContextRequested;
             return rootBorder;
         }, supportsRecycling: true);
 
@@ -207,7 +223,7 @@ public class SongItemTemplateProvider
             {
                 Source = itemGrid,
                 Converter = BooleanToGridLengthConverter.Instance,
-                ConverterParameter = new GridLength(0.8, GridUnitType.Star) // Changed from Auto
+                ConverterParameter = new GridLength(0.8, GridUnitType.Star)
             });
 
             itemGrid.ColumnDefinitions = new ColumnDefinitions
@@ -257,16 +273,7 @@ public class SongItemTemplateProvider
                 RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent)
             });
 
-            // PERF: Use a lightweight ContextFlyout instead of a heavy ContextMenu.
-            var flyout = new MenuFlyout();
-            var editMenuItem = new MenuItem { Header = "Edit Metadata" };
-            editMenuItem.Bind(MenuItem.CommandParameterProperty, new Binding("."));
-            editMenuItem.Bind(MenuItem.CommandProperty, new Binding("DataContext.OpenEditSongMetadataDialogCommand")
-            {
-                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(ListBox) }
-            });
-            flyout.Items.Add(editMenuItem);
-            rootBorder.ContextFlyout = flyout;
+            rootBorder.ContextRequested += OnRootBorderContextRequested;
             return rootBorder;
         }, supportsRecycling: true);
 
@@ -299,17 +306,9 @@ public class SongItemTemplateProvider
 
             var rootBorder = new Border { Width = 120, Height = 150, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
 
-            // PERF: Use a lightweight ContextFlyout instead of a heavy ContextMenu.
-            var flyout = new MenuFlyout();
-            var editMenuItem = new MenuItem { Header = "Edit Metadata" };
-            editMenuItem.Bind(MenuItem.CommandParameterProperty, new Binding("."));
-            editMenuItem.Bind(MenuItem.CommandProperty, new Binding("DataContext.OpenEditSongMetadataDialogCommand")
-            {
-                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(ListBox) }
-            });
-            flyout.Items.Add(editMenuItem);
-            rootBorder.ContextFlyout = flyout;
+            rootBorder.ContextRequested += OnRootBorderContextRequested;
             return rootBorder;
         }, supportsRecycling: true);
     }
 }
+  
