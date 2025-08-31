@@ -15,16 +15,14 @@ namespace Sonorize.Views.MainWindowControls;
 public class SongItemTemplateProvider
 {
     private readonly ThemeColors _theme;
-    private readonly SongContextMenuHelper _contextMenuHelper;
 
     public FuncDataTemplate<Song> DetailedSongTemplate { get; private set; }
     public FuncDataTemplate<Song> CompactSongTemplate { get; private set; }
     public FuncDataTemplate<Song> GridSongTemplate { get; private set; }
 
-    public SongItemTemplateProvider(ThemeColors theme, SongContextMenuHelper contextMenuHelper)
+    public SongItemTemplateProvider(ThemeColors theme)
     {
         _theme = theme;
-        _contextMenuHelper = contextMenuHelper ?? throw new System.ArgumentNullException(nameof(contextMenuHelper));
         Debug.WriteLine("[SongItemTemplateProvider] Initialized.");
         InitializeSongTemplates();
     }
@@ -141,7 +139,19 @@ public class SongItemTemplateProvider
             {
                 RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent)
             });
-            rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
+
+            // PERF: Use a lightweight ContextFlyout instead of a heavy ContextMenu.
+            var flyout = new MenuFlyout();
+            var editMenuItem = new MenuItem { Header = "Edit Metadata" };
+            // Bind CommandParameter to the DataContext of the control that owns the flyout (the song).
+            editMenuItem.Bind(MenuItem.CommandParameterProperty, new Binding("."));
+            // Bind command to the main view model by finding the parent ListBox.
+            editMenuItem.Bind(MenuItem.CommandProperty, new Binding("DataContext.OpenEditSongMetadataDialogCommand")
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(ListBox) }
+            });
+            flyout.Items.Add(editMenuItem);
+            rootBorder.ContextFlyout = flyout;
             return rootBorder;
         }, supportsRecycling: true);
 
@@ -246,7 +256,17 @@ public class SongItemTemplateProvider
             {
                 RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent)
             });
-            rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
+
+            // PERF: Use a lightweight ContextFlyout instead of a heavy ContextMenu.
+            var flyout = new MenuFlyout();
+            var editMenuItem = new MenuItem { Header = "Edit Metadata" };
+            editMenuItem.Bind(MenuItem.CommandParameterProperty, new Binding("."));
+            editMenuItem.Bind(MenuItem.CommandProperty, new Binding("DataContext.OpenEditSongMetadataDialogCommand")
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(ListBox) }
+            });
+            flyout.Items.Add(editMenuItem);
+            rootBorder.ContextFlyout = flyout;
             return rootBorder;
         }, supportsRecycling: true);
 
@@ -278,7 +298,17 @@ public class SongItemTemplateProvider
             var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { image, titleBlock, artistBlock } };
 
             var rootBorder = new Border { Width = 120, Height = 150, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-            rootBorder.ContextMenu = _contextMenuHelper.CreateContextMenu(dataContext);
+
+            // PERF: Use a lightweight ContextFlyout instead of a heavy ContextMenu.
+            var flyout = new MenuFlyout();
+            var editMenuItem = new MenuItem { Header = "Edit Metadata" };
+            editMenuItem.Bind(MenuItem.CommandParameterProperty, new Binding("."));
+            editMenuItem.Bind(MenuItem.CommandProperty, new Binding("DataContext.OpenEditSongMetadataDialogCommand")
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(ListBox) }
+            });
+            flyout.Items.Add(editMenuItem);
+            rootBorder.ContextFlyout = flyout;
             return rootBorder;
         }, supportsRecycling: true);
     }

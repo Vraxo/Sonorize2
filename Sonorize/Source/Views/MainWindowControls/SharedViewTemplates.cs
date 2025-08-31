@@ -16,7 +16,6 @@ namespace Sonorize.Views.MainWindowControls;
 public class SharedViewTemplates
 {
     private readonly ThemeColors _theme;
-    private readonly SongContextMenuHelper _contextMenuHelper;
 
     // Expose the provider for Song templates
     public SongItemTemplateProvider SongTemplates { get; private set; }
@@ -37,8 +36,7 @@ public class SharedViewTemplates
     public SharedViewTemplates(ThemeColors theme)
     {
         _theme = theme;
-        _contextMenuHelper = new SongContextMenuHelper(_theme);
-        SongTemplates = new SongItemTemplateProvider(_theme, _contextMenuHelper);
+        SongTemplates = new SongItemTemplateProvider(_theme);
         ArtistTemplates = new ArtistItemTemplateProvider(_theme);
 
         Debug.WriteLine("[SharedViewTemplates] Constructor called.");
