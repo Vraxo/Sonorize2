@@ -105,7 +105,7 @@ public static class MainPlaybackControlsPanel
 
         var backgroundImage = new Image
         {
-            Stretch = Stretch.UniformToFill,
+            Stretch = Stretch.Fill,
             Opacity = 0.2
         };
         // Bind MaxHeight to the content grid's height to prevent the image from expanding its parent.
