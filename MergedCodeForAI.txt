@@ -2135,11 +2135,9 @@ public class PlaylistParserService
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Services\ScrobbleEligibilityService.cs">
 using System;
 using System.Diagnostics;
-using Sonorize.Models; // For Song
+using Sonorize.Models;
 
 namespace Sonorize.Services;
-
-public record ScrobbleThresholds(int ScrobbleThresholdPercentage, int ScrobbleThresholdAbsoluteSeconds);
 
 public class ScrobbleEligibilityService
 {
@@ -2202,41 +2200,6 @@ public class ScrobblingService
         }
     }
 
-    // ScrobbleEligibilityService constants and logic moved here
-    private const int MinTrackLengthForScrobbleSeconds = 30;
-
-    private static bool DetermineScrobbleEligibility(Song song, TimeSpan playedDuration, ScrobbleThresholds thresholds)
-    {
-        if (song == null || song.Duration.TotalSeconds <= MinTrackLengthForScrobbleSeconds)
-        {
-            Debug.WriteLine($"[ScrobblingService.Eligibility] Song " +
-                $"'{song?.Title ?? "null"}'" +
-                $" is null or too short " +
-                $"({song?.Duration.TotalSeconds ?? 0}s). " +
-                $"Min required: {MinTrackLengthForScrobbleSeconds}s. " +
-                $"Not scrobbling.");
-
-            return false;
-        }
-
-        double percentagePlayed = (playedDuration.TotalSeconds / song.Duration.TotalSeconds) * 100.0;
-        double requiredPlaybackFromPercentage = song.Duration.TotalSeconds * (thresholds.ScrobbleThresholdPercentage / 100.0);
-        double requiredPlaybackAbsolute = thresholds.ScrobbleThresholdAbsoluteSeconds;
-
-        double effectiveRequiredSeconds = Math.Min(requiredPlaybackFromPercentage, requiredPlaybackAbsolute);
-
-        bool conditionMet = playedDuration.TotalSeconds >= effectiveRequiredSeconds;
-
-        //Debug.WriteLine($"[ScrobblingService.Eligibility] For '{song.Title}': " +
-        //                $"Played: {playedDuration.TotalSeconds:F1}s ({percentagePlayed:F1}%), " +
-        //                $"Song Duration: {song.Duration.TotalSeconds:F1}s. " +
-        //                $"Configured Thresholds: {thresholds.ScrobbleThresholdPercentage}% (gives {requiredPlaybackFromPercentage:F1}s) OR {thresholds.ScrobbleThresholdAbsoluteSeconds}s. " +
-        //                $"Effective Threshold: {effectiveRequiredSeconds:F1}s. " +
-        //                $"Met: {conditionMet}");
-        return conditionMet;
-    }
-
-
     public ScrobblingService(
         SettingsService settingsService,
         LastfmAuthenticatorService authenticatorService)
@@ -2270,7 +2233,7 @@ public class ScrobblingService
             _currentSettings.ScrobbleThresholdPercentage,
             _currentSettings.ScrobbleThresholdAbsoluteSeconds);
 
-        return DetermineScrobbleEligibility(song, playedDuration, thresholds);
+        return ScrobbleEligibilityService.ShouldScrobble(song, playedDuration, thresholds);
     }
 
 
@@ -3475,12 +3438,10 @@ public class ApplicationWorkflowManager : IDisposable
     private readonly PlaybackService _playbackService;
 
     private readonly NextTrackSelectorService _nextTrackSelectorService;
-    // Removed: private readonly StatusBarTextProvider _statusBarTextProvider;
     private readonly SettingsChangeProcessorService _settingsChangeProcessorService;
     private readonly PlaybackFlowManagerService _playbackFlowManagerService;
     private readonly ApplicationInteractionService _applicationInteractionService;
     private readonly LibraryPlaybackLinkService _libraryPlaybackLinkService;
-    // Removed: private readonly SongMetadataService _songMetadataService; 
 
 
     private readonly Random _shuffleRandom = new();
@@ -3500,11 +3461,9 @@ public class ApplicationWorkflowManager : IDisposable
         _libraryViewModel = libraryViewModel ?? throw new ArgumentNullException(nameof(libraryViewModel));
         _playbackViewModel = playbackViewModel ?? throw new ArgumentNullException(nameof(playbackViewModel));
         _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
-        // Removed: _songMetadataService = songMetadataService ?? throw new ArgumentNullException(nameof(songMetadataService)); 
 
         // Create internal services
         _nextTrackSelectorService = new NextTrackSelectorService(_shuffleRandom);
-        // Removed: _statusBarTextProvider = new StatusBarTextProvider(_playbackViewModel, null!, _libraryViewModel); // Placeholder
 
         _settingsChangeProcessorService = new SettingsChangeProcessorService(_libraryViewModel, _scrobblingService);
         _playbackFlowManagerService = new PlaybackFlowManagerService(_libraryViewModel, _playbackViewModel, _playbackService, _nextTrackSelectorService);
@@ -3512,7 +3471,7 @@ public class ApplicationWorkflowManager : IDisposable
         _applicationInteractionService = new ApplicationInteractionService(
             _settingsService,
             _settingsChangeProcessorService,
-            _currentTheme); // Removed _songMetadataService from instantiation
+            _currentTheme);
 
         _libraryPlaybackLinkService = new LibraryPlaybackLinkService(_libraryViewModel, _playbackService, _playbackViewModel);
     }
@@ -9305,6 +9264,131 @@ public class LoopEditorViewModel : ViewModelBase, IDisposable
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\MainWindow\MainWindowComponentsManager.cs">
+using System;
+using System.ComponentModel;
+using Avalonia.Controls;
+using Sonorize.Models;
+using Sonorize.Services;
+using Sonorize.ViewModels.LibraryManagement; // Required for LibraryDisplayModeService
+
+namespace Sonorize.ViewModels.MainWindow;
+
+public class MainWindowComponentsManager : IDisposable
+{
+    // Keep direct service references if they are passed to multiple components
+    // or if MainWindowViewModel needs them directly (though preferably through properties here)
+    public SettingsService SettingsServiceProperty { get; }
+    public MusicLibraryService MusicLibraryServiceProperty { get; }
+    // PlaybackService is now a property for MainWindowViewModel to expose
+    public PlaybackService PlaybackServiceProperty { get; }
+    private readonly ThemeColors _currentTheme;
+    private readonly WaveformService _waveformService;
+    private readonly LoopDataService _loopDataService;
+    public ScrobblingService ScrobblingServiceProperty { get; } // Exposed for MainWindowViewModel
+    private readonly SongMetadataService _songMetadataService;
+    private readonly SongEditInteractionService _songEditInteractionService;
+    private readonly SongLoopService _songLoopService;
+
+    public LibraryViewModel Library { get; }
+    public PlaybackViewModel Playback { get; }
+    public LoopEditorViewModel LoopEditor { get; }
+    public AdvancedPanelViewModel AdvancedPanel { get; }
+    public LibraryDisplayModeService LibraryDisplayModeService { get; }
+    public ApplicationWorkflowManager WorkflowManager { get; }
+    public MainWindowInteractionCoordinator InteractionCoordinator { get; }
+    public MainWindowViewModelOrchestrator ViewModelOrchestrator { get; }
+
+    public MainWindowComponentsManager(
+        MainWindowViewModel parentMainWindowViewModel,
+        SettingsService settingsService,
+        MusicLibraryService musicLibraryService,
+        PlaybackService playbackService, // Renamed for clarity from _playbackService
+        ThemeColors currentTheme,
+        WaveformService waveformService,
+        LoopDataService loopDataService,
+        ScrobblingService scrobblingService,
+        SongMetadataService songMetadataService,
+        SongEditInteractionService songEditInteractionService,
+        SongLoopService songLoopService,
+        Func<Window?> getOwnerViewFunc,
+        Action raiseAllCommandsCanExecuteChangedCallback,
+        Action updateStatusBarTextCallback,
+        Action<string> notifyMainWindowVMPropertyChangedCallback)
+    {
+        SettingsServiceProperty = settingsService;
+        MusicLibraryServiceProperty = musicLibraryService;
+        PlaybackServiceProperty = playbackService; // Store the passed service
+        _currentTheme = currentTheme;
+        _waveformService = waveformService;
+        _loopDataService = loopDataService;
+        ScrobblingServiceProperty = scrobblingService; // Store the passed service
+        _songMetadataService = songMetadataService;
+        _songEditInteractionService = songEditInteractionService;
+        _songLoopService = songLoopService;
+
+        LibraryDisplayModeService = new LibraryDisplayModeService(SettingsServiceProperty);
+        // Pass parentMainWindowViewModel to LibraryViewModel as per its constructor
+        Library = new LibraryViewModel(parentMainWindowViewModel, SettingsServiceProperty, MusicLibraryServiceProperty, _loopDataService, LibraryDisplayModeService);
+        Playback = new PlaybackViewModel(PlaybackServiceProperty, _waveformService); // Use the stored PlaybackService
+        LoopEditor = new LoopEditorViewModel(PlaybackServiceProperty, _loopDataService, _songLoopService); // Use stored PlaybackService
+        AdvancedPanel = new AdvancedPanelViewModel(Playback, Library);
+
+        WorkflowManager = new ApplicationWorkflowManager(
+            SettingsServiceProperty,
+            ScrobblingServiceProperty, // Use stored ScrobblingService
+            _currentTheme,
+            Library,
+            Playback,
+            PlaybackServiceProperty, // Use stored PlaybackService
+            _loopDataService);
+
+        InteractionCoordinator = new MainWindowInteractionCoordinator(
+            getOwnerViewFunc,
+            Library,
+            AdvancedPanel,
+            WorkflowManager,
+            _songEditInteractionService,
+            raiseAllCommandsCanExecuteChangedCallback
+        );
+
+        ViewModelOrchestrator = new MainWindowViewModelOrchestrator(
+            Library,
+            Playback,
+            AdvancedPanel,
+            raiseAllCommandsCanExecuteChangedCallback,
+            updateStatusBarTextCallback,
+            notifyMainWindowVMPropertyChangedCallback,
+            parentMainWindowViewModel.UpdatePlaybackAreaBackground
+        );
+
+        // Subscribe to PlaybackServiceProperty events here, as this manager owns the WorkflowManager that handles it.
+        PlaybackServiceProperty.PlaybackEndedNaturally += PlaybackService_PlaybackEndedNaturally;
+    }
+
+    private void PlaybackService_PlaybackEndedNaturally(object? sender, EventArgs e)
+    {
+        // WorkflowManager is instantiated and owned by this ComponentsManager
+        WorkflowManager.HandlePlaybackEndedNaturally();
+    }
+
+    public void Dispose()
+    {
+        if (PlaybackServiceProperty is not null)
+        {
+            PlaybackServiceProperty.PlaybackEndedNaturally -= PlaybackService_PlaybackEndedNaturally;
+        }
+        ViewModelOrchestrator?.Dispose();
+        WorkflowManager?.Dispose();
+        Library?.Dispose();
+        Playback?.Dispose();
+        AdvancedPanel?.Dispose();
+        LoopEditor?.Dispose();
+        // LibraryDisplayModeService does not currently implement IDisposable
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\MainWindow\MainWindowInteractionCoordinator.cs">
 using System;
 using System.Diagnostics;
@@ -9408,13 +9492,11 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
-// Removed: using Avalonia.Platform.Storage; // No longer directly used here for Application.Current
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Sonorize.Models;
 using Sonorize.Services;
-// Removed: using Sonorize.ViewModels.Status; // StatusBarTextProvider usage moved
 using Sonorize.ViewModels.LibraryManagement; // Required for LibraryDisplayModeService
 using Sonorize.ViewModels.MainWindow; // Added for MainWindowInteractionCoordinator
 
@@ -9541,15 +9623,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         (ExitCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
-    // PlaybackService_PlaybackEndedNaturally is now handled within MainWindowComponentsManager via its WorkflowManager
-
     private void UpdateAllUIDependentStates()
     {
         OnPropertyChanged(nameof(IsLoadingLibrary));
-        // Properties of child VMs (Playback.CurrentSong etc.) will notify through their own INPC.
-        // MainWindowViewModel itself doesn't need to raise OnPropertyChanged for them unless it has direct proxy properties.
-        // However, if bindings are to "Playback.CurrentSong" directly from MainWindowViewModel's XAML, they will work.
-        // Let's ensure relevant top-level states that might affect commands are refreshed.
         OnPropertyChanged(nameof(IsAdvancedPanelVisible));
         OnPropertyChanged(nameof(ActiveTabIndex));
 
@@ -9566,13 +9642,10 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             (ExitCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenEditSongMetadataDialogCommand as RelayCommand)?.RaiseCanExecuteChanged();
-
-            // Child VMs manage their own command executability updates based on their state.
-            // If MainWindowViewModel needs to explicitly trigger updates in child VMs' commands:
+            
             Library.RaiseLibraryCommandsCanExecuteChanged();
             Playback.RaisePlaybackCommandCanExecuteChanged();
             LoopEditor.RaiseMainLoopCommandsCanExecuteChanged();
-            // AdvancedPanel's ToggleVisibilityCommand CanExecute will be updated by AdvancedPanelViewModel itself.
         });
     }
 
@@ -9580,7 +9653,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     {
         Dispatcher.UIThread.InvokeAsync(() =>
         {
-            // WorkflowManager is now accessed via _componentsManager
             StatusBarText = _componentsManager.WorkflowManager.GetCurrentStatusText(LoopEditor);
         });
     }
@@ -9590,10 +9662,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         var settings = _componentsManager.SettingsServiceProperty.LoadSettings();
         var style = Enum.TryParse<PlaybackAreaBackgroundStyle>(settings.PlaybackAreaBackgroundStyle, out var s) ? s : PlaybackAreaBackgroundStyle.Solid;
 
-        // Dispose previous abstract bitmap if it exists
         AlbumArtForAbstractBackground?.Dispose();
 
-        // Reset state
         ShowAlbumArtStretchBackground = false;
         ShowAlbumArtAbstractBackground = false;
         AlbumArtForStretchBackground = null;
@@ -9614,7 +9684,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             }
             else if (style == PlaybackAreaBackgroundStyle.AlbumArtAbstract)
             {
-                // Create a tiny, pixelated version for the abstract effect
                 var abstractBitmap = currentArt.CreateScaledBitmap(new PixelSize(8, 8), BitmapInterpolationMode.HighQuality);
                 AlbumArtForAbstractBackground = abstractBitmap;
                 ShowAlbumArtAbstractBackground = true;
@@ -9631,7 +9700,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private async Task OpenSettingsDialogAsync()
     {
-        // InteractionCoordinator is accessed via _componentsManager
         var (statusMessages, settingsChanged) = await _componentsManager.InteractionCoordinator.CoordinateAndProcessSettingsAsync();
         if (settingsChanged)
         {
@@ -9650,15 +9718,14 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private async Task AddMusicDirectoryAndRefreshAsync()
     {
-        // InteractionCoordinator is accessed via _componentsManager
         var (refreshNeeded, statusMessage) = await _componentsManager.InteractionCoordinator.CoordinateAddMusicDirectoryAsync();
         StatusBarText = statusMessage;
 
         if (refreshNeeded)
         {
-            await Library.LoadLibraryAsync(); // Library is from _componentsManager
+            await Library.LoadLibraryAsync();
         }
-        else if (string.IsNullOrEmpty(statusMessage)) // If no specific message (e.g. "already exists")
+        else if (string.IsNullOrEmpty(statusMessage))
         {
             UpdateStatusBarText();
         }
@@ -9666,10 +9733,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private async Task HandleOpenEditSongMetadataDialogAsync(object? songObject)
     {
-        // InteractionCoordinator is accessed via _componentsManager
         string statusMessage = await _componentsManager.InteractionCoordinator.CoordinateEditSongMetadataAsync(songObject as Song);
         StatusBarText = statusMessage;
-        if (string.IsNullOrEmpty(statusMessage)) // Ensure status bar updates if no message
+        if (string.IsNullOrEmpty(statusMessage))
         {
             UpdateStatusBarText();
         }
@@ -10288,131 +10354,6 @@ public class ThemeSettingsViewModel : ViewModelBase
         {
             SelectedThemeFile = AvailableThemes.First(); // Fallback if preferred theme not found
         }
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindow\MainWindowComponentsManager.cs">
-using System;
-using System.ComponentModel;
-using Avalonia.Controls;
-using Sonorize.Models;
-using Sonorize.Services;
-using Sonorize.ViewModels.LibraryManagement; // Required for LibraryDisplayModeService
-
-namespace Sonorize.ViewModels.MainWindow;
-
-public class MainWindowComponentsManager : IDisposable
-{
-    // Keep direct service references if they are passed to multiple components
-    // or if MainWindowViewModel needs them directly (though preferably through properties here)
-    public SettingsService SettingsServiceProperty { get; }
-    public MusicLibraryService MusicLibraryServiceProperty { get; }
-    // PlaybackService is now a property for MainWindowViewModel to expose
-    public PlaybackService PlaybackServiceProperty { get; }
-    private readonly ThemeColors _currentTheme;
-    private readonly WaveformService _waveformService;
-    private readonly LoopDataService _loopDataService;
-    public ScrobblingService ScrobblingServiceProperty { get; } // Exposed for MainWindowViewModel
-    private readonly SongMetadataService _songMetadataService;
-    private readonly SongEditInteractionService _songEditInteractionService;
-    private readonly SongLoopService _songLoopService;
-
-    public LibraryViewModel Library { get; }
-    public PlaybackViewModel Playback { get; }
-    public LoopEditorViewModel LoopEditor { get; }
-    public AdvancedPanelViewModel AdvancedPanel { get; }
-    public LibraryDisplayModeService LibraryDisplayModeService { get; }
-    public ApplicationWorkflowManager WorkflowManager { get; }
-    public MainWindowInteractionCoordinator InteractionCoordinator { get; }
-    public MainWindowViewModelOrchestrator ViewModelOrchestrator { get; }
-
-    public MainWindowComponentsManager(
-        MainWindowViewModel parentMainWindowViewModel,
-        SettingsService settingsService,
-        MusicLibraryService musicLibraryService,
-        PlaybackService playbackService, // Renamed for clarity from _playbackService
-        ThemeColors currentTheme,
-        WaveformService waveformService,
-        LoopDataService loopDataService,
-        ScrobblingService scrobblingService,
-        SongMetadataService songMetadataService,
-        SongEditInteractionService songEditInteractionService,
-        SongLoopService songLoopService,
-        Func<Window?> getOwnerViewFunc,
-        Action raiseAllCommandsCanExecuteChangedCallback,
-        Action updateStatusBarTextCallback,
-        Action<string> notifyMainWindowVMPropertyChangedCallback)
-    {
-        SettingsServiceProperty = settingsService;
-        MusicLibraryServiceProperty = musicLibraryService;
-        PlaybackServiceProperty = playbackService; // Store the passed service
-        _currentTheme = currentTheme;
-        _waveformService = waveformService;
-        _loopDataService = loopDataService;
-        ScrobblingServiceProperty = scrobblingService; // Store the passed service
-        _songMetadataService = songMetadataService;
-        _songEditInteractionService = songEditInteractionService;
-        _songLoopService = songLoopService;
-
-        LibraryDisplayModeService = new LibraryDisplayModeService(SettingsServiceProperty);
-        // Pass parentMainWindowViewModel to LibraryViewModel as per its constructor
-        Library = new LibraryViewModel(parentMainWindowViewModel, SettingsServiceProperty, MusicLibraryServiceProperty, _loopDataService, LibraryDisplayModeService);
-        Playback = new PlaybackViewModel(PlaybackServiceProperty, _waveformService); // Use the stored PlaybackService
-        LoopEditor = new LoopEditorViewModel(PlaybackServiceProperty, _loopDataService, _songLoopService); // Use stored PlaybackService
-        AdvancedPanel = new AdvancedPanelViewModel(Playback, Library);
-
-        WorkflowManager = new ApplicationWorkflowManager(
-            SettingsServiceProperty,
-            ScrobblingServiceProperty, // Use stored ScrobblingService
-            _currentTheme,
-            Library,
-            Playback,
-            PlaybackServiceProperty, // Use stored PlaybackService
-            _loopDataService);
-
-        InteractionCoordinator = new MainWindowInteractionCoordinator(
-            getOwnerViewFunc,
-            Library,
-            AdvancedPanel,
-            WorkflowManager,
-            _songEditInteractionService,
-            raiseAllCommandsCanExecuteChangedCallback
-        );
-
-        ViewModelOrchestrator = new MainWindowViewModelOrchestrator(
-            Library,
-            Playback,
-            AdvancedPanel,
-            raiseAllCommandsCanExecuteChangedCallback,
-            updateStatusBarTextCallback,
-            notifyMainWindowVMPropertyChangedCallback,
-            parentMainWindowViewModel.UpdatePlaybackAreaBackground
-        );
-
-        // Subscribe to PlaybackServiceProperty events here, as this manager owns the WorkflowManager that handles it.
-        PlaybackServiceProperty.PlaybackEndedNaturally += PlaybackService_PlaybackEndedNaturally;
-    }
-
-    private void PlaybackService_PlaybackEndedNaturally(object? sender, EventArgs e)
-    {
-        // WorkflowManager is instantiated and owned by this ComponentsManager
-        WorkflowManager.HandlePlaybackEndedNaturally();
-    }
-
-    public void Dispose()
-    {
-        if (PlaybackServiceProperty is not null)
-        {
-            PlaybackServiceProperty.PlaybackEndedNaturally -= PlaybackService_PlaybackEndedNaturally;
-        }
-        ViewModelOrchestrator?.Dispose();
-        WorkflowManager?.Dispose();
-        Library?.Dispose();
-        Playback?.Dispose();
-        AdvancedPanel?.Dispose();
-        LoopEditor?.Dispose();
-        // LibraryDisplayModeService does not currently implement IDisposable
     }
 }
 </file>

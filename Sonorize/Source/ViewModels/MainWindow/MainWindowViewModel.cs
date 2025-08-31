@@ -41,6 +41,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public Bitmap? AlbumArtForAbstractBackground { get; private set; }
     public bool ShowAlbumArtStretchBackground { get; private set; }
     public bool ShowAlbumArtAbstractBackground { get; private set; }
+    public bool UseCompactPlaybackControls { get; private set; }
 
 
     private int _activeTabIndex;
@@ -176,6 +177,14 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public void UpdatePlaybackAreaBackground()
     {
         var settings = _componentsManager.SettingsServiceProperty.LoadSettings();
+        
+        var newCompactSetting = settings.UseCompactPlaybackControls;
+        if (UseCompactPlaybackControls != newCompactSetting)
+        {
+            UseCompactPlaybackControls = newCompactSetting;
+            OnPropertyChanged(nameof(UseCompactPlaybackControls));
+        }
+
         var style = Enum.TryParse<PlaybackAreaBackgroundStyle>(settings.PlaybackAreaBackgroundStyle, out var s) ? s : PlaybackAreaBackgroundStyle.Solid;
 
         AlbumArtForAbstractBackground?.Dispose();

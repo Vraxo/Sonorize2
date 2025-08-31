@@ -32,9 +32,40 @@ public static class AppearanceSettingsPanel
 
         panel.Children.Add(new Separator { Background = theme.B_ControlBackgroundColor, Margin = new Thickness(0, 5) });
         panel.Children.Add(CreatePlaybackBackgroundSelector(theme));
+        panel.Children.Add(new Separator { Background = theme.B_ControlBackgroundColor, Margin = new Thickness(0, 5) });
+        panel.Children.Add(CreatePlaybackLayoutSelector(theme));
 
 
         return panel;
+    }
+
+    private static StackPanel CreatePlaybackLayoutSelector(ThemeColors theme)
+    {
+        var sectionPanel = new StackPanel { Spacing = 8 };
+
+        var title = new TextBlock
+        {
+            Text = "Playback Panel Layout",
+            FontSize = 14,
+            FontWeight = FontWeight.Normal,
+            Foreground = theme.B_TextColor,
+            Margin = new Thickness(0, 10, 0, 5)
+        };
+
+        var compactLayoutCheck = new CheckBox
+        {
+            Content = "Use compact layout (single line)",
+            Foreground = theme.B_TextColor
+        };
+        compactLayoutCheck.Bind(CheckBox.IsCheckedProperty, new Binding("AppearanceSettings.UseCompactPlaybackControls", BindingMode.TwoWay));
+    
+        var checkPanel = new StackPanel { Spacing = 5, Margin = new Thickness(10, 0, 0, 0) };
+        checkPanel.Children.Add(compactLayoutCheck);
+
+        sectionPanel.Children.Add(title);
+        sectionPanel.Children.Add(checkPanel);
+
+        return sectionPanel;
     }
 
     private static StackPanel CreateLibraryColumnsSelector(ThemeColors theme)

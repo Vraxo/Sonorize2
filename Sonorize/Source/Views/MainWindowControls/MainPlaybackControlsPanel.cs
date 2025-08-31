@@ -13,9 +13,6 @@ public static class MainPlaybackControlsPanel
 {
     public static Grid Create(ThemeColors theme) // Root is a Grid
     {
-        // --- Playback Navigation Buttons Panel (Extracted) ---
-        var combinedPlaybackButtonControlsPanel = PlaybackNavigationButtonsPanel.Create(theme);
-
         var toggleAdvPanelButton = new Button
         {
             Content = "+",
@@ -55,21 +52,43 @@ public static class MainPlaybackControlsPanel
         };
         rightControlsPanel.Children.Add(toggleAdvPanelButton);
 
-        // --- Playback Time Slider Panel (Extracted) ---
-        var timeSliderGrid = PlaybackTimeSliderPanel.Create(theme);
-
-
-        // --- Center Playback Controls Stack (Combined Buttons Panel + Slider) ---
-        var centerPlaybackControlsStack = new StackPanel
+        // --- Standard Vertical Layout ---
+        var verticalLayout = new StackPanel
         {
             Orientation = Orientation.Vertical,
             Margin = new Thickness(0, 5, 0, 0),
-            Spacing = 8, // Space between the button row and the slider row
-            HorizontalAlignment = HorizontalAlignment.Center, // Center this stack panel within its parent grid cell
+            Spacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
-        centerPlaybackControlsStack.Children.Add(combinedPlaybackButtonControlsPanel);
-        centerPlaybackControlsStack.Children.Add(timeSliderGrid);
+        verticalLayout.Children.Add(PlaybackNavigationButtonsPanel.Create(theme));
+        verticalLayout.Children.Add(PlaybackTimeSliderPanel.Create(theme));
+        verticalLayout.Bind(Visual.IsVisibleProperty, new Binding("!UseCompactPlaybackControls"));
+
+        // --- New Compact Horizontal Layout ---
+        var timeSliderGrid_Compact = PlaybackTimeSliderPanel.Create(theme);
+        timeSliderGrid_Compact.MinWidth = 400;
+
+        var horizontalLayout = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 5, 0, 0),
+            Spacing = 15,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        horizontalLayout.Children.Add(PlaybackNavigationButtonsPanel.Create(theme));
+        horizontalLayout.Children.Add(timeSliderGrid_Compact);
+        horizontalLayout.Bind(Visual.IsVisibleProperty, new Binding("UseCompactPlaybackControls"));
+
+        // --- Center Playback Controls Container ---
+        var centerPlaybackControlsContainer = new Panel
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        centerPlaybackControlsContainer.Children.Add(verticalLayout);
+        centerPlaybackControlsContainer.Children.Add(horizontalLayout);
 
 
         // --- Currently Playing Song Info Panel (Extracted) ---
@@ -88,10 +107,10 @@ public static class MainPlaybackControlsPanel
 
         // Place all visible controls into the contentGrid. Their alignment properties will position them correctly.
         Grid.SetColumn(songInfoPanel, 0);
-        Grid.SetColumn(centerPlaybackControlsStack, 1);
+        Grid.SetColumn(centerPlaybackControlsContainer, 1);
         Grid.SetColumn(rightControlsPanel, 2);
         contentGrid.Children.Add(songInfoPanel);
-        contentGrid.Children.Add(centerPlaybackControlsStack);
+        contentGrid.Children.Add(centerPlaybackControlsContainer);
         contentGrid.Children.Add(rightControlsPanel);
 
 
