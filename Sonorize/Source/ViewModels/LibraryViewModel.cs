@@ -32,6 +32,10 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     public ICommand PreviousTrackCommand => _trackNavigationManager.PreviousTrackCommand;
     public ICommand NextTrackCommand => _trackNavigationManager.NextTrackCommand;
     public ICommand EditSongMetadataCommand { get; }
+    public ICommand SortCommand { get; }
+
+    public SortProperty CurrentSortProperty { get; private set; } = SortProperty.Title;
+    public SortDirection CurrentSortDirection { get; private set; } = SortDirection.Ascending;
 
     public SongDisplayMode LibraryViewMode => _displayModeService.LibraryViewMode;
     public SongDisplayMode ArtistViewMode => _displayModeService.ArtistViewMode;
@@ -119,8 +123,34 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         _musicLibraryService.SongThumbnailUpdated += MusicLibraryService_SongThumbnailUpdated;
 
         EditSongMetadataCommand = new RelayCommand(ExecuteEditSongMetadata, CanExecuteEditSongMetadata);
+        SortCommand = new RelayCommand(ExecuteSort);
 
         UpdateStatusBarText();
+    }
+
+    private void ExecuteSort(object? parameter)
+    {
+        if (parameter is not SortProperty newSortProperty)
+        {
+            return;
+        }
+
+        if (CurrentSortProperty == newSortProperty)
+        {
+            // If it's the same column, flip the direction
+            CurrentSortDirection = CurrentSortDirection == SortDirection.Ascending ? SortDirection.Descending : SortDirection.Ascending;
+        }
+        else
+        {
+            // If it's a new column, set it and default to ascending
+            CurrentSortProperty = newSortProperty;
+            CurrentSortDirection = SortDirection.Ascending;
+        }
+
+        OnPropertyChanged(nameof(CurrentSortProperty));
+        OnPropertyChanged(nameof(CurrentSortDirection));
+
+        ApplyFilter(); // Re-apply filter and sorting
     }
 
     private void SongListManager_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -192,7 +222,9 @@ public class LibraryViewModel : ViewModelBase, IDisposable
             _components.FilterState.SearchQuery,
             _components.FilterState.SelectedArtist,
             _components.FilterState.SelectedAlbum,
-            _components.FilterState.SelectedPlaylist);
+            _components.FilterState.SelectedPlaylist,
+            CurrentSortProperty,
+            CurrentSortDirection);
 
         _trackNavigationManager.UpdateSelectedSong(_components.SongList.SelectedSong);
         UpdateStatusBarText();

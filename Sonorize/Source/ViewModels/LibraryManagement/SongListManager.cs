@@ -8,6 +8,9 @@ using Sonorize.Models;
 
 namespace Sonorize.ViewModels.LibraryManagement;
 
+public enum SortProperty { Title, Artist, Album, Duration, DateAdded, PlayCount }
+public enum SortDirection { Ascending, Descending }
+
 public class SongListManager : ViewModelBase
 {
     private readonly SongFilteringService _songFilteringService;
@@ -51,7 +54,7 @@ public class SongListManager : ViewModelBase
 
     public int AllSongsCount => _allSongs.Count;
 
-    public void ApplyFilter(string? searchQuery, ArtistViewModel? selectedArtist, AlbumViewModel? selectedAlbum, PlaylistViewModel? selectedPlaylist)
+    public void ApplyFilter(string? searchQuery, ArtistViewModel? selectedArtist, AlbumViewModel? selectedAlbum, PlaylistViewModel? selectedPlaylist, SortProperty sortBy, SortDirection sortDirection)
     {
         var currentSelectedSongBeforeFilter = SelectedSong;
 
@@ -61,15 +64,17 @@ public class SongListManager : ViewModelBase
             searchQuery,
             selectedArtist,
             selectedAlbum,
-            selectedPlaylist).ToList(); // Materialize the list once
+            selectedPlaylist);
+
+        var sortedResults = SortSongs(filteredResults, sortBy, sortDirection);
 
         // Set the index for each song in the view for performant alternating rows.
-        for (int i = 0; i < filteredResults.Count; i++)
+        for (int i = 0; i < sortedResults.Count; i++)
         {
-            filteredResults[i].IndexInView = i;
+            sortedResults[i].IndexInView = i;
         }
 
-        foreach (var song in filteredResults)
+        foreach (var song in sortedResults)
         {
             FilteredSongs.Add(song);
         }
@@ -89,10 +94,41 @@ public class SongListManager : ViewModelBase
             SelectedSong = null; // Ensure selection is cleared and notified
         }
         // If currentSelectedSongBeforeFilter was null and SelectedSong is also null, no change, no notification.
+OnPropertyChanged(nameof(FilteredSongs)); // Notify that the collection content has changed (though individual adds also notify)
+}
 
-        OnPropertyChanged(nameof(FilteredSongs)); // Notify that the collection content has changed (though individual adds also notify)
-    }
+private List<Song> SortSongs(IEnumerable<Song> songs, SortProperty sortBy, SortDirection sortDirection)
+{
+IOrderedEnumerable<Song> ordered;
+if (sortDirection == SortDirection.Ascending)
+{
+    ordered = sortBy switch
+    {
+        SortProperty.Artist => songs.OrderBy(s => s.Artist, StringComparer.OrdinalIgnoreCase),
+        SortProperty.Album => songs.OrderBy(s => s.Album, StringComparer.OrdinalIgnoreCase),
+        SortProperty.Duration => songs.OrderBy(s => s.Duration),
+        SortProperty.DateAdded => songs.OrderBy(s => s.DateAdded),
+        SortProperty.PlayCount => songs.OrderBy(s => s.PlayCount),
+        _ => songs.OrderBy(s => s.Title, StringComparer.OrdinalIgnoreCase),
+    };
+}
+else // Descending
+{
+    ordered = sortBy switch
+    {
+        SortProperty.Artist => songs.OrderByDescending(s => s.Artist, StringComparer.OrdinalIgnoreCase),
+        SortProperty.Album => songs.OrderByDescending(s => s.Album, StringComparer.OrdinalIgnoreCase),
+        SortProperty.Duration => songs.OrderByDescending(s => s.Duration),
+        SortProperty.DateAdded => songs.OrderByDescending(s => s.DateAdded),
+        SortProperty.PlayCount => songs.OrderByDescending(s => s.PlayCount),
+        _ => songs.OrderByDescending(s => s.Title, StringComparer.OrdinalIgnoreCase),
+    };
+}
+// Add secondary sort for consistency when primary keys are equal
+return ordered.ThenBy(s => s.Title, StringComparer.OrdinalIgnoreCase).ToList();
+}
 
-    // Provides access to the master list for services like ArtistAlbumCollectionManager
-    public IReadOnlyList<Song> GetAllSongsReadOnly() => _allSongs.AsReadOnly();
+
+// Provides access to the master list for services like ArtistAlbumCollectionManager
+public IReadOnlyList<Song> GetAllSongsReadOnly() => _allSongs.AsReadOnly();
 }
