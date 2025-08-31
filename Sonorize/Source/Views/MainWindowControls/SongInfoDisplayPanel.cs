@@ -10,17 +10,16 @@ namespace Sonorize.Views.MainWindowControls;
 
 public static class SongInfoDisplayPanel
 {
-    public static StackPanel Create(ThemeColors theme)
+    public static Grid Create(ThemeColors theme)
     {
-        var songInfoPanel = new StackPanel
+        var songInfoGrid = new Grid
         {
-            Orientation = Orientation.Horizontal,
+            ColumnDefinitions = new ColumnDefinitions("Auto, *"),
             VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Margin = new Thickness(10, 0, 0, 0),
-            Spacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Margin = new Thickness(10, 0, 10, 0),
         };
-        songInfoPanel.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
+        songInfoGrid.Bind(Visual.IsVisibleProperty, new Binding("Playback.HasCurrentSong"));
 
         var thumbnailImage = new Image
         {
@@ -32,13 +31,16 @@ public static class SongInfoDisplayPanel
         };
         RenderOptions.SetBitmapInterpolationMode(thumbnailImage, BitmapInterpolationMode.HighQuality);
         thumbnailImage.Bind(Image.SourceProperty, new Binding("Playback.CurrentSong.Thumbnail"));
+        Grid.SetColumn(thumbnailImage, 0);
 
         var textStack = new StackPanel
         {
             Orientation = Orientation.Vertical,
             VerticalAlignment = VerticalAlignment.Center,
-            Spacing = 1
+            Spacing = 1,
+            Margin = new Thickness(8, 0, 0, 0) // Replaces ColumnSpacing
         };
+        Grid.SetColumn(textStack, 1);
 
         var titleTextBlock = new TextBlock
         {
@@ -47,8 +49,7 @@ public static class SongInfoDisplayPanel
             FontWeight = FontWeight.SemiBold,
             Foreground = theme.B_TextColor,
             TextTrimming = TextTrimming.CharacterEllipsis,
-            VerticalAlignment = VerticalAlignment.Center,
-            MaxWidth = 200
+            VerticalAlignment = VerticalAlignment.Center
         };
         titleTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentSong.Title"));
 
@@ -58,17 +59,16 @@ public static class SongInfoDisplayPanel
             FontSize = 11,
             Foreground = theme.B_SecondaryTextColor,
             TextTrimming = TextTrimming.CharacterEllipsis,
-            VerticalAlignment = VerticalAlignment.Center,
-            MaxWidth = 200
+            VerticalAlignment = VerticalAlignment.Center
         };
         artistTextBlock.Bind(TextBlock.TextProperty, new Binding("Playback.CurrentSong.Artist"));
 
         textStack.Children.Add(titleTextBlock);
         textStack.Children.Add(artistTextBlock);
 
-        songInfoPanel.Children.Add(thumbnailImage);
-        songInfoPanel.Children.Add(textStack);
+        songInfoGrid.Children.Add(thumbnailImage);
+        songInfoGrid.Children.Add(textStack);
 
-        return songInfoPanel;
+        return songInfoGrid;
     }
 }
