@@ -32,6 +32,10 @@ public static class ListBoxViewFactory
             Name = name
         };
 
+        // PERF: Bind the ListBox's Tag to the ViewOptions once.
+        // Each ListBoxItem will then bind to this Tag, avoiding a costly FindAncestor call for every single item.
+        listBoxInstance.Bind(Control.TagProperty, new Binding("Library.ViewOptions"));
+
         ApplyListBoxItemStyles(listBoxInstance, theme);
 
         listBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding(itemsSourcePath));
@@ -76,12 +80,13 @@ public static class ListBoxViewFactory
                 }),
                 new Setter(TextBlock.ForegroundProperty, theme.B_TextColor),
                 new Setter(ListBoxItem.PaddingProperty, new Thickness(3)),
-                // This setter provides the ViewOptions to each item efficiently.
-                new Setter(Control.TagProperty, new Binding("DataContext.Library.ViewOptions")
+                // PERF: This setter provides the ViewOptions to each item by binding to the parent ListBox's Tag.
+                // This is much more efficient than finding the Window ancestor for every item.
+                new Setter(Control.TagProperty, new Binding("Tag")
                 {
                     RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
                     {
-                        AncestorType = typeof(Window)
+                        AncestorType = typeof(ListBox)
                     }
                 })
             }
