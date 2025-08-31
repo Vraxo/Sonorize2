@@ -1,5 +1,4 @@
-﻿using System;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Avalonia;
 using Avalonia.Media;
 using Sonorize.Models;
@@ -14,13 +13,6 @@ public static class ThemeResourceApplicator
         System.ArgumentNullException.ThrowIfNull(app);
         System.ArgumentNullException.ThrowIfNull(themeColors);
 
-        // --- Apply Metrics ---
-        app.Resources["ThemeControlCornerRadius"] = themeColors.C_ControlCornerRadius;
-        app.Resources["ThemeBorderThickness"] = themeColors.T_DefaultBorderThickness;
-        Debug.WriteLine($"[ThemeResourceApplicator] Applying metrics. CornerRadius: {themeColors.ControlCornerRadiusValue}");
-
-
-        // --- Apply Colors ---
         if (themeColors.B_AccentColor is ISolidColorBrush accentSolidBrush &&
             themeColors.B_AccentForeground is ISolidColorBrush accentForegroundSolidBrush)
         {
