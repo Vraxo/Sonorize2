@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Diagnostics;
-using Sonorize.Models; // For Song
+using Sonorize.Models;
 
 namespace Sonorize.Services;
-
-public record ScrobbleThresholds(int ScrobbleThresholdPercentage, int ScrobbleThresholdAbsoluteSeconds);
 
 public class ScrobbleEligibilityService
 {
