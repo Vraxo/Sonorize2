@@ -13,6 +13,10 @@ using Sonorize.Models;
 using Sonorize.ViewModels;
 using Sonorize.ViewModels.LibraryManagement;
 using System.Linq;
+using Avalonia.Media.Imaging; // For BitmapInterpolationMode
+using Avalonia.Input;
+using Avalonia.VisualTree;
+using System; // For Enum
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -31,7 +35,7 @@ public class MainTabViewControls
         _sharedViewTemplates = sharedViewTemplates;
     }
 
-    public TabControl CreateMainTabView(out ListBox songListBox, out ListBox artistsListBox, out ListBox albumsListBox, out ListBox playlistsListBox)
+    public TabControl CreateMainTabView(out DataGrid songDataGrid, out ScrollViewer songListScrollViewer, out ListBox artistsListBox, out ListBox albumsListBox, out ListBox playlistsListBox)
     {
         var tabControl = new TabControl
         {
@@ -63,43 +67,36 @@ public class MainTabViewControls
         tabControl.Styles.Add(selectedTabItemStyle);
         tabControl.Styles.Add(pointerOverTabItemStyle);
 
-        var (songListScrollViewer, slb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+        // --- Library Tab ---
+        var libraryDataGrid = CreateLibraryDataGrid(_theme);
+        var (sv, slb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
             _theme, _sharedViewTemplates, "SongListBox", "Library.FilteredSongs", "Library.SelectedSong",
-            _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
+            _sharedViewTemplates.SongTemplates.GridSongTemplate,
+            _sharedViewTemplates.WrapPanelItemsPanelTemplate,
             lb => _songListBoxInstance = lb);
-        _songListBoxInstance = slb;
-
-        var libraryTabContent = new DockPanel();
-        var libraryHeaderGrid = CreateLibraryHeaderGrid(_theme); // Note: Grid is created without horizontal margins here
-
-        // Wrapper Border for the header, handling all horizontal margins and scrollbar compensation
-        var headerWrapper = new Border
-        {
-            Child = libraryHeaderGrid,
-            Background = libraryHeaderGrid.Background, // Transfer background from grid to wrapper
-            Margin = new Thickness(10, 0, 10, 0), // Outer margin to align with ListBox's outer content area
-            MinHeight = libraryHeaderGrid.MinHeight // Inherit MinHeight
-        };
-        libraryHeaderGrid.Background = Brushes.Transparent; // Make inner grid transparent if wrapper takes background
-
-        // Bind the wrapper's *right padding* to the scrollbar's actual width
-        // This effectively shrinks the content area of the header by the scrollbar's width
-        // without affecting its left alignment.
-        headerWrapper.Bind(Border.PaddingProperty, new Binding("TemplateSettings.VerticalScrollBarActualWidth")
-        {
-            Source = songListScrollViewer,
-            Converter = new FuncValueConverter<double, Thickness>(width => new Thickness(0, 0, width, 0))
-        });
-
-        DockPanel.SetDock(headerWrapper, Dock.Top);
-        libraryTabContent.Children.Add(headerWrapper);
-        libraryTabContent.Children.Add(songListScrollViewer);
 
         var libraryTab = new TabItem
         {
             Header = "LIBRARY",
-            Content = libraryTabContent
+            // The Content is the LibraryViewModel itself.
+            Content = new Binding("Library"),
+            // The ContentTemplate will decide what to show based on the LibraryViewModel's state.
+            ContentTemplate = new FuncDataTemplate<LibraryViewModel>((lvm, ns) =>
+            {
+                // This template creates a ContentControl which will host either the DataGrid or the ListBox.
+                var contentPresenter = new ContentControl();
+
+                // This binding determines which view to show.
+                contentPresenter.Bind(ContentControl.ContentProperty, new Binding(nameof(LibraryViewModel.LibraryViewMode))
+                {
+                    Converter = new FuncValueConverter<SongDisplayMode, Control>(mode =>
+                        mode == SongDisplayMode.Grid ? sv : libraryDataGrid)
+                });
+
+                return contentPresenter;
+            })
         };
+
 
         var (artistsListScrollViewer, alb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
             _theme, _sharedViewTemplates, "ArtistsListBox", "Library.Groupings.Artists", "Library.FilterState.SelectedArtist",
@@ -142,7 +139,8 @@ public class MainTabViewControls
         tabControl.Items.Add(albumsTab);
         tabControl.Items.Add(playlistsTab);
 
-        songListBox = _songListBoxInstance!;
+        songDataGrid = libraryDataGrid;
+        songListScrollViewer = sv;
         artistsListBox = _artistsListBoxInstance!;
         albumsListBox = _albumsListBoxInstance!;
         playlistsListBox = _playlistsListBoxInstance!;
@@ -180,201 +178,137 @@ public class MainTabViewControls
         }
     }
 
-    private Grid CreateLibraryHeaderGrid(ThemeColors theme)
+    private DataGrid CreateLibraryDataGrid(ThemeColors theme)
     {
-        var headerGrid = new Grid
+        var dataGrid = new DataGrid
         {
-            Background = theme.B_SlightlyLighterBackground,
-            // Margin is now handled by the parent wrapper Border
-            MinHeight = 30
+            Margin = new Thickness(10),
+            BorderThickness = new Thickness(0),
+            Background = theme.B_ListBoxBackground,
+            RowBackground = Brushes.Transparent, // Rows will be styled individually
+            GridLinesVisibility = DataGridGridLinesVisibility.None,
+            CanUserReorderColumns = true,
+            CanUserResizeColumns = true,
+            CanUserSortColumns = true,
+            AutoGenerateColumns = false,
+            HeadersVisibility = DataGridHeadersVisibility.Column
         };
 
-        // This proxy element will safely get the DataContext from an ancestor once the UI is attached.
-        var proxy = new Border { Name = "DataContextProxy", IsVisible = false };
-        proxy.Bind(Border.TagProperty, new Binding("DataContext")
+        dataGrid.Bind(DataGrid.RowHeightProperty, new Binding("ViewOptions.RowHeight"));
+
+        // Sorting
+        dataGrid.Sorting += (s, e) =>
         {
-            RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
-        });
-        headerGrid.Children.Add(proxy);
+            if (s is not DataGrid { DataContext: LibraryViewModel vm } ||
+                e.Column.SortMemberPath is null) return;
 
-        // Bindings now source from the proxy's Tag property, which will hold the main view model.
-        headerGrid.Bind(Visual.IsVisibleProperty, new Binding("Tag.Library.LibraryViewMode")
+            if (Enum.TryParse<SortProperty>(e.Column.SortMemberPath, true, out var prop))
+            {
+                vm.SortCommand.Execute(prop);
+            }
+            e.Handled = true; // We handled it
+        };
+
+        // Context Menu Handler
+        dataGrid.ContextRequested += (sender, e) =>
         {
-            Source = proxy,
-            FallbackValue = false,
-            Converter = new FuncValueConverter<SongDisplayMode, bool>(m => m == SongDisplayMode.Detailed || m == SongDisplayMode.Compact)
-        });
+            if (e.Source is not Control { DataContext: Song song } control) return;
 
-        var columns = headerGrid.ColumnDefinitions;
+            var menu = new SongContextMenuHelper(theme).CreateContextMenu(song);
+            menu.PlacementTarget = control;
+            menu.Open();
+            e.Handled = true;
+        };
 
-        // Column 0: Image (fixed width)
-        var imageCol = new ColumnDefinition();
-        imageCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.Library.LibraryViewMode")
+        // --- STYLING ---
+        ApplyDataGridStyles(dataGrid, theme);
+
+        // --- COLUMNS (Structure only, bindings are deferred) ---
+        var imageCol = new DataGridTemplateColumn
         {
-            Source = proxy,
-            FallbackValue = new GridLength(0),
-            Converter = new FuncValueConverter<SongDisplayMode, GridLength>(m => m == SongDisplayMode.Detailed ? new GridLength(32 + 10 + 10) : new GridLength(10))
-        });
-        columns.Add(imageCol);
+            Header = "",
+            Width = new DataGridLength(32 + 20), // Image + Padding
+            CanUserSort = false,
+            CellTemplate = new FuncDataTemplate<Song>((song, ns) =>
+            {
+                var image = new Image { Width = 32, Height = 32, Margin = new Thickness(10, 0), Stretch = Stretch.UniformToFill };
+                image.Bind(Image.SourceProperty, new Binding(nameof(Song.Thumbnail)));
+                RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
+                return image;
+            })
+        };
 
-        // Column 1: Title (star-sized)
-        var titleCol = new ColumnDefinition();
-        titleCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.Library.LibraryViewMode")
-        {
-            Source = proxy,
-            FallbackValue = new GridLength(2, GridUnitType.Star),
-            Converter = new FuncValueConverter<SongDisplayMode, GridLength>(m => m == SongDisplayMode.Detailed ? new GridLength(3, GridUnitType.Star) : new GridLength(2, GridUnitType.Star))
-        });
-        columns.Add(titleCol);
+        var titleCol = new DataGridTextColumn { Binding = new Binding("Title"), Header = "Title", Width = new DataGridLength(3, DataGridLengthUnitType.Star), SortMemberPath = "Title" };
+        var artistCol = new DataGridTextColumn { Binding = new Binding("Artist"), Header = "Artist", Width = new DataGridLength(1.5, DataGridLengthUnitType.Star), SortMemberPath = "Artist" };
+        var albumCol = new DataGridTextColumn { Binding = new Binding("Album"), Header = "Album", Width = new DataGridLength(1.5, DataGridLengthUnitType.Star), SortMemberPath = "Album" };
+        var playCountCol = new DataGridTextColumn { Binding = new Binding("PlayCount"), Header = "Plays", Width = DataGridLength.Auto, SortMemberPath = "PlayCount" };
+        var dateAddedCol = new DataGridTextColumn { Binding = new Binding("DateAdded") { StringFormat = "{0:yyyy-MM-dd}" }, Header = "Date Added", Width = DataGridLength.Auto, SortMemberPath = "DateAdded" };
+        var durationCol = new DataGridTextColumn { Binding = new Binding("DurationString"), Header = "Duration", Width = DataGridLength.Auto, SortMemberPath = "Duration" };
 
-        // Column 2: Artist (star-sized, visibility-controlled)
-        var artistCol = new ColumnDefinition();
-        artistCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.Library.ViewOptions.ShowArtist") { Source = proxy, FallbackValue = GridLength.Parse("1.5*"), Converter = BooleanToGridLengthConverter.Instance, ConverterParameter = "1.5*" });
-        columns.Add(artistCol);
+        dataGrid.Columns.Add(imageCol);
+        dataGrid.Columns.Add(titleCol);
+        dataGrid.Columns.Add(artistCol);
+        dataGrid.Columns.Add(albumCol);
+        dataGrid.Columns.Add(playCountCol);
+        dataGrid.Columns.Add(dateAddedCol);
+        dataGrid.Columns.Add(durationCol);
 
-        // Column 3: Album (star-sized, visibility-controlled)
-        var albumCol = new ColumnDefinition();
-        albumCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.Library.ViewOptions.ShowAlbum") { Source = proxy, FallbackValue = GridLength.Parse("1.5*"), Converter = BooleanToGridLengthConverter.Instance, ConverterParameter = "1.5*" });
-        columns.Add(albumCol);
-
-        // Column 4: Spacer (star-sized)
-        columns.Add(new ColumnDefinition(GridLength.Star));
-
-        // Column 5: Play Count (Auto-sized, visibility-controlled)
-        var playCountCol = new ColumnDefinition();
-        playCountCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.Library.ViewOptions.ShowPlayCount") { Source = proxy, FallbackValue = new GridLength(0), Converter = BooleanToGridLengthConverter.Instance, ConverterParameter = "Auto" });
-        columns.Add(playCountCol);
-
-        // Column 6: Date Added (Auto-sized, visibility-controlled)
-        var dateAddedCol = new ColumnDefinition();
-        dateAddedCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.Library.ViewOptions.ShowDateAdded") { Source = proxy, FallbackValue = new GridLength(0), Converter = BooleanToGridLengthConverter.Instance, ConverterParameter = "Auto" });
-        columns.Add(dateAddedCol);
-
-        // Column 7: Duration (Auto-sized, visibility-controlled)
-        var durationCol = new ColumnDefinition();
-        durationCol.Bind(ColumnDefinition.WidthProperty, new Binding("Tag.Library.ViewOptions.ShowDuration") { Source = proxy, FallbackValue = GridLength.Auto, Converter = BooleanToGridLengthConverter.Instance, ConverterParameter = "Auto" });
-        columns.Add(durationCol);
-
-        int currentColIndex = 0; // Start at 0 for actual grid column placement
-
-        // Image column content (if detailed)
-        if (proxy.DataContext is MainWindowViewModel vm && vm.Library.LibraryDisplayModeService.LibraryViewMode == SongDisplayMode.Detailed)
-        {
-            // No direct header content for the image column itself, just increment.
-            currentColIndex++;
-        }
-        else // Compact mode, first column in item template is just 10px padding
-        {
-            currentColIndex++; // Skip the 10px padding column that exists in compact mode for the song items.
-        }
-
-        // Apply corrected CreateHeaderButton for Title, Artist, Album, etc.
-        headerGrid.Children.Add(CreateHeaderButton(theme, "Title", SortProperty.Title, currentColIndex++, proxy));
-        headerGrid.Children.Add(CreateHeaderButton(theme, "Artist", SortProperty.Artist, currentColIndex++, proxy));
-        headerGrid.Children.Add(CreateHeaderButton(theme, "Album", SortProperty.Album, currentColIndex++, proxy));
-
-        currentColIndex++; // Skip spacer column (Column 4)
-
-        headerGrid.Children.Add(CreateHeaderButton(theme, "Plays", SortProperty.PlayCount, currentColIndex++, proxy, HorizontalAlignment.Right));
-        headerGrid.Children.Add(CreateHeaderButton(theme, "Date Added", SortProperty.DateAdded, currentColIndex++, proxy, HorizontalAlignment.Right));
-        headerGrid.Children.Add(CreateHeaderButton(theme, "Duration", SortProperty.Duration, currentColIndex++, proxy, HorizontalAlignment.Right));
-
-        return headerGrid;
+        return dataGrid;
     }
 
-    private Button CreateHeaderButton(ThemeColors theme, string text, SortProperty sortProperty, int column, Border proxy, HorizontalAlignment alignment = HorizontalAlignment.Left)
+    private void ApplyDataGridStyles(DataGrid dataGrid, ThemeColors theme)
     {
-        var button = new Button
+        dataGrid.Styles.Add(new Style(s => s.OfType<DataGridRow>())
         {
-            Background = Brushes.Transparent,
-            BorderThickness = new Thickness(0),
-            // For left-aligned headers, force HorizontalAlignment.Left to prevent button's visual area from stretching.
-            // For right-aligned headers, HorizontalAlignment.Right is appropriate.
-            HorizontalAlignment = (alignment == HorizontalAlignment.Left) ? HorizontalAlignment.Left : HorizontalAlignment.Right,
-            // HorizontalContentAlignment positions the _content_ (StackPanel) within the button's own bounds.
-            HorizontalContentAlignment = alignment
-        };
-        button.Bind(Button.CommandProperty, new Binding("Tag.Library.SortCommand") { Source = proxy });
-        button.CommandParameter = sortProperty;
-        Grid.SetColumn(button, column);
-
-        // Define button's margin and textblock's padding based on the specific header
-        Thickness buttonMargin = new Thickness(0); // Default to no margin on the button
-        Thickness textBlockPadding = new Thickness(0); // Default to no padding on the text block
-
-        switch (sortProperty)
-        {
-            case SortProperty.Title:
-                // User feedback: Title header needs to move left by 10 pixels.
-                // Resetting its internal TextBlock padding to 0, since it had 10px before.
-                buttonMargin = new Thickness(0);
-                textBlockPadding = new Thickness(0, 0, 0, 0);
-                Debug.WriteLine($"[MainTabViewControls] Title header: ButtonMargin={buttonMargin}, TextPadding={textBlockPadding}");
-                break;
-            case SortProperty.Artist:
-                // Artist configuration from previous step (text aligned, but button shape too wide left)
-                // Retain: buttonMargin = 0, textBlockPadding = 20,0,0,0
-                // User feedback for "extra mass on the left" implied that the button's interactive area was too wide left.
-                // Setting HorizontalAlignment.Left and Margin=0 on the button means the button's interactive area
-                // will hug its content. The padding then pushes the text.
-                buttonMargin = new Thickness(0);
-                textBlockPadding = new Thickness(20, 0, 0, 0);
-                Debug.WriteLine($"[MainTabViewControls] Artist header: ButtonMargin={buttonMargin}, TextPadding={textBlockPadding}");
-                break;
-            case SortProperty.Album:
-                // Album configuration from previous step.
-                buttonMargin = new Thickness(0);
-                textBlockPadding = new Thickness(10, 0, 0, 0);
-                Debug.WriteLine($"[MainTabViewControls] Album header: ButtonMargin={buttonMargin}, TextPadding={textBlockPadding}");
-                break;
-            case SortProperty.PlayCount:
-            case SortProperty.DateAdded:
-            case SortProperty.Duration:
-                // Right-aligned headers from previous step.
-                buttonMargin = new Thickness(0);
-                textBlockPadding = new Thickness(0, 0, 10, 0);
-                Debug.WriteLine($"[MainTabViewControls] Right-aligned header '{text}': ButtonMargin={buttonMargin}, TextPadding={textBlockPadding}");
-                break;
-        }
-
-        button.Margin = buttonMargin; // Apply the calculated margin to the button
-
-        var contentPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
-        var textBlock = new TextBlock
-        {
-            Text = text,
-            FontSize = 11,
-            FontWeight = FontWeight.Bold,
-            Foreground = theme.B_SecondaryTextColor,
-            Padding = textBlockPadding // Apply the calculated padding to the text block
-        };
-        contentPanel.Children.Add(textBlock); // Add the now-configured textBlock
-
-        var sortIndicator = new TextBlock
-        {
-            FontSize = 10,
-            FontWeight = FontWeight.Bold,
-            Foreground = theme.B_TextColor,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        var visibilityBinding = new Binding("Tag.Library.CurrentSortProperty")
-        {
-            Source = proxy,
-            FallbackValue = false,
-            Converter = new FuncValueConverter<SortProperty, bool>(p => p == sortProperty)
-        };
-        sortIndicator.Bind(Visual.IsVisibleProperty, visibilityBinding);
-        sortIndicator.Bind(TextBlock.TextProperty, new Binding("Tag.Library.CurrentSortDirection")
-        {
-            Source = proxy,
-            FallbackValue = SortDirection.Ascending,
-            Converter = new FuncValueConverter<SortDirection, string>(d => d == SortDirection.Ascending ? "▲" : "▼")
+            Setters =
+            {
+                new Setter(TemplatedControl.BackgroundProperty, new MultiBinding
+                {
+                    Converter = new AlternatingRowBackgroundConverter
+                    {
+                        DefaultBrush = theme.B_ListBoxBackground,
+                        AlternateBrush = theme.B_ListBoxAlternateBackground
+                    },
+                    Bindings =
+                    {
+                        new Binding("."),
+                        new Binding("ViewOptions.EnableAlternatingRowColors")
+                    }
+                }),
+                new Setter(TextBlock.ForegroundProperty, theme.B_TextColor),
+            }
         });
 
-        contentPanel.Children.Add(sortIndicator);
-        button.Content = contentPanel;
+        dataGrid.Styles.Add(new Style(s => s.OfType<DataGridRow>().Class(":pointerover").Not(xx => xx.Class(":selected")))
+        { Setters = { new Setter(TemplatedControl.BackgroundProperty, theme.B_ControlBackgroundColor) } });
 
-        return button;
+        dataGrid.Styles.Add(new Style(s => s.OfType<DataGridRow>().Class(":selected"))
+        {
+            Setters =
+            {
+                new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor),
+                new Setter(TextBlock.ForegroundProperty, theme.B_AccentForeground)
+            }
+        });
+
+        dataGrid.Styles.Add(new Style(s => s.OfType<DataGridRow>().Class(":selected").Class(":pointerover"))
+        {
+            Setters =
+            {
+                new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor),
+                new Setter(TextBlock.ForegroundProperty, theme.B_AccentForeground)
+            }
+        });
+
+        dataGrid.Styles.Add(new Style(s => s.OfType<DataGridColumnHeader>())
+        {
+            Setters =
+            {
+                new Setter(TemplatedControl.BackgroundProperty, theme.B_SlightlyLighterBackground),
+                new Setter(TemplatedControl.ForegroundProperty, theme.B_SecondaryTextColor),
+                new Setter(TemplatedControl.FontWeightProperty, FontWeight.Bold),
+                new Setter(TemplatedControl.FontSizeProperty, 11.0),
+            }
+        });
     }
 }

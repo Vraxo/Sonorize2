@@ -5,6 +5,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
+using Avalonia.Data.Converters;
 using Avalonia.Layout;
 using Avalonia.Threading; // Required for Dispatcher
 using Sonorize.Models;
@@ -15,7 +16,8 @@ namespace Sonorize.Views;
 public class MainWindow : Window
 {
     private readonly ThemeColors _theme;
-    private ListBox _songListBox;
+    private DataGrid _songDataGrid;
+    private ScrollViewer _songListScrollViewer; // Changed from ListBox
     private ListBox _artistsListBox;
     private ListBox _albumsListBox;
     private ListBox _playlistsListBox;
@@ -57,7 +59,7 @@ public class MainWindow : Window
         Grid.SetRow(searchBarPanel, 1);
         mainGrid.Children.Add(searchBarPanel);
 
-        var tabControl = _mainTabViewControls.CreateMainTabView(out _songListBox, out _artistsListBox, out _albumsListBox, out _playlistsListBox);
+        var tabControl = _mainTabViewControls.CreateMainTabView(out _songDataGrid, out _songListScrollViewer, out _artistsListBox, out _albumsListBox, out _playlistsListBox);
         Grid.SetRow(tabControl, 2);
         mainGrid.Children.Add(tabControl);
 
@@ -104,11 +106,24 @@ public class MainWindow : Window
 
         vm.SetOwnerView(this);
 
+        // --- DEFERRED BINDING FOR DATAGRID ---
+        // The DataContext is now available, so we can safely apply the bindings.
+        _songDataGrid.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.FilteredSongs"));
+        _songDataGrid.Bind(DataGrid.SelectedItemProperty, new Binding("Library.SelectedSong", BindingMode.TwoWay));
+
+        // Bind column visibility. Columns DO NOT inherit DataContext, so we must provide an explicit Source.
+        _songDataGrid.Columns[0].Bind(DataGridColumn.IsVisibleProperty, new Binding("LibraryViewMode") { Source = vm.Library, Converter = new FuncValueConverter<SongDisplayMode, bool>(m => m == SongDisplayMode.Detailed) });
+        _songDataGrid.Columns[2].Bind(DataGridColumn.IsVisibleProperty, new Binding("ShowArtist") { Source = vm.Library.ViewOptions });
+        _songDataGrid.Columns[3].Bind(DataGridColumn.IsVisibleProperty, new Binding("ShowAlbum") { Source = vm.Library.ViewOptions });
+        _songDataGrid.Columns[4].Bind(DataGridColumn.IsVisibleProperty, new Binding("ShowPlayCount") { Source = vm.Library.ViewOptions });
+        _songDataGrid.Columns[5].Bind(DataGridColumn.IsVisibleProperty, new Binding("ShowDateAdded") { Source = vm.Library.ViewOptions });
+        _songDataGrid.Columns[6].Bind(DataGridColumn.IsVisibleProperty, new Binding("ShowDuration") { Source = vm.Library.ViewOptions });
+        // --- END DEFERRED BINDING ---
+
         _currentLibraryVM = vm.Library;
         _currentLibraryVM.PropertyChanged += LibraryViewModel_PropertyChanged;
-        // _sharedViewTemplates.SetLibraryViewModel(_currentLibraryVM); // No longer needed
 
-        ApplyListViewDisplayMode(_songListBox, _currentLibraryVM.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate);
+        ApplyLibraryViewMode(_currentLibraryVM.LibraryViewMode);
         ApplyListViewDisplayMode(_artistsListBox, _currentLibraryVM.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate);
         ApplyListViewDisplayMode(_albumsListBox, _currentLibraryVM.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate);
         ApplyListViewDisplayMode(_playlistsListBox, _currentLibraryVM.PlaylistViewMode, _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.CompactPlaylistTemplate, _sharedViewTemplates.GridPlaylistTemplate);
@@ -123,7 +138,7 @@ public class MainWindow : Window
 
         if (e.PropertyName == nameof(LibraryViewModel.LibraryViewMode))
         {
-            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_songListBox, lvm.LibraryViewMode, _sharedViewTemplates.SongTemplates.DetailedSongTemplate, _sharedViewTemplates.SongTemplates.CompactSongTemplate, _sharedViewTemplates.SongTemplates.GridSongTemplate));
+            Dispatcher.UIThread.InvokeAsync(() => ApplyLibraryViewMode(lvm.LibraryViewMode));
         }
         else if (e.PropertyName == nameof(LibraryViewModel.ArtistViewMode))
         {
@@ -138,6 +153,20 @@ public class MainWindow : Window
             Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_playlistsListBox, lvm.PlaylistViewMode, _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.CompactPlaylistTemplate, _sharedViewTemplates.GridPlaylistTemplate));
         }
     }
+
+    private void ApplyLibraryViewMode(SongDisplayMode mode)
+    {
+        // This logic is now handled by the DataTemplateSelector on the TabItem's ContentTemplate
+        // We just need to ensure the DataGrid's row height is updated when the view mode changes
+        // (though it doesn't strictly depend on the mode, it's good practice to re-apply related settings)
+
+        // This is now redundant as we're switching to a binding.
+        // if (DataContext is MainWindowViewModel mvm)
+        // {
+        //     _songDataGrid.RowHeight = mvm.Library.ViewOptions.RowHeight;
+        // }
+    }
+
 
     private void ApplyListViewDisplayMode(ListBox listBox, SongDisplayMode mode, IDataTemplate detailedTemplate, IDataTemplate compactTemplate, IDataTemplate gridTemplate)
     {
@@ -164,7 +193,6 @@ public class MainWindow : Window
         if (_currentLibraryVM is not null)
         {
             _currentLibraryVM.PropertyChanged -= LibraryViewModel_PropertyChanged;
-            // _sharedViewTemplates.SetLibraryViewModel(null); // No longer needed
         }
 
         if (DataContext is MainWindowViewModel vm)

@@ -1,32 +1,34 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <LangVersion>preview</LangVersion>
-    <OutputType>WinExe</OutputType>
-    <TargetFramework>net9.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
-    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
-  </PropertyGroup>
+	<PropertyGroup>
+		<LangVersion>preview</LangVersion>
+		<OutputType>WinExe</OutputType>
+		<TargetFramework>net9.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+		<ApplicationManifest>app.manifest</ApplicationManifest>
+		<AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+	</PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Avalonia" Version="11.2.7" />
-    <PackageReference Include="Avalonia.Desktop" Version="11.2.7" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.7" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.2.7" />
-    <PackageReference Include="Avalonia.Diagnostics" Version="11.2.7">
-      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
-      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
-    </PackageReference>
-    <PackageReference Include="Inflatable.Lastfm" Version="1.2.0" />
-    <PackageReference Include="NAudio" Version="1.9.0" />
-    <PackageReference Include="SoundTouch.Net.NAudioSupport" Version="2.3.2" /> <!-- This is the one we want -->
-    <PackageReference Include="TagLibSharp" Version="2.3.0" />
-  </ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="Avalonia" Version="11.3.4" />
+		<PackageReference Include="Avalonia.Controls.DataGrid" Version="11.3.4" />
+		<PackageReference Include="Avalonia.Desktop" Version="11.3.4" />
+		<PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.4" />
+		<PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.4" />
+		<PackageReference Include="Avalonia.Diagnostics" Version="11.3.4">
+			<IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+			<PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+		</PackageReference>
+		<PackageReference Include="Inflatable.Lastfm" Version="1.2.0" />
+		<PackageReference Include="NAudio" Version="1.9.0" />
+		<PackageReference Include="SoundTouch.Net.NAudioSupport" Version="2.3.2" />
+		<!-- This is the one we want -->
+		<PackageReference Include="TagLibSharp" Version="2.3.0" />
+	</ItemGroup>
 
-  <ItemGroup>
-    <Compile Update="App.axaml.cs">
-      <DependentUpon>App.axaml</DependentUpon>
-    </Compile>
-  </ItemGroup>
+	<ItemGroup>
+		<Compile Update="App.axaml.cs">
+			<DependentUpon>App.axaml</DependentUpon>
+		</Compile>
+	</ItemGroup>
 </Project>
