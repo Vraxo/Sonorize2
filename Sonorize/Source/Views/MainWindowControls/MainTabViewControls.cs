@@ -288,11 +288,10 @@ public class MainTabViewControls
         {
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
-            // Use HorizontalAlignment to control how the button itself sits in the column
-            // For left-aligned headers, let it shrink-wrap and align Left.
-            // For right-aligned headers, let it shrink-wrap and align Right.
+            // For left-aligned headers, force HorizontalAlignment.Left to prevent button's visual area from stretching.
+            // For right-aligned headers, HorizontalAlignment.Right is appropriate.
             HorizontalAlignment = (alignment == HorizontalAlignment.Left) ? HorizontalAlignment.Left : HorizontalAlignment.Right,
-            // HorizontalContentAlignment positions the _content_ (StackPanel) within the button's bounds.
+            // HorizontalContentAlignment positions the _content_ (StackPanel) within the button's own bounds.
             HorizontalContentAlignment = alignment
         };
         button.Bind(Button.CommandProperty, new Binding("Tag.Library.SortCommand") { Source = proxy });
@@ -300,34 +299,41 @@ public class MainTabViewControls
         Grid.SetColumn(button, column);
 
         // Define button's margin and textblock's padding based on the specific header
-        Thickness buttonMargin = new Thickness(0);
-        Thickness textBlockPadding = new Thickness(0);
+        Thickness buttonMargin = new Thickness(0); // Default to no margin on the button
+        Thickness textBlockPadding = new Thickness(0); // Default to no padding on the text block
 
         switch (sortProperty)
         {
             case SortProperty.Title:
-                // User feedback: Title was "perfect" at 0 margin/10 padding for text.
-                buttonMargin = new Thickness(0); // Button starts at column edge
-                textBlockPadding = new Thickness(10, 0, 0, 0); // Text has 10px left padding
+                // User feedback: Title header needs to move left by 10 pixels.
+                // Resetting its internal TextBlock padding to 0, since it had 10px before.
+                buttonMargin = new Thickness(0);
+                textBlockPadding = new Thickness(0, 0, 0, 0);
+                Debug.WriteLine($"[MainTabViewControls] Title header: ButtonMargin={buttonMargin}, TextPadding={textBlockPadding}");
                 break;
             case SortProperty.Artist:
-                // User feedback: Artist button had "extra mass on the left", text needed to move right.
-                // Shift entire button 10px right, and text has 10px padding within button.
-                buttonMargin = new Thickness(10, 0, 0, 0); // Shift button itself 10px right from column edge
-                textBlockPadding = new Thickness(10, 0, 0, 0); // Text has 10px left padding inside the button
+                // Artist configuration from previous step (text aligned, but button shape too wide left)
+                // Retain: buttonMargin = 0, textBlockPadding = 20,0,0,0
+                // User feedback for "extra mass on the left" implied that the button's interactive area was too wide left.
+                // Setting HorizontalAlignment.Left and Margin=0 on the button means the button's interactive area
+                // will hug its content. The padding then pushes the text.
+                buttonMargin = new Thickness(0);
+                textBlockPadding = new Thickness(20, 0, 0, 0);
+                Debug.WriteLine($"[MainTabViewControls] Artist header: ButtonMargin={buttonMargin}, TextPadding={textBlockPadding}");
                 break;
             case SortProperty.Album:
-                // Similar to Artist, shift button and give text padding.
-                buttonMargin = new Thickness(10, 0, 0, 0); // Shift button itself 10px right from column edge
-                textBlockPadding = new Thickness(10, 0, 0, 0); // Text has 10px left padding inside the button
+                // Album configuration from previous step.
+                buttonMargin = new Thickness(0);
+                textBlockPadding = new Thickness(10, 0, 0, 0);
+                Debug.WriteLine($"[MainTabViewControls] Album header: ButtonMargin={buttonMargin}, TextPadding={textBlockPadding}");
                 break;
             case SortProperty.PlayCount:
             case SortProperty.DateAdded:
             case SortProperty.Duration:
-                // Right-aligned headers. Button's right edge aligns with column's right edge.
-                // Text inside should have right padding.
-                buttonMargin = new Thickness(0); // Button's right edge aligns with column's right edge
-                textBlockPadding = new Thickness(0, 0, 10, 0); // Text has 10px right padding inside the button
+                // Right-aligned headers from previous step.
+                buttonMargin = new Thickness(0);
+                textBlockPadding = new Thickness(0, 0, 10, 0);
+                Debug.WriteLine($"[MainTabViewControls] Right-aligned header '{text}': ButtonMargin={buttonMargin}, TextPadding={textBlockPadding}");
                 break;
         }
 
