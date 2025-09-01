@@ -72,7 +72,7 @@ public static class ListBoxViewFactory
                     }
                 }),
                 new Setter(TextBlock.ForegroundProperty, theme.B_TextColor),
-                new Setter(ListBoxItem.PaddingProperty, new Thickness(3)),
+                new Setter(ListBoxItem.PaddingProperty, new Thickness(0)),
             }
         });
 

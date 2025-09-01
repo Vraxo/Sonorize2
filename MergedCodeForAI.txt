@@ -739,8 +739,10 @@ public record ScrobbleThresholds(int ScrobbleThresholdPercentage, int ScrobbleTh
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Models\Song.cs">
 using System;
 using System.Diagnostics;
+using System.Text.Json.Serialization;
 using Avalonia.Media.Imaging;
 using Sonorize.ViewModels;
+using Sonorize.ViewModels.LibraryManagement;
 
 namespace Sonorize.Models;
 
@@ -815,6 +817,9 @@ public class Song : ViewModelBase
 
     // This property will be set by the SongListManager for efficient alternating row coloring.
     public int IndexInView { get; set; }
+
+    [JsonIgnore]
+    public LibraryViewOptionsViewModel? ViewOptions { get; set; }
 }
 </file>
 
@@ -3973,7 +3978,8 @@ public class LibraryViewModel : ViewModelBase, IDisposable
             _components.FilterState.SelectedAlbum,
             _components.FilterState.SelectedPlaylist,
             CurrentSortProperty,
-            CurrentSortDirection);
+            CurrentSortDirection,
+            ViewOptions);
 
         _trackNavigationManager.UpdateSelectedSong(_components.SongList.SelectedSong);
         UpdateStatusBarText();
@@ -8672,6 +8678,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 using Sonorize.Models;
+using Sonorize.ViewModels.LibraryManagement;
 
 namespace Sonorize.ViewModels.LibraryManagement;
 
@@ -8721,7 +8728,7 @@ public class SongListManager : ViewModelBase
 
     public int AllSongsCount => _allSongs.Count;
 
-    public void ApplyFilter(string? searchQuery, ArtistViewModel? selectedArtist, AlbumViewModel? selectedAlbum, PlaylistViewModel? selectedPlaylist, SortProperty sortBy, SortDirection sortDirection)
+    public void ApplyFilter(string? searchQuery, ArtistViewModel? selectedArtist, AlbumViewModel? selectedAlbum, PlaylistViewModel? selectedPlaylist, SortProperty sortBy, SortDirection sortDirection, LibraryViewOptionsViewModel viewOptions)
     {
         var currentSelectedSongBeforeFilter = SelectedSong;
 
@@ -8735,10 +8742,11 @@ public class SongListManager : ViewModelBase
 
         var sortedResults = SortSongs(filteredResults, sortBy, sortDirection);
 
-        // Set the index for each song in the view for performant alternating rows.
+        // Set the index and view options for each song in the view for performant bindings.
         for (int i = 0; i < sortedResults.Count; i++)
         {
             sortedResults[i].IndexInView = i;
+            sortedResults[i].ViewOptions = viewOptions;
         }
 
         foreach (var song in sortedResults)
@@ -8761,43 +8769,43 @@ public class SongListManager : ViewModelBase
             SelectedSong = null; // Ensure selection is cleared and notified
         }
         // If currentSelectedSongBeforeFilter was null and SelectedSong is also null, no change, no notification.
-OnPropertyChanged(nameof(FilteredSongs)); // Notify that the collection content has changed (though individual adds also notify)
-}
+        OnPropertyChanged(nameof(FilteredSongs)); // Notify that the collection content has changed (though individual adds also notify)
+    }
 
-private List<Song> SortSongs(IEnumerable<Song> songs, SortProperty sortBy, SortDirection sortDirection)
-{
-IOrderedEnumerable<Song> ordered;
-if (sortDirection == SortDirection.Ascending)
-{
-    ordered = sortBy switch
+    private List<Song> SortSongs(IEnumerable<Song> songs, SortProperty sortBy, SortDirection sortDirection)
     {
-        SortProperty.Artist => songs.OrderBy(s => s.Artist, StringComparer.OrdinalIgnoreCase),
-        SortProperty.Album => songs.OrderBy(s => s.Album, StringComparer.OrdinalIgnoreCase),
-        SortProperty.Duration => songs.OrderBy(s => s.Duration),
-        SortProperty.DateAdded => songs.OrderBy(s => s.DateAdded),
-        SortProperty.PlayCount => songs.OrderBy(s => s.PlayCount),
-        _ => songs.OrderBy(s => s.Title, StringComparer.OrdinalIgnoreCase),
-    };
-}
-else // Descending
-{
-    ordered = sortBy switch
-    {
-        SortProperty.Artist => songs.OrderByDescending(s => s.Artist, StringComparer.OrdinalIgnoreCase),
-        SortProperty.Album => songs.OrderByDescending(s => s.Album, StringComparer.OrdinalIgnoreCase),
-        SortProperty.Duration => songs.OrderByDescending(s => s.Duration),
-        SortProperty.DateAdded => songs.OrderByDescending(s => s.DateAdded),
-        SortProperty.PlayCount => songs.OrderByDescending(s => s.PlayCount),
-        _ => songs.OrderByDescending(s => s.Title, StringComparer.OrdinalIgnoreCase),
-    };
-}
-// Add secondary sort for consistency when primary keys are equal
-return ordered.ThenBy(s => s.Title, StringComparer.OrdinalIgnoreCase).ToList();
-}
+        IOrderedEnumerable<Song> ordered;
+        if (sortDirection == SortDirection.Ascending)
+        {
+            ordered = sortBy switch
+            {
+                SortProperty.Artist => songs.OrderBy(s => s.Artist, StringComparer.OrdinalIgnoreCase),
+                SortProperty.Album => songs.OrderBy(s => s.Album, StringComparer.OrdinalIgnoreCase),
+                SortProperty.Duration => songs.OrderBy(s => s.Duration),
+                SortProperty.DateAdded => songs.OrderBy(s => s.DateAdded),
+                SortProperty.PlayCount => songs.OrderBy(s => s.PlayCount),
+                _ => songs.OrderBy(s => s.Title, StringComparer.OrdinalIgnoreCase),
+            };
+        }
+        else // Descending
+        {
+            ordered = sortBy switch
+            {
+                SortProperty.Artist => songs.OrderByDescending(s => s.Artist, StringComparer.OrdinalIgnoreCase),
+                SortProperty.Album => songs.OrderByDescending(s => s.Album, StringComparer.OrdinalIgnoreCase),
+                SortProperty.Duration => songs.OrderByDescending(s => s.Duration),
+                SortProperty.DateAdded => songs.OrderByDescending(s => s.DateAdded),
+                SortProperty.PlayCount => songs.OrderByDescending(s => s.PlayCount),
+                _ => songs.OrderByDescending(s => s.Title, StringComparer.OrdinalIgnoreCase),
+            };
+        }
+        // Add secondary sort for consistency when primary keys are equal
+        return ordered.ThenBy(s => s.Title, StringComparer.OrdinalIgnoreCase).ToList();
+    }
 
 
-// Provides access to the master list for services like ArtistAlbumCollectionManager
-public IReadOnlyList<Song> GetAllSongsReadOnly() => _allSongs.AsReadOnly();
+    // Provides access to the master list for services like ArtistAlbumCollectionManager
+    public IReadOnlyList<Song> GetAllSongsReadOnly() => _allSongs.AsReadOnly();
 }
 </file>
 
@@ -10731,10 +10739,6 @@ public static class ListBoxViewFactory
             Name = name
         };
 
-        // PERF: Bind the ListBox's Tag to the ViewOptions once.
-        // Each ListBoxItem will then bind to this Tag, avoiding a costly FindAncestor call for every single item.
-        listBoxInstance.Bind(Control.TagProperty, new Binding("Library.ViewOptions"));
-
         ApplyListBoxItemStyles(listBoxInstance, theme);
 
         listBoxInstance.Bind(ItemsControl.ItemsSourceProperty, new Binding(itemsSourcePath));
@@ -10770,27 +10774,12 @@ public static class ListBoxViewFactory
                     {
                         // Pass the Song object itself (the DataContext of the ListBoxItem).
                         new Binding("."),
-                        // Bind to the EnableAlternatingRowColors boolean on the ListBox's Tag.
-                        new Binding("Tag.EnableAlternatingRowColors")
-                        {
-                            RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
-                            {
-                                AncestorType = typeof(ListBox)
-                            }
-                        }
+                        // Bind to the EnableAlternatingRowColors boolean on the Song's own ViewOptions.
+                        new Binding("ViewOptions.EnableAlternatingRowColors")
                     }
                 }),
                 new Setter(TextBlock.ForegroundProperty, theme.B_TextColor),
-                new Setter(ListBoxItem.PaddingProperty, new Thickness(3)),
-                // PERF: This setter provides the ViewOptions to each item by binding to the parent ListBox's Tag.
-                // This is much more efficient than finding the Window ancestor for every item.
-                new Setter(Control.TagProperty, new Binding("Tag")
-                {
-                    RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
-                    {
-                        AncestorType = typeof(ListBox)
-                    }
-                })
+                new Setter(ListBoxItem.PaddingProperty, new Thickness(0)),
             }
         });
 
@@ -12431,14 +12420,9 @@ public class SongItemTemplateProvider
         {
             var itemGrid = new Grid { VerticalAlignment = VerticalAlignment.Center };
 
-            // This proxy element will live in the visual tree and can find the ancestor.
-            // Other bindings that can't do tree traversal will use this as their source.
-            var proxy = new Border { IsVisible = false };
-            proxy.Bind(Border.DataContextProperty, new Binding("Tag")
-            {
-                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(ListBoxItem) }
-            });
-            itemGrid.Children.Add(proxy); // Add proxy to the tree so its binding can resolve.
+            // Create a proxy element. It will be in the visual tree and get a DataContext.
+            var proxy = new Border { Name = "Proxy", IsVisible = false, DataContext = dataContext };
+            itemGrid.Children.Add(proxy);
 
             var rootBorder = new Border
             {
@@ -12447,8 +12431,8 @@ public class SongItemTemplateProvider
                 Child = itemGrid
             };
 
-            // Bind MinHeight using the proxy as the source.
-            rootBorder.Bind(Border.MinHeightProperty, new Binding("DataContext.RowHeight")
+            // Bind MinHeight using the proxy as a stable binding source.
+            rootBorder.Bind(Border.MinHeightProperty, new Binding("DataContext.ViewOptions.RowHeight")
             {
                 Source = proxy,
                 FallbackValue = 44.0
@@ -12470,7 +12454,7 @@ public class SongItemTemplateProvider
 
             // Artist Column
             var artistCol = new ColumnDefinition();
-            artistCol.Bind(ColumnDefinition.WidthProperty, new Binding("DataContext.ShowArtist")
+            artistCol.Bind(ColumnDefinition.WidthProperty, new Binding("DataContext.ViewOptions.ShowArtist")
             {
                 Source = proxy,
                 FallbackValue = GridLength.Parse("1.5*"),
@@ -12481,7 +12465,7 @@ public class SongItemTemplateProvider
 
             // Album Column
             var albumCol = new ColumnDefinition();
-            albumCol.Bind(ColumnDefinition.WidthProperty, new Binding("DataContext.ShowAlbum")
+            albumCol.Bind(ColumnDefinition.WidthProperty, new Binding("DataContext.ViewOptions.ShowAlbum")
             {
                 Source = proxy,
                 FallbackValue = GridLength.Parse("1.5*"),
@@ -12495,7 +12479,7 @@ public class SongItemTemplateProvider
 
             // Play Count Column
             var playCountCol = new ColumnDefinition();
-            playCountCol.Bind(ColumnDefinition.WidthProperty, new Binding("DataContext.ShowPlayCount")
+            playCountCol.Bind(ColumnDefinition.WidthProperty, new Binding("DataContext.ViewOptions.ShowPlayCount")
             {
                 Source = proxy,
                 FallbackValue = new GridLength(0),
@@ -12506,7 +12490,7 @@ public class SongItemTemplateProvider
 
             // Date Added Column
             var dateAddedCol = new ColumnDefinition();
-            dateAddedCol.Bind(ColumnDefinition.WidthProperty, new Binding("DataContext.ShowDateAdded")
+            dateAddedCol.Bind(ColumnDefinition.WidthProperty, new Binding("DataContext.ViewOptions.ShowDateAdded")
             {
                 Source = proxy,
                 FallbackValue = new GridLength(0),
@@ -12517,7 +12501,7 @@ public class SongItemTemplateProvider
 
             // Duration Column
             var durationCol = new ColumnDefinition();
-            durationCol.Bind(ColumnDefinition.WidthProperty, new Binding("DataContext.ShowDuration")
+            durationCol.Bind(ColumnDefinition.WidthProperty, new Binding("DataContext.ViewOptions.ShowDuration")
             {
                 Source = proxy,
                 FallbackValue = GridLength.Auto,
@@ -12543,34 +12527,34 @@ public class SongItemTemplateProvider
                 currentColumn++; // Skip the padding column
             }
 
-            var titleBlock = new TextBlock { Padding = new Thickness(10, 0), FontSize = isDetailed ? 14 : 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+            var titleBlock = new TextBlock { Padding = new Thickness(10, 0), HorizontalAlignment = HorizontalAlignment.Stretch, TextAlignment = TextAlignment.Left, FontSize = isDetailed ? 14 : 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
             titleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Title)));
             Grid.SetColumn(titleBlock, currentColumn++);
             itemGrid.Children.Add(titleBlock);
 
-            var artistBlock = new TextBlock { Padding = new Thickness(10, 0), FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis };
+            var artistBlock = new TextBlock { Padding = new Thickness(10, 0), HorizontalAlignment = HorizontalAlignment.Stretch, TextAlignment = TextAlignment.Left, FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis };
             artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
             Grid.SetColumn(artistBlock, currentColumn++);
             itemGrid.Children.Add(artistBlock);
 
-            var albumBlock = new TextBlock { Padding = new Thickness(10, 0), FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis };
+            var albumBlock = new TextBlock { Padding = new Thickness(10, 0), HorizontalAlignment = HorizontalAlignment.Stretch, TextAlignment = TextAlignment.Left, FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis };
             albumBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Album)));
             Grid.SetColumn(albumBlock, currentColumn++);
             itemGrid.Children.Add(albumBlock);
 
             currentColumn++; // Skip Spacer column
 
-            var playCountBlock = new TextBlock { Padding = new Thickness(10, 0), FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = HorizontalAlignment.Right };
+            var playCountBlock = new TextBlock { Padding = new Thickness(10, 0), HorizontalAlignment = HorizontalAlignment.Stretch, TextAlignment = TextAlignment.Right, FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis };
             playCountBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.PlayCount)));
             Grid.SetColumn(playCountBlock, currentColumn++);
             itemGrid.Children.Add(playCountBlock);
 
-            var dateAddedBlock = new TextBlock { Padding = new Thickness(10, 0), FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = HorizontalAlignment.Right };
+            var dateAddedBlock = new TextBlock { Padding = new Thickness(10, 0), HorizontalAlignment = HorizontalAlignment.Stretch, TextAlignment = TextAlignment.Right, FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis };
             dateAddedBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DateAdded)) { StringFormat = "{0:yyyy-MM-dd}" });
             Grid.SetColumn(dateAddedBlock, currentColumn++);
             itemGrid.Children.Add(dateAddedBlock);
 
-            var durationBlock = new TextBlock { Padding = new Thickness(10, 0), FontSize = isDetailed ? 12 : 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
+            var durationBlock = new TextBlock { Padding = new Thickness(10, 0), HorizontalAlignment = HorizontalAlignment.Stretch, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
             durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
             Grid.SetColumn(durationBlock, currentColumn++);
             itemGrid.Children.Add(durationBlock);

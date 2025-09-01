@@ -177,34 +177,34 @@ public class SongItemTemplateProvider
                 currentColumn++; // Skip the padding column
             }
 
-            var titleBlock = new TextBlock { Padding = new Thickness(10, 0), FontSize = isDetailed ? 14 : 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+            var titleBlock = new TextBlock { Padding = new Thickness(10, 0), HorizontalAlignment = HorizontalAlignment.Stretch, TextAlignment = TextAlignment.Left, FontSize = isDetailed ? 14 : 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
             titleBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Title)));
             Grid.SetColumn(titleBlock, currentColumn++);
             itemGrid.Children.Add(titleBlock);
 
-            var artistBlock = new TextBlock { Padding = new Thickness(10, 0), FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis };
+            var artistBlock = new TextBlock { Padding = new Thickness(10, 0), HorizontalAlignment = HorizontalAlignment.Stretch, TextAlignment = TextAlignment.Left, FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis };
             artistBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Artist)));
             Grid.SetColumn(artistBlock, currentColumn++);
             itemGrid.Children.Add(artistBlock);
 
-            var albumBlock = new TextBlock { Padding = new Thickness(10, 0), FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis };
+            var albumBlock = new TextBlock { Padding = new Thickness(10, 0), HorizontalAlignment = HorizontalAlignment.Stretch, TextAlignment = TextAlignment.Left, FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis };
             albumBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.Album)));
             Grid.SetColumn(albumBlock, currentColumn++);
             itemGrid.Children.Add(albumBlock);
 
             currentColumn++; // Skip Spacer column
 
-            var playCountBlock = new TextBlock { Padding = new Thickness(10, 0), FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = HorizontalAlignment.Right };
+            var playCountBlock = new TextBlock { Padding = new Thickness(10, 0), HorizontalAlignment = HorizontalAlignment.Stretch, TextAlignment = TextAlignment.Right, FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis };
             playCountBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.PlayCount)));
             Grid.SetColumn(playCountBlock, currentColumn++);
             itemGrid.Children.Add(playCountBlock);
 
-            var dateAddedBlock = new TextBlock { Padding = new Thickness(10, 0), FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = HorizontalAlignment.Right };
+            var dateAddedBlock = new TextBlock { Padding = new Thickness(10, 0), HorizontalAlignment = HorizontalAlignment.Stretch, TextAlignment = TextAlignment.Right, FontSize = isDetailed ? 12 : 11, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor, TextTrimming = TextTrimming.CharacterEllipsis };
             dateAddedBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DateAdded)) { StringFormat = "{0:yyyy-MM-dd}" });
             Grid.SetColumn(dateAddedBlock, currentColumn++);
             itemGrid.Children.Add(dateAddedBlock);
 
-            var durationBlock = new TextBlock { Padding = new Thickness(10, 0), FontSize = isDetailed ? 12 : 11, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
+            var durationBlock = new TextBlock { Padding = new Thickness(10, 0), HorizontalAlignment = HorizontalAlignment.Stretch, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = _theme.B_SecondaryTextColor };
             durationBlock.Bind(TextBlock.TextProperty, new Binding(nameof(Song.DurationString)));
             Grid.SetColumn(durationBlock, currentColumn++);
             itemGrid.Children.Add(durationBlock);
