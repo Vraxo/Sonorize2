@@ -31,7 +31,8 @@ internal static class LibraryDataGridFactory
             IsReadOnly = true,
             CanUserSortColumns = true,
             CanUserReorderColumns = true,
-            UseLayoutRounding = true
+            UseLayoutRounding = true,
+            ColumnHeaderTheme = new()
         };
 
         // Bindings
