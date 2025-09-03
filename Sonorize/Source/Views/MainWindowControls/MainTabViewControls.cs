@@ -41,11 +41,7 @@ public class MainTabViewControls
             Padding = new Thickness(0)
         };
 
-        // Ensure DataGrid has its control theme in this subtree (belt-and-suspenders)
-        tabControl.Styles.Add(new StyleInclude(new Uri("avares://Application"))
-        {
-            Source = new Uri("avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml")
-        });
+        // StyleInclude for DataGrid moved to App.cs to ensure it's loaded globally
 
         tabControl.Bind(TabControl.SelectedIndexProperty, new Binding("ActiveTabIndex", BindingMode.TwoWay));
 
@@ -208,7 +204,7 @@ public class MainTabViewControls
         };
 
         // Bindings
-        dataGrid.Bind(ItemsControl.ItemsSourceProperty,
+        dataGrid.Bind(DataGrid.ItemsSourceProperty,
                       new Binding("Library.FilteredSongs"));
         dataGrid.Bind(DataGrid.SelectedItemProperty,
                       new Binding("Library.SelectedSong", BindingMode.TwoWay));

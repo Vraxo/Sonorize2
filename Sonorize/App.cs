@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
@@ -9,7 +10,8 @@ using Sonorize.Services;
 using Sonorize.ViewModels;
 using Sonorize.Views;
 using Sonorize.Extensions;
-using Sonorize.UI; // Added for ThemeResourceApplicator
+using Sonorize.UI;
+using System; // Added for ThemeResourceApplicator
 
 namespace Sonorize;
 
@@ -32,6 +34,13 @@ public class App : Application
 
             var fluentTheme = new FluentTheme();
             Styles.Add(fluentTheme);
+
+            // Add DataGrid theme to application styles to ensure it's available globally.
+            Styles.Add(new StyleInclude(new Uri("avares://Application"))
+            {
+                Source = new Uri("avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml")
+            });
+
             RequestedThemeVariant = ThemeVariant.Dark;
             Debug.WriteLine($"[App] RequestedThemeVariant set to: {RequestedThemeVariant}");
 
