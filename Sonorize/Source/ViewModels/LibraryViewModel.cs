@@ -106,7 +106,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
         // Subscribe to events from components provided by _components
         _components.FilterState.FilterCriteriaChanged += (s, e) => ApplyFilter();
-        _components.FilterState.RequestTabSwitchToLibrary += (s, e) => _parentViewModel.ActiveTabIndex = 0;
         _components.SongList.PropertyChanged += SongListManager_PropertyChanged;
 
         _musicLibraryService.SongThumbnailUpdated += MusicLibraryService_SongThumbnailUpdated;
@@ -256,7 +255,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         if (_components?.FilterState is not null)
         {
             _components.FilterState.FilterCriteriaChanged -= (s, e) => ApplyFilter();
-            _components.FilterState.RequestTabSwitchToLibrary -= (s, e) => _parentViewModel.ActiveTabIndex = 0;
         }
 
         if (_components?.SongList is not null)

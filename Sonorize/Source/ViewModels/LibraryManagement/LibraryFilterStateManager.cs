@@ -36,7 +36,6 @@ public class LibraryFilterStateManager : ViewModelBase
                     _searchQuery = _selectedArtist.Name ?? string.Empty; // Avoid raising SearchQuery's own event storm
                     OnPropertyChanged(nameof(SearchQuery)); // Manually notify SearchQuery changed
                     SelectedAlbum = null; // This will trigger its own PropertyChanged and subsequently FilterCriteriaChanged
-                    RequestTabSwitchToLibrary?.Invoke(this, EventArgs.Empty);
                 }
                 else
                 {
@@ -62,7 +61,6 @@ public class LibraryFilterStateManager : ViewModelBase
                     OnPropertyChanged(nameof(SearchQuery));
                     SelectedArtist = null;
                     SelectedAlbum = null;
-                    RequestTabSwitchToLibrary?.Invoke(this, EventArgs.Empty);
                 }
                 FilterCriteriaChanged?.Invoke(this, EventArgs.Empty);
             }
@@ -83,7 +81,6 @@ public class LibraryFilterStateManager : ViewModelBase
                     _searchQuery = _selectedAlbum.Title ?? string.Empty; // Avoid raising SearchQuery's own event storm
                     OnPropertyChanged(nameof(SearchQuery)); // Manually notify SearchQuery changed
                     SelectedArtist = null; // This will trigger its own PropertyChanged and subsequently FilterCriteriaChanged
-                    RequestTabSwitchToLibrary?.Invoke(this, EventArgs.Empty);
                 }
                 FilterCriteriaChanged?.Invoke(this, EventArgs.Empty);
             }
@@ -91,7 +88,6 @@ public class LibraryFilterStateManager : ViewModelBase
     }
 
     public event EventHandler? FilterCriteriaChanged;
-    public event EventHandler? RequestTabSwitchToLibrary;
 
     public void ClearSelectionsAndSearch()
     {
