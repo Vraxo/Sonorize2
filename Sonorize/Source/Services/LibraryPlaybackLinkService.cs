@@ -44,22 +44,28 @@ public class LibraryPlaybackLinkService : IDisposable
             return;
         }
 
+        // Capture the value IMMEDIATELY from the source of the event.
+        var selectedSongAtEventTime = (sender as LibraryViewModel)?.SelectedSong;
+
         Dispatcher.UIThread.InvokeAsync(() =>
         {
-            Debug.WriteLine($"[LibraryPlaybackLinkService] Library.SelectedSong changed to: {_libraryViewModel.SelectedSong?.Title ?? "null"}. Instance: {_libraryViewModel.SelectedSong?.GetHashCode() ?? 0}");
+            // Use the captured value, not the potentially changed value from the view model property.
+            var songToPlay = selectedSongAtEventTime;
 
-            if (_libraryViewModel.SelectedSong is not null && _playbackService.CurrentSong != _libraryViewModel.SelectedSong)
+            Debug.WriteLine($"[LibraryPlaybackLinkService] Library.SelectedSong changed event processed. Captured song: {songToPlay?.Title ?? "null"}. (Current VM song is: {_libraryViewModel.SelectedSong?.Title ?? "null"})");
+
+            if (songToPlay is not null && _playbackService.CurrentSong != songToPlay)
             {
-                Debug.WriteLine($"[LibraryPlaybackLinkService] Library.SelectedSong changed to a *different* song ({_libraryViewModel.SelectedSong.Title}) than PlaybackService.CurrentSong ({_playbackService.CurrentSong?.Title ?? "null"}). Calling PlaybackService.Play().");
-                _playbackService.Play(_libraryViewModel.SelectedSong);
+                Debug.WriteLine($"[LibraryPlaybackLinkService] Playing captured song '{songToPlay.Title}'.");
+                _playbackService.Play(songToPlay);
             }
-            else if (_libraryViewModel.SelectedSong is not null && _playbackService.CurrentSong == _libraryViewModel.SelectedSong)
+            else if (songToPlay is not null && _playbackService.CurrentSong == songToPlay)
             {
-                Debug.WriteLine($"[LibraryPlaybackLinkService] Library.SelectedSong changed but is the SAME song instance as PlaybackService.CurrentSong ({_libraryViewModel.SelectedSong.Title}). No Play call needed here.");
+                Debug.WriteLine($"[LibraryPlaybackLinkService] Captured song '{songToPlay.Title}' is already playing. No action needed.");
             }
-            else if (_libraryViewModel.SelectedSong == null)
+            else if (songToPlay == null)
             {
-                Debug.WriteLine("[LibraryPlaybackLinkService] Library.SelectedSong is null. No Play call needed here.");
+                Debug.WriteLine("[LibraryPlaybackLinkService] Captured song was null. No Play call needed.");
             }
         });
     }
@@ -71,16 +77,10 @@ public class LibraryPlaybackLinkService : IDisposable
             return;
         }
 
-        Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            if (_playbackViewModel.HasCurrentSong || _libraryViewModel.SelectedSong == null)
-            {
-                return;
-            }
-
-            Debug.WriteLine("[LibraryPlaybackLinkService] Playback has no current song. Clearing Library selection.");
-            _libraryViewModel.SelectedSong = null;
-        });
+        // This logic was causing a race condition. When a new song was selected,
+        // the old song would stop, HasCurrentSong would briefly become false,
+        // and this would immediately nullify the new selection before it could play.
+        // By removing it, the UI selection is now independent of the playback state, which is more robust.
     }
 
     public void Dispose()

@@ -71,11 +71,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
             }
 
             _components.SongList.SelectedSong = value;
-            OnPropertyChanged();
-            _trackNavigationManager.UpdateSelectedSong(value);
-            (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged();
-
-            Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"} (via SongListManager)");
+            Debug.WriteLine($"[LibraryVM] SelectedSong SET to: {value?.Title ?? "null"}");
         }
     }
 
@@ -93,7 +89,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         ViewOptions.LoadFromSettings(_settingsService.LoadSettings());
 
         _components = new LibraryComponentProvider(musicLibraryService, settingsService);
-        _trackNavigationManager = new TrackNavigationManager(_components.SongList.FilteredSongs);
+        _trackNavigationManager = new TrackNavigationManager(this);
 
         // Instantiate the new LibraryLoadProcess
         _libraryLoadProcess = new LibraryLoadProcess(
@@ -147,10 +143,10 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     {
         if (e.PropertyName == nameof(SongListManager.SelectedSong))
         {
+            // This is the single point of reaction to a selection change.
             OnPropertyChanged(nameof(SelectedSong));
-            _trackNavigationManager.UpdateSelectedSong(_components.SongList.SelectedSong);
             (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            Debug.WriteLine($"[LibraryVM] SongListManager.SelectedSong changed to: {_components.SongList.SelectedSong?.Title ?? "null"}. Updated own SelectedSong.");
+            Debug.WriteLine($"[LibraryVM] Reacting to SongListManager.SelectedSong change: {_components.SongList.SelectedSong?.Title ?? "null"}.");
         }
         else if (e.PropertyName == nameof(SongListManager.FilteredSongs))
         {
@@ -200,7 +196,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
             CurrentSortDirection,
             ViewOptions);
 
-        _trackNavigationManager.UpdateSelectedSong(_components.SongList.SelectedSong);
         UpdateStatusBarText();
     }
 
@@ -230,7 +225,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
             Debug.WriteLine($"[LibraryVM] Edit metadata requested but parameter is not a Song or parent command cannot execute.");
             return;
         }
-        
+
         Debug.WriteLine($"[LibraryVM] Delegating Edit metadata for: {song.Title} to MainWindowViewModel.");
         _parentViewModel.OpenEditSongMetadataDialogCommand.Execute(song);
     }
