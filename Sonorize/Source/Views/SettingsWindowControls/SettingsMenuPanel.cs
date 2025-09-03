@@ -28,23 +28,13 @@ public static class SettingsMenuPanel
         var scrobblingButton = new Button { Content = "Scrobbling", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         scrobblingButton.Bind(Button.CommandProperty, new Binding("ShowScrobblingSettingsCommand"));
 
-        menuStackPanel.Children.Add(directoriesButton);
-        menuStackPanel.Children.Add(themeButton);
-        menuStackPanel.Children.Add(appearanceButton);
-        menuStackPanel.Children.Add(scrobblingButton);
-
-        return menuStackPanel;
-    }
-
-    public static StackPanel CreateAppearanceSubMenu(ThemeColors theme)
-    {
-        var menuStackPanel = new StackPanel
+        // --- Appearance Sub-Menu ---
+        var appearanceSubMenuPanel = new StackPanel
         {
-            Spacing = 5
+            Spacing = 5,
+            Margin = new Thickness(15, 5, 0, 5) // Indent the sub-menu
         };
-
-        var backButton = new Button { Content = "← Back", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor, FontWeight = FontWeight.Bold };
-        backButton.Bind(Button.CommandProperty, new Binding("ShowMainSettingsViewCommand"));
+        appearanceSubMenuPanel.Bind(Visual.IsVisibleProperty, new Binding("IsShowingAppearanceSubView"));
 
         var libraryListButton = new Button { Content = "Library List", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         libraryListButton.Bind(Button.CommandProperty, new Binding("ShowLibraryListSettingsCommand"));
@@ -55,11 +45,17 @@ public static class SettingsMenuPanel
         var uiLayoutButton = new Button { Content = "UI Layout", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         uiLayoutButton.Bind(Button.CommandProperty, new Binding("ShowUILayoutSettingsCommand"));
 
-        menuStackPanel.Children.Add(backButton);
-        menuStackPanel.Children.Add(new Separator { Margin = new Thickness(0, 5), Background = theme.B_ControlBackgroundColor });
-        menuStackPanel.Children.Add(libraryListButton);
-        menuStackPanel.Children.Add(gridViewButton);
-        menuStackPanel.Children.Add(uiLayoutButton);
+        appearanceSubMenuPanel.Children.Add(libraryListButton);
+        appearanceSubMenuPanel.Children.Add(gridViewButton);
+        appearanceSubMenuPanel.Children.Add(uiLayoutButton);
+
+
+        // --- Build Main Panel ---
+        menuStackPanel.Children.Add(directoriesButton);
+        menuStackPanel.Children.Add(themeButton);
+        menuStackPanel.Children.Add(appearanceButton);
+        menuStackPanel.Children.Add(appearanceSubMenuPanel); // Add the sub-panel here
+        menuStackPanel.Children.Add(scrobblingButton);
 
         return menuStackPanel;
     }

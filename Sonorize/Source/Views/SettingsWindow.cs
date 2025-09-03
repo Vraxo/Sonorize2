@@ -69,23 +69,11 @@ public class SettingsWindow : Window
 
     private Border CreateLeftMenuPanel()
     {
-        // Main Menu Panel (visible by default)
-        var mainSettingsMenu = SettingsMenuPanel.Create(_theme);
-        mainSettingsMenu.Bind(Visual.IsVisibleProperty, new Binding("!IsShowingAppearanceSubView"));
-
-        // Appearance Sub-Menu Panel (hidden by default)
-        var appearanceSubMenu = SettingsMenuPanel.CreateAppearanceSubMenu(_theme);
-        appearanceSubMenu.Bind(Visual.IsVisibleProperty, new Binding("IsShowingAppearanceSubView"));
-
-        var menuContainer = new Panel();
-        menuContainer.Children.Add(mainSettingsMenu);
-        menuContainer.Children.Add(appearanceSubMenu);
-
         var menuBorder = new Border
         {
             Background = _theme.B_BackgroundColor,
             Padding = new Thickness(10),
-            Child = menuContainer
+            Child = SettingsMenuPanel.Create(_theme)
         };
 
         return menuBorder;
