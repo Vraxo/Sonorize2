@@ -2,6 +2,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Threading;
@@ -25,6 +26,12 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     public LibraryGroupingsViewModel Groupings => _components.Groupings;
     public ObservableCollection<Song> FilteredSongs => _components.SongList.FilteredSongs;
     public LibraryFilterStateManager FilterState => _components.FilterState;
+
+    // Drill-Down State
+    public ArtistViewModel? ArtistDrillDownTarget { get; private set; }
+    public ObservableCollection<Song> SongsForArtistDrillDown { get; } = new();
+    public ICommand GoBackToArtistListCommand { get; }
+
 
     public ICommand PreviousTrackCommand => _trackNavigationManager.PreviousTrackCommand;
     public ICommand NextTrackCommand => _trackNavigationManager.NextTrackCommand;
@@ -94,26 +101,79 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         _components = new LibraryComponentProvider(musicLibraryService, settingsService);
         _trackNavigationManager = new TrackNavigationManager(_components.SongList.FilteredSongs);
 
-        // Instantiate the new LibraryLoadProcess
         _libraryLoadProcess = new LibraryLoadProcess(
             _components,
-            ApplyFilter, // Pass private method as delegate
-            UpdateStatusBarText, // Pass private method as delegate
-            isLoading => IsLoadingLibrary = isLoading, // Lambda to set property
-            status => LibraryStatusText = status,       // Lambda to set property
-            Dispatcher.UIThread                         // Pass dispatcher
+            ApplyFilter,
+            UpdateStatusBarText,
+            isLoading => IsLoadingLibrary = isLoading,
+            status => LibraryStatusText = status,
+            Dispatcher.UIThread
         );
 
-        // Subscribe to events from components provided by _components
-        _components.FilterState.FilterCriteriaChanged += (s, e) => ApplyFilter();
+        _components.FilterState.PropertyChanged += FilterState_PropertyChanged;
         _components.SongList.PropertyChanged += SongListManager_PropertyChanged;
 
         _musicLibraryService.SongThumbnailUpdated += MusicLibraryService_SongThumbnailUpdated;
 
+        GoBackToArtistListCommand = new RelayCommand(ExecuteGoBackToArtistList);
         EditSongMetadataCommand = new RelayCommand(ExecuteEditSongMetadata, CanExecuteEditSongMetadata);
         SortCommand = new RelayCommand(ExecuteSort);
 
         UpdateStatusBarText();
+    }
+
+    private void FilterState_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        switch (e.PropertyName)
+        {
+            // Artist selection is now for drill-down view, not for filtering the main library
+            case nameof(LibraryFilterStateManager.SelectedArtist):
+                HandleArtistSelection(FilterState.SelectedArtist);
+                break;
+
+            // Playlist and Album selections will still filter the main library view
+            case nameof(LibraryFilterStateManager.SelectedAlbum):
+            case nameof(LibraryFilterStateManager.SelectedPlaylist):
+                ApplyFilter();
+                // If a selection was made, switch to the library tab to show the results
+                if (FilterState.SelectedAlbum != null || FilterState.SelectedPlaylist != null)
+                {
+                    _parentViewModel.ActiveTabIndex = 0;
+                }
+                break;
+
+            // Search query always filters the main library view
+            case nameof(LibraryFilterStateManager.SearchQuery):
+                ApplyFilter();
+                break;
+        }
+    }
+
+    private void HandleArtistSelection(ArtistViewModel? artist)
+    {
+        if (artist == null) return;
+
+        ArtistDrillDownTarget = artist;
+        OnPropertyChanged(nameof(ArtistDrillDownTarget));
+
+        SongsForArtistDrillDown.Clear();
+        var songsByArtist = _components.SongList.GetAllSongsReadOnly()
+            .Where(s => s.Artist != null && s.Artist.Equals(artist.Name, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(s => s.Album)
+            .ThenBy(s => s.Title);
+
+        foreach (var song in songsByArtist)
+        {
+            SongsForArtistDrillDown.Add(song);
+        }
+    }
+
+    private void ExecuteGoBackToArtistList(object? _ = null)
+    {
+        ArtistDrillDownTarget = null;
+        OnPropertyChanged(nameof(ArtistDrillDownTarget));
+        // Clear selection to allow re-selecting the same artist
+        FilterState.SelectedArtist = null;
     }
 
     private void ExecuteSort(object? parameter)
@@ -125,12 +185,10 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
         if (CurrentSortProperty == newSortProperty)
         {
-            // If it's the same column, flip the direction
             CurrentSortDirection = CurrentSortDirection == SortDirection.Ascending ? SortDirection.Descending : SortDirection.Ascending;
         }
         else
         {
-            // If it's a new column, set it and default to ascending
             CurrentSortProperty = newSortProperty;
             CurrentSortDirection = SortDirection.Ascending;
         }
@@ -171,7 +229,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
             return;
         }
         Debug.WriteLine("[LibraryVM] LoadLibraryAsync: Starting library load process.");
-        // Delegate the loading process to the new class
         await _libraryLoadProcess.ExecuteLoadAsync();
         Debug.WriteLine("[LibraryVM] LoadLibraryAsync: Library load process finished.");
     }
@@ -189,9 +246,11 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
     private void ApplyFilter()
     {
+        // Artist selection no longer filters the main library, it triggers a drill-down view.
+        // So we pass null for the artist parameter.
         _components.SongList.ApplyFilter(
             _components.FilterState.SearchQuery,
-            _components.FilterState.SelectedArtist,
+            null,
             _components.FilterState.SelectedAlbum,
             _components.FilterState.SelectedPlaylist,
             CurrentSortProperty,
@@ -254,7 +313,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
         if (_components?.FilterState is not null)
         {
-            _components.FilterState.FilterCriteriaChanged -= (s, e) => ApplyFilter();
+            _components.FilterState.PropertyChanged -= FilterState_PropertyChanged;
         }
 
         if (_components?.SongList is not null)

@@ -69,6 +69,17 @@ public class MainTabViewControls
         tabControl.Styles.Add(selectedTabItemStyle);
         tabControl.Styles.Add(pointerOverTabItemStyle);
 
+        tabControl.SelectionChanged += (s, e) =>
+        {
+            if (e.Source is TabControl && tabControl.DataContext is MainWindowViewModel vm)
+            {
+                if (e.AddedItems.Count > 0)
+                {
+                    vm.NotifyUserInitiatedTabChange();
+                }
+            }
+        };
+
         // --- LIBRARY tab (DataGrid directly; no outer ScrollViewer) ---
         var libraryDataGrid = CreateLibraryDataGrid(_theme);
         var libraryTab = new TabItem
@@ -82,21 +93,14 @@ public class MainTabViewControls
             _theme, _sharedViewTemplates, "ArtistsListBox", "Library.Groupings.Artists", "Library.FilterState.SelectedArtist",
             _sharedViewTemplates.DetailedArtistTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate, lb => { });
         artistsListBox = artistsLb;
-        artistsListScrollViewer.Bind(Visual.IsVisibleProperty, new Binding("LibraryDisplayModeService.ArtistViewMode")
-        {
-            Converter = new FuncValueConverter<SongDisplayMode, bool>(m => m != SongDisplayMode.Compact)
-        });
+        artistsListScrollViewer.Bind(Visual.IsVisibleProperty, new Binding("Library.ArtistDrillDownTarget") { Converter = new FuncValueConverter<object, bool>(v => v == null) });
 
-        var artistsCompactGrid = CreateArtistsCompactDataGrid(_theme);
-        artistsCompactGrid.Bind(Visual.IsVisibleProperty, new Binding("LibraryDisplayModeService.ArtistViewMode")
-        {
-            Converter = EnumToBooleanConverter.Instance,
-            ConverterParameter = SongDisplayMode.Compact
-        });
+        var artistDrillDownView = CreateArtistDrillDownView(_theme);
+        artistDrillDownView.Bind(Visual.IsVisibleProperty, new Binding("Library.ArtistDrillDownTarget") { Converter = NotNullToBooleanConverter.Instance });
 
         var artistsTabContent = new Grid();
         artistsTabContent.Children.Add(artistsListScrollViewer);
-        artistsTabContent.Children.Add(artistsCompactGrid);
+        artistsTabContent.Children.Add(artistDrillDownView);
 
         var artistsTab = new TabItem { Header = "ARTISTS", Content = artistsTabContent };
 
@@ -212,8 +216,8 @@ public class MainTabViewControls
             HeadersVisibility = DataGridHeadersVisibility.Column,
             GridLinesVisibility = DataGridGridLinesVisibility.None,
             IsReadOnly = true,
-            CanUserSortColumns = false, // Compact views probably shouldn't be sortable to keep it simple
-            RowHeight = 30 // A good height for compact view
+            CanUserSortColumns = false,
+            RowHeight = 30
         };
 
         dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>())
@@ -245,6 +249,57 @@ public class MainTabViewControls
             }
         });
         return dataGrid;
+    }
+
+    private Grid CreateArtistDrillDownView(ThemeColors theme)
+    {
+        var grid = new Grid
+        {
+            RowDefinitions = new RowDefinitions("Auto, *"),
+            Margin = new Thickness(10)
+        };
+
+        // Header
+        var headerPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 10,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, 10)
+        };
+        var backButton = new Button
+        {
+            Content = "← Back",
+            Background = theme.B_ControlBackgroundColor,
+            Foreground = theme.B_TextColor
+        };
+        backButton.Bind(Button.CommandProperty, new Binding("Library.GoBackToArtistListCommand"));
+
+        var artistNameLabel = new TextBlock
+        {
+            FontSize = 18,
+            FontWeight = FontWeight.Bold,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        artistNameLabel.Bind(TextBlock.TextProperty, new Binding("Library.ArtistDrillDownTarget.Name"));
+
+        headerPanel.Children.Add(backButton);
+        headerPanel.Children.Add(artistNameLabel);
+        Grid.SetRow(headerPanel, 0);
+
+        // Song List
+        var songsGrid = CreateLibraryDataGrid(theme);
+        songsGrid.Margin = new Thickness(0);
+        songsGrid.Columns.Remove(songsGrid.Columns.First(c => (c.Header as string) == "Artist"));
+        songsGrid.Bind(DataGrid.ItemsSourceProperty, new Binding("Library.SongsForArtistDrillDown"));
+        songsGrid.Bind(DataGrid.SelectedItemProperty, new Binding("Library.SelectedSong", BindingMode.TwoWay));
+
+        Grid.SetRow(songsGrid, 1);
+
+        grid.Children.Add(headerPanel);
+        grid.Children.Add(songsGrid);
+
+        return grid;
     }
 
     private DataGrid CreateArtistsCompactDataGrid(ThemeColors theme)
