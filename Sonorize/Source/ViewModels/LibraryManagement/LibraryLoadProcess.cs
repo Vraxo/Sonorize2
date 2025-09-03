@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using Avalonia.Threading;
 using Sonorize.Models;
@@ -44,10 +45,13 @@ public class LibraryLoadProcess
             _components.Groupings.Playlists.Clear();
             _setStatusTextDelegate("Preparing to load music...");
         });
-        
+
         Action<string> statusUpdateCallback = status => _setStatusTextDelegate(status);
 
         var (allLoadedSongsFromOrchestrator, allLoadedPlaylistsFromOrchestrator) = await _components.DataOrchestrator.LoadAndProcessLibraryDataAsync(statusUpdateCallback);
+
+        Debug.WriteLine($"[LibraryLoadProcess] Data orchestrator finished. Loaded {allLoadedSongsFromOrchestrator.Count} songs and {allLoadedPlaylistsFromOrchestrator.Count} playlists.");
+
         _components.SongList.SetAllSongs(allLoadedSongsFromOrchestrator);
 
         await _uiDispatcher.InvokeAsync(() =>

@@ -26,7 +26,6 @@ public class SettingsPersistenceManager
         AppSettings newSettingsToSave = new();
 
         // Preserve settings not managed by SettingsViewModel's UI by copying from disk state
-        newSettingsToSave.LibraryViewModePreference = settingsOnDisk.LibraryViewModePreference;
         newSettingsToSave.ArtistViewModePreference = settingsOnDisk.ArtistViewModePreference;
         newSettingsToSave.AlbumViewModePreference = settingsOnDisk.AlbumViewModePreference;
         newSettingsToSave.PlaylistViewModePreference = settingsOnDisk.PlaylistViewModePreference;

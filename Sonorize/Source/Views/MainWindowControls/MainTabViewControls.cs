@@ -1,22 +1,19 @@
-﻿using System.Diagnostics;
+﻿using System;
+using System.Diagnostics;
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
-using Avalonia.Data.Converters;
 using Avalonia.Layout;
+using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Media;
 using Avalonia.Styling;
-using Sonorize.Converters;
+using Avalonia.VisualTree;
 using Sonorize.Models;
 using Sonorize.ViewModels;
 using Sonorize.ViewModels.LibraryManagement;
-using System.Linq;
-using Avalonia.Media.Imaging; // For BitmapInterpolationMode
-using Avalonia.Input;
-using Avalonia.VisualTree;
-using System; // For Enum
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -24,10 +21,6 @@ public class MainTabViewControls
 {
     private readonly ThemeColors _theme;
     private readonly SharedViewTemplates _sharedViewTemplates;
-    private ListBox? _songListBoxInstance;
-    private ListBox? _artistsListBoxInstance;
-    private ListBox? _albumsListBoxInstance;
-    private ListBox? _playlistsListBoxInstance;
 
     public MainTabViewControls(ThemeColors theme, SharedViewTemplates sharedViewTemplates)
     {
@@ -35,7 +28,10 @@ public class MainTabViewControls
         _sharedViewTemplates = sharedViewTemplates;
     }
 
-    public TabControl CreateMainTabView(out DataGrid songDataGrid, out ScrollViewer songListScrollViewer, out ListBox artistsListBox, out ListBox albumsListBox, out ListBox playlistsListBox)
+    public TabControl CreateMainTabView(
+        out ListBox artistsListBox,
+        out ListBox albumsListBox,
+        out ListBox playlistsListBox)
     {
         var tabControl = new TabControl
         {
@@ -44,8 +40,16 @@ public class MainTabViewControls
             BorderThickness = new Thickness(0),
             Padding = new Thickness(0)
         };
+
+        // Ensure DataGrid has its control theme in this subtree (belt-and-suspenders)
+        tabControl.Styles.Add(new StyleInclude(new Uri("avares://Application"))
+        {
+            Source = new Uri("avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml")
+        });
+
         tabControl.Bind(TabControl.SelectedIndexProperty, new Binding("ActiveTabIndex", BindingMode.TwoWay));
 
+        // TabItem styling
         var tabItemStyle = new Style(s => s.Is<TabItem>());
         tabItemStyle.Setters.Add(new Setter(TabItem.BackgroundProperty, _theme.B_BackgroundColor));
         tabItemStyle.Setters.Add(new Setter(TabItem.ForegroundProperty, _theme.B_SecondaryTextColor));
@@ -67,42 +71,25 @@ public class MainTabViewControls
         tabControl.Styles.Add(selectedTabItemStyle);
         tabControl.Styles.Add(pointerOverTabItemStyle);
 
-        // --- Library Tab ---
+        // --- LIBRARY tab (DataGrid directly; no outer ScrollViewer) ---
         var libraryDataGrid = CreateLibraryDataGrid(_theme);
-        var (sv, slb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "SongListBox", "Library.FilteredSongs", "Library.SelectedSong",
-            _sharedViewTemplates.SongTemplates.GridSongTemplate,
-            _sharedViewTemplates.WrapPanelItemsPanelTemplate,
-            lb => _songListBoxInstance = lb);
-
         var libraryTab = new TabItem
         {
             Header = "LIBRARY",
-            // The Content is the LibraryViewModel itself.
-            Content = new Binding("Library"),
-            // The ContentTemplate will decide what to show based on the LibraryViewModel's state.
-            ContentTemplate = new FuncDataTemplate<LibraryViewModel>((lvm, ns) =>
-            {
-                // This template creates a ContentControl which will host either the DataGrid or the ListBox.
-                var contentPresenter = new ContentControl();
-
-                // This binding determines which view to show.
-                contentPresenter.Bind(ContentControl.ContentProperty, new Binding(nameof(LibraryViewModel.LibraryViewMode))
-                {
-                    Converter = new FuncValueConverter<SongDisplayMode, Control>(mode =>
-                        mode == SongDisplayMode.Grid ? sv : libraryDataGrid)
-                });
-
-                return contentPresenter;
-            })
+            Content = libraryDataGrid
         };
 
-
-        var (artistsListScrollViewer, alb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "ArtistsListBox", "Library.Groupings.Artists", "Library.FilterState.SelectedArtist",
-            _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
-            lb => _artistsListBoxInstance = lb);
-        _artistsListBoxInstance = alb;
+        // --- ARTISTS tab ---
+        var (artistsListScrollViewer, artistsLb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            _theme,
+            _sharedViewTemplates,
+            "ArtistsListBox",
+            "Library.Groupings.Artists",
+            "Library.FilterState.SelectedArtist",
+            _sharedViewTemplates.DetailedArtistTemplate,
+            _sharedViewTemplates.StackPanelItemsPanelTemplate,
+            lb => { });
+        artistsListBox = artistsLb;
 
         var artistsTab = new TabItem
         {
@@ -110,11 +97,17 @@ public class MainTabViewControls
             Content = artistsListScrollViewer
         };
 
-        var (albumsListScrollViewer, alblb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "AlbumsListBox", "Library.Groupings.Albums", "Library.FilterState.SelectedAlbum",
-            _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
-            lb => _albumsListBoxInstance = lb);
-        _albumsListBoxInstance = alblb;
+        // --- ALBUMS tab ---
+        var (albumsListScrollViewer, albumsLb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            _theme,
+            _sharedViewTemplates,
+            "AlbumsListBox",
+            "Library.Groupings.Albums",
+            "Library.FilterState.SelectedAlbum",
+            _sharedViewTemplates.DetailedAlbumTemplate,
+            _sharedViewTemplates.StackPanelItemsPanelTemplate,
+            lb => { });
+        albumsListBox = albumsLb;
 
         var albumsTab = new TabItem
         {
@@ -122,11 +115,17 @@ public class MainTabViewControls
             Content = albumsListScrollViewer
         };
 
-        var (playlistsListScrollViewer, plb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "PlaylistsListBox", "Library.Groupings.Playlists", "Library.FilterState.SelectedPlaylist",
-            _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
-            lb => _playlistsListBoxInstance = lb);
-        _playlistsListBoxInstance = plb;
+        // --- PLAYLISTS tab ---
+        var (playlistsListScrollViewer, playlistsLb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            _theme,
+            _sharedViewTemplates,
+            "PlaylistsListBox",
+            "Library.Groupings.Playlists",
+            "Library.FilterState.SelectedPlaylist",
+            _sharedViewTemplates.DetailedPlaylistTemplate,
+            _sharedViewTemplates.StackPanelItemsPanelTemplate,
+            lb => { });
+        playlistsListBox = playlistsLb;
 
         var playlistsTab = new TabItem
         {
@@ -134,29 +133,39 @@ public class MainTabViewControls
             Content = playlistsListScrollViewer
         };
 
+        // Populate tabs via Items.Add (Items is read-only, but the collection supports Add)
         tabControl.Items.Add(libraryTab);
         tabControl.Items.Add(artistsTab);
         tabControl.Items.Add(albumsTab);
         tabControl.Items.Add(playlistsTab);
 
-        songDataGrid = libraryDataGrid;
-        songListScrollViewer = sv;
-        artistsListBox = _artistsListBoxInstance!;
-        albumsListBox = _albumsListBoxInstance!;
-        playlistsListBox = _playlistsListBoxInstance!;
+        // Debug: see when TabControl is measured
+        tabControl.AttachedToVisualTree += (_, __) =>
+        {
+            Debug.WriteLine("[MainTabViewControls] TabControl attached. Size: " +
+                            $"{tabControl.Bounds.Width}x{tabControl.Bounds.Height}");
+        };
+
         return tabControl;
     }
 
-    public void UpdateListViewMode(SongDisplayMode mode, ListBox listBox, IDataTemplate detailedTemplate, IDataTemplate compactTemplate, IDataTemplate gridTemplate)
+    public void UpdateListViewMode(
+        SongDisplayMode mode,
+        ListBox listBox,
+        IDataTemplate detailedTemplate,
+        IDataTemplate compactTemplate,
+        IDataTemplate gridTemplate)
     {
         if (listBox == null)
         {
-            Debug.WriteLine($"[MainTabViewControls] UpdateListViewMode called but target ListBox is null.");
+            Debug.WriteLine("[MainTabViewControls] UpdateListViewMode called but target ListBox is null.");
             return;
         }
 
         Debug.WriteLine($"[MainTabViewControls] Applying display mode: {mode} to ListBox: {listBox.Name}");
-        var scrollViewer = listBox.Parent as ScrollViewer;
+
+        var scrollViewer = listBox.GetVisualAncestors().OfType<ScrollViewer>().FirstOrDefault()
+                           ?? listBox.Parent as ScrollViewer;
 
         switch (mode)
         {
@@ -165,11 +174,13 @@ public class MainTabViewControls
                 listBox.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
                 if (scrollViewer is not null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
                 break;
+
             case SongDisplayMode.Compact:
                 listBox.ItemTemplate = compactTemplate;
                 listBox.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
                 if (scrollViewer is not null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
                 break;
+
             case SongDisplayMode.Grid:
                 listBox.ItemTemplate = gridTemplate;
                 listBox.ItemsPanel = _sharedViewTemplates.WrapPanelItemsPanelTemplate;
@@ -182,133 +193,64 @@ public class MainTabViewControls
     {
         var dataGrid = new DataGrid
         {
-            Margin = new Thickness(10),
-            BorderThickness = new Thickness(0),
+            Name = "LibraryDataGrid",
+
+            // Make it impossible to miss visually while debugging
             Background = theme.B_ListBoxBackground,
-            RowBackground = Brushes.Transparent, // Rows will be styled individually
-            GridLinesVisibility = DataGridGridLinesVisibility.None,
-            CanUserReorderColumns = true,
-            CanUserResizeColumns = true,
-            CanUserSortColumns = true,
+            Foreground = theme.B_TextColor,
+            BorderBrush = Brushes.Magenta,
+            BorderThickness = new Thickness(2),
+            MinHeight = 250,
+
             AutoGenerateColumns = false,
-            HeadersVisibility = DataGridHeadersVisibility.Column
+            HeadersVisibility = DataGridHeadersVisibility.Column,
+            GridLinesVisibility = DataGridGridLinesVisibility.All,
+            RowHeight = 36,
+            IsReadOnly = true,
+            CanUserSortColumns = true
         };
 
-        dataGrid.Bind(DataGrid.RowHeightProperty, new Binding("ViewOptions.RowHeight"));
+        // Bindings relative to MainWindowViewModel
+        dataGrid.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.FilteredSongs"));
+        dataGrid.Bind(DataGrid.SelectedItemProperty, new Binding("Library.SelectedSong", BindingMode.TwoWay));
 
-        // Sorting
-        dataGrid.Sorting += (s, e) =>
+        // Columns
+        dataGrid.Columns.Add(new DataGridTextColumn
         {
-            if (s is not DataGrid { DataContext: LibraryViewModel vm } ||
-                e.Column.SortMemberPath is null) return;
+            Header = "Title",
+            Binding = new Binding("Title"),
+            Width = new DataGridLength(3, DataGridLengthUnitType.Star)
+        });
 
-            if (Enum.TryParse<SortProperty>(e.Column.SortMemberPath, true, out var prop))
-            {
-                vm.SortCommand.Execute(prop);
-            }
-            e.Handled = true; // We handled it
-        };
-
-        // Context Menu Handler
-        dataGrid.ContextRequested += (sender, e) =>
+        dataGrid.Columns.Add(new DataGridTextColumn
         {
-            if (e.Source is not Control { DataContext: Song song } control) return;
+            Header = "Artist",
+            Binding = new Binding("Artist"),
+            Width = new DataGridLength(2, DataGridLengthUnitType.Star)
+        });
 
-            var menu = new SongContextMenuHelper(theme).CreateContextMenu(song);
-            menu.PlacementTarget = control;
-            menu.Open();
-            e.Handled = true;
-        };
-
-        // --- STYLING ---
-        ApplyDataGridStyles(dataGrid, theme);
-
-        // --- COLUMNS (Structure only, bindings are deferred) ---
-        var imageCol = new DataGridTemplateColumn
+        dataGrid.Columns.Add(new DataGridTextColumn
         {
-            Header = "",
-            Width = new DataGridLength(32 + 20), // Image + Padding
-            CanUserSort = false,
-            CellTemplate = new FuncDataTemplate<Song>((song, ns) =>
-            {
-                var image = new Image { Width = 32, Height = 32, Margin = new Thickness(10, 0), Stretch = Stretch.UniformToFill };
-                image.Bind(Image.SourceProperty, new Binding(nameof(Song.Thumbnail)));
-                RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
-                return image;
-            })
+            Header = "Album",
+            Binding = new Binding("Album"),
+            Width = new DataGridLength(2, DataGridLengthUnitType.Star)
+        });
+
+        // Debug hooks
+        dataGrid.AttachedToVisualTree += (_, __) =>
+        {
+            Debug.WriteLine("[MainTabViewControls] LibraryDataGrid attached.");
+            // Force template application and log row/col presenters existence
+            dataGrid.ApplyTemplate();
+            Debug.WriteLine("[MainTabViewControls] Template applied.");
         };
 
-        var titleCol = new DataGridTextColumn { Binding = new Binding("Title"), Header = "Title", Width = new DataGridLength(3, DataGridLengthUnitType.Star), SortMemberPath = "Title" };
-        var artistCol = new DataGridTextColumn { Binding = new Binding("Artist"), Header = "Artist", Width = new DataGridLength(1.5, DataGridLengthUnitType.Star), SortMemberPath = "Artist" };
-        var albumCol = new DataGridTextColumn { Binding = new Binding("Album"), Header = "Album", Width = new DataGridLength(1.5, DataGridLengthUnitType.Star), SortMemberPath = "Album" };
-        var playCountCol = new DataGridTextColumn { Binding = new Binding("PlayCount"), Header = "Plays", Width = DataGridLength.Auto, SortMemberPath = "PlayCount" };
-        var dateAddedCol = new DataGridTextColumn { Binding = new Binding("DateAdded") { StringFormat = "{0:yyyy-MM-dd}" }, Header = "Date Added", Width = DataGridLength.Auto, SortMemberPath = "DateAdded" };
-        var durationCol = new DataGridTextColumn { Binding = new Binding("DurationString"), Header = "Duration", Width = DataGridLength.Auto, SortMemberPath = "Duration" };
-
-        dataGrid.Columns.Add(imageCol);
-        dataGrid.Columns.Add(titleCol);
-        dataGrid.Columns.Add(artistCol);
-        dataGrid.Columns.Add(albumCol);
-        dataGrid.Columns.Add(playCountCol);
-        dataGrid.Columns.Add(dateAddedCol);
-        dataGrid.Columns.Add(durationCol);
+        dataGrid.LayoutUpdated += (_, __) =>
+        {
+            var b = dataGrid.Bounds;
+            Debug.WriteLine($"[MainTabViewControls] DataGrid size: {b.Width}x{b.Height}");
+        };
 
         return dataGrid;
-    }
-
-    private void ApplyDataGridStyles(DataGrid dataGrid, ThemeColors theme)
-    {
-        dataGrid.Styles.Add(new Style(s => s.OfType<DataGridRow>())
-        {
-            Setters =
-            {
-                new Setter(TemplatedControl.BackgroundProperty, new MultiBinding
-                {
-                    Converter = new AlternatingRowBackgroundConverter
-                    {
-                        DefaultBrush = theme.B_ListBoxBackground,
-                        AlternateBrush = theme.B_ListBoxAlternateBackground
-                    },
-                    Bindings =
-                    {
-                        new Binding("."),
-                        new Binding("ViewOptions.EnableAlternatingRowColors")
-                    }
-                }),
-                new Setter(TextBlock.ForegroundProperty, theme.B_TextColor),
-            }
-        });
-
-        dataGrid.Styles.Add(new Style(s => s.OfType<DataGridRow>().Class(":pointerover").Not(xx => xx.Class(":selected")))
-        { Setters = { new Setter(TemplatedControl.BackgroundProperty, theme.B_ControlBackgroundColor) } });
-
-        dataGrid.Styles.Add(new Style(s => s.OfType<DataGridRow>().Class(":selected"))
-        {
-            Setters =
-            {
-                new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor),
-                new Setter(TextBlock.ForegroundProperty, theme.B_AccentForeground)
-            }
-        });
-
-        dataGrid.Styles.Add(new Style(s => s.OfType<DataGridRow>().Class(":selected").Class(":pointerover"))
-        {
-            Setters =
-            {
-                new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor),
-                new Setter(TextBlock.ForegroundProperty, theme.B_AccentForeground)
-            }
-        });
-
-        dataGrid.Styles.Add(new Style(s => s.OfType<DataGridColumnHeader>())
-        {
-            Setters =
-            {
-                new Setter(TemplatedControl.BackgroundProperty, theme.B_SlightlyLighterBackground),
-                new Setter(TemplatedControl.ForegroundProperty, theme.B_SecondaryTextColor),
-                new Setter(TemplatedControl.FontWeightProperty, FontWeight.Bold),
-                new Setter(TemplatedControl.FontSizeProperty, 11.0),
-            }
-        });
     }
 }

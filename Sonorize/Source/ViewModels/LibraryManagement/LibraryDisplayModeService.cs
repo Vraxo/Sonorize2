@@ -1,5 +1,6 @@
 ﻿using System;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Windows.Input;
 using Sonorize.Models;
 using Sonorize.Services;
@@ -10,19 +11,6 @@ public class LibraryDisplayModeService : ViewModelBase
 {
     private readonly SettingsService _settingsService;
 
-    private SongDisplayMode _libraryViewMode;
-    public SongDisplayMode LibraryViewMode
-    {
-        get => _libraryViewMode;
-        private set // Setter is private, changes are made via command
-        {
-            if (SetProperty(ref _libraryViewMode, value))
-            {
-                SavePreference(nameof(AppSettings.LibraryViewModePreference), value.ToString());
-            }
-        }
-    }
-
     private SongDisplayMode _artistViewMode;
     public SongDisplayMode ArtistViewMode
     {
@@ -31,6 +19,7 @@ public class LibraryDisplayModeService : ViewModelBase
         {
             if (SetProperty(ref _artistViewMode, value))
             {
+                Debug.WriteLine($"[DisplayModeService] ArtistViewMode changed to: {value}");
                 SavePreference(nameof(AppSettings.ArtistViewModePreference), value.ToString());
             }
         }
@@ -44,11 +33,12 @@ public class LibraryDisplayModeService : ViewModelBase
         {
             if (SetProperty(ref _albumViewMode, value))
             {
+                Debug.WriteLine($"[DisplayModeService] AlbumViewMode changed to: {value}");
                 SavePreference(nameof(AppSettings.AlbumViewModePreference), value.ToString());
             }
         }
     }
-    
+
     private SongDisplayMode _playlistViewMode;
     public SongDisplayMode PlaylistViewMode
     {
@@ -57,6 +47,7 @@ public class LibraryDisplayModeService : ViewModelBase
         {
             if (SetProperty(ref _playlistViewMode, value))
             {
+                Debug.WriteLine($"[DisplayModeService] PlaylistViewMode changed to: {value}");
                 SavePreference(nameof(AppSettings.PlaylistViewModePreference), value.ToString());
             }
         }
@@ -83,7 +74,6 @@ public class LibraryDisplayModeService : ViewModelBase
 
                 switch (targetView)
                 {
-                    case "Library": LibraryViewMode = mode; break;
                     case "Artists": ArtistViewMode = mode; break;
                     case "Albums": AlbumViewMode = mode; break;
                     case "Playlists": PlaylistViewMode = mode; break;
@@ -101,17 +91,15 @@ public class LibraryDisplayModeService : ViewModelBase
     private void LoadDisplayPreferences()
     {
         AppSettings settings = _settingsService.LoadSettings();
-        _libraryViewMode = Enum.TryParse<SongDisplayMode>(settings.LibraryViewModePreference, out var libMode) ? libMode : SongDisplayMode.Detailed;
         _artistViewMode = Enum.TryParse<SongDisplayMode>(settings.ArtistViewModePreference, out var artMode) ? artMode : SongDisplayMode.Detailed;
         _albumViewMode = Enum.TryParse<SongDisplayMode>(settings.AlbumViewModePreference, out var albMode) ? albMode : SongDisplayMode.Detailed;
         _playlistViewMode = Enum.TryParse<SongDisplayMode>(settings.PlaylistViewModePreference, out var playMode) ? playMode : SongDisplayMode.Detailed;
-        
+
         ArtistGridDisplayType = Enum.TryParse<GridViewImageType>(settings.ArtistGridViewImageType, out var artistGridType) ? artistGridType : GridViewImageType.Composite;
         AlbumGridDisplayType = Enum.TryParse<GridViewImageType>(settings.AlbumGridViewImageType, out var albumGridType) ? albumGridType : GridViewImageType.Composite;
         PlaylistGridDisplayType = Enum.TryParse<GridViewImageType>(settings.PlaylistGridViewImageType, out var playlistGridType) ? playlistGridType : GridViewImageType.Composite;
 
         // Initial OnPropertyChanged for any subscribers after loading
-        OnPropertyChanged(nameof(LibraryViewMode));
         OnPropertyChanged(nameof(ArtistViewMode));
         OnPropertyChanged(nameof(AlbumViewMode));
         OnPropertyChanged(nameof(PlaylistViewMode));

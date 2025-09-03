@@ -40,6 +40,7 @@ public class SongListManager : ViewModelBase
     public void SetAllSongs(IEnumerable<Song> songs)
     {
         _allSongs = new List<Song>(songs);
+        Debug.WriteLine($"[SongListManager] SetAllSongs completed. Master list now contains {_allSongs.Count} songs.");
         // Typically, after setting all songs, a filter application would follow.
         // This can be triggered by the caller (LibraryViewModel).
         OnPropertyChanged(nameof(AllSongsCount)); // For any internal/debug use
@@ -57,6 +58,7 @@ public class SongListManager : ViewModelBase
 
     public void ApplyFilter(string? searchQuery, ArtistViewModel? selectedArtist, AlbumViewModel? selectedAlbum, PlaylistViewModel? selectedPlaylist, SortProperty sortBy, SortDirection sortDirection, LibraryViewOptionsViewModel viewOptions)
     {
+        Debug.WriteLine($"[SongListManager.ApplyFilter] Starting filter. AllSongs count: {AllSongsCount}, Query: '{searchQuery}', Artist: '{selectedArtist?.Name}', Album: '{selectedAlbum?.Title}'");
         var currentSelectedSongBeforeFilter = SelectedSong;
 
         FilteredSongs.Clear();
@@ -67,7 +69,12 @@ public class SongListManager : ViewModelBase
             selectedAlbum,
             selectedPlaylist);
 
+        int filteredCount = filteredResults.Count();
+        Debug.WriteLine($"[SongListManager.ApplyFilter] After initial filter: {filteredCount} songs.");
+
         var sortedResults = SortSongs(filteredResults, sortBy, sortDirection);
+
+        Debug.WriteLine($"[SongListManager.ApplyFilter] After sorting: {sortedResults.Count} songs. Now populating FilteredSongs collection.");
 
         // Set the index and view options for each song in the view for performant bindings.
         for (int i = 0; i < sortedResults.Count; i++)
@@ -80,6 +87,9 @@ public class SongListManager : ViewModelBase
         {
             FilteredSongs.Add(song);
         }
+
+        Debug.WriteLine($"[SongListManager.ApplyFilter] Finished populating. FilteredSongs.Count: {FilteredSongs.Count}");
+
 
         // Preserve selection if possible
         if (currentSelectedSongBeforeFilter is not null && FilteredSongs.Contains(currentSelectedSongBeforeFilter))

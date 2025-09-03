@@ -96,12 +96,12 @@ public static class PlaybackNavigationButtonsPanel
         shuffleButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.ModeControls.ShuffleEnabled", BindingMode.TwoWay)); // Updated path
         shuffleButton[!ToggleButton.ForegroundProperty] = new Binding("IsChecked")
         {
-            Source = shuffleButton,
+            RelativeSource = new RelativeSource(RelativeSourceMode.Self),
             Converter = new FuncValueConverter<bool, IBrush>(isChecked => isChecked ? theme.B_AccentColor : theme.B_SecondaryTextColor)
         };
         shuffleButton[!ToggleButton.BorderBrushProperty] = new Binding("IsChecked")
         {
-            Source = shuffleButton,
+            RelativeSource = new RelativeSource(RelativeSourceMode.Self),
             Converter = new FuncValueConverter<bool, IBrush>(isChecked => isChecked ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
         };
         shuffleButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));

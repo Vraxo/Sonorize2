@@ -26,6 +26,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     // Expose Services needed by views or bindings if not through child VMs
     public PlaybackService PlaybackService => _componentsManager.PlaybackServiceProperty; // Exposed from ComponentsManager
     public ThemeColors CurrentTheme { get; }
+    public LibraryDisplayModeService LibraryDisplayModeService { get; }
 
     // Expose the child ViewModels from ComponentsManager
     public LibraryViewModel Library => _componentsManager.Library;
@@ -98,6 +99,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         CurrentTheme = theme; // Store theme directly
         PlaybackAreaBackground = CurrentTheme.B_BackgroundColor;
 
+        LibraryDisplayModeService = new LibraryDisplayModeService(settingsService);
+
         _componentsManager = new MainWindowComponentsManager(
             this, // Pass self as parent
             settingsService,
@@ -159,7 +162,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             (ExitCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenEditSongMetadataDialogCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            
+
             Library.RaiseLibraryCommandsCanExecuteChanged();
             Playback.RaisePlaybackCommandCanExecuteChanged();
             LoopEditor.RaiseMainLoopCommandsCanExecuteChanged();
@@ -177,7 +180,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public void UpdatePlaybackAreaBackground()
     {
         var settings = _componentsManager.SettingsServiceProperty.LoadSettings();
-        
+
         var newCompactSetting = settings.UseCompactPlaybackControls;
         if (UseCompactPlaybackControls != newCompactSetting)
         {
@@ -228,7 +231,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         var (statusMessages, settingsChanged) = await _componentsManager.InteractionCoordinator.CoordinateAndProcessSettingsAsync();
         if (settingsChanged)
         {
-            Library.LibraryDisplayModeService.ReloadDisplayPreferences();
+            LibraryDisplayModeService.ReloadDisplayPreferences();
             UpdatePlaybackAreaBackground();
             if (statusMessages.Any())
             {

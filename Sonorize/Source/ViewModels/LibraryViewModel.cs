@@ -16,19 +16,16 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     private readonly SettingsService _settingsService;
     private readonly MusicLibraryService _musicLibraryService;
     private readonly MainWindowViewModel _parentViewModel;
-    private readonly LibraryDisplayModeService _displayModeService;
     private readonly TrackNavigationManager _trackNavigationManager;
     private readonly LibraryComponentProvider _components;
     private readonly LibraryLoadProcess _libraryLoadProcess;
 
     public LibraryViewOptionsViewModel ViewOptions { get; }
 
-    public LibraryDisplayModeService LibraryDisplayModeService => _displayModeService;
     public LibraryGroupingsViewModel Groupings => _components.Groupings;
     public ObservableCollection<Song> FilteredSongs => _components.SongList.FilteredSongs;
     public LibraryFilterStateManager FilterState => _components.FilterState;
 
-    public ICommand SetDisplayModeCommand => _displayModeService.SetDisplayModeCommand;
     public ICommand PreviousTrackCommand => _trackNavigationManager.PreviousTrackCommand;
     public ICommand NextTrackCommand => _trackNavigationManager.NextTrackCommand;
     public ICommand EditSongMetadataCommand { get; }
@@ -36,11 +33,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
     public SortProperty CurrentSortProperty { get; private set; } = SortProperty.Title;
     public SortDirection CurrentSortDirection { get; private set; } = SortDirection.Ascending;
-
-    public SongDisplayMode LibraryViewMode => _displayModeService.LibraryViewMode;
-    public SongDisplayMode ArtistViewMode => _displayModeService.ArtistViewMode;
-    public SongDisplayMode AlbumViewMode => _displayModeService.AlbumViewMode;
-    public SongDisplayMode PlaylistViewMode => _displayModeService.PlaylistViewMode;
 
     public bool IsLoadingLibrary
     {
@@ -90,13 +82,11 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         MainWindowViewModel parentViewModel,
         SettingsService settingsService,
         MusicLibraryService musicLibraryService,
-        LoopDataService loopDataService,
-        LibraryDisplayModeService displayModeService)
+        LoopDataService loopDataService)
     {
         _parentViewModel = parentViewModel ?? throw new ArgumentNullException(nameof(parentViewModel));
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
-        _displayModeService = displayModeService ?? throw new ArgumentNullException(nameof(displayModeService));
 
         ViewOptions = new LibraryViewOptionsViewModel();
         ViewOptions.LoadFromSettings(_settingsService.LoadSettings());
@@ -119,7 +109,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         _components.FilterState.RequestTabSwitchToLibrary += (s, e) => _parentViewModel.ActiveTabIndex = 0;
         _components.SongList.PropertyChanged += SongListManager_PropertyChanged;
 
-        _displayModeService.PropertyChanged += DisplayModeService_PropertyChanged;
         _musicLibraryService.SongThumbnailUpdated += MusicLibraryService_SongThumbnailUpdated;
 
         EditSongMetadataCommand = new RelayCommand(ExecuteEditSongMetadata, CanExecuteEditSongMetadata);
@@ -168,25 +157,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private void DisplayModeService_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        switch (e.PropertyName)
-        {
-            case nameof(LibraryDisplayModeService.LibraryViewMode):
-                OnPropertyChanged(nameof(LibraryViewMode));
-                break;
-            case nameof(LibraryDisplayModeService.ArtistViewMode):
-                OnPropertyChanged(nameof(ArtistViewMode));
-                break;
-            case nameof(LibraryDisplayModeService.AlbumViewMode):
-                OnPropertyChanged(nameof(AlbumViewMode));
-                break;
-            case nameof(LibraryDisplayModeService.PlaylistViewMode):
-                OnPropertyChanged(nameof(PlaylistViewMode));
-                break;
-        }
-    }
-
     private async void MusicLibraryService_SongThumbnailUpdated(Song updatedSong)
     {
         await Dispatcher.UIThread.InvokeAsync(() =>
@@ -201,8 +171,10 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         {
             return;
         }
+        Debug.WriteLine("[LibraryVM] LoadLibraryAsync: Starting library load process.");
         // Delegate the loading process to the new class
         await _libraryLoadProcess.ExecuteLoadAsync();
+        Debug.WriteLine("[LibraryVM] LoadLibraryAsync: Library load process finished.");
     }
 
     public void RefreshAutoPlaylists()
@@ -279,11 +251,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         if (_musicLibraryService is not null)
         {
             _musicLibraryService.SongThumbnailUpdated -= MusicLibraryService_SongThumbnailUpdated;
-        }
-
-        if (_displayModeService is not null)
-        {
-            _displayModeService.PropertyChanged -= DisplayModeService_PropertyChanged;
         }
 
         if (_components?.FilterState is not null)

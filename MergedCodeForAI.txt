@@ -5001,7 +5001,6 @@ namespace Sonorize.Views;
 public class MainWindow : Window
 {
     private readonly ThemeColors _theme;
-    private DataGrid _songDataGrid;
     private ScrollViewer _songListScrollViewer; // Changed from ListBox
     private ListBox _artistsListBox;
     private ListBox _albumsListBox;
@@ -5044,7 +5043,7 @@ public class MainWindow : Window
         Grid.SetRow(searchBarPanel, 1);
         mainGrid.Children.Add(searchBarPanel);
 
-        var tabControl = _mainTabViewControls.CreateMainTabView(out _songDataGrid, out _songListScrollViewer, out _artistsListBox, out _albumsListBox, out _playlistsListBox);
+        var tabControl = _mainTabViewControls.CreateMainTabView(out _songListScrollViewer, out _artistsListBox, out _albumsListBox, out _playlistsListBox);
         Grid.SetRow(tabControl, 2);
         mainGrid.Children.Add(tabControl);
 
@@ -5091,24 +5090,10 @@ public class MainWindow : Window
 
         vm.SetOwnerView(this);
 
-        // --- DEFERRED BINDING FOR DATAGRID ---
-        // The DataContext is now available, so we can safely apply the bindings.
-        _songDataGrid.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.FilteredSongs"));
-        _songDataGrid.Bind(DataGrid.SelectedItemProperty, new Binding("Library.SelectedSong", BindingMode.TwoWay));
-
-        // Bind column visibility. Columns DO NOT inherit DataContext, so we must provide an explicit Source.
-        _songDataGrid.Columns[0].Bind(DataGridColumn.IsVisibleProperty, new Binding("LibraryViewMode") { Source = vm.Library, Converter = new FuncValueConverter<SongDisplayMode, bool>(m => m == SongDisplayMode.Detailed) });
-        _songDataGrid.Columns[2].Bind(DataGridColumn.IsVisibleProperty, new Binding("ShowArtist") { Source = vm.Library.ViewOptions });
-        _songDataGrid.Columns[3].Bind(DataGridColumn.IsVisibleProperty, new Binding("ShowAlbum") { Source = vm.Library.ViewOptions });
-        _songDataGrid.Columns[4].Bind(DataGridColumn.IsVisibleProperty, new Binding("ShowPlayCount") { Source = vm.Library.ViewOptions });
-        _songDataGrid.Columns[5].Bind(DataGridColumn.IsVisibleProperty, new Binding("ShowDateAdded") { Source = vm.Library.ViewOptions });
-        _songDataGrid.Columns[6].Bind(DataGridColumn.IsVisibleProperty, new Binding("ShowDuration") { Source = vm.Library.ViewOptions });
-        // --- END DEFERRED BINDING ---
-
         _currentLibraryVM = vm.Library;
         _currentLibraryVM.PropertyChanged += LibraryViewModel_PropertyChanged;
 
-        ApplyLibraryViewMode(_currentLibraryVM.LibraryViewMode);
+        // Apply initial view modes for non-library tabs
         ApplyListViewDisplayMode(_artistsListBox, _currentLibraryVM.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate);
         ApplyListViewDisplayMode(_albumsListBox, _currentLibraryVM.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate);
         ApplyListViewDisplayMode(_playlistsListBox, _currentLibraryVM.PlaylistViewMode, _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.CompactPlaylistTemplate, _sharedViewTemplates.GridPlaylistTemplate);
@@ -5121,11 +5106,7 @@ public class MainWindow : Window
             return;
         }
 
-        if (e.PropertyName == nameof(LibraryViewModel.LibraryViewMode))
-        {
-            Dispatcher.UIThread.InvokeAsync(() => ApplyLibraryViewMode(lvm.LibraryViewMode));
-        }
-        else if (e.PropertyName == nameof(LibraryViewModel.ArtistViewMode))
+        if (e.PropertyName == nameof(LibraryViewModel.ArtistViewMode))
         {
             Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_artistsListBox, lvm.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate));
         }
@@ -5138,20 +5119,6 @@ public class MainWindow : Window
             Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_playlistsListBox, lvm.PlaylistViewMode, _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.CompactPlaylistTemplate, _sharedViewTemplates.GridPlaylistTemplate));
         }
     }
-
-    private void ApplyLibraryViewMode(SongDisplayMode mode)
-    {
-        bool isGridView = mode == SongDisplayMode.Grid;
-        _songDataGrid.IsVisible = !isGridView;
-        _songListScrollViewer.IsVisible = isGridView;
-
-        // Apply row height changes to DataGrid
-        if (DataContext is MainWindowViewModel mvm)
-        {
-            _songDataGrid.RowHeight = mvm.Library.ViewOptions.RowHeight;
-        }
-    }
-
 
     private void ApplyListViewDisplayMode(ListBox listBox, SongDisplayMode mode, IDataTemplate detailedTemplate, IDataTemplate compactTemplate, IDataTemplate gridTemplate)
     {
@@ -8073,6 +8040,7 @@ public class LibraryDataOrchestrator
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LibraryManagement\LibraryDisplayModeService.cs">
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Windows.Input;
 using Sonorize.Models;
 using Sonorize.Services;
@@ -8091,6 +8059,7 @@ public class LibraryDisplayModeService : ViewModelBase
         {
             if (SetProperty(ref _libraryViewMode, value))
             {
+                Debug.WriteLine($"[DisplayModeService] LibraryViewMode changed to: {value}");
                 SavePreference(nameof(AppSettings.LibraryViewModePreference), value.ToString());
             }
         }
@@ -8104,6 +8073,7 @@ public class LibraryDisplayModeService : ViewModelBase
         {
             if (SetProperty(ref _artistViewMode, value))
             {
+                Debug.WriteLine($"[DisplayModeService] ArtistViewMode changed to: {value}");
                 SavePreference(nameof(AppSettings.ArtistViewModePreference), value.ToString());
             }
         }
@@ -8117,11 +8087,12 @@ public class LibraryDisplayModeService : ViewModelBase
         {
             if (SetProperty(ref _albumViewMode, value))
             {
+                Debug.WriteLine($"[DisplayModeService] AlbumViewMode changed to: {value}");
                 SavePreference(nameof(AppSettings.AlbumViewModePreference), value.ToString());
             }
         }
     }
-    
+
     private SongDisplayMode _playlistViewMode;
     public SongDisplayMode PlaylistViewMode
     {
@@ -8130,6 +8101,7 @@ public class LibraryDisplayModeService : ViewModelBase
         {
             if (SetProperty(ref _playlistViewMode, value))
             {
+                Debug.WriteLine($"[DisplayModeService] PlaylistViewMode changed to: {value}");
                 SavePreference(nameof(AppSettings.PlaylistViewModePreference), value.ToString());
             }
         }
@@ -8178,7 +8150,7 @@ public class LibraryDisplayModeService : ViewModelBase
         _artistViewMode = Enum.TryParse<SongDisplayMode>(settings.ArtistViewModePreference, out var artMode) ? artMode : SongDisplayMode.Detailed;
         _albumViewMode = Enum.TryParse<SongDisplayMode>(settings.AlbumViewModePreference, out var albMode) ? albMode : SongDisplayMode.Detailed;
         _playlistViewMode = Enum.TryParse<SongDisplayMode>(settings.PlaylistViewModePreference, out var playMode) ? playMode : SongDisplayMode.Detailed;
-        
+
         ArtistGridDisplayType = Enum.TryParse<GridViewImageType>(settings.ArtistGridViewImageType, out var artistGridType) ? artistGridType : GridViewImageType.Composite;
         AlbumGridDisplayType = Enum.TryParse<GridViewImageType>(settings.AlbumGridViewImageType, out var albumGridType) ? albumGridType : GridViewImageType.Composite;
         PlaylistGridDisplayType = Enum.TryParse<GridViewImageType>(settings.PlaylistGridViewImageType, out var playlistGridType) ? playlistGridType : GridViewImageType.Composite;
@@ -8758,6 +8730,7 @@ public class SongListManager : ViewModelBase
 
     public void ApplyFilter(string? searchQuery, ArtistViewModel? selectedArtist, AlbumViewModel? selectedAlbum, PlaylistViewModel? selectedPlaylist, SortProperty sortBy, SortDirection sortDirection, LibraryViewOptionsViewModel viewOptions)
     {
+        Debug.WriteLine($"[SongListManager.ApplyFilter] Starting filter. AllSongs count: {AllSongsCount}, Query: '{searchQuery}', Artist: '{selectedArtist?.Name}', Album: '{selectedAlbum?.Title}'");
         var currentSelectedSongBeforeFilter = SelectedSong;
 
         FilteredSongs.Clear();
@@ -8768,7 +8741,11 @@ public class SongListManager : ViewModelBase
             selectedAlbum,
             selectedPlaylist);
 
+        Debug.WriteLine($"[SongListManager.ApplyFilter] After initial filter: {filteredResults.Count()} songs.");
+
         var sortedResults = SortSongs(filteredResults, sortBy, sortDirection);
+
+        Debug.WriteLine($"[SongListManager.ApplyFilter] After sorting: {sortedResults.Count} songs. Now populating FilteredSongs collection.");
 
         // Set the index and view options for each song in the view for performant bindings.
         for (int i = 0; i < sortedResults.Count; i++)
@@ -8781,6 +8758,9 @@ public class SongListManager : ViewModelBase
         {
             FilteredSongs.Add(song);
         }
+
+        Debug.WriteLine($"[SongListManager.ApplyFilter] Finished populating. FilteredSongs.Count: {FilteredSongs.Count}");
+
 
         // Preserve selection if possible
         if (currentSelectedSongBeforeFilter is not null && FilteredSongs.Contains(currentSelectedSongBeforeFilter))
@@ -10546,7 +10526,7 @@ public static class AdvancedPlaybackPanelControls
         waveformDisplay.Bind(WaveformDisplayControl.WaveformPointsProperty, new Binding("Playback.WaveformDisplay.WaveformRenderData"));
         waveformDisplay.Bind(WaveformDisplayControl.CurrentPositionProperty, new Binding("Playback.CurrentPosition"));
         waveformDisplay.Bind(WaveformDisplayControl.DurationProperty, new Binding("Playback.CurrentSongDuration"));
-        waveformDisplay.Bind(WaveformDisplayControl.ActiveLoopProperty, new Binding("Playback.PlaybackService.CurrentSong.SavedLoop"));
+        waveformDisplay.Bind(WaveformDisplayControl.ActiveLoopProperty, new Binding("Playback.CurrentSong.SavedLoop"));
         waveformDisplay.SeekRequested += (s, time) =>
         {
             if (s is Control { DataContext: MainWindowViewModel mainWindowVM })
@@ -10582,7 +10562,7 @@ public static class AdvancedPlaybackPanelControls
 
         var clearLoopBtn = new Button { Content = "Clear Loop", FontSize = 11, Padding = new Thickness(10, 5), Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         clearLoopBtn.Bind(Button.CommandProperty, new Binding("LoopEditor.ClearLoopCommand"));
-        var clearLoopBinding = new Binding("PlaybackService.CurrentSong.SavedLoop") { Converter = NotNullToBooleanConverter.Instance };
+        var clearLoopBinding = new Binding("Playback.CurrentSong.SavedLoop") { Converter = NotNullToBooleanConverter.Instance };
         clearLoopBtn.Bind(Button.IsEnabledProperty, clearLoopBinding);
 
         loopActionsPanel.Children.Add(setStartBtn); loopActionsPanel.Children.Add(startDisp);
@@ -10593,7 +10573,7 @@ public static class AdvancedPlaybackPanelControls
         var loopActiveCheckBox = new CheckBox { Content = "Activate Loop", Foreground = theme.B_TextColor, VerticalAlignment = VerticalAlignment.Center };
         // Bind to the new ActiveLoopViewModel
         loopActiveCheckBox.Bind(ToggleButton.IsCheckedProperty, new Binding("LoopEditor.ActiveLoop.IsLoopActive", BindingMode.TwoWay));
-        var loopActiveCheckBoxIsEnabledBinding = new Binding("PlaybackService.CurrentSong.SavedLoop") { Converter = NotNullToBooleanConverter.Instance };
+        var loopActiveCheckBoxIsEnabledBinding = new Binding("Playback.CurrentSong.SavedLoop") { Converter = NotNullToBooleanConverter.Instance };
         loopActiveCheckBox.Bind(Control.IsEnabledProperty, loopActiveCheckBoxIsEnabledBinding);
         loopActiveTogglePanel.Children.Add(loopActiveCheckBox);
 
@@ -11160,7 +11140,7 @@ public class MainTabViewControls
         _sharedViewTemplates = sharedViewTemplates;
     }
 
-    public TabControl CreateMainTabView(out DataGrid songDataGrid, out ScrollViewer songListScrollViewer, out ListBox artistsListBox, out ListBox albumsListBox, out ListBox playlistsListBox)
+    public TabControl CreateMainTabView(out ScrollViewer songListScrollViewer, out ListBox artistsListBox, out ListBox albumsListBox, out ListBox playlistsListBox)
     {
         var tabControl = new TabControl
         {
@@ -11192,20 +11172,20 @@ public class MainTabViewControls
         tabControl.Styles.Add(selectedTabItemStyle);
         tabControl.Styles.Add(pointerOverTabItemStyle);
 
-        // --- Library Tab: Contains both DataGrid and ListBox, visibility is toggled ---
-        var libraryTabContainer = new Grid(); // CHANGED FROM PANEL TO GRID
-
-        // 1. DataGrid for Detailed/Compact views
+        // --- Library Tab ---
         var libraryDataGrid = CreateLibraryDataGrid(_theme);
-        libraryTabContainer.Children.Add(libraryDataGrid);
+        var dataGridScrollViewer = new ScrollViewer { Content = libraryDataGrid, Name = "DataGridScrollViewer" };
 
-        // 2. ListBox for Grid view
         var (sv, slb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
             _theme, _sharedViewTemplates, "SongListBox", "Library.FilteredSongs", "Library.SelectedSong",
-            _sharedViewTemplates.SongTemplates.GridSongTemplate, // Only needs the grid template now
-            _sharedViewTemplates.WrapPanelItemsPanelTemplate, // Use WrapPanel for grid view
+            _sharedViewTemplates.SongTemplates.GridSongTemplate,
+            _sharedViewTemplates.WrapPanelItemsPanelTemplate,
             lb => _songListBoxInstance = lb);
 
+        var libraryTabContainer = new Grid();
+        dataGridScrollViewer.Bind(Visual.IsVisibleProperty, new Binding("Library.LibraryViewMode") { Converter = new FuncValueConverter<SongDisplayMode, bool>(m => m != SongDisplayMode.Grid) });
+        sv.Bind(Visual.IsVisibleProperty, new Binding("Library.LibraryViewMode") { Converter = new FuncValueConverter<SongDisplayMode, bool>(m => m == SongDisplayMode.Grid) });
+        libraryTabContainer.Children.Add(dataGridScrollViewer);
         libraryTabContainer.Children.Add(sv);
 
         var libraryTab = new TabItem
@@ -11213,6 +11193,7 @@ public class MainTabViewControls
             Header = "LIBRARY",
             Content = libraryTabContainer
         };
+        // The container will inherit the DataContext from the TabControl, which is MainWindowViewModel. All paths inside must be relative to that.
 
 
         var (artistsListScrollViewer, alb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
@@ -11256,7 +11237,6 @@ public class MainTabViewControls
         tabControl.Items.Add(albumsTab);
         tabControl.Items.Add(playlistsTab);
 
-        songDataGrid = libraryDataGrid;
         songListScrollViewer = sv;
         artistsListBox = _artistsListBoxInstance!;
         albumsListBox = _albumsListBoxInstance!;
@@ -11299,6 +11279,7 @@ public class MainTabViewControls
     {
         var dataGrid = new DataGrid
         {
+            Name = "LibraryDataGrid",
             Margin = new Thickness(10),
             BorderThickness = new Thickness(0),
             Background = theme.B_ListBoxBackground,
@@ -11311,15 +11292,19 @@ public class MainTabViewControls
             HeadersVisibility = DataGridHeadersVisibility.Column
         };
 
-        // DEFERRED BINDINGS: These are now set in MainWindow.cs after the DataContext is ready.
-        // dataGrid.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.FilteredSongs"));
-        // dataGrid.Bind(DataGrid.SelectedItemProperty, new Binding("Library.SelectedSong", BindingMode.TwoWay));
+        // Bindings are relative to MainWindowViewModel
+        dataGrid.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.FilteredSongs"));
+        dataGrid.Bind(DataGrid.SelectedItemProperty, new Binding("Library.SelectedSong", BindingMode.TwoWay));
+        dataGrid.Bind(DataGrid.RowHeightProperty, new Binding("Library.ViewOptions.RowHeight"));
 
         // Sorting
         dataGrid.Sorting += (s, e) =>
         {
             if (s is not DataGrid { DataContext: MainWindowViewModel vm } ||
-                e.Column.SortMemberPath is null) return;
+                vm.Library is null || e.Column.SortMemberPath is null)
+            {
+                return;
+            }
 
             if (Enum.TryParse<SortProperty>(e.Column.SortMemberPath, true, out var prop))
             {
@@ -11342,7 +11327,7 @@ public class MainTabViewControls
         // --- STYLING ---
         ApplyDataGridStyles(dataGrid, theme);
 
-        // --- COLUMNS (Structure only, bindings are deferred) ---
+        // --- COLUMNS ---
         var imageCol = new DataGridTemplateColumn
         {
             Header = "",
@@ -11359,10 +11344,39 @@ public class MainTabViewControls
 
         var titleCol = new DataGridTextColumn { Binding = new Binding("Title"), Header = "Title", Width = new DataGridLength(3, DataGridLengthUnitType.Star), SortMemberPath = "Title" };
         var artistCol = new DataGridTextColumn { Binding = new Binding("Artist"), Header = "Artist", Width = new DataGridLength(1.5, DataGridLengthUnitType.Star), SortMemberPath = "Artist" };
+        artistCol.Bind(DataGridColumn.IsVisibleProperty, new Binding
+        {
+            Path = "DataContext.Library.ViewOptions.ShowArtist",
+            Source = dataGrid
+        });
+
         var albumCol = new DataGridTextColumn { Binding = new Binding("Album"), Header = "Album", Width = new DataGridLength(1.5, DataGridLengthUnitType.Star), SortMemberPath = "Album" };
+        albumCol.Bind(DataGridColumn.IsVisibleProperty, new Binding
+        {
+            Path = "DataContext.Library.ViewOptions.ShowAlbum",
+            Source = dataGrid
+        });
+
         var playCountCol = new DataGridTextColumn { Binding = new Binding("PlayCount"), Header = "Plays", Width = DataGridLength.Auto, SortMemberPath = "PlayCount" };
+        playCountCol.Bind(DataGridColumn.IsVisibleProperty, new Binding
+        {
+            Path = "DataContext.Library.ViewOptions.ShowPlayCount",
+            Source = dataGrid
+        });
+
         var dateAddedCol = new DataGridTextColumn { Binding = new Binding("DateAdded") { StringFormat = "{0:yyyy-MM-dd}" }, Header = "Date Added", Width = DataGridLength.Auto, SortMemberPath = "DateAdded" };
+        dateAddedCol.Bind(DataGridColumn.IsVisibleProperty, new Binding
+        {
+            Path = "DataContext.Library.ViewOptions.ShowDateAdded",
+            Source = dataGrid
+        });
+
         var durationCol = new DataGridTextColumn { Binding = new Binding("DurationString"), Header = "Duration", Width = DataGridLength.Auto, SortMemberPath = "Duration" };
+        durationCol.Bind(DataGridColumn.IsVisibleProperty, new Binding
+        {
+            Path = "DataContext.Library.ViewOptions.ShowDuration",
+            Source = dataGrid
+        });
 
         dataGrid.Columns.Add(imageCol);
         dataGrid.Columns.Add(titleCol);
@@ -11391,6 +11405,7 @@ public class MainTabViewControls
                     Bindings =
                     {
                         new Binding("."),
+                        // The Song object (row's DataContext) has ViewOptions attached for this purpose.
                         new Binding("ViewOptions.EnableAlternatingRowColors")
                     }
                 }),
@@ -11532,12 +11547,12 @@ public static class PlaybackNavigationButtonsPanel
         shuffleButton.Bind(ToggleButton.IsCheckedProperty, new Binding("Playback.ModeControls.ShuffleEnabled", BindingMode.TwoWay)); // Updated path
         shuffleButton[!ToggleButton.ForegroundProperty] = new Binding("IsChecked")
         {
-            Source = shuffleButton,
+            RelativeSource = new RelativeSource(RelativeSourceMode.Self),
             Converter = new FuncValueConverter<bool, IBrush>(isChecked => isChecked ? theme.B_AccentColor : theme.B_SecondaryTextColor)
         };
         shuffleButton[!ToggleButton.BorderBrushProperty] = new Binding("IsChecked")
         {
-            Source = shuffleButton,
+            RelativeSource = new RelativeSource(RelativeSourceMode.Self),
             Converter = new FuncValueConverter<bool, IBrush>(isChecked => isChecked ? theme.B_AccentColor : theme.B_ControlBackgroundColor)
         };
         shuffleButton.Bind(Control.IsEnabledProperty, new Binding("Playback.HasCurrentSong"));

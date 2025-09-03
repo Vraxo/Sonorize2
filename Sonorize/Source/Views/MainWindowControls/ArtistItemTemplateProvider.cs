@@ -78,7 +78,7 @@ public class ArtistItemTemplateProvider
                 Bindings =
                 {
                     new Binding(nameof(ArtistViewModel.SongThumbnailsForGrid)),
-                    new Binding("DataContext.Library.LibraryDisplayModeService.ArtistGridDisplayType")
+                    new Binding("LibraryDisplayModeService.ArtistGridDisplayType")
                     {
                         RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
                         {
@@ -98,7 +98,7 @@ public class ArtistItemTemplateProvider
                 Bindings =
                 {
                     new Binding(nameof(ArtistViewModel.SongThumbnailsForGrid)),
-                    new Binding("DataContext.Library.LibraryDisplayModeService.ArtistGridDisplayType")
+                    new Binding("LibraryDisplayModeService.ArtistGridDisplayType")
                     {
                         RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
                         {

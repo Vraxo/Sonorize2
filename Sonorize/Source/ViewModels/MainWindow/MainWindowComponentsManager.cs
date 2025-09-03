@@ -27,7 +27,6 @@ public class MainWindowComponentsManager : IDisposable
     public PlaybackViewModel Playback { get; }
     public LoopEditorViewModel LoopEditor { get; }
     public AdvancedPanelViewModel AdvancedPanel { get; }
-    public LibraryDisplayModeService LibraryDisplayModeService { get; }
     public ApplicationWorkflowManager WorkflowManager { get; }
     public MainWindowInteractionCoordinator InteractionCoordinator { get; }
     public MainWindowViewModelOrchestrator ViewModelOrchestrator { get; }
@@ -60,9 +59,8 @@ public class MainWindowComponentsManager : IDisposable
         _songEditInteractionService = songEditInteractionService;
         _songLoopService = songLoopService;
 
-        LibraryDisplayModeService = new LibraryDisplayModeService(SettingsServiceProperty);
         // Pass parentMainWindowViewModel to LibraryViewModel as per its constructor
-        Library = new LibraryViewModel(parentMainWindowViewModel, SettingsServiceProperty, MusicLibraryServiceProperty, _loopDataService, LibraryDisplayModeService);
+        Library = new LibraryViewModel(parentMainWindowViewModel, SettingsServiceProperty, MusicLibraryServiceProperty, _loopDataService);
         Playback = new PlaybackViewModel(PlaybackServiceProperty, _waveformService); // Use the stored PlaybackService
         LoopEditor = new LoopEditorViewModel(PlaybackServiceProperty, _loopDataService, _songLoopService); // Use stored PlaybackService
         AdvancedPanel = new AdvancedPanelViewModel(Playback, Library);
