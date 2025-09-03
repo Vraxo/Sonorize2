@@ -85,7 +85,7 @@ public static class MainPlaybackControlsPanel
         // --- Root Grid for background and layering ---
         var outerGrid = new Grid
         {
-            Margin = new Thickness(0, 5, 0, 5),
+            Margin = new Thickness(0, 5, 0, 0),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             ClipToBounds = true
         };

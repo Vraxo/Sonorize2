@@ -10594,6 +10594,46 @@ public static class AdvancedPlaybackPanelControls
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindowControls\AlbumsTabFactory.cs">
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Data;
+using Avalonia.Data.Converters;
+using Sonorize.Converters;
+using Sonorize.Models;
+using Sonorize.ViewModels;
+
+namespace Sonorize.Views.MainWindowControls;
+
+internal static class AlbumsTabFactory
+{
+    public static Grid Create(ThemeColors theme, SharedViewTemplates sharedViewTemplates, out ListBox albumsListBox)
+    {
+        var (albumsListScrollViewer, albumsLb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            theme, sharedViewTemplates, "AlbumsListBox", "Library.Groupings.Albums", "Library.FilterState.SelectedAlbum",
+            sharedViewTemplates.DetailedAlbumTemplate, sharedViewTemplates.StackPanelItemsPanelTemplate, lb => { });
+        albumsListBox = albumsLb;
+        albumsListScrollViewer.Bind(Visual.IsVisibleProperty, new Binding("LibraryDisplayModeService.AlbumViewMode")
+        {
+            Converter = new FuncValueConverter<SongDisplayMode, bool>(m => m != SongDisplayMode.Compact)
+        });
+
+        var albumsCompactGrid = CompactDataGridFactory.CreateAlbumsCompactDataGrid(theme);
+        albumsCompactGrid.Bind(Visual.IsVisibleProperty, new Binding("LibraryDisplayModeService.AlbumViewMode")
+        {
+            Converter = EnumToBooleanConverter.Instance,
+            ConverterParameter = SongDisplayMode.Compact
+        });
+
+        var albumsTabContent = new Grid();
+        albumsTabContent.Children.Add(albumsListScrollViewer);
+        albumsTabContent.Children.Add(albumsCompactGrid);
+
+        return albumsTabContent;
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindowControls\ArtistItemTemplateProvider.cs">
 using Avalonia;
 using Avalonia.Controls;
@@ -10714,6 +10754,419 @@ public class ArtistItemTemplateProvider
             var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { imagePresenter, artistNameBlock } };
             return new Border { Width = 120, Height = 130, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         }, supportsRecycling: true);
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindowControls\ArtistsTabFactory.cs">
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Data;
+using Avalonia.Data.Converters;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Sonorize.Converters;
+using Sonorize.Models;
+using Sonorize.ViewModels;
+
+namespace Sonorize.Views.MainWindowControls;
+
+internal static class ArtistsTabFactory
+{
+    public static Grid Create(ThemeColors theme, SharedViewTemplates sharedViewTemplates, out ListBox artistsListBox)
+    {
+        var artistsListView = new Grid();
+        var (artistsListScrollViewer, artistsLb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            theme, sharedViewTemplates, "ArtistsListBox", "Library.Groupings.Artists", "Library.FilterState.SelectedArtist",
+            sharedViewTemplates.DetailedArtistTemplate, sharedViewTemplates.StackPanelItemsPanelTemplate, lb => { });
+        artistsListBox = artistsLb;
+        artistsListScrollViewer.Bind(Visual.IsVisibleProperty, new Binding("LibraryDisplayModeService.ArtistViewMode")
+        {
+            Converter = new FuncValueConverter<SongDisplayMode, bool>(m => m != SongDisplayMode.Compact)
+        });
+        var artistsCompactGrid = CompactDataGridFactory.CreateArtistsCompactDataGrid(theme);
+        artistsCompactGrid.Bind(Visual.IsVisibleProperty, new Binding("LibraryDisplayModeService.ArtistViewMode")
+        {
+            Converter = EnumToBooleanConverter.Instance,
+            ConverterParameter = SongDisplayMode.Compact
+        });
+        artistsListView.Children.Add(artistsListScrollViewer);
+        artistsListView.Children.Add(artistsCompactGrid);
+        artistsListView.Bind(Visual.IsVisibleProperty, new Binding("Library.FilterState.SelectedArtist")
+        {
+            Converter = new FuncValueConverter<ArtistViewModel?, bool>(vm => vm == null)
+        });
+
+        var artistDrillDownView = CreateArtistDrillDownView(theme);
+        artistDrillDownView.Bind(Visual.IsVisibleProperty, new Binding("Library.FilterState.SelectedArtist")
+        {
+            Converter = NotNullToBooleanConverter.Instance
+        });
+
+        var artistsTabContent = new Grid();
+        artistsTabContent.Children.Add(artistsListView);
+        artistsTabContent.Children.Add(artistDrillDownView);
+
+        return artistsTabContent;
+    }
+
+    private static Grid CreateArtistDrillDownView(ThemeColors theme)
+    {
+        var grid = new Grid
+        {
+            RowDefinitions = new RowDefinitions("Auto, *")
+        };
+
+        // Header with Back button and Artist Name
+        var headerPanel = new DockPanel
+        {
+            Margin = new Thickness(10, 0, 10, 5)
+        };
+        var backButton = new Button
+        {
+            Content = "← Back to Artists",
+            Background = theme.B_ControlBackgroundColor,
+            Foreground = theme.B_TextColor,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        backButton.Bind(Button.CommandProperty, new Binding("Library.ClearArtistFilterCommand"));
+        DockPanel.SetDock(backButton, Dock.Left);
+
+        var artistNameBlock = new TextBlock
+        {
+            FontSize = 16,
+            FontWeight = FontWeight.Bold,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Foreground = theme.B_TextColor
+        };
+        artistNameBlock.Bind(TextBlock.TextProperty, new Binding("Library.FilterState.SelectedArtist.Name"));
+        DockPanel.SetDock(artistNameBlock, Dock.Right);
+
+        headerPanel.Children.Add(backButton);
+        headerPanel.Children.Add(artistNameBlock);
+
+        // DataGrid for songs
+        var songsDataGrid = LibraryDataGridFactory.Create(theme); // Reuse the same styling and column setup
+        songsDataGrid.Name = "ArtistSongsDataGrid";
+
+        Grid.SetRow(headerPanel, 0);
+        Grid.SetRow(songsDataGrid, 1);
+        grid.Children.Add(headerPanel);
+        grid.Children.Add(songsDataGrid);
+
+        return grid;
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindowControls\CompactDataGridFactory.cs">
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Templates;
+using Avalonia.Data;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Styling;
+using Sonorize.Models;
+using Sonorize.ViewModels;
+
+namespace Sonorize.Views.MainWindowControls;
+
+internal static class CompactDataGridFactory
+{
+    private static DataGrid CreateBaseStyledDataGrid(ThemeColors theme)
+    {
+        var dataGrid = new DataGrid
+        {
+            Background = theme.B_ListBoxBackground,
+            Foreground = theme.B_TextColor,
+            BorderBrush = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Margin = new Thickness(10),
+            AutoGenerateColumns = false,
+            HeadersVisibility = DataGridHeadersVisibility.Column,
+            GridLinesVisibility = DataGridGridLinesVisibility.None,
+            IsReadOnly = true,
+            CanUserSortColumns = false, // Compact views probably shouldn't be sortable to keep it simple
+            RowHeight = 30 // A good height for compact view
+        };
+
+        dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>())
+        {
+            Setters =
+            {
+                new Setter(TemplatedControl.BackgroundProperty, theme.B_ListBoxBackground),
+                new Setter(TemplatedControl.ForegroundProperty, theme.B_TextColor),
+            }
+        });
+        dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>().Class(":pointerover").Not(x => x.Class(":selected")))
+        {
+            Setters = { new Setter(TemplatedControl.BackgroundProperty, theme.B_ControlBackgroundColor) }
+        });
+        dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>().Class(":selected"))
+        {
+            Setters =
+            {
+                new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor),
+                new Setter(TemplatedControl.ForegroundProperty, theme.B_AccentForeground)
+            }
+        });
+        dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>().Class(":selected").Class(":pointerover"))
+        {
+            Setters =
+            {
+                new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor),
+                new Setter(TemplatedControl.ForegroundProperty, theme.B_AccentForeground)
+            }
+        });
+        return dataGrid;
+    }
+
+    public static DataGrid CreateArtistsCompactDataGrid(ThemeColors theme)
+    {
+        var dataGrid = CreateBaseStyledDataGrid(theme);
+        dataGrid.Name = "ArtistsCompactDataGrid";
+        dataGrid.Bind(DataGrid.ItemsSourceProperty, new Binding("Library.Groupings.Artists"));
+        dataGrid.Bind(DataGrid.SelectedItemProperty, new Binding("Library.FilterState.SelectedArtist", BindingMode.TwoWay));
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Artist",
+            Binding = new Binding("Name"),
+            Width = new DataGridLength(1, DataGridLengthUnitType.Star),
+        });
+        return dataGrid;
+    }
+
+    public static DataGrid CreateAlbumsCompactDataGrid(ThemeColors theme)
+    {
+        var dataGrid = CreateBaseStyledDataGrid(theme);
+        dataGrid.Name = "AlbumsCompactDataGrid";
+        dataGrid.Bind(DataGrid.ItemsSourceProperty, new Binding("Library.Groupings.Albums"));
+        dataGrid.Bind(DataGrid.SelectedItemProperty, new Binding("Library.FilterState.SelectedAlbum", BindingMode.TwoWay));
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Album",
+            Binding = new Binding("Title"),
+            Width = new DataGridLength(2, DataGridLengthUnitType.Star),
+        });
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Artist",
+            Binding = new Binding("Artist"),
+            Width = new DataGridLength(1, DataGridLengthUnitType.Star),
+        });
+        return dataGrid;
+    }
+
+    public static DataGrid CreatePlaylistsCompactDataGrid(ThemeColors theme)
+    {
+        var dataGrid = CreateBaseStyledDataGrid(theme);
+        dataGrid.Name = "PlaylistsCompactDataGrid";
+        dataGrid.Bind(DataGrid.ItemsSourceProperty, new Binding("Library.Groupings.Playlists"));
+        dataGrid.Bind(DataGrid.SelectedItemProperty, new Binding("Library.FilterState.SelectedPlaylist", BindingMode.TwoWay));
+        var nameColumn = new DataGridTemplateColumn
+        {
+            Header = "Playlist",
+            Width = new DataGridLength(1, DataGridLengthUnitType.Star),
+            CellTemplate = new FuncDataTemplate<PlaylistViewModel>((vm, ns) =>
+            {
+                var icon = new TextBlock { FontSize = 12, Text = "✨", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 5, 0) };
+                icon.Bind(Visual.IsVisibleProperty, new Binding("IsAutoPlaylist"));
+                var nameBlock = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
+                nameBlock.Bind(TextBlock.TextProperty, new Binding("Name"));
+                return new StackPanel { Orientation = Orientation.Horizontal, Children = { icon, nameBlock } };
+            })
+        };
+        dataGrid.Columns.Add(nameColumn);
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Songs",
+            Binding = new Binding("SongCount"),
+            Width = DataGridLength.Auto,
+        });
+        return dataGrid;
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindowControls\LibraryDataGridFactory.cs">
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Data;
+using Avalonia.Media;
+using Avalonia.Styling;
+using Sonorize.Converters;
+using Sonorize.Models;
+using System.Collections;
+using System.Diagnostics;
+using System.Linq;
+
+namespace Sonorize.Views.MainWindowControls;
+
+internal static class LibraryDataGridFactory
+{
+    public static DataGrid Create(ThemeColors theme)
+    {
+        var dataGrid = new DataGrid
+        {
+            Name = "LibraryDataGrid",
+            Background = theme.B_ListBoxBackground,
+            Foreground = theme.B_TextColor,
+            BorderBrush = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            MinHeight = 250,
+            AutoGenerateColumns = false,
+            HeadersVisibility = DataGridHeadersVisibility.Column,
+            GridLinesVisibility = DataGridGridLinesVisibility.None,
+            IsReadOnly = true,
+            CanUserSortColumns = true,
+            CanUserReorderColumns = true,
+        };
+
+        // Bindings
+        dataGrid.Bind(DataGrid.ItemsSourceProperty,
+                      new Binding("Library.FilteredSongs"));
+        dataGrid.Bind(DataGrid.SelectedItemProperty,
+                      new Binding("Library.SelectedSong", BindingMode.TwoWay));
+        dataGrid.Bind(DataGrid.RowHeightProperty,
+                      new Binding("Library.ViewOptions.RowHeight"));
+
+        // --- DEBUG SNIPPET: dump DataContext and ItemsSource count ---
+        dataGrid.AttachedToVisualTree += (_, __) =>
+        {
+            Debug.WriteLine($"[Debug] LibraryDataGrid.DataContext = {dataGrid.DataContext}");
+            var items = dataGrid.ItemsSource as IEnumerable;
+            var count = items?.Cast<object>().Count() ?? -1;
+            Debug.WriteLine($"[Debug] LibraryDataGrid.ItemsSource count = {count}");
+        };
+
+        // Row styles (alternating / hover / selected)
+        dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>())
+        {
+            Setters =
+        {
+            new Setter(TemplatedControl.BackgroundProperty, new MultiBinding
+            {
+                Converter = new AlternatingRowBackgroundConverter
+                {
+                    DefaultBrush = theme.B_ListBoxBackground,
+                    AlternateBrush = theme.B_ListBoxAlternateBackground
+                },
+                Bindings =
+                {
+                    new Binding("."), // Song instance
+                    new Binding
+                    {
+                        Path = "DataContext.Library.ViewOptions.EnableAlternatingRowColors",
+                        RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
+                        { AncestorType = typeof(DataGrid) }
+                    }
+                }
+            }),
+            new Setter(TemplatedControl.ForegroundProperty, theme.B_TextColor),
+        }
+        });
+
+        dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>()
+                                             .Class(":pointerover")
+                                             .Not(x => x.Class(":selected")))
+        {
+            Setters = { new Setter(TemplatedControl.BackgroundProperty, theme.B_ControlBackgroundColor) }
+        });
+
+        dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>().Class(":selected"))
+        {
+            Setters =
+        {
+            new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor),
+            new Setter(TemplatedControl.ForegroundProperty, theme.B_AccentForeground)
+        }
+        });
+
+        dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>()
+                                             .Class(":selected")
+                                             .Class(":pointerover"))
+        {
+            Setters =
+        {
+            new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor),
+            new Setter(TemplatedControl.ForegroundProperty, theme.B_AccentForeground)
+        }
+        });
+
+        // Columns
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Title",
+            Binding = new Binding("Title"),
+            Width = new DataGridLength(3, DataGridLengthUnitType.Star),
+            SortMemberPath = "Title"
+        });
+
+        var artistColumn = new DataGridTextColumn
+        {
+            Header = "Artist",
+            Binding = new Binding("Artist"),
+            Width = new DataGridLength(2, DataGridLengthUnitType.Star),
+            SortMemberPath = "Artist"
+        };
+        artistColumn.Bind(DataGridColumn.IsVisibleProperty,
+                          new Binding("DataContext.Library.ViewOptions.ShowArtist")
+                          { Source = dataGrid });
+        dataGrid.Columns.Add(artistColumn);
+
+        var albumColumn = new DataGridTextColumn
+        {
+            Header = "Album",
+            Binding = new Binding("Album"),
+            Width = new DataGridLength(2, DataGridLengthUnitType.Star),
+            SortMemberPath = "Album"
+        };
+        albumColumn.Bind(DataGridColumn.IsVisibleProperty,
+                         new Binding("DataContext.Library.ViewOptions.ShowAlbum")
+                         { Source = dataGrid });
+        dataGrid.Columns.Add(albumColumn);
+
+        var durationColumn = new DataGridTextColumn
+        {
+            Header = "Duration",
+            Binding = new Binding("DurationString"),
+            Width = DataGridLength.Auto,
+            SortMemberPath = "Duration"
+        };
+        durationColumn.Bind(DataGridColumn.IsVisibleProperty,
+                            new Binding("DataContext.Library.ViewOptions.ShowDuration")
+                            { Source = dataGrid });
+        dataGrid.Columns.Add(durationColumn);
+
+        var playCountColumn = new DataGridTextColumn
+        {
+            Header = "Plays",
+            Binding = new Binding("PlayCount"),
+            Width = DataGridLength.Auto,
+            SortMemberPath = "PlayCount"
+        };
+        playCountColumn.Bind(DataGridColumn.IsVisibleProperty,
+                             new Binding("DataContext.Library.ViewOptions.ShowPlayCount")
+                             { Source = dataGrid });
+        dataGrid.Columns.Add(playCountColumn);
+
+        var dateAddedColumn = new DataGridTextColumn
+        {
+            Header = "Date Added",
+            Binding = new Binding("DateAdded") { StringFormat = "yyyy-MM-dd" },
+            Width = DataGridLength.Auto,
+            SortMemberPath = "DateAdded"
+        };
+        dateAddedColumn.Bind(DataGridColumn.IsVisibleProperty,
+                             new Binding("DataContext.Library.ViewOptions.ShowDateAdded")
+                             { Source = dataGrid });
+        dataGrid.Columns.Add(dateAddedColumn);
+
+        return dataGrid;
     }
 }
 </file>
@@ -11098,7 +11551,6 @@ public static class MainPlaybackControlsPanel
 
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindowControls\MainTabViewControls.cs">
 using System;
-using System.Collections;
 using System.Diagnostics;
 using System.Linq;
 using Avalonia;
@@ -11106,13 +11558,9 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
-using Avalonia.Data.Converters;
-using Avalonia.Layout;
-using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.VisualTree;
-using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.ViewModels;
 
@@ -11142,8 +11590,6 @@ public class MainTabViewControls
             Padding = new Thickness(0)
         };
 
-        // StyleInclude for DataGrid moved to App.cs to ensure it's loaded globally
-
         tabControl.Bind(TabControl.SelectedIndexProperty, new Binding("ActiveTabIndex", BindingMode.TwoWay));
 
         // TabItem styling
@@ -11168,8 +11614,8 @@ public class MainTabViewControls
         tabControl.Styles.Add(selectedTabItemStyle);
         tabControl.Styles.Add(pointerOverTabItemStyle);
 
-        // --- LIBRARY tab (DataGrid directly; no outer ScrollViewer) ---
-        var libraryDataGrid = CreateLibraryDataGrid(_theme);
+        // --- LIBRARY tab ---
+        var libraryDataGrid = LibraryDataGridFactory.Create(_theme);
         var libraryTab = new TabItem
         {
             Header = "LIBRARY",
@@ -11177,88 +11623,18 @@ public class MainTabViewControls
         };
 
         // --- ARTISTS tab ---
-        var artistsListView = new Grid();
-        var (artistsListScrollViewer, artistsLb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "ArtistsListBox", "Library.Groupings.Artists", "Library.FilterState.SelectedArtist",
-            _sharedViewTemplates.DetailedArtistTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate, lb => { });
-        artistsListBox = artistsLb;
-        artistsListScrollViewer.Bind(Visual.IsVisibleProperty, new Binding("LibraryDisplayModeService.ArtistViewMode")
-        {
-            Converter = new FuncValueConverter<SongDisplayMode, bool>(m => m != SongDisplayMode.Compact)
-        });
-        var artistsCompactGrid = CreateArtistsCompactDataGrid(_theme);
-        artistsCompactGrid.Bind(Visual.IsVisibleProperty, new Binding("LibraryDisplayModeService.ArtistViewMode")
-        {
-            Converter = EnumToBooleanConverter.Instance,
-            ConverterParameter = SongDisplayMode.Compact
-        });
-        artistsListView.Children.Add(artistsListScrollViewer);
-        artistsListView.Children.Add(artistsCompactGrid);
-        artistsListView.Bind(Visual.IsVisibleProperty, new Binding("Library.FilterState.SelectedArtist")
-        {
-            Converter = new FuncValueConverter<ArtistViewModel?, bool>(vm => vm == null)
-        });
-
-        var artistDrillDownView = CreateArtistDrillDownView(_theme);
-        artistDrillDownView.Bind(Visual.IsVisibleProperty, new Binding("Library.FilterState.SelectedArtist")
-        {
-            Converter = NotNullToBooleanConverter.Instance
-        });
-
-        var artistsTabContent = new Grid();
-        artistsTabContent.Children.Add(artistsListView);
-        artistsTabContent.Children.Add(artistDrillDownView);
-
+        var artistsTabContent = ArtistsTabFactory.Create(_theme, _sharedViewTemplates, out artistsListBox);
         var artistsTab = new TabItem { Header = "ARTISTS", Content = artistsTabContent };
 
-
         // --- ALBUMS tab ---
-        var (albumsListScrollViewer, albumsLb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "AlbumsListBox", "Library.Groupings.Albums", "Library.FilterState.SelectedAlbum",
-            _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate, lb => { });
-        albumsListBox = albumsLb;
-        albumsListScrollViewer.Bind(Visual.IsVisibleProperty, new Binding("LibraryDisplayModeService.AlbumViewMode")
-        {
-            Converter = new FuncValueConverter<SongDisplayMode, bool>(m => m != SongDisplayMode.Compact)
-        });
-
-        var albumsCompactGrid = CreateAlbumsCompactDataGrid(_theme);
-        albumsCompactGrid.Bind(Visual.IsVisibleProperty, new Binding("LibraryDisplayModeService.AlbumViewMode")
-        {
-            Converter = EnumToBooleanConverter.Instance,
-            ConverterParameter = SongDisplayMode.Compact
-        });
-
-        var albumsTabContent = new Grid();
-        albumsTabContent.Children.Add(albumsListScrollViewer);
-        albumsTabContent.Children.Add(albumsCompactGrid);
-
+        var albumsTabContent = AlbumsTabFactory.Create(_theme, _sharedViewTemplates, out albumsListBox);
         var albumsTab = new TabItem { Header = "ALBUMS", Content = albumsTabContent };
 
         // --- PLAYLISTS tab ---
-        var (playlistsListScrollViewer, playlistsLb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "PlaylistsListBox", "Library.Groupings.Playlists", "Library.FilterState.SelectedPlaylist",
-            _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate, lb => { });
-        playlistsListBox = playlistsLb;
-        playlistsListScrollViewer.Bind(Visual.IsVisibleProperty, new Binding("LibraryDisplayModeService.PlaylistViewMode")
-        {
-            Converter = new FuncValueConverter<SongDisplayMode, bool>(m => m != SongDisplayMode.Compact)
-        });
-
-        var playlistsCompactGrid = CreatePlaylistsCompactDataGrid(_theme);
-        playlistsCompactGrid.Bind(Visual.IsVisibleProperty, new Binding("LibraryDisplayModeService.PlaylistViewMode")
-        {
-            Converter = EnumToBooleanConverter.Instance,
-            ConverterParameter = SongDisplayMode.Compact
-        });
-
-        var playlistsTabContent = new Grid();
-        playlistsTabContent.Children.Add(playlistsListScrollViewer);
-        playlistsTabContent.Children.Add(playlistsCompactGrid);
-
+        var playlistsTabContent = PlaylistsTabFactory.Create(_theme, _sharedViewTemplates, out playlistsListBox);
         var playlistsTab = new TabItem { Header = "PLAYLISTS", Content = playlistsTabContent };
 
-        // Populate tabs via Items.Add (Items is read-only, but the collection supports Add)
+        // Populate tabs via Items.Add
         tabControl.Items.Add(libraryTab);
         tabControl.Items.Add(artistsTab);
         tabControl.Items.Add(albumsTab);
@@ -11309,328 +11685,6 @@ public class MainTabViewControls
                 if (scrollViewer is not null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
                 break;
         }
-    }
-
-    private Grid CreateArtistDrillDownView(ThemeColors theme)
-    {
-        var grid = new Grid
-        {
-            RowDefinitions = new RowDefinitions("Auto, *")
-        };
-
-        // Header with Back button and Artist Name
-        var headerPanel = new DockPanel
-        {
-            Margin = new Thickness(10, 0, 10, 5)
-        };
-        var backButton = new Button
-        {
-            Content = "← Back to Artists",
-            Background = theme.B_ControlBackgroundColor,
-            Foreground = theme.B_TextColor,
-            HorizontalAlignment = HorizontalAlignment.Left
-        };
-        backButton.Bind(Button.CommandProperty, new Binding("Library.ClearArtistFilterCommand"));
-        DockPanel.SetDock(backButton, Dock.Left);
-
-        var artistNameBlock = new TextBlock
-        {
-            FontSize = 16,
-            FontWeight = FontWeight.Bold,
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Foreground = theme.B_TextColor
-        };
-        artistNameBlock.Bind(TextBlock.TextProperty, new Binding("Library.FilterState.SelectedArtist.Name"));
-        DockPanel.SetDock(artistNameBlock, Dock.Right);
-
-        headerPanel.Children.Add(backButton);
-        headerPanel.Children.Add(artistNameBlock);
-
-        // DataGrid for songs
-        var songsDataGrid = CreateLibraryDataGrid(theme); // Reuse the same styling and column setup
-        songsDataGrid.Name = "ArtistSongsDataGrid";
-
-        Grid.SetRow(headerPanel, 0);
-        Grid.SetRow(songsDataGrid, 1);
-        grid.Children.Add(headerPanel);
-        grid.Children.Add(songsDataGrid);
-
-        return grid;
-    }
-
-    private DataGrid CreateBaseStyledDataGrid(ThemeColors theme)
-    {
-        var dataGrid = new DataGrid
-        {
-            Background = theme.B_ListBoxBackground,
-            Foreground = theme.B_TextColor,
-            BorderBrush = Brushes.Transparent,
-            BorderThickness = new Thickness(0),
-            Margin = new Thickness(10),
-            AutoGenerateColumns = false,
-            HeadersVisibility = DataGridHeadersVisibility.Column,
-            GridLinesVisibility = DataGridGridLinesVisibility.None,
-            IsReadOnly = true,
-            CanUserSortColumns = false, // Compact views probably shouldn't be sortable to keep it simple
-            RowHeight = 30 // A good height for compact view
-        };
-
-        dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>())
-        {
-            Setters =
-            {
-                new Setter(TemplatedControl.BackgroundProperty, theme.B_ListBoxBackground),
-                new Setter(TemplatedControl.ForegroundProperty, theme.B_TextColor),
-            }
-        });
-        dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>().Class(":pointerover").Not(x => x.Class(":selected")))
-        {
-            Setters = { new Setter(TemplatedControl.BackgroundProperty, theme.B_ControlBackgroundColor) }
-        });
-        dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>().Class(":selected"))
-        {
-            Setters =
-            {
-                new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor),
-                new Setter(TemplatedControl.ForegroundProperty, theme.B_AccentForeground)
-            }
-        });
-        dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>().Class(":selected").Class(":pointerover"))
-        {
-            Setters =
-            {
-                new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor),
-                new Setter(TemplatedControl.ForegroundProperty, theme.B_AccentForeground)
-            }
-        });
-        return dataGrid;
-    }
-
-    private DataGrid CreateArtistsCompactDataGrid(ThemeColors theme)
-    {
-        var dataGrid = CreateBaseStyledDataGrid(theme);
-        dataGrid.Name = "ArtistsCompactDataGrid";
-        dataGrid.Bind(DataGrid.ItemsSourceProperty, new Binding("Library.Groupings.Artists"));
-        dataGrid.Bind(DataGrid.SelectedItemProperty, new Binding("Library.FilterState.SelectedArtist", BindingMode.TwoWay));
-        dataGrid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "Artist",
-            Binding = new Binding("Name"),
-            Width = new DataGridLength(1, DataGridLengthUnitType.Star),
-        });
-        return dataGrid;
-    }
-
-    private DataGrid CreateAlbumsCompactDataGrid(ThemeColors theme)
-    {
-        var dataGrid = CreateBaseStyledDataGrid(theme);
-        dataGrid.Name = "AlbumsCompactDataGrid";
-        dataGrid.Bind(DataGrid.ItemsSourceProperty, new Binding("Library.Groupings.Albums"));
-        dataGrid.Bind(DataGrid.SelectedItemProperty, new Binding("Library.FilterState.SelectedAlbum", BindingMode.TwoWay));
-        dataGrid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "Album",
-            Binding = new Binding("Title"),
-            Width = new DataGridLength(2, DataGridLengthUnitType.Star),
-        });
-        dataGrid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "Artist",
-            Binding = new Binding("Artist"),
-            Width = new DataGridLength(1, DataGridLengthUnitType.Star),
-        });
-        return dataGrid;
-    }
-
-    private DataGrid CreatePlaylistsCompactDataGrid(ThemeColors theme)
-    {
-        var dataGrid = CreateBaseStyledDataGrid(theme);
-        dataGrid.Name = "PlaylistsCompactDataGrid";
-        dataGrid.Bind(DataGrid.ItemsSourceProperty, new Binding("Library.Groupings.Playlists"));
-        dataGrid.Bind(DataGrid.SelectedItemProperty, new Binding("Library.FilterState.SelectedPlaylist", BindingMode.TwoWay));
-        var nameColumn = new DataGridTemplateColumn
-        {
-            Header = "Playlist",
-            Width = new DataGridLength(1, DataGridLengthUnitType.Star),
-            CellTemplate = new FuncDataTemplate<PlaylistViewModel>((vm, ns) =>
-            {
-                var icon = new TextBlock { FontSize = 12, Text = "✨", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 5, 0) };
-                icon.Bind(Visual.IsVisibleProperty, new Binding("IsAutoPlaylist"));
-                var nameBlock = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
-                nameBlock.Bind(TextBlock.TextProperty, new Binding("Name"));
-                return new StackPanel { Orientation = Orientation.Horizontal, Children = { icon, nameBlock } };
-            })
-        };
-        dataGrid.Columns.Add(nameColumn);
-        dataGrid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "Songs",
-            Binding = new Binding("SongCount"),
-            Width = DataGridLength.Auto,
-        });
-        return dataGrid;
-    }
-
-    private DataGrid CreateLibraryDataGrid(ThemeColors theme)
-    {
-        var dataGrid = new DataGrid
-        {
-            Name = "LibraryDataGrid",
-            Background = theme.B_ListBoxBackground,
-            Foreground = theme.B_TextColor,
-            BorderBrush = Brushes.Transparent,
-            BorderThickness = new Thickness(0),
-            MinHeight = 250,
-            AutoGenerateColumns = false,
-            HeadersVisibility = DataGridHeadersVisibility.Column,
-            GridLinesVisibility = DataGridGridLinesVisibility.None,
-            IsReadOnly = true,
-            CanUserSortColumns = true,
-            CanUserReorderColumns = true,
-        };
-
-        // Bindings
-        dataGrid.Bind(DataGrid.ItemsSourceProperty,
-                      new Binding("Library.FilteredSongs"));
-        dataGrid.Bind(DataGrid.SelectedItemProperty,
-                      new Binding("Library.SelectedSong", BindingMode.TwoWay));
-        dataGrid.Bind(DataGrid.RowHeightProperty,
-                      new Binding("Library.ViewOptions.RowHeight"));
-
-        // --- DEBUG SNIPPET: dump DataContext and ItemsSource count ---
-        dataGrid.AttachedToVisualTree += (_, __) =>
-        {
-            Debug.WriteLine($"[Debug] LibraryDataGrid.DataContext = {dataGrid.DataContext}");
-            var items = dataGrid.ItemsSource as IEnumerable;
-            var count = items?.Cast<object>().Count() ?? -1;
-            Debug.WriteLine($"[Debug] LibraryDataGrid.ItemsSource count = {count}");
-        };
-
-        // Row styles (alternating / hover / selected)
-        dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>())
-        {
-            Setters =
-        {
-            new Setter(TemplatedControl.BackgroundProperty, new MultiBinding
-            {
-                Converter = new AlternatingRowBackgroundConverter
-                {
-                    DefaultBrush = theme.B_ListBoxBackground,
-                    AlternateBrush = theme.B_ListBoxAlternateBackground
-                },
-                Bindings =
-                {
-                    new Binding("."), // Song instance
-                    new Binding
-                    {
-                        Path = "DataContext.Library.ViewOptions.EnableAlternatingRowColors",
-                        RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
-                        { AncestorType = typeof(DataGrid) }
-                    }
-                }
-            }),
-            new Setter(TemplatedControl.ForegroundProperty, theme.B_TextColor),
-        }
-        });
-
-        dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>()
-                                             .Class(":pointerover")
-                                             .Not(x => x.Class(":selected")))
-        {
-            Setters = { new Setter(TemplatedControl.BackgroundProperty, theme.B_ControlBackgroundColor) }
-        });
-
-        dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>().Class(":selected"))
-        {
-            Setters =
-        {
-            new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor),
-            new Setter(TemplatedControl.ForegroundProperty, theme.B_AccentForeground)
-        }
-        });
-
-        dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>()
-                                             .Class(":selected")
-                                             .Class(":pointerover"))
-        {
-            Setters =
-        {
-            new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor),
-            new Setter(TemplatedControl.ForegroundProperty, theme.B_AccentForeground)
-        }
-        });
-
-        // Columns
-        dataGrid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "Title",
-            Binding = new Binding("Title"),
-            Width = new DataGridLength(3, DataGridLengthUnitType.Star),
-            SortMemberPath = "Title"
-        });
-
-        var artistColumn = new DataGridTextColumn
-        {
-            Header = "Artist",
-            Binding = new Binding("Artist"),
-            Width = new DataGridLength(2, DataGridLengthUnitType.Star),
-            SortMemberPath = "Artist"
-        };
-        artistColumn.Bind(DataGridColumn.IsVisibleProperty,
-                          new Binding("DataContext.Library.ViewOptions.ShowArtist")
-                          { Source = dataGrid });
-        dataGrid.Columns.Add(artistColumn);
-
-        var albumColumn = new DataGridTextColumn
-        {
-            Header = "Album",
-            Binding = new Binding("Album"),
-            Width = new DataGridLength(2, DataGridLengthUnitType.Star),
-            SortMemberPath = "Album"
-        };
-        albumColumn.Bind(DataGridColumn.IsVisibleProperty,
-                         new Binding("DataContext.Library.ViewOptions.ShowAlbum")
-                         { Source = dataGrid });
-        dataGrid.Columns.Add(albumColumn);
-
-        var durationColumn = new DataGridTextColumn
-        {
-            Header = "Duration",
-            Binding = new Binding("DurationString"),
-            Width = DataGridLength.Auto,
-            SortMemberPath = "Duration"
-        };
-        durationColumn.Bind(DataGridColumn.IsVisibleProperty,
-                            new Binding("DataContext.Library.ViewOptions.ShowDuration")
-                            { Source = dataGrid });
-        dataGrid.Columns.Add(durationColumn);
-
-        var playCountColumn = new DataGridTextColumn
-        {
-            Header = "Plays",
-            Binding = new Binding("PlayCount"),
-            Width = DataGridLength.Auto,
-            SortMemberPath = "PlayCount"
-        };
-        playCountColumn.Bind(DataGridColumn.IsVisibleProperty,
-                             new Binding("DataContext.Library.ViewOptions.ShowPlayCount")
-                             { Source = dataGrid });
-        dataGrid.Columns.Add(playCountColumn);
-
-        var dateAddedColumn = new DataGridTextColumn
-        {
-            Header = "Date Added",
-            Binding = new Binding("DateAdded") { StringFormat = "yyyy-MM-dd" },
-            Width = DataGridLength.Auto,
-            SortMemberPath = "DateAdded"
-        };
-        dateAddedColumn.Bind(DataGridColumn.IsVisibleProperty,
-                             new Binding("DataContext.Library.ViewOptions.ShowDateAdded")
-                             { Source = dataGrid });
-        dataGrid.Columns.Add(dateAddedColumn);
-
-        return dataGrid;
     }
 }
 </file>
@@ -12006,6 +12060,46 @@ public static class PlaybackTimeSliderPanel
         timeSliderGrid.Children.Add(totalTimeTextBlock);
 
         return timeSliderGrid;
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindowControls\PlaylistsTabFactory.cs">
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Data;
+using Avalonia.Data.Converters;
+using Sonorize.Converters;
+using Sonorize.Models;
+using Sonorize.ViewModels;
+
+namespace Sonorize.Views.MainWindowControls;
+
+internal static class PlaylistsTabFactory
+{
+    public static Grid Create(ThemeColors theme, SharedViewTemplates sharedViewTemplates, out ListBox playlistsListBox)
+    {
+        var (playlistsListScrollViewer, playlistsLb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            theme, sharedViewTemplates, "PlaylistsListBox", "Library.Groupings.Playlists", "Library.FilterState.SelectedPlaylist",
+            sharedViewTemplates.DetailedPlaylistTemplate, sharedViewTemplates.StackPanelItemsPanelTemplate, lb => { });
+        playlistsListBox = playlistsLb;
+        playlistsListScrollViewer.Bind(Visual.IsVisibleProperty, new Binding("LibraryDisplayModeService.PlaylistViewMode")
+        {
+            Converter = new FuncValueConverter<SongDisplayMode, bool>(m => m != SongDisplayMode.Compact)
+        });
+
+        var playlistsCompactGrid = CompactDataGridFactory.CreatePlaylistsCompactDataGrid(theme);
+        playlistsCompactGrid.Bind(Visual.IsVisibleProperty, new Binding("LibraryDisplayModeService.PlaylistViewMode")
+        {
+            Converter = EnumToBooleanConverter.Instance,
+            ConverterParameter = SongDisplayMode.Compact
+        });
+
+        var playlistsTabContent = new Grid();
+        playlistsTabContent.Children.Add(playlistsListScrollViewer);
+        playlistsTabContent.Children.Add(playlistsCompactGrid);
+
+        return playlistsTabContent;
     }
 }
 </file>
