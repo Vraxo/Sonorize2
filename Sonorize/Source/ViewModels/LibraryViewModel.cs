@@ -4,10 +4,18 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using Avalonia.Controls;
+using Avalonia.Data.Converters;
+using Avalonia.Data;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia;
 using Avalonia.Threading;
+using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.Services;
 using Sonorize.ViewModels.LibraryManagement;
+using Sonorize.Views.MainWindowControls;
 
 namespace Sonorize.ViewModels;
 
@@ -32,6 +40,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     public ICommand SortCommand { get; }
     public ICommand ClearArtistFilterCommand { get; }
     public ICommand ClearAlbumFilterCommand { get; }
+    public ICommand ClearPlaylistFilterCommand { get; }
 
     public SortProperty CurrentSortProperty { get; private set; } = SortProperty.Title;
     public SortDirection CurrentSortDirection { get; private set; } = SortDirection.Ascending;
@@ -112,6 +121,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         SortCommand = new RelayCommand(ExecuteSort);
         ClearArtistFilterCommand = new RelayCommand(_ => FilterState.SelectedArtist = null);
         ClearAlbumFilterCommand = new RelayCommand(_ => FilterState.SelectedAlbum = null);
+        ClearPlaylistFilterCommand = new RelayCommand(_ => FilterState.SelectedPlaylist = null);
 
         UpdateStatusBarText();
     }

@@ -30,7 +30,7 @@ public class App : Application
             var settingsService = new SettingsService();
             var appSettings = settingsService.LoadSettings();
 
-            var themeService = new ThemeService(appSettings.PreferredThemeFileName);
+            var themeService = new ThemeService(appSettings.General.PreferredThemeFileName);
             ThemeColors currentCustomTheme = themeService.CurrentTheme;
 
             var fluentTheme = new FluentTheme();
@@ -669,22 +669,21 @@ using Sonorize.ViewModels;
 
 namespace Sonorize.Models;
 
-public class AppSettings
+public class GeneralSettings
 {
     public List<string> MusicDirectories { get; set; } = [];
     public string? PreferredThemeFileName { get; set; }
+}
 
+public class AppearanceSettings
+{
     public string ArtistViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
     public string AlbumViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
     public string PlaylistViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
-
-    // Grid View Image Preferences
     public string ArtistGridViewImageType { get; set; } = "Composite";
     public string AlbumGridViewImageType { get; set; } = "Composite";
     public string PlaylistGridViewImageType { get; set; } = "Composite";
     public string PlaybackAreaBackgroundStyle { get; set; } = "Solid";
-
-    // Library List Column Preferences
     public bool ShowArtistInLibrary { get; set; } = true;
     public bool ShowAlbumInLibrary { get; set; } = true;
     public bool ShowDurationInLibrary { get; set; } = true;
@@ -693,15 +692,25 @@ public class AppSettings
     public double LibraryRowHeight { get; set; } = 44.0;
     public bool EnableAlternatingRowColors { get; set; } = true;
     public bool UseCompactPlaybackControls { get; set; } = false;
+    public bool ShowStatusBar { get; set; } = true;
+}
 
-    // Last.fm Settings
-    public bool LastfmScrobblingEnabled { get; set; } = false;
-    public string? LastfmUsername { get; set; }
-    public string? LastfmPassword { get; set; } // Used for initial authentication to get a session key.
-    public string? LastfmSessionKey { get; set; } // Stores the authenticated session key.
-
+public class LastfmSettings
+{
+    public bool ScrobblingEnabled { get; set; } = false;
+    public string? Username { get; set; }
+    public string? Password { get; set; } // Used for initial authentication to get a session key.
+    public string? SessionKey { get; set; } // Stores the authenticated session key.
     public int ScrobbleThresholdPercentage { get; set; } = 50; // Default to 50%
     public int ScrobbleThresholdAbsoluteSeconds { get; set; } = 240; // Default to 240 seconds (4 minutes)
+}
+
+
+public class AppSettings
+{
+    public GeneralSettings General { get; set; } = new();
+    public AppearanceSettings Appearance { get; set; } = new();
+    public LastfmSettings Lastfm { get; set; } = new();
 }
 </file>
 
@@ -1105,20 +1114,20 @@ public class LastfmAuthenticatorService
 
     private async Task<LastfmClient?> TryAuthenticateWithCredentialsAsync(AppSettings settings)
     {
-        Debug.WriteLine($"[LastfmAuthenticatorService] Attempting credential authentication for '{settings.LastfmUsername}'…");
+        Debug.WriteLine($"[LastfmAuthenticatorService] Attempting credential authentication for '{settings.Lastfm.Username}'…");
         var auth = new LastAuth(LastfmApiKey, LastfmApiSecret);
         try
         {
             // Callers ensure LastfmUsername and LastfmPassword are not null/empty
-            var response = await auth.GetSessionTokenAsync(settings.LastfmUsername!, settings.LastfmPassword!);
+            var response = await auth.GetSessionTokenAsync(settings.Lastfm.Username!, settings.Lastfm.Password!);
             if (response.Success && auth.Authenticated && auth.UserSession is not null)
             {
                 var session = auth.UserSession;
-                settings.LastfmSessionKey = session.Token;
-                settings.LastfmPassword = null; // Clear password for security
+                settings.Lastfm.SessionKey = session.Token;
+                settings.Lastfm.Password = null; // Clear password for security
                 _settingsService.SaveSettings(settings); // Save updated settings with session key
 
-                Debug.WriteLine($"[LastfmAuthenticatorService] Successfully obtained and saved session key for '{settings.LastfmUsername}'. Password cleared from settings.");
+                Debug.WriteLine($"[LastfmAuthenticatorService] Successfully obtained and saved session key for '{settings.Lastfm.Username}'. Password cleared from settings.");
                 return new LastfmClient(auth);
             }
             // else: If authentication failed but no exception, falls through to return null.
@@ -1126,7 +1135,7 @@ public class LastfmAuthenticatorService
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[LastfmAuthenticatorService] Exception during credential authentication for '{settings.LastfmUsername}': {ex.Message}");
+            Debug.WriteLine($"[LastfmAuthenticatorService] Exception during credential authentication for '{settings.Lastfm.Username}': {ex.Message}");
         }
         return null;
     }
@@ -1143,17 +1152,17 @@ public class LastfmAuthenticatorService
         AppSettings currentSettings = _settingsService.LoadSettings(); // Always load fresh settings
 
         // Attempt 1: Use existing session key from settings
-        if (!string.IsNullOrEmpty(currentSettings.LastfmSessionKey))
+        if (!string.IsNullOrEmpty(currentSettings.Lastfm.SessionKey))
         {
             Debug.WriteLine("[LastfmAuthenticatorService] Using existing session key from settings.");
             var auth = new LastAuth(LastfmApiKey, LastfmApiSecret);
-            auth.LoadSession(new LastUserSession { Token = currentSettings.LastfmSessionKey });
+            auth.LoadSession(new LastUserSession { Token = currentSettings.Lastfm.SessionKey });
             return new LastfmClient(auth);
         }
 
         // Attempt 2: Authenticate with username/password
-        if (!string.IsNullOrEmpty(currentSettings.LastfmUsername) &&
-            !string.IsNullOrEmpty(currentSettings.LastfmPassword))
+        if (!string.IsNullOrEmpty(currentSettings.Lastfm.Username) &&
+            !string.IsNullOrEmpty(currentSettings.Lastfm.Password))
         {
             var client = await TryAuthenticateWithCredentialsAsync(currentSettings);
             if (client is not null)
@@ -1174,8 +1183,8 @@ public class LastfmAuthenticatorService
 
     public static bool AreCredentialsEffectivelyConfigured(AppSettings settings)
     {
-        return !string.IsNullOrEmpty(settings.LastfmSessionKey) ||
-               (!string.IsNullOrEmpty(settings.LastfmUsername) && !string.IsNullOrEmpty(settings.LastfmPassword));
+        return !string.IsNullOrEmpty(settings.Lastfm.SessionKey) ||
+               (!string.IsNullOrEmpty(settings.Lastfm.Username) && !string.IsNullOrEmpty(settings.Lastfm.Password));
     }
 }
 </file>
@@ -2201,7 +2210,7 @@ public class ScrobblingService
     private readonly LastfmAuthenticatorService _authenticatorService;
     private AppSettings _currentSettings;
 
-    public bool IsScrobblingEnabled => _currentSettings.LastfmScrobblingEnabled;
+    public bool IsScrobblingEnabled => _currentSettings.Lastfm.ScrobblingEnabled;
 
     public bool AreCredentialsEffectivelyConfigured
     {
@@ -2227,7 +2236,7 @@ public class ScrobblingService
         Debug.WriteLine($"[ScrobblingService] Settings refreshed. " +
             $"Scrobbling Enabled: {IsScrobblingEnabled}, " +
             $"Credentials Configured: {AreCredentialsEffectivelyConfigured}, " +
-            $"Thresholds: {_currentSettings.ScrobbleThresholdPercentage}% / {_currentSettings.ScrobbleThresholdAbsoluteSeconds}s");
+            $"Thresholds: {_currentSettings.Lastfm.ScrobbleThresholdPercentage}% / {_currentSettings.Lastfm.ScrobbleThresholdAbsoluteSeconds}s");
     }
 
     private async Task<LastfmClient?> GetAuthenticatedClientAsync()
@@ -2241,8 +2250,8 @@ public class ScrobblingService
     {
         // Rely on _currentSettings being up-to-date from constructor or external RefreshSettings call.
         var thresholds = new ScrobbleThresholds(
-            _currentSettings.ScrobbleThresholdPercentage,
-            _currentSettings.ScrobbleThresholdAbsoluteSeconds);
+            _currentSettings.Lastfm.ScrobbleThresholdPercentage,
+            _currentSettings.Lastfm.ScrobbleThresholdAbsoluteSeconds);
 
         return ScrobbleEligibilityService.ShouldScrobble(song, playedDuration, thresholds);
     }
@@ -3688,7 +3697,7 @@ public class LastfmSettingsViewModel : ViewModelBase
             SetProperty(ref field, value);
         }
     }
-    
+
     public string? LastfmUsername
     {
         get;
@@ -3698,7 +3707,7 @@ public class LastfmSettingsViewModel : ViewModelBase
             SetProperty(ref field, value);
         }
     }
-    
+
     public string? LastfmPassword
     {
         get;
@@ -3708,7 +3717,7 @@ public class LastfmSettingsViewModel : ViewModelBase
             SetProperty(ref field, value);
         }
     }
-    
+
     public int ScrobbleThresholdPercentage
     {
         get;
@@ -3718,7 +3727,7 @@ public class LastfmSettingsViewModel : ViewModelBase
             SetProperty(ref field, value);
         }
     }
-    
+
     public int ScrobbleThresholdAbsoluteSeconds
     {
         get;
@@ -3731,25 +3740,25 @@ public class LastfmSettingsViewModel : ViewModelBase
 
     public LastfmSettingsViewModel() { }
 
-    public void LoadFromSettings(AppSettings settings)
+    public void LoadFromSettings(LastfmSettings settings)
     {
-        LastfmScrobblingEnabled = settings.LastfmScrobblingEnabled;
-        LastfmUsername = settings.LastfmUsername;
-        LastfmPassword = settings.LastfmPassword;
+        LastfmScrobblingEnabled = settings.ScrobblingEnabled;
+        LastfmUsername = settings.Username;
+        LastfmPassword = settings.Password;
         ScrobbleThresholdPercentage = settings.ScrobbleThresholdPercentage;
         ScrobbleThresholdAbsoluteSeconds = settings.ScrobbleThresholdAbsoluteSeconds;
     }
 
-    public void UpdateAppSettings(AppSettings settings)
+    public void UpdateLastfmSettings(LastfmSettings settings)
     {
-        settings.LastfmScrobblingEnabled = LastfmScrobblingEnabled;
-        settings.LastfmUsername = LastfmUsername;
-        
+        settings.ScrobblingEnabled = LastfmScrobblingEnabled;
+        settings.Username = LastfmUsername;
+
         if (LastfmPassword is not null)
         {
-            settings.LastfmPassword = LastfmPassword;
+            settings.Password = LastfmPassword;
         }
-        
+
         settings.ScrobbleThresholdPercentage = ScrobbleThresholdPercentage;
         settings.ScrobbleThresholdAbsoluteSeconds = ScrobbleThresholdAbsoluteSeconds;
     }
@@ -3790,6 +3799,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     public ICommand EditSongMetadataCommand { get; }
     public ICommand SortCommand { get; }
     public ICommand ClearArtistFilterCommand { get; }
+    public ICommand ClearAlbumFilterCommand { get; }
 
     public SortProperty CurrentSortProperty { get; private set; } = SortProperty.Title;
     public SortDirection CurrentSortDirection { get; private set; } = SortDirection.Ascending;
@@ -3869,6 +3879,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         EditSongMetadataCommand = new RelayCommand(ExecuteEditSongMetadata, CanExecuteEditSongMetadata);
         SortCommand = new RelayCommand(ExecuteSort);
         ClearArtistFilterCommand = new RelayCommand(_ => FilterState.SelectedArtist = null);
+        ClearAlbumFilterCommand = new RelayCommand(_ => FilterState.SelectedAlbum = null);
 
         UpdateStatusBarText();
     }
@@ -5023,6 +5034,7 @@ public class MainWindow : Window
         mainGrid.Children.Add(mainPlaybackControls);
 
         var statusBar = CreateStatusBar();
+        statusBar.Bind(Visual.IsVisibleProperty, new Binding("IsStatusBarVisible"));
         Grid.SetRow(statusBar, 5);
         mainGrid.Children.Add(statusBar);
 
@@ -5177,7 +5189,7 @@ public class SettingsWindow : Window
         };
 
         // --- Left Navigation Menu ---
-        var menuPanelContainer = SettingsMenuPanel.Create(_theme);
+        var menuPanelContainer = CreateLeftMenuPanel();
         Grid.SetColumn(menuPanelContainer, 0);
         Grid.SetRow(menuPanelContainer, 0);
         mainGrid.Children.Add(menuPanelContainer);
@@ -5197,6 +5209,19 @@ public class SettingsWindow : Window
 
         Content = mainGrid;
     }
+
+    private Border CreateLeftMenuPanel()
+    {
+        var menuBorder = new Border
+        {
+            Background = _theme.B_BackgroundColor,
+            Padding = new Thickness(10),
+            Child = SettingsMenuPanel.Create(_theme)
+        };
+
+        return menuBorder;
+    }
+
 
     private ScrollViewer CreateContentAreaScrollViewer()
     {
@@ -5488,9 +5513,9 @@ public class ApplicationInteractionService
         }
 
         var settings = _settingsService.LoadSettings();
-        if (!settings.MusicDirectories.Any(d => string.Equals(d, folderPath, StringComparison.OrdinalIgnoreCase)))
+        if (!settings.General.MusicDirectories.Any(d => string.Equals(d, folderPath, StringComparison.OrdinalIgnoreCase)))
         {
-            settings.MusicDirectories.Add(folderPath);
+            settings.General.MusicDirectories.Add(folderPath);
             _settingsService.SaveSettings(settings);
             Debug.WriteLine($"[AppInteractionService] Added new directory: {folderPath}. Library refresh needed.");
             return (true, $"Added directory: {Path.GetFileName(folderPath)}. Library refreshing...");
@@ -7406,7 +7431,7 @@ public class SettingsChangeProcessorService
         List<string> statusMessages = [];
 
         // Directory changes
-        bool dirsActuallyChanged = !oldSettings.MusicDirectories.SequenceEqual(newSettings.MusicDirectories);
+        bool dirsActuallyChanged = !oldSettings.General.MusicDirectories.SequenceEqual(newSettings.General.MusicDirectories);
         if (dirsActuallyChanged)
         {
             Debug.WriteLine("[SettingsChangeProcessor] Music directories changed. Reloading library.");
@@ -7415,7 +7440,7 @@ public class SettingsChangeProcessorService
         }
 
         // Theme changes
-        bool themeActuallyChanged = oldSettings.PreferredThemeFileName != newSettings.PreferredThemeFileName;
+        bool themeActuallyChanged = oldSettings.General.PreferredThemeFileName != newSettings.General.PreferredThemeFileName;
         if (themeActuallyChanged)
         {
             Debug.WriteLine("[SettingsChangeProcessor] Theme changed. Restart recommended.");
@@ -7423,13 +7448,13 @@ public class SettingsChangeProcessorService
         }
 
         // Appearance changes (including library columns)
-        bool libraryViewOptionsChanged = oldSettings.ShowArtistInLibrary != newSettings.ShowArtistInLibrary ||
-                                         oldSettings.ShowAlbumInLibrary != newSettings.ShowAlbumInLibrary ||
-                                         oldSettings.ShowDurationInLibrary != newSettings.ShowDurationInLibrary ||
-                                         oldSettings.ShowDateAddedInLibrary != newSettings.ShowDateAddedInLibrary ||
-                                         oldSettings.ShowPlayCountInLibrary != newSettings.ShowPlayCountInLibrary ||
-                                         System.Math.Abs(oldSettings.LibraryRowHeight - newSettings.LibraryRowHeight) > 0.01 ||
-                                         oldSettings.EnableAlternatingRowColors != newSettings.EnableAlternatingRowColors;
+        bool libraryViewOptionsChanged = oldSettings.Appearance.ShowArtistInLibrary != newSettings.Appearance.ShowArtistInLibrary ||
+                                         oldSettings.Appearance.ShowAlbumInLibrary != newSettings.Appearance.ShowAlbumInLibrary ||
+                                         oldSettings.Appearance.ShowDurationInLibrary != newSettings.Appearance.ShowDurationInLibrary ||
+                                         oldSettings.Appearance.ShowDateAddedInLibrary != newSettings.Appearance.ShowDateAddedInLibrary ||
+                                         oldSettings.Appearance.ShowPlayCountInLibrary != newSettings.Appearance.ShowPlayCountInLibrary ||
+                                         System.Math.Abs(oldSettings.Appearance.LibraryRowHeight - newSettings.Appearance.LibraryRowHeight) > 0.01 ||
+                                         oldSettings.Appearance.EnableAlternatingRowColors != newSettings.Appearance.EnableAlternatingRowColors;
 
         if (libraryViewOptionsChanged)
         {
@@ -7439,12 +7464,12 @@ public class SettingsChangeProcessorService
 
         // Scrobbling settings changes
         bool scrobbleSettingsActuallyChanged =
-            oldSettings.LastfmScrobblingEnabled != newSettings.LastfmScrobblingEnabled ||
-            oldSettings.LastfmUsername != newSettings.LastfmUsername ||
-            oldSettings.LastfmPassword != newSettings.LastfmPassword || // Used for change detection only
-            oldSettings.LastfmSessionKey != newSettings.LastfmSessionKey || // If session key is cleared/changed directly
-            oldSettings.ScrobbleThresholdPercentage != newSettings.ScrobbleThresholdPercentage ||
-            oldSettings.ScrobbleThresholdAbsoluteSeconds != newSettings.ScrobbleThresholdAbsoluteSeconds;
+            oldSettings.Lastfm.ScrobblingEnabled != newSettings.Lastfm.ScrobblingEnabled ||
+            oldSettings.Lastfm.Username != newSettings.Lastfm.Username ||
+            oldSettings.Lastfm.Password != newSettings.Lastfm.Password || // Used for change detection only
+            oldSettings.Lastfm.SessionKey != newSettings.Lastfm.SessionKey || // If session key is cleared/changed directly
+            oldSettings.Lastfm.ScrobbleThresholdPercentage != newSettings.Lastfm.ScrobbleThresholdPercentage ||
+            oldSettings.Lastfm.ScrobbleThresholdAbsoluteSeconds != newSettings.Lastfm.ScrobbleThresholdAbsoluteSeconds;
 
         if (scrobbleSettingsActuallyChanged)
         {
@@ -7481,7 +7506,7 @@ public class SettingsChangeProcessorService
                     else statusMessages.Add("Scrobbling enabled, but not configured. Check settings.");
                 }
             }
-            else if (!_scrobblingService.IsScrobblingEnabled && oldSettings.LastfmScrobblingEnabled)
+            else if (!_scrobblingService.IsScrobblingEnabled && oldSettings.Lastfm.ScrobblingEnabled)
             {
                 if (!statusMessages.Any(m => m.Contains("Theme changed")))
                 {
@@ -7533,80 +7558,61 @@ public class SettingsPersistenceManager
     {
         AppSettings newSettingsToSave = new();
 
-        // Preserve settings not managed by SettingsViewModel's UI by copying from disk state
-        newSettingsToSave.ArtistViewModePreference = settingsOnDisk.ArtistViewModePreference;
-        newSettingsToSave.AlbumViewModePreference = settingsOnDisk.AlbumViewModePreference;
-        newSettingsToSave.PlaylistViewModePreference = settingsOnDisk.PlaylistViewModePreference;
-        newSettingsToSave.LastfmSessionKey = settingsOnDisk.LastfmSessionKey;
+        // Preserve the existing session key, as the UI doesn't manage it directly.
+        newSettingsToSave.Lastfm.SessionKey = settingsOnDisk.Lastfm.SessionKey;
 
         bool actualChangesMade = false;
 
-        // Music Directories
+        // --- General Settings ---
         if (musicDirectoriesSettings.HasChangesFromInitialState)
         {
-            newSettingsToSave.MusicDirectories = new List<string>(musicDirectoriesSettings.MusicDirectories);
+            newSettingsToSave.General.MusicDirectories = new List<string>(musicDirectoriesSettings.MusicDirectories);
             actualChangesMade = true;
-            Debug.WriteLine($"[SettingsPersistence] Music directories changed. Count: {newSettingsToSave.MusicDirectories.Count}");
+            Debug.WriteLine($"[SettingsPersistence] Music directories changed.");
         }
         else
         {
-            newSettingsToSave.MusicDirectories = new List<string>(settingsOnDisk.MusicDirectories);
+            newSettingsToSave.General.MusicDirectories = new List<string>(settingsOnDisk.General.MusicDirectories);
         }
 
-        // Theme
         if (themeSettings.HasChangesFromInitialState)
         {
-            newSettingsToSave.PreferredThemeFileName = themeSettings.SelectedThemeFile;
+            newSettingsToSave.General.PreferredThemeFileName = themeSettings.SelectedThemeFile;
             actualChangesMade = true;
-            Debug.WriteLine($"[SettingsPersistence] Theme changed to: {themeSettings.SelectedThemeFile}");
+            Debug.WriteLine($"[SettingsPersistence] Theme changed.");
         }
         else
         {
-            newSettingsToSave.PreferredThemeFileName = settingsOnDisk.PreferredThemeFileName;
+            newSettingsToSave.General.PreferredThemeFileName = settingsOnDisk.General.PreferredThemeFileName;
         }
 
-        // Appearance
+        // --- Appearance Settings ---
         if (appearanceSettings.HasChangesFromInitialState)
         {
-            appearanceSettings.UpdateAppSettings(newSettingsToSave);
+            appearanceSettings.UpdateAppSettings(newSettingsToSave.Appearance);
             actualChangesMade = true;
             Debug.WriteLine($"[SettingsPersistence] Appearance settings changed.");
         }
         else
         {
-            newSettingsToSave.ArtistGridViewImageType = settingsOnDisk.ArtistGridViewImageType;
-            newSettingsToSave.AlbumGridViewImageType = settingsOnDisk.AlbumGridViewImageType;
-            newSettingsToSave.PlaylistGridViewImageType = settingsOnDisk.PlaylistGridViewImageType;
-            newSettingsToSave.PlaybackAreaBackgroundStyle = settingsOnDisk.PlaybackAreaBackgroundStyle;
-            newSettingsToSave.ShowArtistInLibrary = settingsOnDisk.ShowArtistInLibrary;
-            newSettingsToSave.ShowAlbumInLibrary = settingsOnDisk.ShowAlbumInLibrary;
-            newSettingsToSave.ShowDurationInLibrary = settingsOnDisk.ShowDurationInLibrary;
-            newSettingsToSave.ShowDateAddedInLibrary = settingsOnDisk.ShowDateAddedInLibrary;
-            newSettingsToSave.ShowPlayCountInLibrary = settingsOnDisk.ShowPlayCountInLibrary;
-            newSettingsToSave.LibraryRowHeight = settingsOnDisk.LibraryRowHeight;
-            newSettingsToSave.EnableAlternatingRowColors = settingsOnDisk.EnableAlternatingRowColors;
-            newSettingsToSave.UseCompactPlaybackControls = settingsOnDisk.UseCompactPlaybackControls;
+            newSettingsToSave.Appearance = settingsOnDisk.Appearance;
         }
 
-        // Last.fm Settings - Compare UI state against disk state for change detection
-        bool lastfmChanged = settingsOnDisk.LastfmScrobblingEnabled != lastfmSettings.LastfmScrobblingEnabled ||
-                             settingsOnDisk.LastfmUsername != lastfmSettings.LastfmUsername ||
-                             !string.IsNullOrEmpty(lastfmSettings.LastfmPassword) ||
-                             settingsOnDisk.ScrobbleThresholdPercentage != lastfmSettings.ScrobbleThresholdPercentage ||
-                             settingsOnDisk.ScrobbleThresholdAbsoluteSeconds != lastfmSettings.ScrobbleThresholdAbsoluteSeconds;
+        // --- Last.fm Settings ---
+        bool lastfmChanged = settingsOnDisk.Lastfm.ScrobblingEnabled != lastfmSettings.LastfmScrobblingEnabled ||
+                             settingsOnDisk.Lastfm.Username != lastfmSettings.LastfmUsername ||
+                             !string.IsNullOrEmpty(lastfmSettings.LastfmPassword) || // Password field being non-empty is a change
+                             settingsOnDisk.Lastfm.ScrobbleThresholdPercentage != lastfmSettings.ScrobbleThresholdPercentage ||
+                             settingsOnDisk.Lastfm.ScrobbleThresholdAbsoluteSeconds != lastfmSettings.ScrobbleThresholdAbsoluteSeconds;
 
-        if (lastfmChanged) actualChangesMade = true;
-
-        lastfmSettings.UpdateAppSettings(newSettingsToSave);
         if (lastfmChanged)
         {
-            Debug.WriteLine($"[SettingsPersistence] Last.fm settings potentially updated in newSettingsToSave: " +
-                            $"Scrobbling={newSettingsToSave.LastfmScrobblingEnabled}, " +
-                            $"User={newSettingsToSave.LastfmUsername}, " +
-                            $"PassLen={(newSettingsToSave.LastfmPassword?.Length ?? 0)}, " +
-                            $"Thresh%={newSettingsToSave.ScrobbleThresholdPercentage}, " +
-                            $"ThreshAbsSec={newSettingsToSave.ScrobbleThresholdAbsoluteSeconds}");
+            actualChangesMade = true;
+            Debug.WriteLine($"[SettingsPersistence] Last.fm settings changed.");
         }
+
+        // Always update from the view model to capture all values, even if just one changed.
+        lastfmSettings.UpdateLastfmSettings(newSettingsToSave.Lastfm);
 
 
         if (actualChangesMade)
@@ -7961,7 +7967,7 @@ public class LibraryDataOrchestrator
         var rawSongs = new List<Song>();
 
         AppSettings settings = _settingsService.LoadSettings();
-        if (!settings.MusicDirectories.Any())
+        if (!settings.General.MusicDirectories.Any())
         {
             await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback("No music directories configured."));
             return (rawSongs, new List<Playlist>());
@@ -7971,7 +7977,7 @@ public class LibraryDataOrchestrator
         {
             // Phase 1: Load raw song metadata and thumbnails
             await _musicLibraryService.LoadMusicFromDirectoriesAsync(
-                settings.MusicDirectories,
+                settings.General.MusicDirectories,
                 song =>
                 {
                     rawSongs.Add(song);
@@ -7981,7 +7987,7 @@ public class LibraryDataOrchestrator
 
             // Phase 2: Load Playlists using the fully gathered rawSongs list
             await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Found {rawSongs.Count} songs. Scanning for playlists..."));
-            var filePlaylists = await _musicLibraryService.LoadPlaylistsAsync(settings.MusicDirectories, rawSongs);
+            var filePlaylists = await _musicLibraryService.LoadPlaylistsAsync(settings.General.MusicDirectories, rawSongs);
 
             // Phase 2.5: Generate Auto-Playlists
             var autoPlaylists = _autoPlaylistManager.GenerateInitialAutoPlaylists(rawSongs);
@@ -8030,7 +8036,7 @@ public class LibraryDisplayModeService : ViewModelBase
             if (SetProperty(ref _artistViewMode, value))
             {
                 Debug.WriteLine($"[DisplayModeService] ArtistViewMode changed to: {value}");
-                SavePreference(nameof(AppSettings.ArtistViewModePreference), value.ToString());
+                SavePreference(nameof(AppearanceSettings.ArtistViewModePreference), value.ToString());
             }
         }
     }
@@ -8044,7 +8050,7 @@ public class LibraryDisplayModeService : ViewModelBase
             if (SetProperty(ref _albumViewMode, value))
             {
                 Debug.WriteLine($"[DisplayModeService] AlbumViewMode changed to: {value}");
-                SavePreference(nameof(AppSettings.AlbumViewModePreference), value.ToString());
+                SavePreference(nameof(AppearanceSettings.AlbumViewModePreference), value.ToString());
             }
         }
     }
@@ -8058,7 +8064,7 @@ public class LibraryDisplayModeService : ViewModelBase
             if (SetProperty(ref _playlistViewMode, value))
             {
                 Debug.WriteLine($"[DisplayModeService] PlaylistViewMode changed to: {value}");
-                SavePreference(nameof(AppSettings.PlaylistViewModePreference), value.ToString());
+                SavePreference(nameof(AppearanceSettings.PlaylistViewModePreference), value.ToString());
             }
         }
     }
@@ -8101,13 +8107,13 @@ public class LibraryDisplayModeService : ViewModelBase
     private void LoadDisplayPreferences()
     {
         AppSettings settings = _settingsService.LoadSettings();
-        _artistViewMode = Enum.TryParse<SongDisplayMode>(settings.ArtistViewModePreference, out var artMode) ? artMode : SongDisplayMode.Detailed;
-        _albumViewMode = Enum.TryParse<SongDisplayMode>(settings.AlbumViewModePreference, out var albMode) ? albMode : SongDisplayMode.Detailed;
-        _playlistViewMode = Enum.TryParse<SongDisplayMode>(settings.PlaylistViewModePreference, out var playMode) ? playMode : SongDisplayMode.Detailed;
+        _artistViewMode = Enum.TryParse<SongDisplayMode>(settings.Appearance.ArtistViewModePreference, out var artMode) ? artMode : SongDisplayMode.Detailed;
+        _albumViewMode = Enum.TryParse<SongDisplayMode>(settings.Appearance.AlbumViewModePreference, out var albMode) ? albMode : SongDisplayMode.Detailed;
+        _playlistViewMode = Enum.TryParse<SongDisplayMode>(settings.Appearance.PlaylistViewModePreference, out var playMode) ? playMode : SongDisplayMode.Detailed;
 
-        ArtistGridDisplayType = Enum.TryParse<GridViewImageType>(settings.ArtistGridViewImageType, out var artistGridType) ? artistGridType : GridViewImageType.Composite;
-        AlbumGridDisplayType = Enum.TryParse<GridViewImageType>(settings.AlbumGridViewImageType, out var albumGridType) ? albumGridType : GridViewImageType.Composite;
-        PlaylistGridDisplayType = Enum.TryParse<GridViewImageType>(settings.PlaylistGridViewImageType, out var playlistGridType) ? playlistGridType : GridViewImageType.Composite;
+        ArtistGridDisplayType = Enum.TryParse<GridViewImageType>(settings.Appearance.ArtistGridViewImageType, out var artistGridType) ? artistGridType : GridViewImageType.Composite;
+        AlbumGridDisplayType = Enum.TryParse<GridViewImageType>(settings.Appearance.AlbumGridViewImageType, out var albumGridType) ? albumGridType : GridViewImageType.Composite;
+        PlaylistGridDisplayType = Enum.TryParse<GridViewImageType>(settings.Appearance.PlaylistGridViewImageType, out var playlistGridType) ? playlistGridType : GridViewImageType.Composite;
 
         // Initial OnPropertyChanged for any subscribers after loading
         OnPropertyChanged(nameof(ArtistViewMode));
@@ -8121,10 +8127,17 @@ public class LibraryDisplayModeService : ViewModelBase
     private void SavePreference(string preferenceKey, string value)
     {
         AppSettings settings = _settingsService.LoadSettings();
-        var prop = typeof(AppSettings).GetProperty(preferenceKey);
-        if (prop != null && prop.CanWrite)
+        switch (preferenceKey)
         {
-            prop.SetValue(settings, value, null);
+            case nameof(AppearanceSettings.ArtistViewModePreference):
+                settings.Appearance.ArtistViewModePreference = value;
+                break;
+            case nameof(AppearanceSettings.AlbumViewModePreference):
+                settings.Appearance.AlbumViewModePreference = value;
+                break;
+            case nameof(AppearanceSettings.PlaylistViewModePreference):
+                settings.Appearance.PlaylistViewModePreference = value;
+                break;
         }
         _settingsService.SaveSettings(settings);
     }
@@ -8422,7 +8435,7 @@ public class LibraryStatusTextGenerator
         if (allSongsCount == 0)
         {
             AppSettings settings = settingsService.LoadSettings();
-            if (!settings.MusicDirectories.Any())
+            if (!settings.General.MusicDirectories.Any())
             {
                 return "Library empty. Add directories via File menu.";
             }
@@ -8473,58 +8486,46 @@ public class LibraryViewOptionsViewModel : ViewModelBase
         get => _showArtist;
         set => SetProperty(ref _showArtist, value);
     }
-
-    private bool _showAlbum;
     public bool ShowAlbum
     {
-        get => _showAlbum;
-        set => SetProperty(ref _showAlbum, value);
+        get;
+        set => SetProperty(ref field, value);
     }
-
-    private bool _showDuration;
     public bool ShowDuration
     {
-        get => _showDuration;
-        set => SetProperty(ref _showDuration, value);
+        get;
+        set => SetProperty(ref field, value);
     }
-
-    private bool _showDateAdded;
     public bool ShowDateAdded
     {
-        get => _showDateAdded;
-        set => SetProperty(ref _showDateAdded, value);
+        get;
+        set => SetProperty(ref field, value);
     }
-
-    private bool _showPlayCount;
     public bool ShowPlayCount
     {
-        get => _showPlayCount;
-        set => SetProperty(ref _showPlayCount, value);
+        get;
+        set => SetProperty(ref field, value);
     }
-
-    private double _rowHeight;
     public double RowHeight
     {
-        get => _rowHeight;
-        set => SetProperty(ref _rowHeight, value);
+        get;
+        set => SetProperty(ref field, value);
     }
-
-    private bool _enableAlternatingRowColors;
     public bool EnableAlternatingRowColors
     {
-        get => _enableAlternatingRowColors;
-        set => SetProperty(ref _enableAlternatingRowColors, value);
+        get;
+        set => SetProperty(ref field, value);
     }
 
     public void LoadFromSettings(AppSettings settings)
     {
-        ShowArtist = settings.ShowArtistInLibrary;
-        ShowAlbum = settings.ShowAlbumInLibrary;
-        ShowDuration = settings.ShowDurationInLibrary;
-        ShowDateAdded = settings.ShowDateAddedInLibrary;
-        ShowPlayCount = settings.ShowPlayCountInLibrary;
-        RowHeight = settings.LibraryRowHeight;
-        EnableAlternatingRowColors = settings.EnableAlternatingRowColors;
+        ShowArtist = settings.Appearance.ShowArtistInLibrary;
+        ShowAlbum = settings.Appearance.ShowAlbumInLibrary;
+        ShowDuration = settings.Appearance.ShowDurationInLibrary;
+        ShowDateAdded = settings.Appearance.ShowDateAddedInLibrary;
+        ShowPlayCount = settings.Appearance.ShowPlayCountInLibrary;
+        RowHeight = settings.Appearance.LibraryRowHeight;
+        EnableAlternatingRowColors = settings.Appearance.EnableAlternatingRowColors;
     }
 }
 </file>
@@ -9602,6 +9603,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public bool ShowAlbumArtStretchBackground { get; private set; }
     public bool ShowAlbumArtAbstractBackground { get; private set; }
     public bool UseCompactPlaybackControls { get; private set; }
+    private bool _isStatusBarVisible;
+    public bool IsStatusBarVisible { get => _isStatusBarVisible; private set => SetProperty(ref _isStatusBarVisible, value); }
 
 
     private int _activeTabIndex;
@@ -9754,14 +9757,16 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     {
         var settings = _componentsManager.SettingsServiceProperty.LoadSettings();
 
-        var newCompactSetting = settings.UseCompactPlaybackControls;
+        var newCompactSetting = settings.Appearance.UseCompactPlaybackControls;
         if (UseCompactPlaybackControls != newCompactSetting)
         {
             UseCompactPlaybackControls = newCompactSetting;
             OnPropertyChanged(nameof(UseCompactPlaybackControls));
         }
 
-        var style = Enum.TryParse<PlaybackAreaBackgroundStyle>(settings.PlaybackAreaBackgroundStyle, out var s) ? s : PlaybackAreaBackgroundStyle.Solid;
+        IsStatusBarVisible = settings.Appearance.ShowStatusBar;
+
+        var style = Enum.TryParse<PlaybackAreaBackgroundStyle>(settings.Appearance.PlaybackAreaBackgroundStyle, out var s) ? s : PlaybackAreaBackgroundStyle.Solid;
 
         AlbumArtForAbstractBackground?.Dispose();
 
@@ -10046,6 +10051,7 @@ namespace Sonorize.ViewModels.Settings
         private double _libraryRowHeight;
         private bool _enableAlternatingRowColors;
         private bool _useCompactPlaybackControls;
+        private bool _showStatusBar;
 
         // Initial state fields
         private readonly GridViewImageType _initialArtistGridType;
@@ -10060,6 +10066,7 @@ namespace Sonorize.ViewModels.Settings
         private readonly double _initialLibraryRowHeight;
         private readonly bool _initialEnableAlternatingRowColors;
         private readonly bool _initialUseCompactPlaybackControls;
+        private readonly bool _initialShowStatusBar;
 
         // Properties
         public GridViewImageType ArtistGridType { get => _artistGridType; private set { if (_artistGridType != value) { _artistGridType = value; OnAppearanceChanged(); } } }
@@ -10074,6 +10081,7 @@ namespace Sonorize.ViewModels.Settings
         public double LibraryRowHeight { get => _libraryRowHeight; set { if (Math.Abs(_libraryRowHeight - value) > 0.01) { _libraryRowHeight = value; OnAppearanceChanged(); } } }
         public bool EnableAlternatingRowColors { get => _enableAlternatingRowColors; set { if (_enableAlternatingRowColors != value) { _enableAlternatingRowColors = value; OnAppearanceChanged(); } } }
         public bool UseCompactPlaybackControls { get => _useCompactPlaybackControls; set { if (_useCompactPlaybackControls != value) { _useCompactPlaybackControls = value; OnAppearanceChanged(); } } }
+        public bool ShowStatusBar { get => _showStatusBar; set { if (_showStatusBar != value) { _showStatusBar = value; OnAppearanceChanged(); } } }
 
         // Radio Button Helpers
         public bool IsArtistGridSingle { get => ArtistGridType == GridViewImageType.Single; set { if (value) ArtistGridType = GridViewImageType.Single; } }
@@ -10099,9 +10107,10 @@ namespace Sonorize.ViewModels.Settings
             _initialShowPlayCount != ShowPlayCountInLibrary ||
             Math.Abs(_initialLibraryRowHeight - LibraryRowHeight) > 0.01 ||
             _initialEnableAlternatingRowColors != EnableAlternatingRowColors ||
-            _initialUseCompactPlaybackControls != UseCompactPlaybackControls;
+            _initialUseCompactPlaybackControls != UseCompactPlaybackControls ||
+            _initialShowStatusBar != ShowStatusBar;
 
-        public AppearanceSettingsViewModel(AppSettings settings, Action notifyParentSettingsChanged)
+        public AppearanceSettingsViewModel(AppearanceSettings settings, Action notifyParentSettingsChanged)
         {
             _notifyParentSettingsChanged = notifyParentSettingsChanged ?? throw new ArgumentNullException(nameof(notifyParentSettingsChanged));
 
@@ -10117,6 +10126,7 @@ namespace Sonorize.ViewModels.Settings
             _initialLibraryRowHeight = settings.LibraryRowHeight;
             _initialEnableAlternatingRowColors = settings.EnableAlternatingRowColors;
             _initialUseCompactPlaybackControls = settings.UseCompactPlaybackControls;
+            _initialShowStatusBar = settings.ShowStatusBar;
 
             _artistGridType = _initialArtistGridType;
             _albumGridType = _initialAlbumGridType;
@@ -10130,6 +10140,7 @@ namespace Sonorize.ViewModels.Settings
             _libraryRowHeight = _initialLibraryRowHeight;
             _enableAlternatingRowColors = _initialEnableAlternatingRowColors;
             _useCompactPlaybackControls = _initialUseCompactPlaybackControls;
+            _showStatusBar = _initialShowStatusBar;
         }
 
         private void OnAppearanceChanged([CallerMemberName] string? propertyName = null)
@@ -10153,7 +10164,7 @@ namespace Sonorize.ViewModels.Settings
             _notifyParentSettingsChanged();
         }
 
-        public void UpdateAppSettings(AppSettings settings)
+        public void UpdateAppSettings(AppearanceSettings settings)
         {
             settings.ArtistGridViewImageType = ArtistGridType.ToString();
             settings.AlbumGridViewImageType = AlbumGridType.ToString();
@@ -10167,6 +10178,7 @@ namespace Sonorize.ViewModels.Settings
             settings.LibraryRowHeight = LibraryRowHeight;
             settings.EnableAlternatingRowColors = EnableAlternatingRowColors;
             settings.UseCompactPlaybackControls = UseCompactPlaybackControls;
+            settings.ShowStatusBar = ShowStatusBar;
         }
     }
 }
@@ -10310,13 +10322,13 @@ using Sonorize.ViewModels.Settings;
 
 namespace Sonorize.ViewModels;
 
-public enum SettingsViewSection
+public enum AppearanceSettingsViewSection
 {
-    Directories,
-    Theme,
-    Appearance,
-    Scrobbling
+    LibraryList,
+    GridView,
+    UILayout
 }
+
 
 public class SettingsViewModel : ViewModelBase
 {
@@ -10338,11 +10350,30 @@ public class SettingsViewModel : ViewModelBase
         set => SetProperty(ref _currentSettingsViewSection, value);
     }
 
+    private AppearanceSettingsViewSection _currentAppearanceSettingsViewSection = AppearanceSettingsViewSection.LibraryList;
+    public AppearanceSettingsViewSection CurrentAppearanceSettingsViewSection
+    {
+        get => _currentAppearanceSettingsViewSection;
+        set => SetProperty(ref _currentAppearanceSettingsViewSection, value);
+    }
+
+    private bool _isShowingAppearanceSubView;
+    public bool IsShowingAppearanceSubView
+    {
+        get => _isShowingAppearanceSubView;
+        set => SetProperty(ref _isShowingAppearanceSubView, value);
+    }
+
+
     public ICommand SaveAndCloseCommand { get; }
     public ICommand ShowDirectoriesSettingsCommand { get; }
     public ICommand ShowThemeSettingsCommand { get; }
     public ICommand ShowAppearanceSettingsCommand { get; }
     public ICommand ShowScrobblingSettingsCommand { get; }
+
+    public ICommand ShowLibraryListSettingsCommand { get; }
+    public ICommand ShowGridViewSettingsCommand { get; }
+    public ICommand ShowUILayoutSettingsCommand { get; }
 
 
     public SettingsViewModel(SettingsService settingsService)
@@ -10352,15 +10383,15 @@ public class SettingsViewModel : ViewModelBase
 
         var settings = _settingsService.LoadSettings();
 
-        MusicDirectoriesSettings = new MusicDirectoriesSettingsViewModel(settings.MusicDirectories, MarkSettingsChanged);
+        MusicDirectoriesSettings = new MusicDirectoriesSettingsViewModel(settings.General.MusicDirectories, MarkSettingsChanged);
 
-        var themeServiceForChild = new ThemeService(settings.PreferredThemeFileName);
-        ThemeSettings = new ThemeSettingsViewModel(settings.PreferredThemeFileName, themeServiceForChild, MarkSettingsChanged);
-        
-        AppearanceSettings = new AppearanceSettingsViewModel(settings, MarkSettingsChanged);
+        var themeServiceForChild = new ThemeService(settings.General.PreferredThemeFileName);
+        ThemeSettings = new ThemeSettingsViewModel(settings.General.PreferredThemeFileName, themeServiceForChild, MarkSettingsChanged);
+
+        AppearanceSettings = new AppearanceSettingsViewModel(settings.Appearance, MarkSettingsChanged);
 
         LastfmSettings = new LastfmSettingsViewModel();
-        LastfmSettings.LoadFromSettings(settings);
+        LastfmSettings.LoadFromSettings(settings.Lastfm);
         LastfmSettings.PropertyChanged += (s, e) => MarkSettingsChanged();
 
 
@@ -10368,10 +10399,34 @@ public class SettingsViewModel : ViewModelBase
 
         SaveAndCloseCommand = new RelayCommand(SaveSettings);
 
-        ShowDirectoriesSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Directories);
-        ShowThemeSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Theme);
-        ShowAppearanceSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Appearance);
-        ShowScrobblingSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Scrobbling);
+        ShowDirectoriesSettingsCommand = new RelayCommand(_ => { CurrentSettingsViewSection = SettingsViewSection.Directories; IsShowingAppearanceSubView = false; });
+        ShowThemeSettingsCommand = new RelayCommand(_ => { CurrentSettingsViewSection = SettingsViewSection.Theme; IsShowingAppearanceSubView = false; });
+        ShowAppearanceSettingsCommand = new RelayCommand(_ =>
+        {
+            IsShowingAppearanceSubView = !IsShowingAppearanceSubView;
+            if (IsShowingAppearanceSubView)
+            {
+                CurrentSettingsViewSection = SettingsViewSection.Appearance;
+                CurrentAppearanceSettingsViewSection = AppearanceSettingsViewSection.LibraryList; // Default to first sub-section
+            }
+        });
+        ShowScrobblingSettingsCommand = new RelayCommand(_ => { CurrentSettingsViewSection = SettingsViewSection.Scrobbling; IsShowingAppearanceSubView = false; });
+
+        ShowLibraryListSettingsCommand = new RelayCommand(_ =>
+        {
+            CurrentSettingsViewSection = SettingsViewSection.Appearance;
+            CurrentAppearanceSettingsViewSection = AppearanceSettingsViewSection.LibraryList;
+        });
+        ShowGridViewSettingsCommand = new RelayCommand(_ =>
+        {
+            CurrentSettingsViewSection = SettingsViewSection.Appearance;
+            CurrentAppearanceSettingsViewSection = AppearanceSettingsViewSection.GridView;
+        });
+        ShowUILayoutSettingsCommand = new RelayCommand(_ =>
+        {
+            CurrentSettingsViewSection = SettingsViewSection.Appearance;
+            CurrentAppearanceSettingsViewSection = AppearanceSettingsViewSection.UILayout;
+        });
     }
 
     private void MarkSettingsChanged()
@@ -10408,6 +10463,19 @@ public class SettingsViewModel : ViewModelBase
             Debug.WriteLine("[SettingsVM] No changes were persisted by SettingsPersistenceManager.");
         }
     }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\Settings\SettingsViewSection.cs">
+// Removed: using Avalonia.Platform.Storage; // No longer directly used here
+namespace Sonorize.ViewModels;
+
+public enum SettingsViewSection
+{
+    Directories,
+    Theme,
+    Appearance,
+    Scrobbling
 }
 </file>
 
@@ -10599,6 +10667,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Data.Converters;
+using Avalonia.Layout;
+using Avalonia.Media;
 using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.ViewModels;
@@ -10609,6 +10679,7 @@ internal static class AlbumsTabFactory
 {
     public static Grid Create(ThemeColors theme, SharedViewTemplates sharedViewTemplates, out ListBox albumsListBox)
     {
+        var albumsListView = new Grid();
         var (albumsListScrollViewer, albumsLb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
             theme, sharedViewTemplates, "AlbumsListBox", "Library.Groupings.Albums", "Library.FilterState.SelectedAlbum",
             sharedViewTemplates.DetailedAlbumTemplate, sharedViewTemplates.StackPanelItemsPanelTemplate, lb => { });
@@ -10625,11 +10696,73 @@ internal static class AlbumsTabFactory
             ConverterParameter = SongDisplayMode.Compact
         });
 
+        albumsListView.Children.Add(albumsListScrollViewer);
+        albumsListView.Children.Add(albumsCompactGrid);
+
+        albumsListView.Bind(Visual.IsVisibleProperty, new Binding("Library.FilterState.SelectedAlbum")
+        {
+            Converter = new FuncValueConverter<AlbumViewModel?, bool>(vm => vm == null)
+        });
+
+        var albumDrillDownView = CreateAlbumDrillDownView(theme);
+        albumDrillDownView.Bind(Visual.IsVisibleProperty, new Binding("Library.FilterState.SelectedAlbum")
+        {
+            Converter = NotNullToBooleanConverter.Instance
+        });
+
         var albumsTabContent = new Grid();
-        albumsTabContent.Children.Add(albumsListScrollViewer);
-        albumsTabContent.Children.Add(albumsCompactGrid);
+        albumsTabContent.Children.Add(albumsListView);
+        albumsTabContent.Children.Add(albumDrillDownView);
 
         return albumsTabContent;
+    }
+
+    private static Grid CreateAlbumDrillDownView(ThemeColors theme)
+    {
+        var grid = new Grid
+        {
+            RowDefinitions = new RowDefinitions("Auto, *")
+        };
+
+        // Header with Back button and Album Name
+        var headerPanel = new DockPanel
+        {
+            Margin = new Thickness(10, 0, 10, 5)
+        };
+        var backButton = new Button
+        {
+            Content = "← Back to Albums",
+            Background = theme.B_ControlBackgroundColor,
+            Foreground = theme.B_TextColor,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        backButton.Bind(Button.CommandProperty, new Binding("Library.ClearAlbumFilterCommand"));
+        DockPanel.SetDock(backButton, Dock.Left);
+
+        var albumNameBlock = new TextBlock
+        {
+            FontSize = 16,
+            FontWeight = FontWeight.Bold,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Foreground = theme.B_TextColor
+        };
+        albumNameBlock.Bind(TextBlock.TextProperty, new Binding("Library.FilterState.SelectedAlbum.DisplayText"));
+        DockPanel.SetDock(albumNameBlock, Dock.Right);
+
+        headerPanel.Children.Add(backButton);
+        headerPanel.Children.Add(albumNameBlock);
+
+        // DataGrid for songs
+        var songsDataGrid = LibraryDataGridFactory.Create(theme);
+        songsDataGrid.Name = "AlbumSongsDataGrid";
+
+        Grid.SetRow(headerPanel, 0);
+        Grid.SetRow(songsDataGrid, 1);
+        grid.Children.Add(headerPanel);
+        grid.Children.Add(songsDataGrid);
+
+        return grid;
     }
 }
 </file>
@@ -11457,7 +11590,7 @@ public static class MainPlaybackControlsPanel
         // --- Root Grid for background and layering ---
         var outerGrid = new Grid
         {
-            Margin = new Thickness(0, 5, 0, 5),
+            Margin = new Thickness(0, 5, 0, 0),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             ClipToBounds = true
         };
@@ -12871,6 +13004,7 @@ using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.ViewModels;
 
@@ -12878,31 +13012,68 @@ namespace Sonorize.Views.SettingsWindowControls;
 
 public static class AppearanceSettingsPanel
 {
-    public static StackPanel Create(ThemeColors theme)
+    public static Panel Create(ThemeColors theme)
     {
-        var panel = new StackPanel { Spacing = 15 };
+        var panel = new Panel();
 
-        panel.Children.Add(new TextBlock
+        var libraryListPanel = new StackPanel { Spacing = 15 };
+        libraryListPanel.Bind(Visual.IsVisibleProperty, new Binding("CurrentAppearanceSettingsViewSection")
         {
-            Text = "Appearance",
+            Converter = EnumToBooleanConverter.Instance,
+            ConverterParameter = AppearanceSettingsViewSection.LibraryList
+        });
+
+        libraryListPanel.Children.Add(new TextBlock
+        {
+            Text = "Library List Display",
             FontSize = 18,
             FontWeight = FontWeight.SemiBold,
             Foreground = theme.B_TextColor,
             Margin = new Thickness(0, 0, 0, 5)
         });
+        libraryListPanel.Children.Add(CreateLibraryColumnsSelector(theme));
 
-        panel.Children.Add(CreateLibraryColumnsSelector(theme));
-        panel.Children.Add(new Separator { Background = theme.B_ControlBackgroundColor, Margin = new Thickness(0, 5) });
 
-        panel.Children.Add(CreateGridImageTypeSelector(theme, "Artist", "AppearanceSettings.IsArtistGridSingle", "AppearanceSettings.IsArtistGridComposite"));
-        panel.Children.Add(CreateGridImageTypeSelector(theme, "Album", "AppearanceSettings.IsAlbumGridSingle", "AppearanceSettings.IsAlbumGridComposite"));
-        panel.Children.Add(CreateGridImageTypeSelector(theme, "Playlist", "AppearanceSettings.IsPlaylistGridSingle", "AppearanceSettings.IsPlaylistGridComposite"));
+        var gridViewPanel = new StackPanel { Spacing = 15 };
+        gridViewPanel.Bind(Visual.IsVisibleProperty, new Binding("CurrentAppearanceSettingsViewSection")
+        {
+            Converter = EnumToBooleanConverter.Instance,
+            ConverterParameter = AppearanceSettingsViewSection.GridView
+        });
+        gridViewPanel.Children.Add(new TextBlock
+        {
+            Text = "Grid View Image Style",
+            FontSize = 18,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = theme.B_TextColor,
+            Margin = new Thickness(0, 0, 0, 5)
+        });
+        gridViewPanel.Children.Add(CreateGridImageTypeSelector(theme, "Artist", "AppearanceSettings.IsArtistGridSingle", "AppearanceSettings.IsArtistGridComposite"));
+        gridViewPanel.Children.Add(CreateGridImageTypeSelector(theme, "Album", "AppearanceSettings.IsAlbumGridSingle", "AppearanceSettings.IsAlbumGridComposite"));
+        gridViewPanel.Children.Add(CreateGridImageTypeSelector(theme, "Playlist", "AppearanceSettings.IsPlaylistGridSingle", "AppearanceSettings.IsPlaylistGridComposite"));
 
-        panel.Children.Add(new Separator { Background = theme.B_ControlBackgroundColor, Margin = new Thickness(0, 5) });
-        panel.Children.Add(CreatePlaybackBackgroundSelector(theme));
-        panel.Children.Add(new Separator { Background = theme.B_ControlBackgroundColor, Margin = new Thickness(0, 5) });
-        panel.Children.Add(CreatePlaybackLayoutSelector(theme));
 
+        var uiLayoutPanel = new StackPanel { Spacing = 15 };
+        uiLayoutPanel.Bind(Visual.IsVisibleProperty, new Binding("CurrentAppearanceSettingsViewSection")
+        {
+            Converter = EnumToBooleanConverter.Instance,
+            ConverterParameter = AppearanceSettingsViewSection.UILayout
+        });
+        uiLayoutPanel.Children.Add(new TextBlock
+        {
+            Text = "UI Layout & Behavior",
+            FontSize = 18,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = theme.B_TextColor,
+            Margin = new Thickness(0, 0, 0, 5)
+        });
+        uiLayoutPanel.Children.Add(CreatePlaybackLayoutSelector(theme));
+        uiLayoutPanel.Children.Add(new Separator { Background = theme.B_ControlBackgroundColor, Margin = new Thickness(0, 5) });
+        uiLayoutPanel.Children.Add(CreatePlaybackBackgroundSelector(theme));
+
+        panel.Children.Add(libraryListPanel);
+        panel.Children.Add(gridViewPanel);
+        panel.Children.Add(uiLayoutPanel);
 
         return panel;
     }
@@ -12913,11 +13084,11 @@ public static class AppearanceSettingsPanel
 
         var title = new TextBlock
         {
-            Text = "Playback Panel Layout",
+            Text = "UI Layout",
             FontSize = 14,
             FontWeight = FontWeight.Normal,
             Foreground = theme.B_TextColor,
-            Margin = new Thickness(0, 10, 0, 5)
+            Margin = new Thickness(0, 0, 0, 5)
         };
 
         var compactLayoutCheck = new CheckBox
@@ -12926,9 +13097,17 @@ public static class AppearanceSettingsPanel
             Foreground = theme.B_TextColor
         };
         compactLayoutCheck.Bind(CheckBox.IsCheckedProperty, new Binding("AppearanceSettings.UseCompactPlaybackControls", BindingMode.TwoWay));
-    
+
+        var showStatusBarCheck = new CheckBox
+        {
+            Content = "Show status bar",
+            Foreground = theme.B_TextColor
+        };
+        showStatusBarCheck.Bind(CheckBox.IsCheckedProperty, new Binding("AppearanceSettings.ShowStatusBar", BindingMode.TwoWay));
+
         var checkPanel = new StackPanel { Spacing = 5, Margin = new Thickness(10, 0, 0, 0) };
         checkPanel.Children.Add(compactLayoutCheck);
+        checkPanel.Children.Add(showStatusBarCheck);
 
         sectionPanel.Children.Add(title);
         sectionPanel.Children.Add(checkPanel);
@@ -12938,16 +13117,7 @@ public static class AppearanceSettingsPanel
 
     private static StackPanel CreateLibraryColumnsSelector(ThemeColors theme)
     {
-        var sectionPanel = new StackPanel { Spacing = 8 };
-
-        var title = new TextBlock
-        {
-            Text = "Library List Columns & Sizing",
-            FontSize = 14,
-            FontWeight = FontWeight.Normal,
-            Foreground = theme.B_TextColor,
-            Margin = new Thickness(0, 0, 0, 5)
-        };
+        var sectionPanel = new StackPanel { Spacing = 8, Margin = new Thickness(0) };
 
         var showArtistCheck = new CheckBox
         {
@@ -13000,7 +13170,6 @@ public static class AppearanceSettingsPanel
         checkPanel.Children.Add(showDateAddedCheck);
         checkPanel.Children.Add(alternatingRowCheck);
 
-        sectionPanel.Children.Add(title);
         sectionPanel.Children.Add(checkPanel);
 
         var rowHeightPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(10, 10, 0, 0) };
@@ -13039,7 +13208,7 @@ public static class AppearanceSettingsPanel
             FontSize = 14,
             FontWeight = FontWeight.Normal,
             Foreground = theme.B_TextColor,
-            Margin = new Thickness(0, 10, 0, 5)
+            Margin = new Thickness(0, 0, 0, 5)
         };
 
         var singleRadio = new RadioButton
@@ -13078,7 +13247,7 @@ public static class AppearanceSettingsPanel
             FontSize = 14,
             FontWeight = FontWeight.Normal,
             Foreground = theme.B_TextColor,
-            Margin = new Thickness(0, 10, 0, 5)
+            Margin = new Thickness(0, 0, 0, 5)
         };
 
         var solidRadio = new RadioButton
@@ -13332,14 +13501,18 @@ public static class SettingsButtonPanel
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
+using Avalonia.Data.Converters;
 using Avalonia.Layout;
+using Avalonia.Media;
 using Sonorize.Models; // For ThemeColors
+using Sonorize.ViewModels; // For SettingsViewSection enum
+using Sonorize.Views; // For BrushExtensions
 
 namespace Sonorize.Views.SettingsWindowControls;
 
 public static class SettingsMenuPanel
 {
-    public static Border Create(ThemeColors theme)
+    public static StackPanel Create(ThemeColors theme)
     {
         var menuStackPanel = new StackPanel
         {
@@ -13348,29 +13521,102 @@ public static class SettingsMenuPanel
 
         var directoriesButton = new Button { Content = "Directories", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         directoriesButton.Bind(Button.CommandProperty, new Binding("ShowDirectoriesSettingsCommand"));
+        directoriesButton[!Button.BackgroundProperty] = new Binding("CurrentSettingsViewSection")
+        {
+            Converter = new FuncValueConverter<SettingsViewSection, IBrush>(section => section == SettingsViewSection.Directories ? theme.B_AccentColor.Multiply(0.8) : theme.B_ControlBackgroundColor)
+        };
+        directoriesButton[!Button.ForegroundProperty] = new Binding("CurrentSettingsViewSection")
+        {
+            Converter = new FuncValueConverter<SettingsViewSection, IBrush>(section => section == SettingsViewSection.Directories ? theme.B_AccentForeground : theme.B_TextColor)
+        };
 
         var themeButton = new Button { Content = "Theme", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         themeButton.Bind(Button.CommandProperty, new Binding("ShowThemeSettingsCommand"));
-        
+        themeButton[!Button.BackgroundProperty] = new Binding("CurrentSettingsViewSection")
+        {
+            Converter = new FuncValueConverter<SettingsViewSection, IBrush>(section => section == SettingsViewSection.Theme ? theme.B_AccentColor.Multiply(0.8) : theme.B_ControlBackgroundColor)
+        };
+        themeButton[!Button.ForegroundProperty] = new Binding("CurrentSettingsViewSection")
+        {
+            Converter = new FuncValueConverter<SettingsViewSection, IBrush>(section => section == SettingsViewSection.Theme ? theme.B_AccentForeground : theme.B_TextColor)
+        };
+
         var appearanceButton = new Button { Content = "Appearance", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         appearanceButton.Bind(Button.CommandProperty, new Binding("ShowAppearanceSettingsCommand"));
+        appearanceButton[!Button.BackgroundProperty] = new Binding("CurrentSettingsViewSection")
+        {
+            Converter = new FuncValueConverter<SettingsViewSection, IBrush>(section => section == SettingsViewSection.Appearance ? theme.B_AccentColor.Multiply(0.8) : theme.B_ControlBackgroundColor)
+        };
+        appearanceButton[!Button.ForegroundProperty] = new Binding("CurrentSettingsViewSection")
+        {
+            Converter = new FuncValueConverter<SettingsViewSection, IBrush>(section => section == SettingsViewSection.Appearance ? theme.B_AccentForeground : theme.B_TextColor)
+        };
 
         var scrobblingButton = new Button { Content = "Scrobbling", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         scrobblingButton.Bind(Button.CommandProperty, new Binding("ShowScrobblingSettingsCommand"));
+        scrobblingButton[!Button.BackgroundProperty] = new Binding("CurrentSettingsViewSection")
+        {
+            Converter = new FuncValueConverter<SettingsViewSection, IBrush>(section => section == SettingsViewSection.Scrobbling ? theme.B_AccentColor.Multiply(0.8) : theme.B_ControlBackgroundColor)
+        };
+        scrobblingButton[!Button.ForegroundProperty] = new Binding("CurrentSettingsViewSection")
+        {
+            Converter = new FuncValueConverter<SettingsViewSection, IBrush>(section => section == SettingsViewSection.Scrobbling ? theme.B_AccentForeground : theme.B_TextColor)
+        };
 
+        // --- Appearance Sub-Menu ---
+        var appearanceSubMenuPanel = new StackPanel
+        {
+            Spacing = 5,
+            Margin = new Thickness(15, 5, 0, 5) // Indent the sub-menu
+        };
+        appearanceSubMenuPanel.Bind(Visual.IsVisibleProperty, new Binding("IsShowingAppearanceSubView"));
+
+        var libraryListButton = new Button { Content = "Library List", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
+        libraryListButton.Bind(Button.CommandProperty, new Binding("ShowLibraryListSettingsCommand"));
+        libraryListButton[!Button.BackgroundProperty] = new Binding("CurrentAppearanceSettingsViewSection")
+        {
+            Converter = new FuncValueConverter<AppearanceSettingsViewSection, IBrush>(section => section == AppearanceSettingsViewSection.LibraryList ? theme.B_AccentColor.Multiply(0.8) : theme.B_ControlBackgroundColor)
+        };
+        libraryListButton[!Button.ForegroundProperty] = new Binding("CurrentAppearanceSettingsViewSection")
+        {
+            Converter = new FuncValueConverter<AppearanceSettingsViewSection, IBrush>(section => section == AppearanceSettingsViewSection.LibraryList ? theme.B_AccentForeground : theme.B_TextColor)
+        };
+
+        var gridViewButton = new Button { Content = "Grid View", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
+        gridViewButton.Bind(Button.CommandProperty, new Binding("ShowGridViewSettingsCommand"));
+        gridViewButton[!Button.BackgroundProperty] = new Binding("CurrentAppearanceSettingsViewSection")
+        {
+            Converter = new FuncValueConverter<AppearanceSettingsViewSection, IBrush>(section => section == AppearanceSettingsViewSection.GridView ? theme.B_AccentColor.Multiply(0.8) : theme.B_ControlBackgroundColor)
+        };
+        gridViewButton[!Button.ForegroundProperty] = new Binding("CurrentAppearanceSettingsViewSection")
+        {
+            Converter = new FuncValueConverter<AppearanceSettingsViewSection, IBrush>(section => section == AppearanceSettingsViewSection.GridView ? theme.B_AccentForeground : theme.B_TextColor)
+        };
+
+        var uiLayoutButton = new Button { Content = "UI Layout", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
+        uiLayoutButton.Bind(Button.CommandProperty, new Binding("ShowUILayoutSettingsCommand"));
+        uiLayoutButton[!Button.BackgroundProperty] = new Binding("CurrentAppearanceSettingsViewSection")
+        {
+            Converter = new FuncValueConverter<AppearanceSettingsViewSection, IBrush>(section => section == AppearanceSettingsViewSection.UILayout ? theme.B_AccentColor.Multiply(0.8) : theme.B_ControlBackgroundColor)
+        };
+        uiLayoutButton[!Button.ForegroundProperty] = new Binding("CurrentAppearanceSettingsViewSection")
+        {
+            Converter = new FuncValueConverter<AppearanceSettingsViewSection, IBrush>(section => section == AppearanceSettingsViewSection.UILayout ? theme.B_AccentForeground : theme.B_TextColor)
+        };
+
+        appearanceSubMenuPanel.Children.Add(libraryListButton);
+        appearanceSubMenuPanel.Children.Add(gridViewButton);
+        appearanceSubMenuPanel.Children.Add(uiLayoutButton);
+
+
+        // --- Build Main Panel ---
         menuStackPanel.Children.Add(directoriesButton);
         menuStackPanel.Children.Add(themeButton);
         menuStackPanel.Children.Add(appearanceButton);
+        menuStackPanel.Children.Add(appearanceSubMenuPanel); // Add the sub-panel here
         menuStackPanel.Children.Add(scrobblingButton);
 
-        var menuBorder = new Border
-        {
-            Background = theme.B_BackgroundColor,
-            Padding = new Thickness(10),
-            Child = menuStackPanel
-        };
-
-        return menuBorder;
+        return menuStackPanel;
     }
 }
 </file>
