@@ -24,7 +24,7 @@ public class LibraryStatusTextGenerator
         if (allSongsCount == 0)
         {
             AppSettings settings = settingsService.LoadSettings();
-            if (!settings.MusicDirectories.Any())
+            if (!settings.General.MusicDirectories.Any())
             {
                 return "Library empty. Add directories via File menu.";
             }

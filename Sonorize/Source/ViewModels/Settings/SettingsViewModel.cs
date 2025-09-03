@@ -13,14 +13,6 @@ using Sonorize.ViewModels.Settings;
 
 namespace Sonorize.ViewModels;
 
-public enum SettingsViewSection
-{
-    Directories,
-    Theme,
-    Appearance,
-    Scrobbling
-}
-
 public class SettingsViewModel : ViewModelBase
 {
     private readonly SettingsService _settingsService;
@@ -55,15 +47,15 @@ public class SettingsViewModel : ViewModelBase
 
         var settings = _settingsService.LoadSettings();
 
-        MusicDirectoriesSettings = new MusicDirectoriesSettingsViewModel(settings.MusicDirectories, MarkSettingsChanged);
+        MusicDirectoriesSettings = new MusicDirectoriesSettingsViewModel(settings.General.MusicDirectories, MarkSettingsChanged);
 
-        var themeServiceForChild = new ThemeService(settings.PreferredThemeFileName);
-        ThemeSettings = new ThemeSettingsViewModel(settings.PreferredThemeFileName, themeServiceForChild, MarkSettingsChanged);
-        
-        AppearanceSettings = new AppearanceSettingsViewModel(settings, MarkSettingsChanged);
+        var themeServiceForChild = new ThemeService(settings.General.PreferredThemeFileName);
+        ThemeSettings = new ThemeSettingsViewModel(settings.General.PreferredThemeFileName, themeServiceForChild, MarkSettingsChanged);
+
+        AppearanceSettings = new AppearanceSettingsViewModel(settings.Appearance, MarkSettingsChanged);
 
         LastfmSettings = new LastfmSettingsViewModel();
-        LastfmSettings.LoadFromSettings(settings);
+        LastfmSettings.LoadFromSettings(settings.Lastfm);
         LastfmSettings.PropertyChanged += (s, e) => MarkSettingsChanged();
 
 

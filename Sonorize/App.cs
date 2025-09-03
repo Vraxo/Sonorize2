@@ -29,7 +29,7 @@ public class App : Application
             var settingsService = new SettingsService();
             var appSettings = settingsService.LoadSettings();
 
-            var themeService = new ThemeService(appSettings.PreferredThemeFileName);
+            var themeService = new ThemeService(appSettings.General.PreferredThemeFileName);
             ThemeColors currentCustomTheme = themeService.CurrentTheme;
 
             var fluentTheme = new FluentTheme();

@@ -23,20 +23,20 @@ public class LastfmAuthenticatorService
 
     private async Task<LastfmClient?> TryAuthenticateWithCredentialsAsync(AppSettings settings)
     {
-        Debug.WriteLine($"[LastfmAuthenticatorService] Attempting credential authentication for '{settings.LastfmUsername}'…");
+        Debug.WriteLine($"[LastfmAuthenticatorService] Attempting credential authentication for '{settings.Lastfm.Username}'…");
         var auth = new LastAuth(LastfmApiKey, LastfmApiSecret);
         try
         {
             // Callers ensure LastfmUsername and LastfmPassword are not null/empty
-            var response = await auth.GetSessionTokenAsync(settings.LastfmUsername!, settings.LastfmPassword!);
+            var response = await auth.GetSessionTokenAsync(settings.Lastfm.Username!, settings.Lastfm.Password!);
             if (response.Success && auth.Authenticated && auth.UserSession is not null)
             {
                 var session = auth.UserSession;
-                settings.LastfmSessionKey = session.Token;
-                settings.LastfmPassword = null; // Clear password for security
+                settings.Lastfm.SessionKey = session.Token;
+                settings.Lastfm.Password = null; // Clear password for security
                 _settingsService.SaveSettings(settings); // Save updated settings with session key
 
-                Debug.WriteLine($"[LastfmAuthenticatorService] Successfully obtained and saved session key for '{settings.LastfmUsername}'. Password cleared from settings.");
+                Debug.WriteLine($"[LastfmAuthenticatorService] Successfully obtained and saved session key for '{settings.Lastfm.Username}'. Password cleared from settings.");
                 return new LastfmClient(auth);
             }
             // else: If authentication failed but no exception, falls through to return null.
@@ -44,7 +44,7 @@ public class LastfmAuthenticatorService
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[LastfmAuthenticatorService] Exception during credential authentication for '{settings.LastfmUsername}': {ex.Message}");
+            Debug.WriteLine($"[LastfmAuthenticatorService] Exception during credential authentication for '{settings.Lastfm.Username}': {ex.Message}");
         }
         return null;
     }
@@ -61,17 +61,17 @@ public class LastfmAuthenticatorService
         AppSettings currentSettings = _settingsService.LoadSettings(); // Always load fresh settings
 
         // Attempt 1: Use existing session key from settings
-        if (!string.IsNullOrEmpty(currentSettings.LastfmSessionKey))
+        if (!string.IsNullOrEmpty(currentSettings.Lastfm.SessionKey))
         {
             Debug.WriteLine("[LastfmAuthenticatorService] Using existing session key from settings.");
             var auth = new LastAuth(LastfmApiKey, LastfmApiSecret);
-            auth.LoadSession(new LastUserSession { Token = currentSettings.LastfmSessionKey });
+            auth.LoadSession(new LastUserSession { Token = currentSettings.Lastfm.SessionKey });
             return new LastfmClient(auth);
         }
 
         // Attempt 2: Authenticate with username/password
-        if (!string.IsNullOrEmpty(currentSettings.LastfmUsername) &&
-            !string.IsNullOrEmpty(currentSettings.LastfmPassword))
+        if (!string.IsNullOrEmpty(currentSettings.Lastfm.Username) &&
+            !string.IsNullOrEmpty(currentSettings.Lastfm.Password))
         {
             var client = await TryAuthenticateWithCredentialsAsync(currentSettings);
             if (client is not null)
@@ -92,7 +92,7 @@ public class LastfmAuthenticatorService
 
     public static bool AreCredentialsEffectivelyConfigured(AppSettings settings)
     {
-        return !string.IsNullOrEmpty(settings.LastfmSessionKey) ||
-               (!string.IsNullOrEmpty(settings.LastfmUsername) && !string.IsNullOrEmpty(settings.LastfmPassword));
+        return !string.IsNullOrEmpty(settings.Lastfm.SessionKey) ||
+               (!string.IsNullOrEmpty(settings.Lastfm.Username) && !string.IsNullOrEmpty(settings.Lastfm.Password));
     }
 }

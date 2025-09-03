@@ -25,81 +25,61 @@ public class SettingsPersistenceManager
     {
         AppSettings newSettingsToSave = new();
 
-        // Preserve settings not managed by SettingsViewModel's UI by copying from disk state
-        newSettingsToSave.ArtistViewModePreference = settingsOnDisk.ArtistViewModePreference;
-        newSettingsToSave.AlbumViewModePreference = settingsOnDisk.AlbumViewModePreference;
-        newSettingsToSave.PlaylistViewModePreference = settingsOnDisk.PlaylistViewModePreference;
-        newSettingsToSave.LastfmSessionKey = settingsOnDisk.LastfmSessionKey;
+        // Preserve the existing session key, as the UI doesn't manage it directly.
+        newSettingsToSave.Lastfm.SessionKey = settingsOnDisk.Lastfm.SessionKey;
 
         bool actualChangesMade = false;
 
-        // Music Directories
+        // --- General Settings ---
         if (musicDirectoriesSettings.HasChangesFromInitialState)
         {
-            newSettingsToSave.MusicDirectories = new List<string>(musicDirectoriesSettings.MusicDirectories);
+            newSettingsToSave.General.MusicDirectories = new List<string>(musicDirectoriesSettings.MusicDirectories);
             actualChangesMade = true;
-            Debug.WriteLine($"[SettingsPersistence] Music directories changed. Count: {newSettingsToSave.MusicDirectories.Count}");
+            Debug.WriteLine($"[SettingsPersistence] Music directories changed.");
         }
         else
         {
-            newSettingsToSave.MusicDirectories = new List<string>(settingsOnDisk.MusicDirectories);
+            newSettingsToSave.General.MusicDirectories = new List<string>(settingsOnDisk.General.MusicDirectories);
         }
 
-        // Theme
         if (themeSettings.HasChangesFromInitialState)
         {
-            newSettingsToSave.PreferredThemeFileName = themeSettings.SelectedThemeFile;
+            newSettingsToSave.General.PreferredThemeFileName = themeSettings.SelectedThemeFile;
             actualChangesMade = true;
-            Debug.WriteLine($"[SettingsPersistence] Theme changed to: {themeSettings.SelectedThemeFile}");
+            Debug.WriteLine($"[SettingsPersistence] Theme changed.");
         }
         else
         {
-            newSettingsToSave.PreferredThemeFileName = settingsOnDisk.PreferredThemeFileName;
+            newSettingsToSave.General.PreferredThemeFileName = settingsOnDisk.General.PreferredThemeFileName;
         }
 
-        // Appearance
+        // --- Appearance Settings ---
         if (appearanceSettings.HasChangesFromInitialState)
         {
-            appearanceSettings.UpdateAppSettings(newSettingsToSave);
+            appearanceSettings.UpdateAppSettings(newSettingsToSave.Appearance);
             actualChangesMade = true;
             Debug.WriteLine($"[SettingsPersistence] Appearance settings changed.");
         }
         else
         {
-            newSettingsToSave.ArtistGridViewImageType = settingsOnDisk.ArtistGridViewImageType;
-            newSettingsToSave.AlbumGridViewImageType = settingsOnDisk.AlbumGridViewImageType;
-            newSettingsToSave.PlaylistGridViewImageType = settingsOnDisk.PlaylistGridViewImageType;
-            newSettingsToSave.PlaybackAreaBackgroundStyle = settingsOnDisk.PlaybackAreaBackgroundStyle;
-            newSettingsToSave.ShowArtistInLibrary = settingsOnDisk.ShowArtistInLibrary;
-            newSettingsToSave.ShowAlbumInLibrary = settingsOnDisk.ShowAlbumInLibrary;
-            newSettingsToSave.ShowDurationInLibrary = settingsOnDisk.ShowDurationInLibrary;
-            newSettingsToSave.ShowDateAddedInLibrary = settingsOnDisk.ShowDateAddedInLibrary;
-            newSettingsToSave.ShowPlayCountInLibrary = settingsOnDisk.ShowPlayCountInLibrary;
-            newSettingsToSave.LibraryRowHeight = settingsOnDisk.LibraryRowHeight;
-            newSettingsToSave.EnableAlternatingRowColors = settingsOnDisk.EnableAlternatingRowColors;
-            newSettingsToSave.UseCompactPlaybackControls = settingsOnDisk.UseCompactPlaybackControls;
-            newSettingsToSave.ShowStatusBar = settingsOnDisk.ShowStatusBar;
+            newSettingsToSave.Appearance = settingsOnDisk.Appearance;
         }
 
-        // Last.fm Settings - Compare UI state against disk state for change detection
-        bool lastfmChanged = settingsOnDisk.LastfmScrobblingEnabled != lastfmSettings.LastfmScrobblingEnabled ||
-                             settingsOnDisk.LastfmUsername != lastfmSettings.LastfmUsername ||
-                             !string.IsNullOrEmpty(lastfmSettings.LastfmPassword) ||
-                             settingsOnDisk.ScrobbleThresholdPercentage != lastfmSettings.ScrobbleThresholdPercentage ||
-                             settingsOnDisk.ScrobbleThresholdAbsoluteSeconds != lastfmSettings.ScrobbleThresholdAbsoluteSeconds;
+        // --- Last.fm Settings ---
+        bool lastfmChanged = settingsOnDisk.Lastfm.ScrobblingEnabled != lastfmSettings.LastfmScrobblingEnabled ||
+                             settingsOnDisk.Lastfm.Username != lastfmSettings.LastfmUsername ||
+                             !string.IsNullOrEmpty(lastfmSettings.LastfmPassword) || // Password field being non-empty is a change
+                             settingsOnDisk.Lastfm.ScrobbleThresholdPercentage != lastfmSettings.ScrobbleThresholdPercentage ||
+                             settingsOnDisk.Lastfm.ScrobbleThresholdAbsoluteSeconds != lastfmSettings.ScrobbleThresholdAbsoluteSeconds;
 
-        if (lastfmChanged) actualChangesMade = true;
-
-        lastfmSettings.UpdateAppSettings(newSettingsToSave);
         if (lastfmChanged)
         {
-            Debug.WriteLine($"[SettingsPersistence] Last.fm settings potentially updated in newSettingsToSave: " +
-                            $"Scrobbling={newSettingsToSave.LastfmScrobblingEnabled}, " +
-                            $"User={newSettingsToSave.LastfmUsername}, " +
-                            $"PassLen={(newSettingsToSave.LastfmPassword?.Length ?? 0)}, " +
-                            $"Thresh%={newSettingsToSave.ScrobbleThresholdPercentage}, " +
-                            $"ThreshAbsSec={newSettingsToSave.ScrobbleThresholdAbsoluteSeconds}");
+            actualChangesMade = true;
+            Debug.WriteLine($"[SettingsPersistence] Last.fm settings changed.");
         }
+
+        // Always update from the view model to capture all values, even if just one changed.
+        lastfmSettings.UpdateLastfmSettings(newSettingsToSave.Lastfm);
 
 
         if (actualChangesMade)

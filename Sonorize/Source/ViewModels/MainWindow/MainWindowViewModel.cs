@@ -197,16 +197,16 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     {
         var settings = _componentsManager.SettingsServiceProperty.LoadSettings();
 
-        var newCompactSetting = settings.UseCompactPlaybackControls;
+        var newCompactSetting = settings.Appearance.UseCompactPlaybackControls;
         if (UseCompactPlaybackControls != newCompactSetting)
         {
             UseCompactPlaybackControls = newCompactSetting;
             OnPropertyChanged(nameof(UseCompactPlaybackControls));
         }
 
-        IsStatusBarVisible = settings.ShowStatusBar;
+        IsStatusBarVisible = settings.Appearance.ShowStatusBar;
 
-        var style = Enum.TryParse<PlaybackAreaBackgroundStyle>(settings.PlaybackAreaBackgroundStyle, out var s) ? s : PlaybackAreaBackgroundStyle.Solid;
+        var style = Enum.TryParse<PlaybackAreaBackgroundStyle>(settings.Appearance.PlaybackAreaBackgroundStyle, out var s) ? s : PlaybackAreaBackgroundStyle.Solid;
 
         AlbumArtForAbstractBackground?.Dispose();
 

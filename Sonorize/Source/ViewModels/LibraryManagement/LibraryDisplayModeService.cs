@@ -20,7 +20,7 @@ public class LibraryDisplayModeService : ViewModelBase
             if (SetProperty(ref _artistViewMode, value))
             {
                 Debug.WriteLine($"[DisplayModeService] ArtistViewMode changed to: {value}");
-                SavePreference(nameof(AppSettings.ArtistViewModePreference), value.ToString());
+                SavePreference(nameof(AppearanceSettings.ArtistViewModePreference), value.ToString());
             }
         }
     }
@@ -34,7 +34,7 @@ public class LibraryDisplayModeService : ViewModelBase
             if (SetProperty(ref _albumViewMode, value))
             {
                 Debug.WriteLine($"[DisplayModeService] AlbumViewMode changed to: {value}");
-                SavePreference(nameof(AppSettings.AlbumViewModePreference), value.ToString());
+                SavePreference(nameof(AppearanceSettings.AlbumViewModePreference), value.ToString());
             }
         }
     }
@@ -48,7 +48,7 @@ public class LibraryDisplayModeService : ViewModelBase
             if (SetProperty(ref _playlistViewMode, value))
             {
                 Debug.WriteLine($"[DisplayModeService] PlaylistViewMode changed to: {value}");
-                SavePreference(nameof(AppSettings.PlaylistViewModePreference), value.ToString());
+                SavePreference(nameof(AppearanceSettings.PlaylistViewModePreference), value.ToString());
             }
         }
     }
@@ -91,13 +91,13 @@ public class LibraryDisplayModeService : ViewModelBase
     private void LoadDisplayPreferences()
     {
         AppSettings settings = _settingsService.LoadSettings();
-        _artistViewMode = Enum.TryParse<SongDisplayMode>(settings.ArtistViewModePreference, out var artMode) ? artMode : SongDisplayMode.Detailed;
-        _albumViewMode = Enum.TryParse<SongDisplayMode>(settings.AlbumViewModePreference, out var albMode) ? albMode : SongDisplayMode.Detailed;
-        _playlistViewMode = Enum.TryParse<SongDisplayMode>(settings.PlaylistViewModePreference, out var playMode) ? playMode : SongDisplayMode.Detailed;
+        _artistViewMode = Enum.TryParse<SongDisplayMode>(settings.Appearance.ArtistViewModePreference, out var artMode) ? artMode : SongDisplayMode.Detailed;
+        _albumViewMode = Enum.TryParse<SongDisplayMode>(settings.Appearance.AlbumViewModePreference, out var albMode) ? albMode : SongDisplayMode.Detailed;
+        _playlistViewMode = Enum.TryParse<SongDisplayMode>(settings.Appearance.PlaylistViewModePreference, out var playMode) ? playMode : SongDisplayMode.Detailed;
 
-        ArtistGridDisplayType = Enum.TryParse<GridViewImageType>(settings.ArtistGridViewImageType, out var artistGridType) ? artistGridType : GridViewImageType.Composite;
-        AlbumGridDisplayType = Enum.TryParse<GridViewImageType>(settings.AlbumGridViewImageType, out var albumGridType) ? albumGridType : GridViewImageType.Composite;
-        PlaylistGridDisplayType = Enum.TryParse<GridViewImageType>(settings.PlaylistGridViewImageType, out var playlistGridType) ? playlistGridType : GridViewImageType.Composite;
+        ArtistGridDisplayType = Enum.TryParse<GridViewImageType>(settings.Appearance.ArtistGridViewImageType, out var artistGridType) ? artistGridType : GridViewImageType.Composite;
+        AlbumGridDisplayType = Enum.TryParse<GridViewImageType>(settings.Appearance.AlbumGridViewImageType, out var albumGridType) ? albumGridType : GridViewImageType.Composite;
+        PlaylistGridDisplayType = Enum.TryParse<GridViewImageType>(settings.Appearance.PlaylistGridViewImageType, out var playlistGridType) ? playlistGridType : GridViewImageType.Composite;
 
         // Initial OnPropertyChanged for any subscribers after loading
         OnPropertyChanged(nameof(ArtistViewMode));
@@ -111,10 +111,17 @@ public class LibraryDisplayModeService : ViewModelBase
     private void SavePreference(string preferenceKey, string value)
     {
         AppSettings settings = _settingsService.LoadSettings();
-        var prop = typeof(AppSettings).GetProperty(preferenceKey);
-        if (prop != null && prop.CanWrite)
+        switch (preferenceKey)
         {
-            prop.SetValue(settings, value, null);
+            case nameof(AppearanceSettings.ArtistViewModePreference):
+                settings.Appearance.ArtistViewModePreference = value;
+                break;
+            case nameof(AppearanceSettings.AlbumViewModePreference):
+                settings.Appearance.AlbumViewModePreference = value;
+                break;
+            case nameof(AppearanceSettings.PlaylistViewModePreference):
+                settings.Appearance.PlaylistViewModePreference = value;
+                break;
         }
         _settingsService.SaveSettings(settings);
     }

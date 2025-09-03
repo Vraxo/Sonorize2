@@ -11,57 +11,45 @@ public class LibraryViewOptionsViewModel : ViewModelBase
         get => _showArtist;
         set => SetProperty(ref _showArtist, value);
     }
-
-    private bool _showAlbum;
     public bool ShowAlbum
     {
-        get => _showAlbum;
-        set => SetProperty(ref _showAlbum, value);
+        get;
+        set => SetProperty(ref field, value);
     }
-
-    private bool _showDuration;
     public bool ShowDuration
     {
-        get => _showDuration;
-        set => SetProperty(ref _showDuration, value);
+        get;
+        set => SetProperty(ref field, value);
     }
-
-    private bool _showDateAdded;
     public bool ShowDateAdded
     {
-        get => _showDateAdded;
-        set => SetProperty(ref _showDateAdded, value);
+        get;
+        set => SetProperty(ref field, value);
     }
-
-    private bool _showPlayCount;
     public bool ShowPlayCount
     {
-        get => _showPlayCount;
-        set => SetProperty(ref _showPlayCount, value);
+        get;
+        set => SetProperty(ref field, value);
     }
-
-    private double _rowHeight;
     public double RowHeight
     {
-        get => _rowHeight;
-        set => SetProperty(ref _rowHeight, value);
+        get;
+        set => SetProperty(ref field, value);
     }
-
-    private bool _enableAlternatingRowColors;
     public bool EnableAlternatingRowColors
     {
-        get => _enableAlternatingRowColors;
-        set => SetProperty(ref _enableAlternatingRowColors, value);
+        get;
+        set => SetProperty(ref field, value);
     }
 
     public void LoadFromSettings(AppSettings settings)
     {
-        ShowArtist = settings.ShowArtistInLibrary;
-        ShowAlbum = settings.ShowAlbumInLibrary;
-        ShowDuration = settings.ShowDurationInLibrary;
-        ShowDateAdded = settings.ShowDateAddedInLibrary;
-        ShowPlayCount = settings.ShowPlayCountInLibrary;
-        RowHeight = settings.LibraryRowHeight;
-        EnableAlternatingRowColors = settings.EnableAlternatingRowColors;
+        ShowArtist = settings.Appearance.ShowArtistInLibrary;
+        ShowAlbum = settings.Appearance.ShowAlbumInLibrary;
+        ShowDuration = settings.Appearance.ShowDurationInLibrary;
+        ShowDateAdded = settings.Appearance.ShowDateAddedInLibrary;
+        ShowPlayCount = settings.Appearance.ShowPlayCountInLibrary;
+        RowHeight = settings.Appearance.LibraryRowHeight;
+        EnableAlternatingRowColors = settings.Appearance.EnableAlternatingRowColors;
     }
 }

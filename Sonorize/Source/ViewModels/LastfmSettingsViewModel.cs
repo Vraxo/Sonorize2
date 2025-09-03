@@ -13,7 +13,7 @@ public class LastfmSettingsViewModel : ViewModelBase
             SetProperty(ref field, value);
         }
     }
-    
+
     public string? LastfmUsername
     {
         get;
@@ -23,7 +23,7 @@ public class LastfmSettingsViewModel : ViewModelBase
             SetProperty(ref field, value);
         }
     }
-    
+
     public string? LastfmPassword
     {
         get;
@@ -33,7 +33,7 @@ public class LastfmSettingsViewModel : ViewModelBase
             SetProperty(ref field, value);
         }
     }
-    
+
     public int ScrobbleThresholdPercentage
     {
         get;
@@ -43,7 +43,7 @@ public class LastfmSettingsViewModel : ViewModelBase
             SetProperty(ref field, value);
         }
     }
-    
+
     public int ScrobbleThresholdAbsoluteSeconds
     {
         get;
@@ -56,25 +56,25 @@ public class LastfmSettingsViewModel : ViewModelBase
 
     public LastfmSettingsViewModel() { }
 
-    public void LoadFromSettings(AppSettings settings)
+    public void LoadFromSettings(LastfmSettings settings)
     {
-        LastfmScrobblingEnabled = settings.LastfmScrobblingEnabled;
-        LastfmUsername = settings.LastfmUsername;
-        LastfmPassword = settings.LastfmPassword;
+        LastfmScrobblingEnabled = settings.ScrobblingEnabled;
+        LastfmUsername = settings.Username;
+        LastfmPassword = settings.Password;
         ScrobbleThresholdPercentage = settings.ScrobbleThresholdPercentage;
         ScrobbleThresholdAbsoluteSeconds = settings.ScrobbleThresholdAbsoluteSeconds;
     }
 
-    public void UpdateAppSettings(AppSettings settings)
+    public void UpdateLastfmSettings(LastfmSettings settings)
     {
-        settings.LastfmScrobblingEnabled = LastfmScrobblingEnabled;
-        settings.LastfmUsername = LastfmUsername;
-        
+        settings.ScrobblingEnabled = LastfmScrobblingEnabled;
+        settings.Username = LastfmUsername;
+
         if (LastfmPassword is not null)
         {
-            settings.LastfmPassword = LastfmPassword;
+            settings.Password = LastfmPassword;
         }
-        
+
         settings.ScrobbleThresholdPercentage = ScrobbleThresholdPercentage;
         settings.ScrobbleThresholdAbsoluteSeconds = ScrobbleThresholdAbsoluteSeconds;
     }

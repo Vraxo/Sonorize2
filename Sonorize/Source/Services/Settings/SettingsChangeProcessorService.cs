@@ -23,7 +23,7 @@ public class SettingsChangeProcessorService
         List<string> statusMessages = [];
 
         // Directory changes
-        bool dirsActuallyChanged = !oldSettings.MusicDirectories.SequenceEqual(newSettings.MusicDirectories);
+        bool dirsActuallyChanged = !oldSettings.General.MusicDirectories.SequenceEqual(newSettings.General.MusicDirectories);
         if (dirsActuallyChanged)
         {
             Debug.WriteLine("[SettingsChangeProcessor] Music directories changed. Reloading library.");
@@ -32,7 +32,7 @@ public class SettingsChangeProcessorService
         }
 
         // Theme changes
-        bool themeActuallyChanged = oldSettings.PreferredThemeFileName != newSettings.PreferredThemeFileName;
+        bool themeActuallyChanged = oldSettings.General.PreferredThemeFileName != newSettings.General.PreferredThemeFileName;
         if (themeActuallyChanged)
         {
             Debug.WriteLine("[SettingsChangeProcessor] Theme changed. Restart recommended.");
@@ -40,13 +40,13 @@ public class SettingsChangeProcessorService
         }
 
         // Appearance changes (including library columns)
-        bool libraryViewOptionsChanged = oldSettings.ShowArtistInLibrary != newSettings.ShowArtistInLibrary ||
-                                         oldSettings.ShowAlbumInLibrary != newSettings.ShowAlbumInLibrary ||
-                                         oldSettings.ShowDurationInLibrary != newSettings.ShowDurationInLibrary ||
-                                         oldSettings.ShowDateAddedInLibrary != newSettings.ShowDateAddedInLibrary ||
-                                         oldSettings.ShowPlayCountInLibrary != newSettings.ShowPlayCountInLibrary ||
-                                         System.Math.Abs(oldSettings.LibraryRowHeight - newSettings.LibraryRowHeight) > 0.01 ||
-                                         oldSettings.EnableAlternatingRowColors != newSettings.EnableAlternatingRowColors;
+        bool libraryViewOptionsChanged = oldSettings.Appearance.ShowArtistInLibrary != newSettings.Appearance.ShowArtistInLibrary ||
+                                         oldSettings.Appearance.ShowAlbumInLibrary != newSettings.Appearance.ShowAlbumInLibrary ||
+                                         oldSettings.Appearance.ShowDurationInLibrary != newSettings.Appearance.ShowDurationInLibrary ||
+                                         oldSettings.Appearance.ShowDateAddedInLibrary != newSettings.Appearance.ShowDateAddedInLibrary ||
+                                         oldSettings.Appearance.ShowPlayCountInLibrary != newSettings.Appearance.ShowPlayCountInLibrary ||
+                                         System.Math.Abs(oldSettings.Appearance.LibraryRowHeight - newSettings.Appearance.LibraryRowHeight) > 0.01 ||
+                                         oldSettings.Appearance.EnableAlternatingRowColors != newSettings.Appearance.EnableAlternatingRowColors;
 
         if (libraryViewOptionsChanged)
         {
@@ -56,12 +56,12 @@ public class SettingsChangeProcessorService
 
         // Scrobbling settings changes
         bool scrobbleSettingsActuallyChanged =
-            oldSettings.LastfmScrobblingEnabled != newSettings.LastfmScrobblingEnabled ||
-            oldSettings.LastfmUsername != newSettings.LastfmUsername ||
-            oldSettings.LastfmPassword != newSettings.LastfmPassword || // Used for change detection only
-            oldSettings.LastfmSessionKey != newSettings.LastfmSessionKey || // If session key is cleared/changed directly
-            oldSettings.ScrobbleThresholdPercentage != newSettings.ScrobbleThresholdPercentage ||
-            oldSettings.ScrobbleThresholdAbsoluteSeconds != newSettings.ScrobbleThresholdAbsoluteSeconds;
+            oldSettings.Lastfm.ScrobblingEnabled != newSettings.Lastfm.ScrobblingEnabled ||
+            oldSettings.Lastfm.Username != newSettings.Lastfm.Username ||
+            oldSettings.Lastfm.Password != newSettings.Lastfm.Password || // Used for change detection only
+            oldSettings.Lastfm.SessionKey != newSettings.Lastfm.SessionKey || // If session key is cleared/changed directly
+            oldSettings.Lastfm.ScrobbleThresholdPercentage != newSettings.Lastfm.ScrobbleThresholdPercentage ||
+            oldSettings.Lastfm.ScrobbleThresholdAbsoluteSeconds != newSettings.Lastfm.ScrobbleThresholdAbsoluteSeconds;
 
         if (scrobbleSettingsActuallyChanged)
         {
@@ -98,7 +98,7 @@ public class SettingsChangeProcessorService
                     else statusMessages.Add("Scrobbling enabled, but not configured. Check settings.");
                 }
             }
-            else if (!_scrobblingService.IsScrobblingEnabled && oldSettings.LastfmScrobblingEnabled)
+            else if (!_scrobblingService.IsScrobblingEnabled && oldSettings.Lastfm.ScrobblingEnabled)
             {
                 if (!statusMessages.Any(m => m.Contains("Theme changed")))
                 {

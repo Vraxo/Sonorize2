@@ -33,7 +33,7 @@ public class LibraryDataOrchestrator
         var rawSongs = new List<Song>();
 
         AppSettings settings = _settingsService.LoadSettings();
-        if (!settings.MusicDirectories.Any())
+        if (!settings.General.MusicDirectories.Any())
         {
             await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback("No music directories configured."));
             return (rawSongs, new List<Playlist>());
@@ -43,7 +43,7 @@ public class LibraryDataOrchestrator
         {
             // Phase 1: Load raw song metadata and thumbnails
             await _musicLibraryService.LoadMusicFromDirectoriesAsync(
-                settings.MusicDirectories,
+                settings.General.MusicDirectories,
                 song =>
                 {
                     rawSongs.Add(song);
@@ -53,7 +53,7 @@ public class LibraryDataOrchestrator
 
             // Phase 2: Load Playlists using the fully gathered rawSongs list
             await Dispatcher.UIThread.InvokeAsync(() => statusUpdateCallback($"Found {rawSongs.Count} songs. Scanning for playlists..."));
-            var filePlaylists = await _musicLibraryService.LoadPlaylistsAsync(settings.MusicDirectories, rawSongs);
+            var filePlaylists = await _musicLibraryService.LoadPlaylistsAsync(settings.General.MusicDirectories, rawSongs);
 
             // Phase 2.5: Generate Auto-Playlists
             var autoPlaylists = _autoPlaylistManager.GenerateInitialAutoPlaylists(rawSongs);

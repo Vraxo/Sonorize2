@@ -84,9 +84,9 @@ public class ApplicationInteractionService
         }
 
         var settings = _settingsService.LoadSettings();
-        if (!settings.MusicDirectories.Any(d => string.Equals(d, folderPath, StringComparison.OrdinalIgnoreCase)))
+        if (!settings.General.MusicDirectories.Any(d => string.Equals(d, folderPath, StringComparison.OrdinalIgnoreCase)))
         {
-            settings.MusicDirectories.Add(folderPath);
+            settings.General.MusicDirectories.Add(folderPath);
             _settingsService.SaveSettings(settings);
             Debug.WriteLine($"[AppInteractionService] Added new directory: {folderPath}. Library refresh needed.");
             return (true, $"Added directory: {Path.GetFileName(folderPath)}. Library refreshing...");

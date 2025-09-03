@@ -90,7 +90,7 @@ namespace Sonorize.ViewModels.Settings
             _initialUseCompactPlaybackControls != UseCompactPlaybackControls ||
             _initialShowStatusBar != ShowStatusBar;
 
-        public AppearanceSettingsViewModel(AppSettings settings, Action notifyParentSettingsChanged)
+        public AppearanceSettingsViewModel(AppearanceSettings settings, Action notifyParentSettingsChanged)
         {
             _notifyParentSettingsChanged = notifyParentSettingsChanged ?? throw new ArgumentNullException(nameof(notifyParentSettingsChanged));
 
@@ -144,7 +144,7 @@ namespace Sonorize.ViewModels.Settings
             _notifyParentSettingsChanged();
         }
 
-        public void UpdateAppSettings(AppSettings settings)
+        public void UpdateAppSettings(AppearanceSettings settings)
         {
             settings.ArtistGridViewImageType = ArtistGridType.ToString();
             settings.AlbumGridViewImageType = AlbumGridType.ToString();

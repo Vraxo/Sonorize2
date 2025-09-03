@@ -14,7 +14,7 @@ public class ScrobblingService
     private readonly LastfmAuthenticatorService _authenticatorService;
     private AppSettings _currentSettings;
 
-    public bool IsScrobblingEnabled => _currentSettings.LastfmScrobblingEnabled;
+    public bool IsScrobblingEnabled => _currentSettings.Lastfm.ScrobblingEnabled;
 
     public bool AreCredentialsEffectivelyConfigured
     {
@@ -40,7 +40,7 @@ public class ScrobblingService
         Debug.WriteLine($"[ScrobblingService] Settings refreshed. " +
             $"Scrobbling Enabled: {IsScrobblingEnabled}, " +
             $"Credentials Configured: {AreCredentialsEffectivelyConfigured}, " +
-            $"Thresholds: {_currentSettings.ScrobbleThresholdPercentage}% / {_currentSettings.ScrobbleThresholdAbsoluteSeconds}s");
+            $"Thresholds: {_currentSettings.Lastfm.ScrobbleThresholdPercentage}% / {_currentSettings.Lastfm.ScrobbleThresholdAbsoluteSeconds}s");
     }
 
     private async Task<LastfmClient?> GetAuthenticatedClientAsync()
@@ -54,8 +54,8 @@ public class ScrobblingService
     {
         // Rely on _currentSettings being up-to-date from constructor or external RefreshSettings call.
         var thresholds = new ScrobbleThresholds(
-            _currentSettings.ScrobbleThresholdPercentage,
-            _currentSettings.ScrobbleThresholdAbsoluteSeconds);
+            _currentSettings.Lastfm.ScrobbleThresholdPercentage,
+            _currentSettings.Lastfm.ScrobbleThresholdAbsoluteSeconds);
 
         return ScrobbleEligibilityService.ShouldScrobble(song, playedDuration, thresholds);
     }
