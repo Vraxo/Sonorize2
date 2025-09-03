@@ -13,10 +13,6 @@ public class LibraryFilterStateManager : ViewModelBase
         {
             if (SetProperty(ref _searchQuery, value))
             {
-                // Direct search query input might clear artist/album selections
-                // or this can be handled by LibraryViewModel reacting to this change.
-                // For now, assume direct search query changes don't auto-clear selected artist/album.
-                // LibraryViewModel's ApplyFilter logic will decide precedence.
                 FilterCriteriaChanged?.Invoke(this, EventArgs.Empty);
             }
         }
@@ -32,15 +28,18 @@ public class LibraryFilterStateManager : ViewModelBase
             {
                 if (_selectedArtist is not null)
                 {
-                    // When an artist is selected, update SearchQuery and clear SelectedAlbum
-                    _searchQuery = _selectedArtist.Name ?? string.Empty; // Avoid raising SearchQuery's own event storm
-                    OnPropertyChanged(nameof(SearchQuery)); // Manually notify SearchQuery changed
-                    SelectedAlbum = null; // This will trigger its own PropertyChanged and subsequently FilterCriteriaChanged
-                }
-                else
-                {
-                    // When artist is deselected, clear the search query
-                    SearchQuery = string.Empty;
+                    // When an artist is selected, clear other selections.
+                    // Use backing fields to prevent event storms from setters.
+                    if (_selectedAlbum is not null)
+                    {
+                        _selectedAlbum = null;
+                        OnPropertyChanged(nameof(SelectedAlbum));
+                    }
+                    if (_selectedPlaylist is not null)
+                    {
+                        _selectedPlaylist = null;
+                        OnPropertyChanged(nameof(SelectedPlaylist));
+                    }
                 }
                 FilterCriteriaChanged?.Invoke(this, EventArgs.Empty);
             }
@@ -57,10 +56,16 @@ public class LibraryFilterStateManager : ViewModelBase
             {
                 if (_selectedPlaylist is not null)
                 {
-                    SearchQuery = string.Empty;
-                    OnPropertyChanged(nameof(SearchQuery));
-                    SelectedArtist = null;
-                    SelectedAlbum = null;
+                    if (_selectedArtist is not null)
+                    {
+                        _selectedArtist = null;
+                        OnPropertyChanged(nameof(SelectedArtist));
+                    }
+                    if (_selectedAlbum is not null)
+                    {
+                        _selectedAlbum = null;
+                        OnPropertyChanged(nameof(SelectedAlbum));
+                    }
                 }
                 FilterCriteriaChanged?.Invoke(this, EventArgs.Empty);
             }
@@ -77,10 +82,16 @@ public class LibraryFilterStateManager : ViewModelBase
             {
                 if (_selectedAlbum is not null)
                 {
-                    // When an album is selected, update SearchQuery and clear SelectedArtist
-                    _searchQuery = _selectedAlbum.Title ?? string.Empty; // Avoid raising SearchQuery's own event storm
-                    OnPropertyChanged(nameof(SearchQuery)); // Manually notify SearchQuery changed
-                    SelectedArtist = null; // This will trigger its own PropertyChanged and subsequently FilterCriteriaChanged
+                    if (_selectedArtist is not null)
+                    {
+                        _selectedArtist = null;
+                        OnPropertyChanged(nameof(SelectedArtist));
+                    }
+                    if (_selectedPlaylist is not null)
+                    {
+                        _selectedPlaylist = null;
+                        OnPropertyChanged(nameof(SelectedPlaylist));
+                    }
                 }
                 FilterCriteriaChanged?.Invoke(this, EventArgs.Empty);
             }

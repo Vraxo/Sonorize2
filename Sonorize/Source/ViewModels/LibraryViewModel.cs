@@ -30,6 +30,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     public ICommand NextTrackCommand => _trackNavigationManager.NextTrackCommand;
     public ICommand EditSongMetadataCommand { get; }
     public ICommand SortCommand { get; }
+    public ICommand ClearArtistFilterCommand { get; }
 
     public SortProperty CurrentSortProperty { get; private set; } = SortProperty.Title;
     public SortDirection CurrentSortDirection { get; private set; } = SortDirection.Ascending;
@@ -112,6 +113,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
         EditSongMetadataCommand = new RelayCommand(ExecuteEditSongMetadata, CanExecuteEditSongMetadata);
         SortCommand = new RelayCommand(ExecuteSort);
+        ClearArtistFilterCommand = new RelayCommand(_ => FilterState.SelectedArtist = null);
 
         UpdateStatusBarText();
     }
@@ -228,7 +230,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
             Debug.WriteLine($"[LibraryVM] Edit metadata requested but parameter is not a Song or parent command cannot execute.");
             return;
         }
-
+        
         Debug.WriteLine($"[LibraryVM] Delegating Edit metadata for: {song.Title} to MainWindowViewModel.");
         _parentViewModel.OpenEditSongMetadataDialogCommand.Execute(song);
     }

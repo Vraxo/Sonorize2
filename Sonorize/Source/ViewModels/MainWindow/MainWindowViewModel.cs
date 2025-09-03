@@ -53,6 +53,14 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         {
             if (SetProperty(ref _activeTabIndex, value))
             {
+                // Library tab is index 0. Clear filters when switching to it.
+                if (_activeTabIndex == 0)
+                {
+                    Library.FilterState.SelectedArtist = null;
+                    Library.FilterState.SelectedAlbum = null;
+                    Library.FilterState.SelectedPlaylist = null;
+                }
+
                 // Playlist tab is index 3
                 if (_activeTabIndex == 3)
                 {

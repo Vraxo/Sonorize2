@@ -78,6 +78,7 @@ public class MainTabViewControls
         };
 
         // --- ARTISTS tab ---
+        var artistsListView = new Grid();
         var (artistsListScrollViewer, artistsLb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
             _theme, _sharedViewTemplates, "ArtistsListBox", "Library.Groupings.Artists", "Library.FilterState.SelectedArtist",
             _sharedViewTemplates.DetailedArtistTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate, lb => { });
@@ -86,19 +87,31 @@ public class MainTabViewControls
         {
             Converter = new FuncValueConverter<SongDisplayMode, bool>(m => m != SongDisplayMode.Compact)
         });
-
         var artistsCompactGrid = CreateArtistsCompactDataGrid(_theme);
         artistsCompactGrid.Bind(Visual.IsVisibleProperty, new Binding("LibraryDisplayModeService.ArtistViewMode")
         {
             Converter = EnumToBooleanConverter.Instance,
             ConverterParameter = SongDisplayMode.Compact
         });
+        artistsListView.Children.Add(artistsListScrollViewer);
+        artistsListView.Children.Add(artistsCompactGrid);
+        artistsListView.Bind(Visual.IsVisibleProperty, new Binding("Library.FilterState.SelectedArtist")
+        {
+            Converter = new FuncValueConverter<ArtistViewModel?, bool>(vm => vm == null)
+        });
+
+        var artistDrillDownView = CreateArtistDrillDownView(_theme);
+        artistDrillDownView.Bind(Visual.IsVisibleProperty, new Binding("Library.FilterState.SelectedArtist")
+        {
+            Converter = NotNullToBooleanConverter.Instance
+        });
 
         var artistsTabContent = new Grid();
-        artistsTabContent.Children.Add(artistsListScrollViewer);
-        artistsTabContent.Children.Add(artistsCompactGrid);
+        artistsTabContent.Children.Add(artistsListView);
+        artistsTabContent.Children.Add(artistDrillDownView);
 
         var artistsTab = new TabItem { Header = "ARTISTS", Content = artistsTabContent };
+
 
         // --- ALBUMS tab ---
         var (albumsListScrollViewer, albumsLb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
@@ -197,6 +210,54 @@ public class MainTabViewControls
                 if (scrollViewer is not null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
                 break;
         }
+    }
+
+    private Grid CreateArtistDrillDownView(ThemeColors theme)
+    {
+        var grid = new Grid
+        {
+            RowDefinitions = new RowDefinitions("Auto, *")
+        };
+
+        // Header with Back button and Artist Name
+        var headerPanel = new DockPanel
+        {
+            Margin = new Thickness(10, 0, 10, 5)
+        };
+        var backButton = new Button
+        {
+            Content = "← Back to Artists",
+            Background = theme.B_ControlBackgroundColor,
+            Foreground = theme.B_TextColor,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        backButton.Bind(Button.CommandProperty, new Binding("Library.ClearArtistFilterCommand"));
+        DockPanel.SetDock(backButton, Dock.Left);
+
+        var artistNameBlock = new TextBlock
+        {
+            FontSize = 16,
+            FontWeight = FontWeight.Bold,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Foreground = theme.B_TextColor
+        };
+        artistNameBlock.Bind(TextBlock.TextProperty, new Binding("Library.FilterState.SelectedArtist.Name"));
+        DockPanel.SetDock(artistNameBlock, Dock.Right);
+
+        headerPanel.Children.Add(backButton);
+        headerPanel.Children.Add(artistNameBlock);
+
+        // DataGrid for songs
+        var songsDataGrid = CreateLibraryDataGrid(theme); // Reuse the same styling and column setup
+        songsDataGrid.Name = "ArtistSongsDataGrid";
+
+        Grid.SetRow(headerPanel, 0);
+        Grid.SetRow(songsDataGrid, 1);
+        grid.Children.Add(headerPanel);
+        grid.Children.Add(songsDataGrid);
+
+        return grid;
     }
 
     private DataGrid CreateBaseStyledDataGrid(ThemeColors theme)
