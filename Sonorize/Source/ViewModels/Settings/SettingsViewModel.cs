@@ -13,6 +13,15 @@ using Sonorize.ViewModels.Settings;
 
 namespace Sonorize.ViewModels;
 
+
+public enum AppearanceSettingsViewSection
+{
+    LibraryList,
+    GridView,
+    UILayout
+}
+
+
 public class SettingsViewModel : ViewModelBase
 {
     private readonly SettingsService _settingsService;
@@ -33,11 +42,31 @@ public class SettingsViewModel : ViewModelBase
         set => SetProperty(ref _currentSettingsViewSection, value);
     }
 
+    private AppearanceSettingsViewSection _currentAppearanceSettingsViewSection = AppearanceSettingsViewSection.LibraryList;
+    public AppearanceSettingsViewSection CurrentAppearanceSettingsViewSection
+    {
+        get => _currentAppearanceSettingsViewSection;
+        set => SetProperty(ref _currentAppearanceSettingsViewSection, value);
+    }
+
+    private bool _isShowingAppearanceSubView;
+    public bool IsShowingAppearanceSubView
+    {
+        get => _isShowingAppearanceSubView;
+        set => SetProperty(ref _isShowingAppearanceSubView, value);
+    }
+
+
     public ICommand SaveAndCloseCommand { get; }
     public ICommand ShowDirectoriesSettingsCommand { get; }
     public ICommand ShowThemeSettingsCommand { get; }
     public ICommand ShowAppearanceSettingsCommand { get; }
     public ICommand ShowScrobblingSettingsCommand { get; }
+
+    public ICommand ShowMainSettingsViewCommand { get; }
+    public ICommand ShowLibraryListSettingsCommand { get; }
+    public ICommand ShowGridViewSettingsCommand { get; }
+    public ICommand ShowUILayoutSettingsCommand { get; }
 
 
     public SettingsViewModel(SettingsService settingsService)
@@ -63,10 +92,20 @@ public class SettingsViewModel : ViewModelBase
 
         SaveAndCloseCommand = new RelayCommand(SaveSettings);
 
-        ShowDirectoriesSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Directories);
-        ShowThemeSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Theme);
-        ShowAppearanceSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Appearance);
-        ShowScrobblingSettingsCommand = new RelayCommand(_ => CurrentSettingsViewSection = SettingsViewSection.Scrobbling);
+        ShowDirectoriesSettingsCommand = new RelayCommand(_ => { CurrentSettingsViewSection = SettingsViewSection.Directories; IsShowingAppearanceSubView = false; });
+        ShowThemeSettingsCommand = new RelayCommand(_ => { CurrentSettingsViewSection = SettingsViewSection.Theme; IsShowingAppearanceSubView = false; });
+        ShowAppearanceSettingsCommand = new RelayCommand(_ =>
+        {
+            CurrentSettingsViewSection = SettingsViewSection.Appearance;
+            CurrentAppearanceSettingsViewSection = AppearanceSettingsViewSection.LibraryList; // Default to first sub-section
+            IsShowingAppearanceSubView = true;
+        });
+        ShowScrobblingSettingsCommand = new RelayCommand(_ => { CurrentSettingsViewSection = SettingsViewSection.Scrobbling; IsShowingAppearanceSubView = false; });
+
+        ShowMainSettingsViewCommand = new RelayCommand(_ => { IsShowingAppearanceSubView = false; CurrentSettingsViewSection = SettingsViewSection.Directories; });
+        ShowLibraryListSettingsCommand = new RelayCommand(_ => CurrentAppearanceSettingsViewSection = AppearanceSettingsViewSection.LibraryList);
+        ShowGridViewSettingsCommand = new RelayCommand(_ => CurrentAppearanceSettingsViewSection = AppearanceSettingsViewSection.GridView);
+        ShowUILayoutSettingsCommand = new RelayCommand(_ => CurrentAppearanceSettingsViewSection = AppearanceSettingsViewSection.UILayout);
     }
 
     private void MarkSettingsChanged()

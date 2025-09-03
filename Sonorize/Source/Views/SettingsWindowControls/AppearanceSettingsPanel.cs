@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.ViewModels;
 
@@ -10,31 +11,68 @@ namespace Sonorize.Views.SettingsWindowControls;
 
 public static class AppearanceSettingsPanel
 {
-    public static StackPanel Create(ThemeColors theme)
+    public static Panel Create(ThemeColors theme)
     {
-        var panel = new StackPanel { Spacing = 15 };
+        var panel = new Panel();
 
-        panel.Children.Add(new TextBlock
+        var libraryListPanel = new StackPanel { Spacing = 15 };
+        libraryListPanel.Bind(Visual.IsVisibleProperty, new Binding("CurrentAppearanceSettingsViewSection")
         {
-            Text = "Appearance",
+            Converter = EnumToBooleanConverter.Instance,
+            ConverterParameter = AppearanceSettingsViewSection.LibraryList
+        });
+
+        libraryListPanel.Children.Add(new TextBlock
+        {
+            Text = "Library List Display",
             FontSize = 18,
             FontWeight = FontWeight.SemiBold,
             Foreground = theme.B_TextColor,
             Margin = new Thickness(0, 0, 0, 5)
         });
+        libraryListPanel.Children.Add(CreateLibraryColumnsSelector(theme));
 
-        panel.Children.Add(CreateLibraryColumnsSelector(theme));
-        panel.Children.Add(new Separator { Background = theme.B_ControlBackgroundColor, Margin = new Thickness(0, 5) });
 
-        panel.Children.Add(CreateGridImageTypeSelector(theme, "Artist", "AppearanceSettings.IsArtistGridSingle", "AppearanceSettings.IsArtistGridComposite"));
-        panel.Children.Add(CreateGridImageTypeSelector(theme, "Album", "AppearanceSettings.IsAlbumGridSingle", "AppearanceSettings.IsAlbumGridComposite"));
-        panel.Children.Add(CreateGridImageTypeSelector(theme, "Playlist", "AppearanceSettings.IsPlaylistGridSingle", "AppearanceSettings.IsPlaylistGridComposite"));
+        var gridViewPanel = new StackPanel { Spacing = 15 };
+        gridViewPanel.Bind(Visual.IsVisibleProperty, new Binding("CurrentAppearanceSettingsViewSection")
+        {
+            Converter = EnumToBooleanConverter.Instance,
+            ConverterParameter = AppearanceSettingsViewSection.GridView
+        });
+        gridViewPanel.Children.Add(new TextBlock
+        {
+            Text = "Grid View Image Style",
+            FontSize = 18,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = theme.B_TextColor,
+            Margin = new Thickness(0, 0, 0, 5)
+        });
+        gridViewPanel.Children.Add(CreateGridImageTypeSelector(theme, "Artist", "AppearanceSettings.IsArtistGridSingle", "AppearanceSettings.IsArtistGridComposite"));
+        gridViewPanel.Children.Add(CreateGridImageTypeSelector(theme, "Album", "AppearanceSettings.IsAlbumGridSingle", "AppearanceSettings.IsAlbumGridComposite"));
+        gridViewPanel.Children.Add(CreateGridImageTypeSelector(theme, "Playlist", "AppearanceSettings.IsPlaylistGridSingle", "AppearanceSettings.IsPlaylistGridComposite"));
 
-        panel.Children.Add(new Separator { Background = theme.B_ControlBackgroundColor, Margin = new Thickness(0, 5) });
-        panel.Children.Add(CreatePlaybackBackgroundSelector(theme));
-        panel.Children.Add(new Separator { Background = theme.B_ControlBackgroundColor, Margin = new Thickness(0, 5) });
-        panel.Children.Add(CreatePlaybackLayoutSelector(theme));
 
+        var uiLayoutPanel = new StackPanel { Spacing = 15 };
+        uiLayoutPanel.Bind(Visual.IsVisibleProperty, new Binding("CurrentAppearanceSettingsViewSection")
+        {
+            Converter = EnumToBooleanConverter.Instance,
+            ConverterParameter = AppearanceSettingsViewSection.UILayout
+        });
+        uiLayoutPanel.Children.Add(new TextBlock
+        {
+            Text = "UI Layout & Behavior",
+            FontSize = 18,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = theme.B_TextColor,
+            Margin = new Thickness(0, 0, 0, 5)
+        });
+        uiLayoutPanel.Children.Add(CreatePlaybackLayoutSelector(theme));
+        uiLayoutPanel.Children.Add(new Separator { Background = theme.B_ControlBackgroundColor, Margin = new Thickness(0, 5) });
+        uiLayoutPanel.Children.Add(CreatePlaybackBackgroundSelector(theme));
+
+        panel.Children.Add(libraryListPanel);
+        panel.Children.Add(gridViewPanel);
+        panel.Children.Add(uiLayoutPanel);
 
         return panel;
     }
@@ -49,7 +87,7 @@ public static class AppearanceSettingsPanel
             FontSize = 14,
             FontWeight = FontWeight.Normal,
             Foreground = theme.B_TextColor,
-            Margin = new Thickness(0, 10, 0, 5)
+            Margin = new Thickness(0, 0, 0, 5)
         };
 
         var compactLayoutCheck = new CheckBox
@@ -78,16 +116,7 @@ public static class AppearanceSettingsPanel
 
     private static StackPanel CreateLibraryColumnsSelector(ThemeColors theme)
     {
-        var sectionPanel = new StackPanel { Spacing = 8 };
-
-        var title = new TextBlock
-        {
-            Text = "Library List Columns & Sizing",
-            FontSize = 14,
-            FontWeight = FontWeight.Normal,
-            Foreground = theme.B_TextColor,
-            Margin = new Thickness(0, 0, 0, 5)
-        };
+        var sectionPanel = new StackPanel { Spacing = 8, Margin = new Thickness(0) };
 
         var showArtistCheck = new CheckBox
         {
@@ -140,7 +169,6 @@ public static class AppearanceSettingsPanel
         checkPanel.Children.Add(showDateAddedCheck);
         checkPanel.Children.Add(alternatingRowCheck);
 
-        sectionPanel.Children.Add(title);
         sectionPanel.Children.Add(checkPanel);
 
         var rowHeightPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(10, 10, 0, 0) };
@@ -179,7 +207,7 @@ public static class AppearanceSettingsPanel
             FontSize = 14,
             FontWeight = FontWeight.Normal,
             Foreground = theme.B_TextColor,
-            Margin = new Thickness(0, 10, 0, 5)
+            Margin = new Thickness(0, 0, 0, 5)
         };
 
         var singleRadio = new RadioButton
@@ -218,7 +246,7 @@ public static class AppearanceSettingsPanel
             FontSize = 14,
             FontWeight = FontWeight.Normal,
             Foreground = theme.B_TextColor,
-            Margin = new Thickness(0, 10, 0, 5)
+            Margin = new Thickness(0, 0, 0, 5)
         };
 
         var solidRadio = new RadioButton

@@ -2,13 +2,14 @@
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Layout;
+using Avalonia.Media;
 using Sonorize.Models; // For ThemeColors
 
 namespace Sonorize.Views.SettingsWindowControls;
 
 public static class SettingsMenuPanel
 {
-    public static Border Create(ThemeColors theme)
+    public static StackPanel Create(ThemeColors theme)
     {
         var menuStackPanel = new StackPanel
         {
@@ -20,7 +21,7 @@ public static class SettingsMenuPanel
 
         var themeButton = new Button { Content = "Theme", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         themeButton.Bind(Button.CommandProperty, new Binding("ShowThemeSettingsCommand"));
-        
+
         var appearanceButton = new Button { Content = "Appearance", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
         appearanceButton.Bind(Button.CommandProperty, new Binding("ShowAppearanceSettingsCommand"));
 
@@ -32,13 +33,34 @@ public static class SettingsMenuPanel
         menuStackPanel.Children.Add(appearanceButton);
         menuStackPanel.Children.Add(scrobblingButton);
 
-        var menuBorder = new Border
+        return menuStackPanel;
+    }
+
+    public static StackPanel CreateAppearanceSubMenu(ThemeColors theme)
+    {
+        var menuStackPanel = new StackPanel
         {
-            Background = theme.B_BackgroundColor,
-            Padding = new Thickness(10),
-            Child = menuStackPanel
+            Spacing = 5
         };
 
-        return menuBorder;
+        var backButton = new Button { Content = "← Back", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor, FontWeight = FontWeight.Bold };
+        backButton.Bind(Button.CommandProperty, new Binding("ShowMainSettingsViewCommand"));
+
+        var libraryListButton = new Button { Content = "Library List", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
+        libraryListButton.Bind(Button.CommandProperty, new Binding("ShowLibraryListSettingsCommand"));
+
+        var gridViewButton = new Button { Content = "Grid View", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
+        gridViewButton.Bind(Button.CommandProperty, new Binding("ShowGridViewSettingsCommand"));
+
+        var uiLayoutButton = new Button { Content = "UI Layout", HorizontalAlignment = HorizontalAlignment.Stretch, Background = theme.B_ControlBackgroundColor, Foreground = theme.B_TextColor };
+        uiLayoutButton.Bind(Button.CommandProperty, new Binding("ShowUILayoutSettingsCommand"));
+
+        menuStackPanel.Children.Add(backButton);
+        menuStackPanel.Children.Add(new Separator { Margin = new Thickness(0, 5), Background = theme.B_ControlBackgroundColor });
+        menuStackPanel.Children.Add(libraryListButton);
+        menuStackPanel.Children.Add(gridViewButton);
+        menuStackPanel.Children.Add(uiLayoutButton);
+
+        return menuStackPanel;
     }
 }

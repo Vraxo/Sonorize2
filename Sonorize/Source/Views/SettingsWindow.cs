@@ -46,7 +46,7 @@ public class SettingsWindow : Window
         };
 
         // --- Left Navigation Menu ---
-        var menuPanelContainer = SettingsMenuPanel.Create(_theme);
+        var menuPanelContainer = CreateLeftMenuPanel();
         Grid.SetColumn(menuPanelContainer, 0);
         Grid.SetRow(menuPanelContainer, 0);
         mainGrid.Children.Add(menuPanelContainer);
@@ -66,6 +66,31 @@ public class SettingsWindow : Window
 
         Content = mainGrid;
     }
+
+    private Border CreateLeftMenuPanel()
+    {
+        // Main Menu Panel (visible by default)
+        var mainSettingsMenu = SettingsMenuPanel.Create(_theme);
+        mainSettingsMenu.Bind(Visual.IsVisibleProperty, new Binding("!IsShowingAppearanceSubView"));
+
+        // Appearance Sub-Menu Panel (hidden by default)
+        var appearanceSubMenu = SettingsMenuPanel.CreateAppearanceSubMenu(_theme);
+        appearanceSubMenu.Bind(Visual.IsVisibleProperty, new Binding("IsShowingAppearanceSubView"));
+
+        var menuContainer = new Panel();
+        menuContainer.Children.Add(mainSettingsMenu);
+        menuContainer.Children.Add(appearanceSubMenu);
+
+        var menuBorder = new Border
+        {
+            Background = _theme.B_BackgroundColor,
+            Padding = new Thickness(10),
+            Child = menuContainer
+        };
+
+        return menuBorder;
+    }
+
 
     private ScrollViewer CreateContentAreaScrollViewer()
     {
