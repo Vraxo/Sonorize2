@@ -22,7 +22,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 {
     private readonly MainWindowComponentsManager _componentsManager;
     private Window? _ownerView;
-    private bool _userInitiatedTabChange = false;
 
     // Expose Services needed by views or bindings if not through child VMs
     public PlaybackService PlaybackService => _componentsManager.PlaybackServiceProperty; // Exposed from ComponentsManager
@@ -148,23 +147,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         _ownerView = ownerView;
         // Re-evaluate CanExecute for commands that depend on the owner view.
         (ExitCommand as RelayCommand)?.RaiseCanExecuteChanged();
-    }
-
-    public void NotifyUserInitiatedTabChange()
-    {
-        _userInitiatedTabChange = true;
-        Debug.WriteLine("[MainWindowVM] User-initiated tab change signaled.");
-    }
-
-    public bool CheckAndConsumeTabChangeFlag()
-    {
-        if (_userInitiatedTabChange)
-        {
-            Debug.WriteLine("[MainWindowVM] Tab change flag was set. Consuming it now.");
-            _userInitiatedTabChange = false; // Consume the flag
-            return true; // Report that it was set
-        }
-        return false;
     }
 
     private void UpdateAllUIDependentStates()
