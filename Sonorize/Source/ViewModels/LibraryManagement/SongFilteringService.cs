@@ -8,50 +8,49 @@ namespace Sonorize.ViewModels.LibraryManagement;
 public class SongFilteringService
 {
     public IEnumerable<Song> ApplyFilter(
-        IEnumerable<Song> allSongs,
-        string? searchQuery,
-        ArtistViewModel? selectedArtist,
-        AlbumViewModel? selectedAlbum,
-        PlaylistViewModel? selectedPlaylist)
+    IEnumerable<Song> allSongs,
+    string? searchQuery,
+    ArtistViewModel? selectedArtist,
+    AlbumViewModel? selectedAlbum,
+    PlaylistViewModel? selectedPlaylist)
     {
-        IEnumerable<Song> songsToFilter = allSongs;
-
-        // Priority:
-        // 1. If a playlist is selected, show its songs.
-        // 2. Else if an album is selected, filter by album (and its artist).
-        // 3. Else if an artist is selected, filter by artist.
-        // 4. Else if a search query is present, filter by query.
-        // 5. Else, show all songs (after ordering).
-
-        bool specificPlaylistSelected = selectedPlaylist is not null;
-        bool specificAlbumSelected = selectedAlbum?.Title is not null && selectedAlbum.Artist is not null;
-        bool specificArtistSelected = selectedArtist?.Name is not null;
-
-        if (specificPlaylistSelected)
+        // Priority 1: Playlist is a special case, it overrides all other filters and has its own sorting.
+        if (selectedPlaylist != null)
         {
-            // Playlist songs are already in order. Don't sort them.
-            return selectedPlaylist!.PlaylistModel.Songs;
+            return selectedPlaylist.PlaylistModel.Songs;
         }
-        else if (specificAlbumSelected)
+
+        IEnumerable<Song> filteredSongs = allSongs;
+
+        // Apply filters hierarchically. An album selection implies an artist selection.
+        // A search query is the most general filter.
+
+        // Priority 2: Album
+        if (selectedAlbum != null)
         {
-            songsToFilter = songsToFilter.Where(s =>
-                (s.Album?.Equals(selectedAlbum!.Title, StringComparison.OrdinalIgnoreCase) ?? false) &&
-                (s.Artist?.Equals(selectedAlbum!.Artist, StringComparison.OrdinalIgnoreCase) ?? false));
+            filteredSongs = filteredSongs.Where(s =>
+                (s.Album?.Equals(selectedAlbum.Title, StringComparison.OrdinalIgnoreCase) ?? false) &&
+                (s.Artist?.Equals(selectedAlbum.Artist, StringComparison.OrdinalIgnoreCase) ?? false));
         }
-        else if (specificArtistSelected)
+        // Priority 3: Artist
+        else if (selectedArtist?.Name != null)
         {
-            songsToFilter = songsToFilter.Where(s =>
-                s.Artist?.Equals(selectedArtist!.Name, StringComparison.OrdinalIgnoreCase) ?? false);
+            filteredSongs = filteredSongs.Where(s =>
+                s.Artist?.Equals(selectedArtist.Name, StringComparison.OrdinalIgnoreCase) ?? false);
         }
+        // Priority 4: Search Query
         else if (!string.IsNullOrWhiteSpace(searchQuery))
         {
-            string query = searchQuery.ToLowerInvariant().Trim();
-            songsToFilter = songsToFilter.Where(s =>
-                (s.Title?.ToLowerInvariant().Contains(query, StringComparison.InvariantCultureIgnoreCase) ?? false) ||
-                (s.Artist?.ToLowerInvariant().Contains(query, StringComparison.InvariantCultureIgnoreCase) ?? false) ||
-                (s.Album?.ToLowerInvariant().Contains(query, StringComparison.InvariantCultureIgnoreCase) ?? false));
+            string query = searchQuery.Trim();
+            // Use the more performant and correct string.Contains overload with StringComparison
+            filteredSongs = filteredSongs.Where(s =>
+                (s.Title?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (s.Artist?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (s.Album?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false));
         }
 
-        return songsToFilter.OrderBy(s => s.Title, StringComparer.OrdinalIgnoreCase);
+        // If no filters were applied, filteredSongs is still the original 'allSongs' enumerable.
+        // The caller (SongListManager) is responsible for sorting the final results.
+        return filteredSongs;
     }
 }

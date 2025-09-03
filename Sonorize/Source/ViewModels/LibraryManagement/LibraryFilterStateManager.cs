@@ -38,6 +38,11 @@ public class LibraryFilterStateManager : ViewModelBase
                     SelectedAlbum = null; // This will trigger its own PropertyChanged and subsequently FilterCriteriaChanged
                     RequestTabSwitchToLibrary?.Invoke(this, EventArgs.Empty);
                 }
+                else
+                {
+                    // When artist is deselected, clear the search query
+                    SearchQuery = string.Empty;
+                }
                 FilterCriteriaChanged?.Invoke(this, EventArgs.Empty);
             }
         }
@@ -90,12 +95,40 @@ public class LibraryFilterStateManager : ViewModelBase
 
     public void ClearSelectionsAndSearch()
     {
-        // Use the public setters to ensure all logic (including clearing other properties) is triggered.
-        // The setters will ultimately trigger FilterCriteriaChanged.
-        // We set them in an order that prevents unwanted side-effects, e.g., setting SearchQuery last.
-        SelectedPlaylist = null;
-        SelectedArtist = null;
-        SelectedAlbum = null;
-        SearchQuery = string.Empty;
+        // This method directly manipulates the backing fields and then fires the
+        // change notification once, avoiding the chain reactions of the public setters.
+        // This is useful when resetting the state completely, like before a library load.
+        bool changed = false;
+
+        if (_selectedArtist != null)
+        {
+            _selectedArtist = null;
+            OnPropertyChanged(nameof(SelectedArtist));
+            changed = true;
+        }
+        if (_selectedAlbum != null)
+        {
+            _selectedAlbum = null;
+            OnPropertyChanged(nameof(SelectedAlbum));
+            changed = true;
+        }
+        if (_selectedPlaylist != null)
+        {
+            _selectedPlaylist = null;
+            OnPropertyChanged(nameof(SelectedPlaylist));
+            changed = true;
+        }
+        if (!string.IsNullOrEmpty(_searchQuery))
+        {
+            _searchQuery = string.Empty;
+            OnPropertyChanged(nameof(SearchQuery));
+            changed = true;
+        }
+
+        // If any state was changed, notify listeners that the filter criteria have changed.
+        if (changed)
+        {
+            FilterCriteriaChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 }

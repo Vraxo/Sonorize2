@@ -76,11 +76,10 @@ public class SongListManager : ViewModelBase
 
         Debug.WriteLine($"[SongListManager.ApplyFilter] After sorting: {sortedResults.Count} songs. Now populating FilteredSongs collection.");
 
-        // Set the index and view options for each song in the view for performant bindings.
+        // Set the index for each song in the view for performant bindings.
         for (int i = 0; i < sortedResults.Count; i++)
         {
             sortedResults[i].IndexInView = i;
-            sortedResults[i].ViewOptions = viewOptions;
         }
 
         foreach (var song in sortedResults)

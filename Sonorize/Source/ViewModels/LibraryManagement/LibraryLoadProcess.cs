@@ -52,16 +52,18 @@ public class LibraryLoadProcess
 
         Debug.WriteLine($"[LibraryLoadProcess] Data orchestrator finished. Loaded {allLoadedSongsFromOrchestrator.Count} songs and {allLoadedPlaylistsFromOrchestrator.Count} playlists.");
 
-        _components.SongList.SetAllSongs(allLoadedSongsFromOrchestrator);
-
         await _uiDispatcher.InvokeAsync(() =>
         {
+            _components.SongList.SetAllSongs(allLoadedSongsFromOrchestrator);
             _components.Groupings.PopulateCollections(_components.SongList.GetAllSongsReadOnly());
             _components.Groupings.PopulatePlaylistCollection(allLoadedPlaylistsFromOrchestrator);
-            _applyFilterDelegate();
-        });
 
-        _setLoadingFlagDelegate(false);
-        _updateStatusBarTextDelegate();
+            // Now that the master list is set and groupings are populated, apply the (cleared) filter.
+            // This will populate the FilteredSongs collection for the first time.
+            _applyFilterDelegate();
+
+            _setLoadingFlagDelegate(false);
+            _updateStatusBarTextDelegate();
+        });
     }
 }

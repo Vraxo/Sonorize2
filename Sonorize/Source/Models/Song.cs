@@ -78,7 +78,4 @@ public class Song : ViewModelBase
 
     // This property will be set by the SongListManager for efficient alternating row coloring.
     public int IndexInView { get; set; }
-
-    [JsonIgnore]
-    public LibraryViewOptionsViewModel? ViewOptions { get; set; }
 }
