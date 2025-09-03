@@ -31,6 +31,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     public ICommand EditSongMetadataCommand { get; }
     public ICommand SortCommand { get; }
     public ICommand ClearArtistFilterCommand { get; }
+    public ICommand ClearAlbumFilterCommand { get; }
 
     public SortProperty CurrentSortProperty { get; private set; } = SortProperty.Title;
     public SortDirection CurrentSortDirection { get; private set; } = SortDirection.Ascending;
@@ -110,6 +111,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         EditSongMetadataCommand = new RelayCommand(ExecuteEditSongMetadata, CanExecuteEditSongMetadata);
         SortCommand = new RelayCommand(ExecuteSort);
         ClearArtistFilterCommand = new RelayCommand(_ => FilterState.SelectedArtist = null);
+        ClearAlbumFilterCommand = new RelayCommand(_ => FilterState.SelectedAlbum = null);
 
         UpdateStatusBarText();
     }
