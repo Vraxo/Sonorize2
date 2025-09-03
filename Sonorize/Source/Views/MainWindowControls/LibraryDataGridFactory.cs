@@ -31,6 +31,7 @@ internal static class LibraryDataGridFactory
             IsReadOnly = true,
             CanUserSortColumns = true,
             CanUserReorderColumns = true,
+            UseLayoutRounding = true
         };
 
         // Bindings
@@ -104,6 +105,15 @@ internal static class LibraryDataGridFactory
         }
         });
 
+        // Make the header separator completely invisible.
+        dataGrid.Styles.Add(new Style(s => s.Is<DataGridColumnHeader>())
+        {
+            Setters =
+            {
+                new Setter(DataGridColumnHeader.SeparatorBrushProperty, Brushes.Transparent)
+            }
+        });
+
         // Columns
         dataGrid.Columns.Add(new DataGridTextColumn
         {
@@ -173,34 +183,6 @@ internal static class LibraryDataGridFactory
                              { Source = dataGrid });
         dataGrid.Columns.Add(dateAddedColumn);
 
-        // ── FIX: snap column widths to whole pixels so header dividers never vanish
-        dataGrid.LayoutUpdated += (_, __) => SnapColumnWidthsToPixels(dataGrid);
-
         return dataGrid;
-    }
-
-    /// <summary>
-    /// Rounds every column width to an integral number of physical pixels
-    /// so that vertical header dividers are always drawn.
-    /// </summary>
-    private static void SnapColumnWidthsToPixels(DataGrid grid)
-    {
-        if (grid?.Columns is null) return;
-
-        var topLevel = TopLevel.GetTopLevel(grid);
-        if (topLevel is null) return;
-
-        double scale = topLevel.RenderScaling;
-
-        foreach (var col in grid.Columns)
-        {
-            if (!col.IsVisible) continue;
-
-            double current = col.ActualWidth;
-            double devicePixels = current * scale;
-            double snapped = Math.Round(devicePixels) / scale;
-            if (Math.Abs(current - snapped) > 0.05)
-                col.Width = new DataGridLength(snapped);
-        }
     }
 }

@@ -3772,10 +3772,18 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using Avalonia.Controls;
+using Avalonia.Data.Converters;
+using Avalonia.Data;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia;
 using Avalonia.Threading;
+using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.Services;
 using Sonorize.ViewModels.LibraryManagement;
+using Sonorize.Views.MainWindowControls;
 
 namespace Sonorize.ViewModels;
 
@@ -3800,6 +3808,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     public ICommand SortCommand { get; }
     public ICommand ClearArtistFilterCommand { get; }
     public ICommand ClearAlbumFilterCommand { get; }
+    public ICommand ClearPlaylistFilterCommand { get; }
 
     public SortProperty CurrentSortProperty { get; private set; } = SortProperty.Title;
     public SortDirection CurrentSortDirection { get; private set; } = SortDirection.Ascending;
@@ -3880,6 +3889,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         SortCommand = new RelayCommand(ExecuteSort);
         ClearArtistFilterCommand = new RelayCommand(_ => FilterState.SelectedArtist = null);
         ClearAlbumFilterCommand = new RelayCommand(_ => FilterState.SelectedAlbum = null);
+        ClearPlaylistFilterCommand = new RelayCommand(_ => FilterState.SelectedPlaylist = null);
 
         UpdateStatusBarText();
     }
@@ -11004,6 +11014,7 @@ using Avalonia.Media;
 using Avalonia.Styling;
 using Sonorize.Models;
 using Sonorize.ViewModels;
+using System;
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -11022,8 +11033,8 @@ internal static class CompactDataGridFactory
             HeadersVisibility = DataGridHeadersVisibility.Column,
             GridLinesVisibility = DataGridGridLinesVisibility.None,
             IsReadOnly = true,
-            CanUserSortColumns = false, // Compact views probably shouldn't be sortable to keep it simple
-            RowHeight = 30 // A good height for compact view
+            CanUserSortColumns = false,
+            RowHeight = 30
         };
 
         dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>())
@@ -11054,6 +11065,10 @@ internal static class CompactDataGridFactory
                 new Setter(TemplatedControl.ForegroundProperty, theme.B_AccentForeground)
             }
         });
+
+        // ── FIX: snap column widths to whole pixels so header dividers never vanish
+        dataGrid.LayoutUpdated += (_, __) => SnapColumnWidthsToPixels(dataGrid);
+
         return dataGrid;
     }
 
@@ -11121,6 +11136,31 @@ internal static class CompactDataGridFactory
         });
         return dataGrid;
     }
+
+    /// <summary>
+    /// Rounds every column width to an integral number of physical pixels
+    /// so that vertical header dividers are always drawn.
+    /// </summary>
+    private static void SnapColumnWidthsToPixels(DataGrid grid)
+    {
+        if (grid?.Columns is null) return;
+
+        var topLevel = TopLevel.GetTopLevel(grid);
+        if (topLevel is null) return;
+
+        double scale = topLevel.RenderScaling;
+
+        foreach (var col in grid.Columns)
+        {
+            if (!col.IsVisible) continue;
+
+            double current = col.ActualWidth;
+            double devicePixels = current * scale;
+            double snapped = Math.Round(devicePixels) / scale;
+            if (Math.Abs(current - snapped) > 0.05)
+                col.Width = new DataGridLength(snapped);
+        }
+    }
 }
 </file>
 
@@ -11133,6 +11173,7 @@ using Avalonia.Media;
 using Avalonia.Styling;
 using Sonorize.Converters;
 using Sonorize.Models;
+using System;
 using System.Collections;
 using System.Diagnostics;
 using System.Linq;
@@ -11299,7 +11340,35 @@ internal static class LibraryDataGridFactory
                              { Source = dataGrid });
         dataGrid.Columns.Add(dateAddedColumn);
 
+        // ── FIX: snap column widths to whole pixels so header dividers never vanish
+        dataGrid.LayoutUpdated += (_, __) => SnapColumnWidthsToPixels(dataGrid);
+
         return dataGrid;
+    }
+
+    /// <summary>
+    /// Rounds every column width to an integral number of physical pixels
+    /// so that vertical header dividers are always drawn.
+    /// </summary>
+    private static void SnapColumnWidthsToPixels(DataGrid grid)
+    {
+        if (grid?.Columns is null) return;
+
+        var topLevel = TopLevel.GetTopLevel(grid);
+        if (topLevel is null) return;
+
+        double scale = topLevel.RenderScaling;
+
+        foreach (var col in grid.Columns)
+        {
+            if (!col.IsVisible) continue;
+
+            double current = col.ActualWidth;
+            double devicePixels = current * scale;
+            double snapped = Math.Round(devicePixels) / scale;
+            if (Math.Abs(current - snapped) > 0.05)
+                col.Width = new DataGridLength(snapped);
+        }
     }
 }
 </file>
@@ -12202,6 +12271,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Data.Converters;
+using Avalonia.Layout;
+using Avalonia.Media;
 using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.ViewModels;
@@ -12212,6 +12283,7 @@ internal static class PlaylistsTabFactory
 {
     public static Grid Create(ThemeColors theme, SharedViewTemplates sharedViewTemplates, out ListBox playlistsListBox)
     {
+        var playlistsListView = new Grid();
         var (playlistsListScrollViewer, playlistsLb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
             theme, sharedViewTemplates, "PlaylistsListBox", "Library.Groupings.Playlists", "Library.FilterState.SelectedPlaylist",
             sharedViewTemplates.DetailedPlaylistTemplate, sharedViewTemplates.StackPanelItemsPanelTemplate, lb => { });
@@ -12228,11 +12300,72 @@ internal static class PlaylistsTabFactory
             ConverterParameter = SongDisplayMode.Compact
         });
 
+        playlistsListView.Children.Add(playlistsListScrollViewer);
+        playlistsListView.Children.Add(playlistsCompactGrid);
+        playlistsListView.Bind(Visual.IsVisibleProperty, new Binding("Library.FilterState.SelectedPlaylist")
+        {
+            Converter = new FuncValueConverter<PlaylistViewModel?, bool>(vm => vm == null)
+        });
+
+        var playlistDrillDownView = CreatePlaylistDrillDownView(theme);
+        playlistDrillDownView.Bind(Visual.IsVisibleProperty, new Binding("Library.FilterState.SelectedPlaylist")
+        {
+            Converter = NotNullToBooleanConverter.Instance
+        });
+
         var playlistsTabContent = new Grid();
-        playlistsTabContent.Children.Add(playlistsListScrollViewer);
-        playlistsTabContent.Children.Add(playlistsCompactGrid);
+        playlistsTabContent.Children.Add(playlistsListView);
+        playlistsTabContent.Children.Add(playlistDrillDownView);
 
         return playlistsTabContent;
+    }
+
+    private static Grid CreatePlaylistDrillDownView(ThemeColors theme)
+    {
+        var grid = new Grid
+        {
+            RowDefinitions = new RowDefinitions("Auto, *")
+        };
+
+        // Header with Back button and Playlist Name
+        var headerPanel = new DockPanel
+        {
+            Margin = new Thickness(10, 0, 10, 5)
+        };
+        var backButton = new Button
+        {
+            Content = "← Back to Playlists",
+            Background = theme.B_ControlBackgroundColor,
+            Foreground = theme.B_TextColor,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        backButton.Bind(Button.CommandProperty, new Binding("Library.ClearPlaylistFilterCommand"));
+        DockPanel.SetDock(backButton, Dock.Left);
+
+        var playlistNameBlock = new TextBlock
+        {
+            FontSize = 16,
+            FontWeight = FontWeight.Bold,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Foreground = theme.B_TextColor
+        };
+        playlistNameBlock.Bind(TextBlock.TextProperty, new Binding("Library.FilterState.SelectedPlaylist.Name"));
+        DockPanel.SetDock(playlistNameBlock, Dock.Right);
+
+        headerPanel.Children.Add(backButton);
+        headerPanel.Children.Add(playlistNameBlock);
+
+        // DataGrid for songs
+        var songsDataGrid = LibraryDataGridFactory.Create(theme);
+        songsDataGrid.Name = "PlaylistSongsDataGrid";
+
+        Grid.SetRow(headerPanel, 0);
+        Grid.SetRow(songsDataGrid, 1);
+        grid.Children.Add(headerPanel);
+        grid.Children.Add(songsDataGrid);
+
+        return grid;
     }
 }
 </file>
