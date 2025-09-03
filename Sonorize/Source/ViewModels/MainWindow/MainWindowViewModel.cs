@@ -43,6 +43,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public bool ShowAlbumArtStretchBackground { get; private set; }
     public bool ShowAlbumArtAbstractBackground { get; private set; }
     public bool UseCompactPlaybackControls { get; private set; }
+    private bool _isStatusBarVisible;
+    public bool IsStatusBarVisible { get => _isStatusBarVisible; private set => SetProperty(ref _isStatusBarVisible, value); }
 
 
     private int _activeTabIndex;
@@ -201,6 +203,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             UseCompactPlaybackControls = newCompactSetting;
             OnPropertyChanged(nameof(UseCompactPlaybackControls));
         }
+
+        IsStatusBarVisible = settings.ShowStatusBar;
 
         var style = Enum.TryParse<PlaybackAreaBackgroundStyle>(settings.PlaybackAreaBackgroundStyle, out var s) ? s : PlaybackAreaBackgroundStyle.Solid;
 

@@ -71,6 +71,7 @@ public class MainWindow : Window
         mainGrid.Children.Add(mainPlaybackControls);
 
         var statusBar = CreateStatusBar();
+        statusBar.Bind(Visual.IsVisibleProperty, new Binding("IsStatusBarVisible"));
         Grid.SetRow(statusBar, 5);
         mainGrid.Children.Add(statusBar);
 

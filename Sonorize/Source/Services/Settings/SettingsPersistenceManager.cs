@@ -78,6 +78,7 @@ public class SettingsPersistenceManager
             newSettingsToSave.LibraryRowHeight = settingsOnDisk.LibraryRowHeight;
             newSettingsToSave.EnableAlternatingRowColors = settingsOnDisk.EnableAlternatingRowColors;
             newSettingsToSave.UseCompactPlaybackControls = settingsOnDisk.UseCompactPlaybackControls;
+            newSettingsToSave.ShowStatusBar = settingsOnDisk.ShowStatusBar;
         }
 
         // Last.fm Settings - Compare UI state against disk state for change detection

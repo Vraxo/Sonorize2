@@ -31,6 +31,7 @@ namespace Sonorize.ViewModels.Settings
         private double _libraryRowHeight;
         private bool _enableAlternatingRowColors;
         private bool _useCompactPlaybackControls;
+        private bool _showStatusBar;
 
         // Initial state fields
         private readonly GridViewImageType _initialArtistGridType;
@@ -45,6 +46,7 @@ namespace Sonorize.ViewModels.Settings
         private readonly double _initialLibraryRowHeight;
         private readonly bool _initialEnableAlternatingRowColors;
         private readonly bool _initialUseCompactPlaybackControls;
+        private readonly bool _initialShowStatusBar;
 
         // Properties
         public GridViewImageType ArtistGridType { get => _artistGridType; private set { if (_artistGridType != value) { _artistGridType = value; OnAppearanceChanged(); } } }
@@ -59,6 +61,7 @@ namespace Sonorize.ViewModels.Settings
         public double LibraryRowHeight { get => _libraryRowHeight; set { if (Math.Abs(_libraryRowHeight - value) > 0.01) { _libraryRowHeight = value; OnAppearanceChanged(); } } }
         public bool EnableAlternatingRowColors { get => _enableAlternatingRowColors; set { if (_enableAlternatingRowColors != value) { _enableAlternatingRowColors = value; OnAppearanceChanged(); } } }
         public bool UseCompactPlaybackControls { get => _useCompactPlaybackControls; set { if (_useCompactPlaybackControls != value) { _useCompactPlaybackControls = value; OnAppearanceChanged(); } } }
+        public bool ShowStatusBar { get => _showStatusBar; set { if (_showStatusBar != value) { _showStatusBar = value; OnAppearanceChanged(); } } }
 
         // Radio Button Helpers
         public bool IsArtistGridSingle { get => ArtistGridType == GridViewImageType.Single; set { if (value) ArtistGridType = GridViewImageType.Single; } }
@@ -84,7 +87,8 @@ namespace Sonorize.ViewModels.Settings
             _initialShowPlayCount != ShowPlayCountInLibrary ||
             Math.Abs(_initialLibraryRowHeight - LibraryRowHeight) > 0.01 ||
             _initialEnableAlternatingRowColors != EnableAlternatingRowColors ||
-            _initialUseCompactPlaybackControls != UseCompactPlaybackControls;
+            _initialUseCompactPlaybackControls != UseCompactPlaybackControls ||
+            _initialShowStatusBar != ShowStatusBar;
 
         public AppearanceSettingsViewModel(AppSettings settings, Action notifyParentSettingsChanged)
         {
@@ -102,6 +106,7 @@ namespace Sonorize.ViewModels.Settings
             _initialLibraryRowHeight = settings.LibraryRowHeight;
             _initialEnableAlternatingRowColors = settings.EnableAlternatingRowColors;
             _initialUseCompactPlaybackControls = settings.UseCompactPlaybackControls;
+            _initialShowStatusBar = settings.ShowStatusBar;
 
             _artistGridType = _initialArtistGridType;
             _albumGridType = _initialAlbumGridType;
@@ -115,6 +120,7 @@ namespace Sonorize.ViewModels.Settings
             _libraryRowHeight = _initialLibraryRowHeight;
             _enableAlternatingRowColors = _initialEnableAlternatingRowColors;
             _useCompactPlaybackControls = _initialUseCompactPlaybackControls;
+            _showStatusBar = _initialShowStatusBar;
         }
 
         private void OnAppearanceChanged([CallerMemberName] string? propertyName = null)
@@ -152,6 +158,7 @@ namespace Sonorize.ViewModels.Settings
             settings.LibraryRowHeight = LibraryRowHeight;
             settings.EnableAlternatingRowColors = EnableAlternatingRowColors;
             settings.UseCompactPlaybackControls = UseCompactPlaybackControls;
+            settings.ShowStatusBar = ShowStatusBar;
         }
     }
 }

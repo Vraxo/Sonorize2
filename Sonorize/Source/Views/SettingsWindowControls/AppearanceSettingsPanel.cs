@@ -45,7 +45,7 @@ public static class AppearanceSettingsPanel
 
         var title = new TextBlock
         {
-            Text = "Playback Panel Layout",
+            Text = "UI Layout",
             FontSize = 14,
             FontWeight = FontWeight.Normal,
             Foreground = theme.B_TextColor,
@@ -58,9 +58,17 @@ public static class AppearanceSettingsPanel
             Foreground = theme.B_TextColor
         };
         compactLayoutCheck.Bind(CheckBox.IsCheckedProperty, new Binding("AppearanceSettings.UseCompactPlaybackControls", BindingMode.TwoWay));
-    
+
+        var showStatusBarCheck = new CheckBox
+        {
+            Content = "Show status bar",
+            Foreground = theme.B_TextColor
+        };
+        showStatusBarCheck.Bind(CheckBox.IsCheckedProperty, new Binding("AppearanceSettings.ShowStatusBar", BindingMode.TwoWay));
+
         var checkPanel = new StackPanel { Spacing = 5, Margin = new Thickness(10, 0, 0, 0) };
         checkPanel.Children.Add(compactLayoutCheck);
+        checkPanel.Children.Add(showStatusBarCheck);
 
         sectionPanel.Children.Add(title);
         sectionPanel.Children.Add(checkPanel);
