@@ -1227,22 +1227,28 @@ public class LibraryPlaybackLinkService : IDisposable
             return;
         }
 
+        // Capture the value IMMEDIATELY from the source of the event.
+        var selectedSongAtEventTime = (sender as LibraryViewModel)?.SelectedSong;
+
         Dispatcher.UIThread.InvokeAsync(() =>
         {
-            Debug.WriteLine($"[LibraryPlaybackLinkService] Library.SelectedSong changed to: {_libraryViewModel.SelectedSong?.Title ?? "null"}. Instance: {_libraryViewModel.SelectedSong?.GetHashCode() ?? 0}");
+            // Use the captured value, not the potentially changed value from the view model property.
+            var songToPlay = selectedSongAtEventTime;
 
-            if (_libraryViewModel.SelectedSong is not null && _playbackService.CurrentSong != _libraryViewModel.SelectedSong)
+            Debug.WriteLine($"[LibraryPlaybackLinkService] Library.SelectedSong changed event processed. Captured song: {songToPlay?.Title ?? "null"}. (Current VM song is: {_libraryViewModel.SelectedSong?.Title ?? "null"})");
+
+            if (songToPlay is not null && _playbackService.CurrentSong != songToPlay)
             {
-                Debug.WriteLine($"[LibraryPlaybackLinkService] Library.SelectedSong changed to a *different* song ({_libraryViewModel.SelectedSong.Title}) than PlaybackService.CurrentSong ({_playbackService.CurrentSong?.Title ?? "null"}). Calling PlaybackService.Play().");
-                _playbackService.Play(_libraryViewModel.SelectedSong);
+                Debug.WriteLine($"[LibraryPlaybackLinkService] Playing captured song '{songToPlay.Title}'.");
+                _playbackService.Play(songToPlay);
             }
-            else if (_libraryViewModel.SelectedSong is not null && _playbackService.CurrentSong == _libraryViewModel.SelectedSong)
+            else if (songToPlay is not null && _playbackService.CurrentSong == songToPlay)
             {
-                Debug.WriteLine($"[LibraryPlaybackLinkService] Library.SelectedSong changed but is the SAME song instance as PlaybackService.CurrentSong ({_libraryViewModel.SelectedSong.Title}). No Play call needed here.");
+                Debug.WriteLine($"[LibraryPlaybackLinkService] Captured song '{songToPlay.Title}' is already playing. No action needed.");
             }
-            else if (_libraryViewModel.SelectedSong == null)
+            else if (songToPlay == null)
             {
-                Debug.WriteLine("[LibraryPlaybackLinkService] Library.SelectedSong is null. No Play call needed here.");
+                Debug.WriteLine("[LibraryPlaybackLinkService] Captured song was null. No Play call needed.");
             }
         });
     }
@@ -1254,16 +1260,10 @@ public class LibraryPlaybackLinkService : IDisposable
             return;
         }
 
-        Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            if (_playbackViewModel.HasCurrentSong || _libraryViewModel.SelectedSong == null)
-            {
-                return;
-            }
-
-            Debug.WriteLine("[LibraryPlaybackLinkService] Playback has no current song. Clearing Library selection.");
-            _libraryViewModel.SelectedSong = null;
-        });
+        // This logic was causing a race condition. When a new song was selected,
+        // the old song would stop, HasCurrentSong would briefly become false,
+        // and this would immediately nullify the new selection before it could play.
+        // By removing it, the UI selection is now independent of the playback state, which is more robust.
     }
 
     public void Dispose()
@@ -3789,6 +3789,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     public ICommand NextTrackCommand => _trackNavigationManager.NextTrackCommand;
     public ICommand EditSongMetadataCommand { get; }
     public ICommand SortCommand { get; }
+    public ICommand ClearArtistFilterCommand { get; }
 
     public SortProperty CurrentSortProperty { get; private set; } = SortProperty.Title;
     public SortDirection CurrentSortDirection { get; private set; } = SortDirection.Ascending;
@@ -3829,11 +3830,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
             }
 
             _components.SongList.SelectedSong = value;
-            OnPropertyChanged();
-            _trackNavigationManager.UpdateSelectedSong(value);
-            (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged();
-
-            Debug.WriteLine($"[LibraryVM] SelectedSong changed to: {value?.Title ?? "null"} (via SongListManager)");
+            Debug.WriteLine($"[LibraryVM] SelectedSong SET to: {value?.Title ?? "null"}");
         }
     }
 
@@ -3851,7 +3848,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         ViewOptions.LoadFromSettings(_settingsService.LoadSettings());
 
         _components = new LibraryComponentProvider(musicLibraryService, settingsService);
-        _trackNavigationManager = new TrackNavigationManager(_components.SongList.FilteredSongs);
+        _trackNavigationManager = new TrackNavigationManager(this);
 
         // Instantiate the new LibraryLoadProcess
         _libraryLoadProcess = new LibraryLoadProcess(
@@ -3871,6 +3868,7 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
         EditSongMetadataCommand = new RelayCommand(ExecuteEditSongMetadata, CanExecuteEditSongMetadata);
         SortCommand = new RelayCommand(ExecuteSort);
+        ClearArtistFilterCommand = new RelayCommand(_ => FilterState.SelectedArtist = null);
 
         UpdateStatusBarText();
     }
@@ -3904,10 +3902,10 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     {
         if (e.PropertyName == nameof(SongListManager.SelectedSong))
         {
+            // This is the single point of reaction to a selection change.
             OnPropertyChanged(nameof(SelectedSong));
-            _trackNavigationManager.UpdateSelectedSong(_components.SongList.SelectedSong);
             (EditSongMetadataCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            Debug.WriteLine($"[LibraryVM] SongListManager.SelectedSong changed to: {_components.SongList.SelectedSong?.Title ?? "null"}. Updated own SelectedSong.");
+            Debug.WriteLine($"[LibraryVM] Reacting to SongListManager.SelectedSong change: {_components.SongList.SelectedSong?.Title ?? "null"}.");
         }
         else if (e.PropertyName == nameof(SongListManager.FilteredSongs))
         {
@@ -3957,7 +3955,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
             CurrentSortDirection,
             ViewOptions);
 
-        _trackNavigationManager.UpdateSelectedSong(_components.SongList.SelectedSong);
         UpdateStatusBarText();
     }
 
@@ -8150,10 +8147,6 @@ public class LibraryFilterStateManager : ViewModelBase
         {
             if (SetProperty(ref _searchQuery, value))
             {
-                // Direct search query input might clear artist/album selections
-                // or this can be handled by LibraryViewModel reacting to this change.
-                // For now, assume direct search query changes don't auto-clear selected artist/album.
-                // LibraryViewModel's ApplyFilter logic will decide precedence.
                 FilterCriteriaChanged?.Invoke(this, EventArgs.Empty);
             }
         }
@@ -8169,15 +8162,18 @@ public class LibraryFilterStateManager : ViewModelBase
             {
                 if (_selectedArtist is not null)
                 {
-                    // When an artist is selected, update SearchQuery and clear SelectedAlbum
-                    _searchQuery = _selectedArtist.Name ?? string.Empty; // Avoid raising SearchQuery's own event storm
-                    OnPropertyChanged(nameof(SearchQuery)); // Manually notify SearchQuery changed
-                    SelectedAlbum = null; // This will trigger its own PropertyChanged and subsequently FilterCriteriaChanged
-                }
-                else
-                {
-                    // When artist is deselected, clear the search query
-                    SearchQuery = string.Empty;
+                    // When an artist is selected, clear other selections.
+                    // Use backing fields to prevent event storms from setters.
+                    if (_selectedAlbum is not null)
+                    {
+                        _selectedAlbum = null;
+                        OnPropertyChanged(nameof(SelectedAlbum));
+                    }
+                    if (_selectedPlaylist is not null)
+                    {
+                        _selectedPlaylist = null;
+                        OnPropertyChanged(nameof(SelectedPlaylist));
+                    }
                 }
                 FilterCriteriaChanged?.Invoke(this, EventArgs.Empty);
             }
@@ -8194,10 +8190,16 @@ public class LibraryFilterStateManager : ViewModelBase
             {
                 if (_selectedPlaylist is not null)
                 {
-                    SearchQuery = string.Empty;
-                    OnPropertyChanged(nameof(SearchQuery));
-                    SelectedArtist = null;
-                    SelectedAlbum = null;
+                    if (_selectedArtist is not null)
+                    {
+                        _selectedArtist = null;
+                        OnPropertyChanged(nameof(SelectedArtist));
+                    }
+                    if (_selectedAlbum is not null)
+                    {
+                        _selectedAlbum = null;
+                        OnPropertyChanged(nameof(SelectedAlbum));
+                    }
                 }
                 FilterCriteriaChanged?.Invoke(this, EventArgs.Empty);
             }
@@ -8214,10 +8216,16 @@ public class LibraryFilterStateManager : ViewModelBase
             {
                 if (_selectedAlbum is not null)
                 {
-                    // When an album is selected, update SearchQuery and clear SelectedArtist
-                    _searchQuery = _selectedAlbum.Title ?? string.Empty; // Avoid raising SearchQuery's own event storm
-                    OnPropertyChanged(nameof(SearchQuery)); // Manually notify SearchQuery changed
-                    SelectedArtist = null; // This will trigger its own PropertyChanged and subsequently FilterCriteriaChanged
+                    if (_selectedArtist is not null)
+                    {
+                        _selectedArtist = null;
+                        OnPropertyChanged(nameof(SelectedArtist));
+                    }
+                    if (_selectedPlaylist is not null)
+                    {
+                        _selectedPlaylist = null;
+                        OnPropertyChanged(nameof(SelectedPlaylist));
+                    }
                 }
                 FilterCriteriaChanged?.Invoke(this, EventArgs.Empty);
             }
@@ -8617,40 +8625,44 @@ public class SongFilteringService
         // Priority 1: Playlist is a special case, it overrides all other filters and has its own sorting.
         if (selectedPlaylist != null)
         {
-            return selectedPlaylist.PlaylistModel.Songs;
+            // When a playlist is selected, search should apply to its contents.
+            var playlistSongs = selectedPlaylist.PlaylistModel.Songs;
+            if (!string.IsNullOrWhiteSpace(searchQuery))
+            {
+                string query = searchQuery.Trim();
+                return playlistSongs.Where(s =>
+                    (s.Title?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (s.Artist?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (s.Album?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+            return playlistSongs;
         }
 
         IEnumerable<Song> filteredSongs = allSongs;
 
-        // Apply filters hierarchically. An album selection implies an artist selection.
-        // A search query is the most general filter.
-
-        // Priority 2: Album
+        // Apply hierarchical filters first.
         if (selectedAlbum != null)
         {
             filteredSongs = filteredSongs.Where(s =>
                 (s.Album?.Equals(selectedAlbum.Title, StringComparison.OrdinalIgnoreCase) ?? false) &&
                 (s.Artist?.Equals(selectedAlbum.Artist, StringComparison.OrdinalIgnoreCase) ?? false));
         }
-        // Priority 3: Artist
         else if (selectedArtist?.Name != null)
         {
             filteredSongs = filteredSongs.Where(s =>
                 s.Artist?.Equals(selectedArtist.Name, StringComparison.OrdinalIgnoreCase) ?? false);
         }
-        // Priority 4: Search Query
-        else if (!string.IsNullOrWhiteSpace(searchQuery))
+
+        // Apply search query to the result of the above filters (or to all songs if no filter is active).
+        if (!string.IsNullOrWhiteSpace(searchQuery))
         {
             string query = searchQuery.Trim();
-            // Use the more performant and correct string.Contains overload with StringComparison
             filteredSongs = filteredSongs.Where(s =>
                 (s.Title?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
                 (s.Artist?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
                 (s.Album?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false));
         }
 
-        // If no filters were applied, filteredSongs is still the original 'allSongs' enumerable.
-        // The caller (SongListManager) is responsible for sorting the final results.
         return filteredSongs;
     }
 }
@@ -8806,7 +8818,7 @@ public class SongListManager : ViewModelBase
 
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LibraryManagement\TrackNavigationManager.cs">
 using System;
-using System.Collections.ObjectModel; // For ObservableCollection
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Windows.Input;
@@ -8814,57 +8826,44 @@ using Sonorize.Models;
 
 namespace Sonorize.ViewModels.LibraryManagement;
 
-public class TrackNavigationManager : ViewModelBase // Inherit for RelayCommand's RaiseCanExecuteChanged if needed
+public class TrackNavigationManager : ViewModelBase
 {
-    private readonly ObservableCollection<Song> _filteredSongs;
-    private Song? _selectedSong;
-
-    public Song? SelectedSong
-    {
-        get => _selectedSong;
-        set
-        {
-            // This setter is crucial. It's what the LibraryViewModel will call.
-            // Or, LibraryViewModel could expose its SelectedSong and FilteredSongs
-            // and this manager could observe them. For direct control, LibraryViewModel calls this.
-            if (SetProperty(ref _selectedSong, value))
-            {
-                RaiseCanExecuteChangedForAllCommands();
-            }
-        }
-    }
+    private readonly LibraryViewModel _libraryViewModel;
 
     public ICommand PreviousTrackCommand { get; }
     public ICommand NextTrackCommand { get; }
 
-    public TrackNavigationManager(ObservableCollection<Song> filteredSongs)
+    public TrackNavigationManager(LibraryViewModel libraryViewModel)
     {
-        _filteredSongs = filteredSongs ?? throw new ArgumentNullException(nameof(filteredSongs));
-        _filteredSongs.CollectionChanged += (s, e) => RaiseCanExecuteChangedForAllCommands();
+        _libraryViewModel = libraryViewModel ?? throw new ArgumentNullException(nameof(libraryViewModel));
+
+        // Listen to changes in the source of truth (LibraryViewModel) to update command states.
+        _libraryViewModel.FilteredSongs.CollectionChanged += (s, e) => RaiseCanExecuteChangedForAllCommands();
+        _libraryViewModel.PropertyChanged += OnLibraryViewModelPropertyChanged;
 
         PreviousTrackCommand = new RelayCommand(ExecutePreviousTrack, CanExecutePreviousTrack);
         NextTrackCommand = new RelayCommand(ExecuteNextTrack, CanExecuteNextTrack);
     }
 
-    // This method will be called by LibraryViewModel when its SelectedSong changes
-    public void UpdateSelectedSong(Song? newSelectedSong)
+    private void OnLibraryViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (_selectedSong != newSelectedSong)
+        if (e.PropertyName == nameof(LibraryViewModel.SelectedSong))
         {
-            _selectedSong = newSelectedSong; // Update internal state
-            RaiseCanExecuteChangedForAllCommands(); // Update command states
+            RaiseCanExecuteChangedForAllCommands();
         }
     }
 
-
     private void ExecutePreviousTrack(object? parameter)
     {
-        if (_selectedSong == null || !_filteredSongs.Any()) return;
-        int currentIndex = _filteredSongs.IndexOf(_selectedSong);
+        var songs = _libraryViewModel.FilteredSongs;
+        var current = _libraryViewModel.SelectedSong;
+        if (current == null || !songs.Any()) return;
+
+        int currentIndex = songs.IndexOf(current);
         if (currentIndex > 0)
         {
-            SelectedSong = _filteredSongs[currentIndex - 1]; // This will trigger property changed & command updates
-            Debug.WriteLine($"[TrackNavManager] Moved to previous track: {SelectedSong.Title}");
+            _libraryViewModel.SelectedSong = songs[currentIndex - 1];
+            Debug.WriteLine($"[TrackNavManager] Moved to previous track: {_libraryViewModel.SelectedSong.Title}");
         }
         else
         {
@@ -8874,18 +8873,23 @@ public class TrackNavigationManager : ViewModelBase // Inherit for RelayCommand'
 
     private bool CanExecutePreviousTrack(object? parameter)
     {
-        if (_selectedSong == null || !_filteredSongs.Any()) return false;
-        return _filteredSongs.IndexOf(_selectedSong) > 0;
+        var songs = _libraryViewModel.FilteredSongs;
+        var current = _libraryViewModel.SelectedSong;
+        if (current == null || !songs.Any()) return false;
+        return songs.IndexOf(current) > 0;
     }
 
     private void ExecuteNextTrack(object? parameter)
     {
-        if (_selectedSong == null || !_filteredSongs.Any()) return;
-        int currentIndex = _filteredSongs.IndexOf(_selectedSong);
-        if (currentIndex < _filteredSongs.Count - 1 && currentIndex != -1)
+        var songs = _libraryViewModel.FilteredSongs;
+        var current = _libraryViewModel.SelectedSong;
+        if (current == null || !songs.Any()) return;
+
+        int currentIndex = songs.IndexOf(current);
+        if (currentIndex < songs.Count - 1 && currentIndex != -1)
         {
-            SelectedSong = _filteredSongs[currentIndex + 1]; // This will trigger property changed & command updates
-            Debug.WriteLine($"[TrackNavManager] Moved to next track: {SelectedSong.Title}");
+            _libraryViewModel.SelectedSong = songs[currentIndex + 1];
+            Debug.WriteLine($"[TrackNavManager] Moved to next track: {_libraryViewModel.SelectedSong.Title}");
         }
         else if (currentIndex != -1)
         {
@@ -8899,9 +8903,12 @@ public class TrackNavigationManager : ViewModelBase // Inherit for RelayCommand'
 
     private bool CanExecuteNextTrack(object? parameter)
     {
-        if (_selectedSong == null || !_filteredSongs.Any()) return false;
-        int currentIndex = _filteredSongs.IndexOf(_selectedSong);
-        return currentIndex != -1 && currentIndex < _filteredSongs.Count - 1;
+        var songs = _libraryViewModel.FilteredSongs;
+        var current = _libraryViewModel.SelectedSong;
+        if (current == null || !songs.Any()) return false;
+
+        int currentIndex = songs.IndexOf(current);
+        return currentIndex != -1 && currentIndex < songs.Count - 1;
     }
 
     private void RaiseCanExecuteChangedForAllCommands()
@@ -8909,9 +8916,6 @@ public class TrackNavigationManager : ViewModelBase // Inherit for RelayCommand'
         (PreviousTrackCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (NextTrackCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
-
-    // Optional: Expose an event if LibraryViewModel needs to react to selection changes from this manager
-    // public event Action<Song?>? ManagedSelectionChanged;
 }
 </file>
 
@@ -9608,6 +9612,14 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         {
             if (SetProperty(ref _activeTabIndex, value))
             {
+                // Library tab is index 0. Clear filters when switching to it.
+                if (_activeTabIndex == 0)
+                {
+                    Library.FilterState.SelectedArtist = null;
+                    Library.FilterState.SelectedAlbum = null;
+                    Library.FilterState.SelectedPlaylist = null;
+                }
+
                 // Playlist tab is index 3
                 if (_activeTabIndex == 3)
                 {
@@ -11165,6 +11177,7 @@ public class MainTabViewControls
         };
 
         // --- ARTISTS tab ---
+        var artistsListView = new Grid();
         var (artistsListScrollViewer, artistsLb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
             _theme, _sharedViewTemplates, "ArtistsListBox", "Library.Groupings.Artists", "Library.FilterState.SelectedArtist",
             _sharedViewTemplates.DetailedArtistTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate, lb => { });
@@ -11173,19 +11186,31 @@ public class MainTabViewControls
         {
             Converter = new FuncValueConverter<SongDisplayMode, bool>(m => m != SongDisplayMode.Compact)
         });
-
         var artistsCompactGrid = CreateArtistsCompactDataGrid(_theme);
         artistsCompactGrid.Bind(Visual.IsVisibleProperty, new Binding("LibraryDisplayModeService.ArtistViewMode")
         {
             Converter = EnumToBooleanConverter.Instance,
             ConverterParameter = SongDisplayMode.Compact
         });
+        artistsListView.Children.Add(artistsListScrollViewer);
+        artistsListView.Children.Add(artistsCompactGrid);
+        artistsListView.Bind(Visual.IsVisibleProperty, new Binding("Library.FilterState.SelectedArtist")
+        {
+            Converter = new FuncValueConverter<ArtistViewModel?, bool>(vm => vm == null)
+        });
+
+        var artistDrillDownView = CreateArtistDrillDownView(_theme);
+        artistDrillDownView.Bind(Visual.IsVisibleProperty, new Binding("Library.FilterState.SelectedArtist")
+        {
+            Converter = NotNullToBooleanConverter.Instance
+        });
 
         var artistsTabContent = new Grid();
-        artistsTabContent.Children.Add(artistsListScrollViewer);
-        artistsTabContent.Children.Add(artistsCompactGrid);
+        artistsTabContent.Children.Add(artistsListView);
+        artistsTabContent.Children.Add(artistDrillDownView);
 
         var artistsTab = new TabItem { Header = "ARTISTS", Content = artistsTabContent };
+
 
         // --- ALBUMS tab ---
         var (albumsListScrollViewer, albumsLb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
@@ -11284,6 +11309,54 @@ public class MainTabViewControls
                 if (scrollViewer is not null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
                 break;
         }
+    }
+
+    private Grid CreateArtistDrillDownView(ThemeColors theme)
+    {
+        var grid = new Grid
+        {
+            RowDefinitions = new RowDefinitions("Auto, *")
+        };
+
+        // Header with Back button and Artist Name
+        var headerPanel = new DockPanel
+        {
+            Margin = new Thickness(10, 0, 10, 5)
+        };
+        var backButton = new Button
+        {
+            Content = "← Back to Artists",
+            Background = theme.B_ControlBackgroundColor,
+            Foreground = theme.B_TextColor,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        backButton.Bind(Button.CommandProperty, new Binding("Library.ClearArtistFilterCommand"));
+        DockPanel.SetDock(backButton, Dock.Left);
+
+        var artistNameBlock = new TextBlock
+        {
+            FontSize = 16,
+            FontWeight = FontWeight.Bold,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Foreground = theme.B_TextColor
+        };
+        artistNameBlock.Bind(TextBlock.TextProperty, new Binding("Library.FilterState.SelectedArtist.Name"));
+        DockPanel.SetDock(artistNameBlock, Dock.Right);
+
+        headerPanel.Children.Add(backButton);
+        headerPanel.Children.Add(artistNameBlock);
+
+        // DataGrid for songs
+        var songsDataGrid = CreateLibraryDataGrid(theme); // Reuse the same styling and column setup
+        songsDataGrid.Name = "ArtistSongsDataGrid";
+
+        Grid.SetRow(headerPanel, 0);
+        Grid.SetRow(songsDataGrid, 1);
+        grid.Children.Add(headerPanel);
+        grid.Children.Add(songsDataGrid);
+
+        return grid;
     }
 
     private DataGrid CreateBaseStyledDataGrid(ThemeColors theme)
