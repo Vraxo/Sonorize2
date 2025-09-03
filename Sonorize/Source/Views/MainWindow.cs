@@ -76,7 +76,13 @@ public class MainWindow : Window
 
         Content = mainGrid;
 
-        this.DataContextChanged += MainWindow_DataContextChanged;
+        // Explicitly set the DataContext for the TabControl to ensure bindings inside resolve correctly.
+        tabControl.DataContext = this.DataContext;
+        this.DataContextChanged += (s, e) =>
+        {
+            tabControl.DataContext = this.DataContext;
+            MainWindow_DataContextChanged(s, e);
+        };
         this.Closing += OnMainWindowClosing; // Graceful shutdown hook
     }
 

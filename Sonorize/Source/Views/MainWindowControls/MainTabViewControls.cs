@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Diagnostics;
 using System.Linq;
 using Avalonia;
@@ -6,8 +7,6 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
-using Avalonia.Data.Converters;
-using Avalonia.Layout;
 using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Media;
 using Avalonia.Styling;
@@ -15,7 +14,6 @@ using Avalonia.VisualTree;
 using Sonorize.Converters;
 using Sonorize.Models;
 using Sonorize.ViewModels;
-using Sonorize.ViewModels.LibraryManagement;
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -203,44 +201,59 @@ public class MainTabViewControls
             MinHeight = 250,
             AutoGenerateColumns = false,
             HeadersVisibility = DataGridHeadersVisibility.Column,
-            GridLinesVisibility = DataGridGridLinesVisibility.None, // Cleaner look
+            GridLinesVisibility = DataGridGridLinesVisibility.None,
             IsReadOnly = true,
-            CanUserSortColumns = true, // Enable built-in sorting
+            CanUserSortColumns = true,
             CanUserReorderColumns = true,
         };
 
-        // Bindings relative to MainWindowViewModel's DataContext
-        dataGrid.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.FilteredSongs"));
-        dataGrid.Bind(DataGrid.SelectedItemProperty, new Binding("Library.SelectedSong", BindingMode.TwoWay));
-        dataGrid.Bind(DataGrid.RowHeightProperty, new Binding("Library.ViewOptions.RowHeight"));
+        // Bindings
+        dataGrid.Bind(ItemsControl.ItemsSourceProperty,
+                      new Binding("Library.FilteredSongs"));
+        dataGrid.Bind(DataGrid.SelectedItemProperty,
+                      new Binding("Library.SelectedSong", BindingMode.TwoWay));
+        dataGrid.Bind(DataGrid.RowHeightProperty,
+                      new Binding("Library.ViewOptions.RowHeight"));
 
-        // Add styles for DataGridRow
+        // --- DEBUG SNIPPET: dump DataContext and ItemsSource count ---
+        dataGrid.AttachedToVisualTree += (_, __) =>
+        {
+            Debug.WriteLine($"[Debug] LibraryDataGrid.DataContext = {dataGrid.DataContext}");
+            var items = dataGrid.ItemsSource as IEnumerable;
+            var count = items?.Cast<object>().Count() ?? -1;
+            Debug.WriteLine($"[Debug] LibraryDataGrid.ItemsSource count = {count}");
+        };
+
+        // Row styles (alternating / hover / selected)
         dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>())
         {
             Setters =
+        {
+            new Setter(TemplatedControl.BackgroundProperty, new MultiBinding
             {
-                new Setter(TemplatedControl.BackgroundProperty, new MultiBinding
+                Converter = new AlternatingRowBackgroundConverter
                 {
-                    Converter = new AlternatingRowBackgroundConverter
+                    DefaultBrush = theme.B_ListBoxBackground,
+                    AlternateBrush = theme.B_ListBoxAlternateBackground
+                },
+                Bindings =
+                {
+                    new Binding("."), // Song instance
+                    new Binding
                     {
-                        DefaultBrush = theme.B_ListBoxBackground,
-                        AlternateBrush = theme.B_ListBoxAlternateBackground
-                    },
-                    Bindings =
-                    {
-                        new Binding("."), // The Song object
-                        new Binding
-                        {
-                            Path = "DataContext.Library.ViewOptions.EnableAlternatingRowColors",
-                            RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(DataGrid) }
-                        }
+                        Path = "DataContext.Library.ViewOptions.EnableAlternatingRowColors",
+                        RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
+                        { AncestorType = typeof(DataGrid) }
                     }
-                }),
-                new Setter(TemplatedControl.ForegroundProperty, theme.B_TextColor),
-            }
+                }
+            }),
+            new Setter(TemplatedControl.ForegroundProperty, theme.B_TextColor),
+        }
         });
 
-        dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>().Class(":pointerover").Not(x => x.Class(":selected")))
+        dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>()
+                                             .Class(":pointerover")
+                                             .Not(x => x.Class(":selected")))
         {
             Setters = { new Setter(TemplatedControl.BackgroundProperty, theme.B_ControlBackgroundColor) }
         });
@@ -248,21 +261,22 @@ public class MainTabViewControls
         dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>().Class(":selected"))
         {
             Setters =
-            {
-                new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor),
-                new Setter(TemplatedControl.ForegroundProperty, theme.B_AccentForeground)
-            }
+        {
+            new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor),
+            new Setter(TemplatedControl.ForegroundProperty, theme.B_AccentForeground)
+        }
         });
 
-        dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>().Class(":selected").Class(":pointerover"))
+        dataGrid.Styles.Add(new Style(s => s.Is<DataGridRow>()
+                                             .Class(":selected")
+                                             .Class(":pointerover"))
         {
             Setters =
-            {
-                new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor),
-                new Setter(TemplatedControl.ForegroundProperty, theme.B_AccentForeground)
-            }
+        {
+            new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor),
+            new Setter(TemplatedControl.ForegroundProperty, theme.B_AccentForeground)
+        }
         });
-
 
         // Columns
         dataGrid.Columns.Add(new DataGridTextColumn
@@ -280,7 +294,9 @@ public class MainTabViewControls
             Width = new DataGridLength(2, DataGridLengthUnitType.Star),
             SortMemberPath = "Artist"
         };
-        artistColumn.Bind(DataGridColumn.IsVisibleProperty, new Binding { Path = "DataContext.Library.ViewOptions.ShowArtist", Source = dataGrid });
+        artistColumn.Bind(DataGridColumn.IsVisibleProperty,
+                          new Binding("DataContext.Library.ViewOptions.ShowArtist")
+                          { Source = dataGrid });
         dataGrid.Columns.Add(artistColumn);
 
         var albumColumn = new DataGridTextColumn
@@ -290,7 +306,9 @@ public class MainTabViewControls
             Width = new DataGridLength(2, DataGridLengthUnitType.Star),
             SortMemberPath = "Album"
         };
-        albumColumn.Bind(DataGridColumn.IsVisibleProperty, new Binding { Path = "DataContext.Library.ViewOptions.ShowAlbum", Source = dataGrid });
+        albumColumn.Bind(DataGridColumn.IsVisibleProperty,
+                         new Binding("DataContext.Library.ViewOptions.ShowAlbum")
+                         { Source = dataGrid });
         dataGrid.Columns.Add(albumColumn);
 
         var durationColumn = new DataGridTextColumn
@@ -300,7 +318,9 @@ public class MainTabViewControls
             Width = DataGridLength.Auto,
             SortMemberPath = "Duration"
         };
-        durationColumn.Bind(DataGridColumn.IsVisibleProperty, new Binding { Path = "DataContext.Library.ViewOptions.ShowDuration", Source = dataGrid });
+        durationColumn.Bind(DataGridColumn.IsVisibleProperty,
+                            new Binding("DataContext.Library.ViewOptions.ShowDuration")
+                            { Source = dataGrid });
         dataGrid.Columns.Add(durationColumn);
 
         var playCountColumn = new DataGridTextColumn
@@ -310,7 +330,9 @@ public class MainTabViewControls
             Width = DataGridLength.Auto,
             SortMemberPath = "PlayCount"
         };
-        playCountColumn.Bind(DataGridColumn.IsVisibleProperty, new Binding { Path = "DataContext.Library.ViewOptions.ShowPlayCount", Source = dataGrid });
+        playCountColumn.Bind(DataGridColumn.IsVisibleProperty,
+                             new Binding("DataContext.Library.ViewOptions.ShowPlayCount")
+                             { Source = dataGrid });
         dataGrid.Columns.Add(playCountColumn);
 
         var dateAddedColumn = new DataGridTextColumn
@@ -320,24 +342,10 @@ public class MainTabViewControls
             Width = DataGridLength.Auto,
             SortMemberPath = "DateAdded"
         };
-        dateAddedColumn.Bind(DataGridColumn.IsVisibleProperty, new Binding { Path = "DataContext.Library.ViewOptions.ShowDateAdded", Source = dataGrid });
+        dateAddedColumn.Bind(DataGridColumn.IsVisibleProperty,
+                             new Binding("DataContext.Library.ViewOptions.ShowDateAdded")
+                             { Source = dataGrid });
         dataGrid.Columns.Add(dateAddedColumn);
-
-        // Debug hooks
-        dataGrid.AttachedToVisualTree += (_, __) =>
-        {
-            Debug.WriteLine("[MainTabViewControls] LibraryDataGrid attached.");
-            // Force template application and log row/col presenters existence
-            dataGrid.ApplyTemplate();
-            Debug.WriteLine("[MainTabViewControls] Template applied.");
-        };
-
-        dataGrid.LayoutUpdated += (_, __) =>
-        {
-            var b = dataGrid.Bounds;
-            // This can be very noisy, so commented out for now.
-            // Debug.WriteLine($"[MainTabViewControls] DataGrid size: {b.Width}x{b.Height}");
-        };
 
         return dataGrid;
     }
