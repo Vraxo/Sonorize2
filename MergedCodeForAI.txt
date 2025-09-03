@@ -665,7 +665,6 @@ public class AppSettings
     public List<string> MusicDirectories { get; set; } = [];
     public string? PreferredThemeFileName { get; set; }
 
-    public string LibraryViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
     public string ArtistViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
     public string AlbumViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
     public string PlaylistViewModePreference { get; set; } = SongDisplayMode.Detailed.ToString();
@@ -3770,19 +3769,16 @@ public class LibraryViewModel : ViewModelBase, IDisposable
     private readonly SettingsService _settingsService;
     private readonly MusicLibraryService _musicLibraryService;
     private readonly MainWindowViewModel _parentViewModel;
-    private readonly LibraryDisplayModeService _displayModeService;
     private readonly TrackNavigationManager _trackNavigationManager;
     private readonly LibraryComponentProvider _components;
     private readonly LibraryLoadProcess _libraryLoadProcess;
 
     public LibraryViewOptionsViewModel ViewOptions { get; }
 
-    public LibraryDisplayModeService LibraryDisplayModeService => _displayModeService;
     public LibraryGroupingsViewModel Groupings => _components.Groupings;
     public ObservableCollection<Song> FilteredSongs => _components.SongList.FilteredSongs;
     public LibraryFilterStateManager FilterState => _components.FilterState;
 
-    public ICommand SetDisplayModeCommand => _displayModeService.SetDisplayModeCommand;
     public ICommand PreviousTrackCommand => _trackNavigationManager.PreviousTrackCommand;
     public ICommand NextTrackCommand => _trackNavigationManager.NextTrackCommand;
     public ICommand EditSongMetadataCommand { get; }
@@ -3790,11 +3786,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
 
     public SortProperty CurrentSortProperty { get; private set; } = SortProperty.Title;
     public SortDirection CurrentSortDirection { get; private set; } = SortDirection.Ascending;
-
-    public SongDisplayMode LibraryViewMode => _displayModeService.LibraryViewMode;
-    public SongDisplayMode ArtistViewMode => _displayModeService.ArtistViewMode;
-    public SongDisplayMode AlbumViewMode => _displayModeService.AlbumViewMode;
-    public SongDisplayMode PlaylistViewMode => _displayModeService.PlaylistViewMode;
 
     public bool IsLoadingLibrary
     {
@@ -3844,13 +3835,11 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         MainWindowViewModel parentViewModel,
         SettingsService settingsService,
         MusicLibraryService musicLibraryService,
-        LoopDataService loopDataService,
-        LibraryDisplayModeService displayModeService)
+        LoopDataService loopDataService)
     {
         _parentViewModel = parentViewModel ?? throw new ArgumentNullException(nameof(parentViewModel));
         _settingsService = settingsService;
         _musicLibraryService = musicLibraryService;
-        _displayModeService = displayModeService ?? throw new ArgumentNullException(nameof(displayModeService));
 
         ViewOptions = new LibraryViewOptionsViewModel();
         ViewOptions.LoadFromSettings(_settingsService.LoadSettings());
@@ -3873,7 +3862,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         _components.FilterState.RequestTabSwitchToLibrary += (s, e) => _parentViewModel.ActiveTabIndex = 0;
         _components.SongList.PropertyChanged += SongListManager_PropertyChanged;
 
-        _displayModeService.PropertyChanged += DisplayModeService_PropertyChanged;
         _musicLibraryService.SongThumbnailUpdated += MusicLibraryService_SongThumbnailUpdated;
 
         EditSongMetadataCommand = new RelayCommand(ExecuteEditSongMetadata, CanExecuteEditSongMetadata);
@@ -3922,25 +3910,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private void DisplayModeService_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        switch (e.PropertyName)
-        {
-            case nameof(LibraryDisplayModeService.LibraryViewMode):
-                OnPropertyChanged(nameof(LibraryViewMode));
-                break;
-            case nameof(LibraryDisplayModeService.ArtistViewMode):
-                OnPropertyChanged(nameof(ArtistViewMode));
-                break;
-            case nameof(LibraryDisplayModeService.AlbumViewMode):
-                OnPropertyChanged(nameof(AlbumViewMode));
-                break;
-            case nameof(LibraryDisplayModeService.PlaylistViewMode):
-                OnPropertyChanged(nameof(PlaylistViewMode));
-                break;
-        }
-    }
-
     private async void MusicLibraryService_SongThumbnailUpdated(Song updatedSong)
     {
         await Dispatcher.UIThread.InvokeAsync(() =>
@@ -3955,8 +3924,10 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         {
             return;
         }
+        Debug.WriteLine("[LibraryVM] LoadLibraryAsync: Starting library load process.");
         // Delegate the loading process to the new class
         await _libraryLoadProcess.ExecuteLoadAsync();
+        Debug.WriteLine("[LibraryVM] LoadLibraryAsync: Library load process finished.");
     }
 
     public void RefreshAutoPlaylists()
@@ -4033,11 +4004,6 @@ public class LibraryViewModel : ViewModelBase, IDisposable
         if (_musicLibraryService is not null)
         {
             _musicLibraryService.SongThumbnailUpdated -= MusicLibraryService_SongThumbnailUpdated;
-        }
-
-        if (_displayModeService is not null)
-        {
-            _displayModeService.PropertyChanged -= DisplayModeService_PropertyChanged;
         }
 
         if (_components?.FilterState is not null)
@@ -5001,11 +4967,10 @@ namespace Sonorize.Views;
 public class MainWindow : Window
 {
     private readonly ThemeColors _theme;
-    private ScrollViewer _songListScrollViewer; // Changed from ListBox
     private ListBox _artistsListBox;
     private ListBox _albumsListBox;
     private ListBox _playlistsListBox;
-    private LibraryViewModel? _currentLibraryVM;
+    private MainWindowViewModel? _currentMainVM;
     private readonly SharedViewTemplates _sharedViewTemplates;
     private readonly MainTabViewControls _mainTabViewControls;
     public MainWindow(ThemeColors theme)
@@ -5043,7 +5008,7 @@ public class MainWindow : Window
         Grid.SetRow(searchBarPanel, 1);
         mainGrid.Children.Add(searchBarPanel);
 
-        var tabControl = _mainTabViewControls.CreateMainTabView(out _songListScrollViewer, out _artistsListBox, out _albumsListBox, out _playlistsListBox);
+        var tabControl = _mainTabViewControls.CreateMainTabView(out _artistsListBox, out _albumsListBox, out _playlistsListBox);
         Grid.SetRow(tabControl, 2);
         mainGrid.Children.Add(tabControl);
 
@@ -5077,46 +5042,45 @@ public class MainWindow : Window
 
     private void MainWindow_DataContextChanged(object? sender, EventArgs e)
     {
-        if (_currentLibraryVM is not null)
+        if (_currentMainVM?.LibraryDisplayModeService is not null)
         {
-            _currentLibraryVM.PropertyChanged -= LibraryViewModel_PropertyChanged;
-            _currentLibraryVM = null;
+            _currentMainVM.LibraryDisplayModeService.PropertyChanged -= DisplayModeService_PropertyChanged;
         }
 
-        if (DataContext is not MainWindowViewModel vm || vm.Library == null)
+        if (DataContext is not MainWindowViewModel vm)
         {
+            _currentMainVM = null;
             return;
         }
 
         vm.SetOwnerView(this);
-
-        _currentLibraryVM = vm.Library;
-        _currentLibraryVM.PropertyChanged += LibraryViewModel_PropertyChanged;
+        _currentMainVM = vm;
+        _currentMainVM.LibraryDisplayModeService.PropertyChanged += DisplayModeService_PropertyChanged;
 
         // Apply initial view modes for non-library tabs
-        ApplyListViewDisplayMode(_artistsListBox, _currentLibraryVM.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate);
-        ApplyListViewDisplayMode(_albumsListBox, _currentLibraryVM.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate);
-        ApplyListViewDisplayMode(_playlistsListBox, _currentLibraryVM.PlaylistViewMode, _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.CompactPlaylistTemplate, _sharedViewTemplates.GridPlaylistTemplate);
+        ApplyListViewDisplayMode(_artistsListBox, _currentMainVM.LibraryDisplayModeService.ArtistViewMode, _sharedViewTemplates.DetailedArtistTemplate, _sharedViewTemplates.CompactArtistTemplate, _sharedViewTemplates.GridArtistTemplate);
+        ApplyListViewDisplayMode(_albumsListBox, _currentMainVM.LibraryDisplayModeService.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate);
+        ApplyListViewDisplayMode(_playlistsListBox, _currentMainVM.LibraryDisplayModeService.PlaylistViewMode, _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.CompactPlaylistTemplate, _sharedViewTemplates.GridPlaylistTemplate);
     }
 
-    private void LibraryViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    private void DisplayModeService_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (sender is not LibraryViewModel lvm)
+        if (_currentMainVM is null)
         {
             return;
         }
 
-        if (e.PropertyName == nameof(LibraryViewModel.ArtistViewMode))
+        if (e.PropertyName == nameof(ViewModels.LibraryManagement.LibraryDisplayModeService.ArtistViewMode))
         {
-            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_artistsListBox, lvm.ArtistViewMode, _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.ArtistTemplates.CompactArtistTemplate, _sharedViewTemplates.ArtistTemplates.GridArtistTemplate));
+            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_artistsListBox, _currentMainVM.LibraryDisplayModeService.ArtistViewMode, _sharedViewTemplates.DetailedArtistTemplate, _sharedViewTemplates.CompactArtistTemplate, _sharedViewTemplates.GridArtistTemplate));
         }
-        else if (e.PropertyName == nameof(LibraryViewModel.AlbumViewMode))
+        else if (e.PropertyName == nameof(ViewModels.LibraryManagement.LibraryDisplayModeService.AlbumViewMode))
         {
-            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_albumsListBox, lvm.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate));
+            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_albumsListBox, _currentMainVM.LibraryDisplayModeService.AlbumViewMode, _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.CompactAlbumTemplate, _sharedViewTemplates.GridAlbumTemplate));
         }
-        else if (e.PropertyName == nameof(LibraryViewModel.PlaylistViewMode))
+        else if (e.PropertyName == nameof(ViewModels.LibraryManagement.LibraryDisplayModeService.PlaylistViewMode))
         {
-            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_playlistsListBox, lvm.PlaylistViewMode, _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.CompactPlaylistTemplate, _sharedViewTemplates.GridPlaylistTemplate));
+            Dispatcher.UIThread.InvokeAsync(() => ApplyListViewDisplayMode(_playlistsListBox, _currentMainVM.LibraryDisplayModeService.PlaylistViewMode, _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.CompactPlaylistTemplate, _sharedViewTemplates.GridPlaylistTemplate));
         }
     }
 
@@ -5142,9 +5106,9 @@ public class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
-        if (_currentLibraryVM is not null)
+        if (_currentMainVM?.LibraryDisplayModeService is not null)
         {
-            _currentLibraryVM.PropertyChanged -= LibraryViewModel_PropertyChanged;
+            _currentMainVM.LibraryDisplayModeService.PropertyChanged -= DisplayModeService_PropertyChanged;
         }
 
         if (DataContext is MainWindowViewModel vm)
@@ -7563,7 +7527,6 @@ public class SettingsPersistenceManager
         AppSettings newSettingsToSave = new();
 
         // Preserve settings not managed by SettingsViewModel's UI by copying from disk state
-        newSettingsToSave.LibraryViewModePreference = settingsOnDisk.LibraryViewModePreference;
         newSettingsToSave.ArtistViewModePreference = settingsOnDisk.ArtistViewModePreference;
         newSettingsToSave.AlbumViewModePreference = settingsOnDisk.AlbumViewModePreference;
         newSettingsToSave.PlaylistViewModePreference = settingsOnDisk.PlaylistViewModePreference;
@@ -8051,20 +8014,6 @@ public class LibraryDisplayModeService : ViewModelBase
 {
     private readonly SettingsService _settingsService;
 
-    private SongDisplayMode _libraryViewMode;
-    public SongDisplayMode LibraryViewMode
-    {
-        get => _libraryViewMode;
-        private set // Setter is private, changes are made via command
-        {
-            if (SetProperty(ref _libraryViewMode, value))
-            {
-                Debug.WriteLine($"[DisplayModeService] LibraryViewMode changed to: {value}");
-                SavePreference(nameof(AppSettings.LibraryViewModePreference), value.ToString());
-            }
-        }
-    }
-
     private SongDisplayMode _artistViewMode;
     public SongDisplayMode ArtistViewMode
     {
@@ -8128,7 +8077,6 @@ public class LibraryDisplayModeService : ViewModelBase
 
                 switch (targetView)
                 {
-                    case "Library": LibraryViewMode = mode; break;
                     case "Artists": ArtistViewMode = mode; break;
                     case "Albums": AlbumViewMode = mode; break;
                     case "Playlists": PlaylistViewMode = mode; break;
@@ -8146,7 +8094,6 @@ public class LibraryDisplayModeService : ViewModelBase
     private void LoadDisplayPreferences()
     {
         AppSettings settings = _settingsService.LoadSettings();
-        _libraryViewMode = Enum.TryParse<SongDisplayMode>(settings.LibraryViewModePreference, out var libMode) ? libMode : SongDisplayMode.Detailed;
         _artistViewMode = Enum.TryParse<SongDisplayMode>(settings.ArtistViewModePreference, out var artMode) ? artMode : SongDisplayMode.Detailed;
         _albumViewMode = Enum.TryParse<SongDisplayMode>(settings.AlbumViewModePreference, out var albMode) ? albMode : SongDisplayMode.Detailed;
         _playlistViewMode = Enum.TryParse<SongDisplayMode>(settings.PlaylistViewModePreference, out var playMode) ? playMode : SongDisplayMode.Detailed;
@@ -8156,7 +8103,6 @@ public class LibraryDisplayModeService : ViewModelBase
         PlaylistGridDisplayType = Enum.TryParse<GridViewImageType>(settings.PlaylistGridViewImageType, out var playlistGridType) ? playlistGridType : GridViewImageType.Composite;
 
         // Initial OnPropertyChanged for any subscribers after loading
-        OnPropertyChanged(nameof(LibraryViewMode));
         OnPropertyChanged(nameof(ArtistViewMode));
         OnPropertyChanged(nameof(AlbumViewMode));
         OnPropertyChanged(nameof(PlaylistViewMode));
@@ -8337,6 +8283,7 @@ public class LibraryGroupingsViewModel : ViewModelBase
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\ViewModels\LibraryManagement\LibraryLoadProcess.cs">
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using Avalonia.Threading;
 using Sonorize.Models;
@@ -8381,10 +8328,13 @@ public class LibraryLoadProcess
             _components.Groupings.Playlists.Clear();
             _setStatusTextDelegate("Preparing to load music...");
         });
-        
+
         Action<string> statusUpdateCallback = status => _setStatusTextDelegate(status);
 
         var (allLoadedSongsFromOrchestrator, allLoadedPlaylistsFromOrchestrator) = await _components.DataOrchestrator.LoadAndProcessLibraryDataAsync(statusUpdateCallback);
+
+        Debug.WriteLine($"[LibraryLoadProcess] Data orchestrator finished. Loaded {allLoadedSongsFromOrchestrator.Count} songs and {allLoadedPlaylistsFromOrchestrator.Count} playlists.");
+
         _components.SongList.SetAllSongs(allLoadedSongsFromOrchestrator);
 
         await _uiDispatcher.InvokeAsync(() =>
@@ -8713,6 +8663,7 @@ public class SongListManager : ViewModelBase
     public void SetAllSongs(IEnumerable<Song> songs)
     {
         _allSongs = new List<Song>(songs);
+        Debug.WriteLine($"[SongListManager] SetAllSongs completed. Master list now contains {_allSongs.Count} songs.");
         // Typically, after setting all songs, a filter application would follow.
         // This can be triggered by the caller (LibraryViewModel).
         OnPropertyChanged(nameof(AllSongsCount)); // For any internal/debug use
@@ -8741,7 +8692,8 @@ public class SongListManager : ViewModelBase
             selectedAlbum,
             selectedPlaylist);
 
-        Debug.WriteLine($"[SongListManager.ApplyFilter] After initial filter: {filteredResults.Count()} songs.");
+        int filteredCount = filteredResults.Count();
+        Debug.WriteLine($"[SongListManager.ApplyFilter] After initial filter: {filteredCount} songs.");
 
         var sortedResults = SortSongs(filteredResults, sortBy, sortDirection);
 
@@ -9380,7 +9332,6 @@ public class MainWindowComponentsManager : IDisposable
     public PlaybackViewModel Playback { get; }
     public LoopEditorViewModel LoopEditor { get; }
     public AdvancedPanelViewModel AdvancedPanel { get; }
-    public LibraryDisplayModeService LibraryDisplayModeService { get; }
     public ApplicationWorkflowManager WorkflowManager { get; }
     public MainWindowInteractionCoordinator InteractionCoordinator { get; }
     public MainWindowViewModelOrchestrator ViewModelOrchestrator { get; }
@@ -9413,9 +9364,8 @@ public class MainWindowComponentsManager : IDisposable
         _songEditInteractionService = songEditInteractionService;
         _songLoopService = songLoopService;
 
-        LibraryDisplayModeService = new LibraryDisplayModeService(SettingsServiceProperty);
         // Pass parentMainWindowViewModel to LibraryViewModel as per its constructor
-        Library = new LibraryViewModel(parentMainWindowViewModel, SettingsServiceProperty, MusicLibraryServiceProperty, _loopDataService, LibraryDisplayModeService);
+        Library = new LibraryViewModel(parentMainWindowViewModel, SettingsServiceProperty, MusicLibraryServiceProperty, _loopDataService);
         Playback = new PlaybackViewModel(PlaybackServiceProperty, _waveformService); // Use the stored PlaybackService
         LoopEditor = new LoopEditorViewModel(PlaybackServiceProperty, _loopDataService, _songLoopService); // Use stored PlaybackService
         AdvancedPanel = new AdvancedPanelViewModel(Playback, Library);
@@ -9596,6 +9546,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     // Expose Services needed by views or bindings if not through child VMs
     public PlaybackService PlaybackService => _componentsManager.PlaybackServiceProperty; // Exposed from ComponentsManager
     public ThemeColors CurrentTheme { get; }
+    public LibraryDisplayModeService LibraryDisplayModeService { get; }
 
     // Expose the child ViewModels from ComponentsManager
     public LibraryViewModel Library => _componentsManager.Library;
@@ -9668,6 +9619,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         CurrentTheme = theme; // Store theme directly
         PlaybackAreaBackground = CurrentTheme.B_BackgroundColor;
 
+        LibraryDisplayModeService = new LibraryDisplayModeService(settingsService);
+
         _componentsManager = new MainWindowComponentsManager(
             this, // Pass self as parent
             settingsService,
@@ -9729,7 +9682,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             (ExitCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (AddDirectoryAndRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenEditSongMetadataDialogCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            
+
             Library.RaiseLibraryCommandsCanExecuteChanged();
             Playback.RaisePlaybackCommandCanExecuteChanged();
             LoopEditor.RaiseMainLoopCommandsCanExecuteChanged();
@@ -9747,7 +9700,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public void UpdatePlaybackAreaBackground()
     {
         var settings = _componentsManager.SettingsServiceProperty.LoadSettings();
-        
+
         var newCompactSetting = settings.UseCompactPlaybackControls;
         if (UseCompactPlaybackControls != newCompactSetting)
         {
@@ -9798,7 +9751,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         var (statusMessages, settingsChanged) = await _componentsManager.InteractionCoordinator.CoordinateAndProcessSettingsAsync();
         if (settingsChanged)
         {
-            Library.LibraryDisplayModeService.ReloadDisplayPreferences();
+            LibraryDisplayModeService.ReloadDisplayPreferences();
             UpdatePlaybackAreaBackground();
             if (statusMessages.Any())
             {
@@ -10669,7 +10622,7 @@ public class ArtistItemTemplateProvider
                 Bindings =
                 {
                     new Binding(nameof(ArtistViewModel.SongThumbnailsForGrid)),
-                    new Binding("DataContext.Library.LibraryDisplayModeService.ArtistGridDisplayType")
+                    new Binding("LibraryDisplayModeService.ArtistGridDisplayType")
                     {
                         RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
                         {
@@ -10689,7 +10642,7 @@ public class ArtistItemTemplateProvider
                 Bindings =
                 {
                     new Binding(nameof(ArtistViewModel.SongThumbnailsForGrid)),
-                    new Binding("DataContext.Library.LibraryDisplayModeService.ArtistGridDisplayType")
+                    new Binding("LibraryDisplayModeService.ArtistGridDisplayType")
                     {
                         RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
                         {
@@ -10850,31 +10803,16 @@ public static class MainMenu
         // View Menu
         var viewMenuItem = new MenuItem { Header = "_View", Foreground = theme.B_TextColor };
 
-        // Library View SubMenu
-        var libraryViewSubMenu = new MenuItem { Header = "Library View", Foreground = theme.B_TextColor };
-        var libDetailed = new MenuItem { Header = "Detailed", Foreground = theme.B_TextColor };
-        libDetailed.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
-        libDetailed.CommandParameter = ("Library", SongDisplayMode.Detailed);
-        var libCompact = new MenuItem { Header = "Compact", Foreground = theme.B_TextColor };
-        libCompact.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
-        libCompact.CommandParameter = ("Library", SongDisplayMode.Compact);
-        var libGrid = new MenuItem { Header = "Grid", Foreground = theme.B_TextColor };
-        libGrid.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
-        libGrid.CommandParameter = ("Library", SongDisplayMode.Grid);
-        libraryViewSubMenu.Items.Add(libDetailed);
-        libraryViewSubMenu.Items.Add(libCompact);
-        libraryViewSubMenu.Items.Add(libGrid);
-
         // Artists View SubMenu
         var artistsViewSubMenu = new MenuItem { Header = "Artists View", Foreground = theme.B_TextColor };
         var artDetailed = new MenuItem { Header = "Detailed", Foreground = theme.B_TextColor };
-        artDetailed.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        artDetailed.Bind(MenuItem.CommandProperty, new Binding("LibraryDisplayModeService.SetDisplayModeCommand"));
         artDetailed.CommandParameter = ("Artists", SongDisplayMode.Detailed);
         var artCompact = new MenuItem { Header = "Compact", Foreground = theme.B_TextColor };
-        artCompact.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        artCompact.Bind(MenuItem.CommandProperty, new Binding("LibraryDisplayModeService.SetDisplayModeCommand"));
         artCompact.CommandParameter = ("Artists", SongDisplayMode.Compact);
         var artGrid = new MenuItem { Header = "Grid", Foreground = theme.B_TextColor };
-        artGrid.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        artGrid.Bind(MenuItem.CommandProperty, new Binding("LibraryDisplayModeService.SetDisplayModeCommand"));
         artGrid.CommandParameter = ("Artists", SongDisplayMode.Grid);
         artistsViewSubMenu.Items.Add(artDetailed);
         artistsViewSubMenu.Items.Add(artCompact);
@@ -10883,13 +10821,13 @@ public static class MainMenu
         // Albums View SubMenu
         var albumsViewSubMenu = new MenuItem { Header = "Albums View", Foreground = theme.B_TextColor };
         var albDetailed = new MenuItem { Header = "Detailed", Foreground = theme.B_TextColor };
-        albDetailed.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        albDetailed.Bind(MenuItem.CommandProperty, new Binding("LibraryDisplayModeService.SetDisplayModeCommand"));
         albDetailed.CommandParameter = ("Albums", SongDisplayMode.Detailed);
         var albCompact = new MenuItem { Header = "Compact", Foreground = theme.B_TextColor };
-        albCompact.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        albCompact.Bind(MenuItem.CommandProperty, new Binding("LibraryDisplayModeService.SetDisplayModeCommand"));
         albCompact.CommandParameter = ("Albums", SongDisplayMode.Compact);
         var albGrid = new MenuItem { Header = "Grid", Foreground = theme.B_TextColor };
-        albGrid.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        albGrid.Bind(MenuItem.CommandProperty, new Binding("LibraryDisplayModeService.SetDisplayModeCommand"));
         albGrid.CommandParameter = ("Albums", SongDisplayMode.Grid);
         albumsViewSubMenu.Items.Add(albDetailed);
         albumsViewSubMenu.Items.Add(albCompact);
@@ -10898,19 +10836,18 @@ public static class MainMenu
         // Playlists View SubMenu
         var playlistsViewSubMenu = new MenuItem { Header = "Playlists View", Foreground = theme.B_TextColor };
         var playDetailed = new MenuItem { Header = "Detailed", Foreground = theme.B_TextColor };
-        playDetailed.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        playDetailed.Bind(MenuItem.CommandProperty, new Binding("LibraryDisplayModeService.SetDisplayModeCommand"));
         playDetailed.CommandParameter = ("Playlists", SongDisplayMode.Detailed);
         var playCompact = new MenuItem { Header = "Compact", Foreground = theme.B_TextColor };
-        playCompact.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        playCompact.Bind(MenuItem.CommandProperty, new Binding("LibraryDisplayModeService.SetDisplayModeCommand"));
         playCompact.CommandParameter = ("Playlists", SongDisplayMode.Compact);
         var playGrid = new MenuItem { Header = "Grid", Foreground = theme.B_TextColor };
-        playGrid.Bind(MenuItem.CommandProperty, new Binding("Library.SetDisplayModeCommand"));
+        playGrid.Bind(MenuItem.CommandProperty, new Binding("LibraryDisplayModeService.SetDisplayModeCommand"));
         playGrid.CommandParameter = ("Playlists", SongDisplayMode.Grid);
         playlistsViewSubMenu.Items.Add(playDetailed);
         playlistsViewSubMenu.Items.Add(playCompact);
         playlistsViewSubMenu.Items.Add(playGrid);
 
-        viewMenuItem.Items.Add(libraryViewSubMenu);
         viewMenuItem.Items.Add(artistsViewSubMenu);
         viewMenuItem.Items.Add(albumsViewSubMenu);
         viewMenuItem.Items.Add(playlistsViewSubMenu);
@@ -11103,25 +11040,22 @@ public static class MainPlaybackControlsPanel
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\Sonorize\Sonorize\Source\Views\MainWindowControls\MainTabViewControls.cs">
+using System;
 using System.Diagnostics;
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
-using Avalonia.Data.Converters;
 using Avalonia.Layout;
+using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Media;
 using Avalonia.Styling;
-using Sonorize.Converters;
+using Avalonia.VisualTree;
 using Sonorize.Models;
 using Sonorize.ViewModels;
 using Sonorize.ViewModels.LibraryManagement;
-using System.Linq;
-using Avalonia.Media.Imaging; // For BitmapInterpolationMode
-using Avalonia.Input;
-using Avalonia.VisualTree;
-using System; // For Enum
 
 namespace Sonorize.Views.MainWindowControls;
 
@@ -11129,10 +11063,6 @@ public class MainTabViewControls
 {
     private readonly ThemeColors _theme;
     private readonly SharedViewTemplates _sharedViewTemplates;
-    private ListBox? _songListBoxInstance;
-    private ListBox? _artistsListBoxInstance;
-    private ListBox? _albumsListBoxInstance;
-    private ListBox? _playlistsListBoxInstance;
 
     public MainTabViewControls(ThemeColors theme, SharedViewTemplates sharedViewTemplates)
     {
@@ -11140,7 +11070,10 @@ public class MainTabViewControls
         _sharedViewTemplates = sharedViewTemplates;
     }
 
-    public TabControl CreateMainTabView(out ScrollViewer songListScrollViewer, out ListBox artistsListBox, out ListBox albumsListBox, out ListBox playlistsListBox)
+    public TabControl CreateMainTabView(
+        out ListBox artistsListBox,
+        out ListBox albumsListBox,
+        out ListBox playlistsListBox)
     {
         var tabControl = new TabControl
         {
@@ -11149,8 +11082,16 @@ public class MainTabViewControls
             BorderThickness = new Thickness(0),
             Padding = new Thickness(0)
         };
+
+        // Ensure DataGrid has its control theme in this subtree (belt-and-suspenders)
+        tabControl.Styles.Add(new StyleInclude(new Uri("avares://Application"))
+        {
+            Source = new Uri("avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml")
+        });
+
         tabControl.Bind(TabControl.SelectedIndexProperty, new Binding("ActiveTabIndex", BindingMode.TwoWay));
 
+        // TabItem styling
         var tabItemStyle = new Style(s => s.Is<TabItem>());
         tabItemStyle.Setters.Add(new Setter(TabItem.BackgroundProperty, _theme.B_BackgroundColor));
         tabItemStyle.Setters.Add(new Setter(TabItem.ForegroundProperty, _theme.B_SecondaryTextColor));
@@ -11172,35 +11113,25 @@ public class MainTabViewControls
         tabControl.Styles.Add(selectedTabItemStyle);
         tabControl.Styles.Add(pointerOverTabItemStyle);
 
-        // --- Library Tab ---
+        // --- LIBRARY tab (DataGrid directly; no outer ScrollViewer) ---
         var libraryDataGrid = CreateLibraryDataGrid(_theme);
-        var dataGridScrollViewer = new ScrollViewer { Content = libraryDataGrid, Name = "DataGridScrollViewer" };
-
-        var (sv, slb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "SongListBox", "Library.FilteredSongs", "Library.SelectedSong",
-            _sharedViewTemplates.SongTemplates.GridSongTemplate,
-            _sharedViewTemplates.WrapPanelItemsPanelTemplate,
-            lb => _songListBoxInstance = lb);
-
-        var libraryTabContainer = new Grid();
-        dataGridScrollViewer.Bind(Visual.IsVisibleProperty, new Binding("Library.LibraryViewMode") { Converter = new FuncValueConverter<SongDisplayMode, bool>(m => m != SongDisplayMode.Grid) });
-        sv.Bind(Visual.IsVisibleProperty, new Binding("Library.LibraryViewMode") { Converter = new FuncValueConverter<SongDisplayMode, bool>(m => m == SongDisplayMode.Grid) });
-        libraryTabContainer.Children.Add(dataGridScrollViewer);
-        libraryTabContainer.Children.Add(sv);
-
         var libraryTab = new TabItem
         {
             Header = "LIBRARY",
-            Content = libraryTabContainer
+            Content = libraryDataGrid
         };
-        // The container will inherit the DataContext from the TabControl, which is MainWindowViewModel. All paths inside must be relative to that.
 
-
-        var (artistsListScrollViewer, alb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "ArtistsListBox", "Library.Groupings.Artists", "Library.FilterState.SelectedArtist",
-            _sharedViewTemplates.ArtistTemplates.DetailedArtistTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
-            lb => _artistsListBoxInstance = lb);
-        _artistsListBoxInstance = alb;
+        // --- ARTISTS tab ---
+        var (artistsListScrollViewer, artistsLb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            _theme,
+            _sharedViewTemplates,
+            "ArtistsListBox",
+            "Library.Groupings.Artists",
+            "Library.FilterState.SelectedArtist",
+            _sharedViewTemplates.DetailedArtistTemplate,
+            _sharedViewTemplates.StackPanelItemsPanelTemplate,
+            lb => { });
+        artistsListBox = artistsLb;
 
         var artistsTab = new TabItem
         {
@@ -11208,11 +11139,17 @@ public class MainTabViewControls
             Content = artistsListScrollViewer
         };
 
-        var (albumsListScrollViewer, alblb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "AlbumsListBox", "Library.Groupings.Albums", "Library.FilterState.SelectedAlbum",
-            _sharedViewTemplates.DetailedAlbumTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
-            lb => _albumsListBoxInstance = lb);
-        _albumsListBoxInstance = alblb;
+        // --- ALBUMS tab ---
+        var (albumsListScrollViewer, albumsLb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            _theme,
+            _sharedViewTemplates,
+            "AlbumsListBox",
+            "Library.Groupings.Albums",
+            "Library.FilterState.SelectedAlbum",
+            _sharedViewTemplates.DetailedAlbumTemplate,
+            _sharedViewTemplates.StackPanelItemsPanelTemplate,
+            lb => { });
+        albumsListBox = albumsLb;
 
         var albumsTab = new TabItem
         {
@@ -11220,11 +11157,17 @@ public class MainTabViewControls
             Content = albumsListScrollViewer
         };
 
-        var (playlistsListScrollViewer, plb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
-            _theme, _sharedViewTemplates, "PlaylistsListBox", "Library.Groupings.Playlists", "Library.FilterState.SelectedPlaylist",
-            _sharedViewTemplates.DetailedPlaylistTemplate, _sharedViewTemplates.StackPanelItemsPanelTemplate,
-            lb => _playlistsListBoxInstance = lb);
-        _playlistsListBoxInstance = plb;
+        // --- PLAYLISTS tab ---
+        var (playlistsListScrollViewer, playlistsLb) = ListBoxViewFactory.CreateStyledListBoxScrollViewer(
+            _theme,
+            _sharedViewTemplates,
+            "PlaylistsListBox",
+            "Library.Groupings.Playlists",
+            "Library.FilterState.SelectedPlaylist",
+            _sharedViewTemplates.DetailedPlaylistTemplate,
+            _sharedViewTemplates.StackPanelItemsPanelTemplate,
+            lb => { });
+        playlistsListBox = playlistsLb;
 
         var playlistsTab = new TabItem
         {
@@ -11232,28 +11175,39 @@ public class MainTabViewControls
             Content = playlistsListScrollViewer
         };
 
+        // Populate tabs via Items.Add (Items is read-only, but the collection supports Add)
         tabControl.Items.Add(libraryTab);
         tabControl.Items.Add(artistsTab);
         tabControl.Items.Add(albumsTab);
         tabControl.Items.Add(playlistsTab);
 
-        songListScrollViewer = sv;
-        artistsListBox = _artistsListBoxInstance!;
-        albumsListBox = _albumsListBoxInstance!;
-        playlistsListBox = _playlistsListBoxInstance!;
+        // Debug: see when TabControl is measured
+        tabControl.AttachedToVisualTree += (_, __) =>
+        {
+            Debug.WriteLine("[MainTabViewControls] TabControl attached. Size: " +
+                            $"{tabControl.Bounds.Width}x{tabControl.Bounds.Height}");
+        };
+
         return tabControl;
     }
 
-    public void UpdateListViewMode(SongDisplayMode mode, ListBox listBox, IDataTemplate detailedTemplate, IDataTemplate compactTemplate, IDataTemplate gridTemplate)
+    public void UpdateListViewMode(
+        SongDisplayMode mode,
+        ListBox listBox,
+        IDataTemplate detailedTemplate,
+        IDataTemplate compactTemplate,
+        IDataTemplate gridTemplate)
     {
         if (listBox == null)
         {
-            Debug.WriteLine($"[MainTabViewControls] UpdateListViewMode called but target ListBox is null.");
+            Debug.WriteLine("[MainTabViewControls] UpdateListViewMode called but target ListBox is null.");
             return;
         }
 
         Debug.WriteLine($"[MainTabViewControls] Applying display mode: {mode} to ListBox: {listBox.Name}");
-        var scrollViewer = listBox.Parent as ScrollViewer;
+
+        var scrollViewer = listBox.GetVisualAncestors().OfType<ScrollViewer>().FirstOrDefault()
+                           ?? listBox.Parent as ScrollViewer;
 
         switch (mode)
         {
@@ -11262,11 +11216,13 @@ public class MainTabViewControls
                 listBox.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
                 if (scrollViewer is not null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
                 break;
+
             case SongDisplayMode.Compact:
                 listBox.ItemTemplate = compactTemplate;
                 listBox.ItemsPanel = _sharedViewTemplates.StackPanelItemsPanelTemplate;
                 if (scrollViewer is not null) scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
                 break;
+
             case SongDisplayMode.Grid:
                 listBox.ItemTemplate = gridTemplate;
                 listBox.ItemsPanel = _sharedViewTemplates.WrapPanelItemsPanelTemplate;
@@ -11280,170 +11236,64 @@ public class MainTabViewControls
         var dataGrid = new DataGrid
         {
             Name = "LibraryDataGrid",
-            Margin = new Thickness(10),
-            BorderThickness = new Thickness(0),
+
+            // Make it impossible to miss visually while debugging
             Background = theme.B_ListBoxBackground,
-            RowBackground = Brushes.Transparent, // Rows will be styled individually
-            GridLinesVisibility = DataGridGridLinesVisibility.None,
-            CanUserReorderColumns = true,
-            CanUserResizeColumns = true,
-            CanUserSortColumns = true,
+            Foreground = theme.B_TextColor,
+            BorderBrush = Brushes.Magenta,
+            BorderThickness = new Thickness(2),
+            MinHeight = 250,
+
             AutoGenerateColumns = false,
-            HeadersVisibility = DataGridHeadersVisibility.Column
+            HeadersVisibility = DataGridHeadersVisibility.Column,
+            GridLinesVisibility = DataGridGridLinesVisibility.All,
+            RowHeight = 36,
+            IsReadOnly = true,
+            CanUserSortColumns = true
         };
 
-        // Bindings are relative to MainWindowViewModel
+        // Bindings relative to MainWindowViewModel
         dataGrid.Bind(ItemsControl.ItemsSourceProperty, new Binding("Library.FilteredSongs"));
         dataGrid.Bind(DataGrid.SelectedItemProperty, new Binding("Library.SelectedSong", BindingMode.TwoWay));
-        dataGrid.Bind(DataGrid.RowHeightProperty, new Binding("Library.ViewOptions.RowHeight"));
 
-        // Sorting
-        dataGrid.Sorting += (s, e) =>
+        // Columns
+        dataGrid.Columns.Add(new DataGridTextColumn
         {
-            if (s is not DataGrid { DataContext: MainWindowViewModel vm } ||
-                vm.Library is null || e.Column.SortMemberPath is null)
-            {
-                return;
-            }
+            Header = "Title",
+            Binding = new Binding("Title"),
+            Width = new DataGridLength(3, DataGridLengthUnitType.Star)
+        });
 
-            if (Enum.TryParse<SortProperty>(e.Column.SortMemberPath, true, out var prop))
-            {
-                vm.Library.SortCommand.Execute(prop);
-            }
-            e.Handled = true; // We handled it
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Artist",
+            Binding = new Binding("Artist"),
+            Width = new DataGridLength(2, DataGridLengthUnitType.Star)
+        });
+
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Album",
+            Binding = new Binding("Album"),
+            Width = new DataGridLength(2, DataGridLengthUnitType.Star)
+        });
+
+        // Debug hooks
+        dataGrid.AttachedToVisualTree += (_, __) =>
+        {
+            Debug.WriteLine("[MainTabViewControls] LibraryDataGrid attached.");
+            // Force template application and log row/col presenters existence
+            dataGrid.ApplyTemplate();
+            Debug.WriteLine("[MainTabViewControls] Template applied.");
         };
 
-        // Context Menu Handler
-        dataGrid.ContextRequested += (sender, e) =>
+        dataGrid.LayoutUpdated += (_, __) =>
         {
-            if (e.Source is not Control { DataContext: Song song } control) return;
-
-            var menu = new SongContextMenuHelper(theme).CreateContextMenu(song);
-            menu.PlacementTarget = control;
-            menu.Open();
-            e.Handled = true;
+            var b = dataGrid.Bounds;
+            Debug.WriteLine($"[MainTabViewControls] DataGrid size: {b.Width}x{b.Height}");
         };
-
-        // --- STYLING ---
-        ApplyDataGridStyles(dataGrid, theme);
-
-        // --- COLUMNS ---
-        var imageCol = new DataGridTemplateColumn
-        {
-            Header = "",
-            Width = new DataGridLength(32 + 20), // Image + Padding
-            CanUserSort = false,
-            CellTemplate = new FuncDataTemplate<Song>((song, ns) =>
-            {
-                var image = new Image { Width = 32, Height = 32, Margin = new Thickness(10, 0), Stretch = Stretch.UniformToFill };
-                image.Bind(Image.SourceProperty, new Binding(nameof(Song.Thumbnail)));
-                RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
-                return image;
-            })
-        };
-
-        var titleCol = new DataGridTextColumn { Binding = new Binding("Title"), Header = "Title", Width = new DataGridLength(3, DataGridLengthUnitType.Star), SortMemberPath = "Title" };
-        var artistCol = new DataGridTextColumn { Binding = new Binding("Artist"), Header = "Artist", Width = new DataGridLength(1.5, DataGridLengthUnitType.Star), SortMemberPath = "Artist" };
-        artistCol.Bind(DataGridColumn.IsVisibleProperty, new Binding
-        {
-            Path = "DataContext.Library.ViewOptions.ShowArtist",
-            Source = dataGrid
-        });
-
-        var albumCol = new DataGridTextColumn { Binding = new Binding("Album"), Header = "Album", Width = new DataGridLength(1.5, DataGridLengthUnitType.Star), SortMemberPath = "Album" };
-        albumCol.Bind(DataGridColumn.IsVisibleProperty, new Binding
-        {
-            Path = "DataContext.Library.ViewOptions.ShowAlbum",
-            Source = dataGrid
-        });
-
-        var playCountCol = new DataGridTextColumn { Binding = new Binding("PlayCount"), Header = "Plays", Width = DataGridLength.Auto, SortMemberPath = "PlayCount" };
-        playCountCol.Bind(DataGridColumn.IsVisibleProperty, new Binding
-        {
-            Path = "DataContext.Library.ViewOptions.ShowPlayCount",
-            Source = dataGrid
-        });
-
-        var dateAddedCol = new DataGridTextColumn { Binding = new Binding("DateAdded") { StringFormat = "{0:yyyy-MM-dd}" }, Header = "Date Added", Width = DataGridLength.Auto, SortMemberPath = "DateAdded" };
-        dateAddedCol.Bind(DataGridColumn.IsVisibleProperty, new Binding
-        {
-            Path = "DataContext.Library.ViewOptions.ShowDateAdded",
-            Source = dataGrid
-        });
-
-        var durationCol = new DataGridTextColumn { Binding = new Binding("DurationString"), Header = "Duration", Width = DataGridLength.Auto, SortMemberPath = "Duration" };
-        durationCol.Bind(DataGridColumn.IsVisibleProperty, new Binding
-        {
-            Path = "DataContext.Library.ViewOptions.ShowDuration",
-            Source = dataGrid
-        });
-
-        dataGrid.Columns.Add(imageCol);
-        dataGrid.Columns.Add(titleCol);
-        dataGrid.Columns.Add(artistCol);
-        dataGrid.Columns.Add(albumCol);
-        dataGrid.Columns.Add(playCountCol);
-        dataGrid.Columns.Add(dateAddedCol);
-        dataGrid.Columns.Add(durationCol);
 
         return dataGrid;
-    }
-
-    private void ApplyDataGridStyles(DataGrid dataGrid, ThemeColors theme)
-    {
-        dataGrid.Styles.Add(new Style(s => s.OfType<DataGridRow>())
-        {
-            Setters =
-            {
-                new Setter(TemplatedControl.BackgroundProperty, new MultiBinding
-                {
-                    Converter = new AlternatingRowBackgroundConverter
-                    {
-                        DefaultBrush = theme.B_ListBoxBackground,
-                        AlternateBrush = theme.B_ListBoxAlternateBackground
-                    },
-                    Bindings =
-                    {
-                        new Binding("."),
-                        // The Song object (row's DataContext) has ViewOptions attached for this purpose.
-                        new Binding("ViewOptions.EnableAlternatingRowColors")
-                    }
-                }),
-                new Setter(TextBlock.ForegroundProperty, theme.B_TextColor),
-            }
-        });
-
-        dataGrid.Styles.Add(new Style(s => s.OfType<DataGridRow>().Class(":pointerover").Not(xx => xx.Class(":selected")))
-        { Setters = { new Setter(TemplatedControl.BackgroundProperty, theme.B_ControlBackgroundColor) } });
-
-        dataGrid.Styles.Add(new Style(s => s.OfType<DataGridRow>().Class(":selected"))
-        {
-            Setters =
-            {
-                new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor),
-                new Setter(TextBlock.ForegroundProperty, theme.B_AccentForeground)
-            }
-        });
-
-        dataGrid.Styles.Add(new Style(s => s.OfType<DataGridRow>().Class(":selected").Class(":pointerover"))
-        {
-            Setters =
-            {
-                new Setter(TemplatedControl.BackgroundProperty, theme.B_AccentColor),
-                new Setter(TextBlock.ForegroundProperty, theme.B_AccentForeground)
-            }
-        });
-
-        dataGrid.Styles.Add(new Style(s => s.OfType<DataGridColumnHeader>())
-        {
-            Setters =
-            {
-                new Setter(TemplatedControl.BackgroundProperty, theme.B_SlightlyLighterBackground),
-                new Setter(TemplatedControl.ForegroundProperty, theme.B_SecondaryTextColor),
-                new Setter(TemplatedControl.FontWeightProperty, FontWeight.Bold),
-                new Setter(TemplatedControl.FontSizeProperty, 11.0),
-            }
-        });
     }
 }
 </file>
@@ -11887,32 +11737,119 @@ public class SharedViewTemplates
 {
     private readonly ThemeColors _theme;
 
-    // Expose the provider for Song templates
-    public SongItemTemplateProvider SongTemplates { get; private set; }
-    // Expose the provider for Artist templates
-    public ArtistItemTemplateProvider ArtistTemplates { get; private set; }
+    // Artist Templates
+    public FuncDataTemplate<ArtistViewModel> DetailedArtistTemplate { get; private set; }
+    public FuncDataTemplate<ArtistViewModel> CompactArtistTemplate { get; private set; }
+    public FuncDataTemplate<ArtistViewModel> GridArtistTemplate { get; private set; }
 
+    // Playlist Templates
     public FuncDataTemplate<PlaylistViewModel> DetailedPlaylistTemplate { get; private set; }
     public FuncDataTemplate<PlaylistViewModel> CompactPlaylistTemplate { get; private set; }
     public FuncDataTemplate<PlaylistViewModel> GridPlaylistTemplate { get; private set; }
 
+    // Album Templates
     public FuncDataTemplate<AlbumViewModel> DetailedAlbumTemplate { get; private set; }
     public FuncDataTemplate<AlbumViewModel> CompactAlbumTemplate { get; private set; }
     public FuncDataTemplate<AlbumViewModel> GridAlbumTemplate { get; private set; }
 
+    // Panel Templates
     public ITemplate<Panel> StackPanelItemsPanelTemplate { get; private set; }
     public ITemplate<Panel> WrapPanelItemsPanelTemplate { get; private set; }
 
     public SharedViewTemplates(ThemeColors theme)
     {
         _theme = theme;
-        SongTemplates = new SongItemTemplateProvider(_theme);
-        ArtistTemplates = new ArtistItemTemplateProvider(_theme);
-
         Debug.WriteLine("[SharedViewTemplates] Constructor called.");
+        InitializeArtistTemplates();
         InitializeAlbumTemplates();
         InitializePlaylistTemplates();
         InitializePanelTemplates();
+    }
+
+    private void InitializeArtistTemplates()
+    {
+        DetailedArtistTemplate = new FuncDataTemplate<ArtistViewModel>((dataContext, nameScope) =>
+        {
+            var image = new Image { Width = 32, Height = 32, Margin = new Thickness(5, 0, 10, 0), Stretch = Stretch.UniformToFill };
+            image.Bind(Image.SourceProperty, new Binding(nameof(ArtistViewModel.Thumbnail)));
+            RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
+
+            var artistNameBlock = new TextBlock { FontSize = 14, VerticalAlignment = VerticalAlignment.Center };
+            artistNameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(ArtistViewModel.Name)));
+
+            var itemGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), VerticalAlignment = VerticalAlignment.Center };
+            itemGrid.Children.Add(image); itemGrid.Children.Add(artistNameBlock);
+            Grid.SetColumn(image, 0); Grid.SetColumn(artistNameBlock, 1);
+            return new Border { Padding = new Thickness(10, 8), MinHeight = 44, Background = Brushes.Transparent, Child = itemGrid };
+        }, supportsRecycling: true);
+
+        CompactArtistTemplate = new FuncDataTemplate<ArtistViewModel>((dataContext, nameScope) =>
+        {
+            var artistNameBlock = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+            artistNameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(ArtistViewModel.Name)));
+            return new Border { Padding = new Thickness(10, 4, 10, 4), MinHeight = 30, Background = Brushes.Transparent, Child = artistNameBlock };
+        }, supportsRecycling: true);
+
+        GridArtistTemplate = new FuncDataTemplate<ArtistViewModel>((dataContext, nameScope) =>
+        {
+            var imagePresenter = new Panel { Width = 80, Height = 80, HorizontalAlignment = HorizontalAlignment.Center };
+
+            // Composite 4-image grid
+            var imageGrid = new Grid
+            {
+                Width = 80,
+                Height = 80,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                ColumnDefinitions = new ColumnDefinitions("*,*"),
+                RowDefinitions = new RowDefinitions("*,*")
+            };
+            for (int i = 0; i < 4; i++)
+            {
+                var img = new Image { Width = 38, Height = 38, Stretch = Stretch.UniformToFill, Margin = new Thickness(1) };
+                img.Bind(Image.SourceProperty, new Binding($"SongThumbnailsForGrid[{i}]"));
+                RenderOptions.SetBitmapInterpolationMode(img, BitmapInterpolationMode.HighQuality);
+                Grid.SetRow(img, i / 2); Grid.SetColumn(img, i % 2);
+                imageGrid.Children.Add(img);
+            }
+            imageGrid.Bind(Visual.IsVisibleProperty, new MultiBinding
+            {
+                Converter = new GridViewImageVisibilityConverter { TargetType = GridViewImageType.Composite },
+                Bindings =
+                {
+                    new Binding(nameof(ArtistViewModel.SongThumbnailsForGrid)),
+                    new Binding("LibraryDisplayModeService.ArtistGridDisplayType")
+                    {
+                        RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+                    }
+                }
+            });
+
+            // Single representative image
+            var singleImage = new Image { Width = 80, Height = 80, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center };
+            singleImage.Bind(Image.SourceProperty, new Binding(nameof(ArtistViewModel.Thumbnail)));
+            RenderOptions.SetBitmapInterpolationMode(singleImage, BitmapInterpolationMode.HighQuality);
+            singleImage.Bind(Visual.IsVisibleProperty, new MultiBinding
+            {
+                Converter = new GridViewImageVisibilityConverter { TargetType = GridViewImageType.Single },
+                Bindings =
+                {
+                    new Binding(nameof(ArtistViewModel.SongThumbnailsForGrid)),
+                    new Binding("LibraryDisplayModeService.ArtistGridDisplayType")
+                    {
+                        RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
+                    }
+                }
+            });
+
+            imagePresenter.Children.Add(imageGrid);
+            imagePresenter.Children.Add(singleImage);
+
+            var artistNameBlock = new TextBlock { FontSize = 12, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, MaxHeight = 30, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 3, 0, 0) };
+            artistNameBlock.Bind(TextBlock.TextProperty, new Binding(nameof(ArtistViewModel.Name)));
+
+            var contentStack = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Children = { imagePresenter, artistNameBlock } };
+            return new Border { Width = 120, Height = 130, Background = Brushes.Transparent, Padding = new Thickness(5), Child = contentStack, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        }, supportsRecycling: true);
     }
 
     private void InitializePlaylistTemplates()
@@ -11999,7 +11936,7 @@ public class SharedViewTemplates
                 Bindings =
                 {
                     new Binding(nameof(PlaylistViewModel.SongThumbnailsForGrid)),
-                    new Binding("DataContext.Library.LibraryDisplayModeService.PlaylistGridDisplayType")
+                    new Binding("LibraryDisplayModeService.PlaylistGridDisplayType")
                     {
                         RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
                     }
@@ -12016,7 +11953,7 @@ public class SharedViewTemplates
                 Bindings =
                 {
                     new Binding(nameof(PlaylistViewModel.SongThumbnailsForGrid)),
-                    new Binding("DataContext.Library.LibraryDisplayModeService.PlaylistGridDisplayType")
+                    new Binding("LibraryDisplayModeService.PlaylistGridDisplayType")
                     {
                         RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
                     }
@@ -12161,7 +12098,7 @@ public class SharedViewTemplates
                 Bindings =
                 {
                     new Binding(nameof(AlbumViewModel.SongThumbnailsForGrid)),
-                    new Binding("DataContext.Library.LibraryDisplayModeService.AlbumGridDisplayType")
+                    new Binding("LibraryDisplayModeService.AlbumGridDisplayType")
                     {
                         RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
                     }
@@ -12178,7 +12115,7 @@ public class SharedViewTemplates
                 Bindings =
                 {
                     new Binding(nameof(AlbumViewModel.SongThumbnailsForGrid)),
-                    new Binding("DataContext.Library.LibraryDisplayModeService.AlbumGridDisplayType")
+                    new Binding("LibraryDisplayModeService.AlbumGridDisplayType")
                     {
                         RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Window) }
                     }

@@ -195,11 +195,10 @@ public class MainTabViewControls
         {
             Name = "LibraryDataGrid",
 
-            // Make it impossible to miss visually while debugging
             Background = theme.B_ListBoxBackground,
             Foreground = theme.B_TextColor,
-            BorderBrush = Brushes.Magenta,
-            BorderThickness = new Thickness(2),
+            BorderBrush = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
             MinHeight = 250,
 
             AutoGenerateColumns = false,

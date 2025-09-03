@@ -134,6 +134,12 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         Dispatcher.UIThread.InvokeAsync(UpdateAllUIDependentStates);
         UpdatePlaybackAreaBackground();
+
+        // Load the library
+        if (LoadInitialDataCommand.CanExecute(null))
+        {
+            LoadInitialDataCommand.Execute(null);
+        }
     }
 
     public void SetOwnerView(Window ownerView)

@@ -90,16 +90,12 @@ public class LibraryFilterStateManager : ViewModelBase
 
     public void ClearSelectionsAndSearch()
     {
-        // Suppress individual notifications if setting multiple properties
-        bool changed = false;
-        if (_selectedArtist is not null) { _selectedArtist = null; OnPropertyChanged(nameof(SelectedArtist)); changed = true; }
-        if (_selectedAlbum is not null) { _selectedAlbum = null; OnPropertyChanged(nameof(SelectedAlbum)); changed = true; }
-        if (_selectedPlaylist is not null) { _selectedPlaylist = null; OnPropertyChanged(nameof(SelectedPlaylist)); changed = true; }
-        if (!string.IsNullOrEmpty(_searchQuery)) { _searchQuery = string.Empty; OnPropertyChanged(nameof(SearchQuery)); changed = true; }
-
-        if (changed)
-        {
-            FilterCriteriaChanged?.Invoke(this, EventArgs.Empty);
-        }
+        // Use the public setters to ensure all logic (including clearing other properties) is triggered.
+        // The setters will ultimately trigger FilterCriteriaChanged.
+        // We set them in an order that prevents unwanted side-effects, e.g., setting SearchQuery last.
+        SelectedPlaylist = null;
+        SelectedArtist = null;
+        SelectedAlbum = null;
+        SearchQuery = string.Empty;
     }
 }
